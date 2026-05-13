@@ -1,0 +1,39 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+
+const authRoutes = require('./routes/auth');
+const conversationRoutes = require('./routes/conversations');
+const adminRoutes = require('./routes/admins');
+const settingsRoutes = require('./routes/settings');
+const webhookRoutes = require('./routes/webhook');
+
+const app = express();
+
+app.use(
+  cors({
+    origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+    credentials: true,
+  })
+);
+
+// Raw body needed before JSON parser for webhook signature verification (future-proofing)
+app.use('/webhook', express.json(), webhookRoutes);
+
+app.use(express.json());
+app.use('/api/auth', authRoutes);
+app.use('/api/conversations', conversationRoutes);
+app.use('/api/admins', adminRoutes);
+app.use('/api/settings', settingsRoutes);
+
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+
+app.use((err, _req, res, _next) => {
+  console.error('Unhandled error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
+const PORT = process.env.PORT || 3001;
+app.listen(PORT, () => {
+  console.log(`WhatsApp Support backend running on port ${PORT}`);
+});

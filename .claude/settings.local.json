@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(cd \"C:\\\\Users\\\\Administrator\\\\Downloads\\\\expresnet agent\" ; Get-ChildItem -Recurse -File -Name | Where-Object { $_ -notmatch \"node_modules\" } | Sort-Object)",
+      "Read(//c/Users/Administrator/.ssh/**)",
+      "PowerShell(Get-ChildItem *)",
+      "PowerShell(ssh -V 2>&1)",
+      "PowerShell(cmd /c \"dir /a C:\\\\Users\\\\Administrator\\\\\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no -o ConnectTimeout=10 root@139.59.36.247 \"echo connected && whoami && pm2 list\")",
+      "PowerShell(scp *)",
+      "Bash(curl -s --max-time 5 http://139.59.36.247:3001/api/health)",
+      "Bash(echo \"Exit: $?\")",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://139.59.36.247:3001/api/health\" -TimeoutSec 5 -ErrorAction Stop; \"Status: $\\($r.StatusCode\\)`n$\\($r.Content\\)\" } catch { \"Error: $_\" })",
+      "PowerShell(try { $r = Invoke-WebRequest -Uri \"http://139.59.36.247\" -TimeoutSec 5 -ErrorAction Stop; \"Status: $\\($r.StatusCode\\)`n$\\($r.Content.Substring\\(0, [Math]::Min\\(500, $r.Content.Length\\)\\)\\)\" } catch { \"Error: $_\" })",
+      "PowerShell(Test-NetConnection *)",
+      "PowerShell(cmd /c \"dir /a C:\\\\Users\\\\Administrator\\\\.ssh\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\.ssh\\\\id_rsa\" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 root@139.59.36.247 \"echo connected && uname -a && lsb_release -d 2>/dev/null || cat /etc/os-release | head -3\" 2>&1)",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\.ssh\\\\id_ed25519\" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 root@139.59.36.247 \"echo connected && uname -a\" 2>&1)",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no -o BatchMode=yes -o ConnectTimeout=10 root@139.59.36.247 \"echo connected && uname -a && lsb_release -d 2>/dev/null\" 2>&1)",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"node -v 2>/dev/null || echo 'no node'; npm -v 2>/dev/null || echo 'no npm'; psql --version 2>/dev/null || echo 'no psql'; nginx -v 2>/dev/null || echo 'no nginx'; pm2 -v 2>/dev/null || echo 'no pm2'; docker -v 2>/dev/null || echo 'no docker'; ls /var/www 2>/dev/null || echo 'no /var/www'\" 2>&1)",
+      "Bash(ssh *)",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"node -v 2>/dev/null || echo 'no node'; npm -v 2>/dev/null || echo 'no npm'; which psql 2>/dev/null || echo 'no psql'; docker -v 2>/dev/null || echo 'no docker'; ls /root/\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"apt-get update -qq && apt-get install -y -qq curl gnupg2 postgresql postgresql-contrib 2>&1 | tail -5\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"curl -fsSL https://deb.nodesource.com/setup_20.x | bash - && apt-get install -y nodejs 2>&1 | tail -5 && node -v && npm -v\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"systemctl start postgresql && systemctl enable postgresql && sudo -u postgres psql -c \\\\\"CREATE DATABASE whatsapp_support;\\\\\" && sudo -u postgres psql -c \\\\\"ALTER USER postgres PASSWORD 'postgres';\\\\\" && npm install -g pm2 2>&1 | tail -3\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"node -v 2>/dev/null || echo 'node: not found'; npm -v 2>/dev/null || echo 'npm: not found'; pm2 -v 2>/dev/null || echo 'pm2: not found'; nginx -v 2>/dev/null || echo 'nginx: not found'; psql --version 2>/dev/null || echo 'psql: not found'; lsb_release -d 2>/dev/null || head -3 /etc/os-release\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"npm install -g pm2 && apt-get install -y nginx\")",
+      "PowerShell(ssh -i \"C:\\\\Users\\\\Administrator\\\\telenexus_key\" -o StrictHostKeyChecking=no root@139.59.36.247 \"apt-get install -y unzip > /dev/null 2>&1 && mkdir -p /var/www/expresnet && unzip -o /root/expresnet-deploy.zip -d /var/www/expresnet && ls /var/www/expresnet\")"
+    ]
+  }
+}

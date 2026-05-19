@@ -5,6 +5,26 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 
+const ALL_PERMISSIONS = [
+  'statistics',
+  'conversations',
+  'escalations',
+  'installations',
+  'complaints',
+  'ai_health',
+  'admins',
+  'employees',
+  'workflow',
+  'agent',
+];
+
+function normalizePermissions(raw, role) {
+  if (role === 'superadmin') return ALL_PERMISSIONS;
+  if (!Array.isArray(raw) || raw.length === 0) return ALL_PERMISSIONS;
+  const clean = [...new Set(raw.filter((p) => ALL_PERMISSIONS.includes(p)))];
+  return clean.length > 0 ? clean : ['statistics'];
+}
+
 // POST /api/auth/login
 router.post(
   '/login',
@@ -38,17 +58,18 @@ router.post(
         return res.status(401).json({ error: 'Invalid credentials' });
       }
 
-      // Regular admins whose client has been suspended cannot log in
       if (admin.role !== 'superadmin' && admin.client_status === 'suspended') {
         return res.status(403).json({ error: 'This account has been suspended. Contact support.' });
       }
 
+      const permissions = normalizePermissions(admin.permissions, admin.role);
       const tokenPayload = {
         id: admin.id,
         email: admin.email,
         role: admin.role,
         name: admin.name,
         client_id: admin.client_id || null,
+        permissions,
       };
       const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
 
@@ -62,6 +83,7 @@ router.post(
           client_id: admin.client_id || null,
           client_name: admin.client_name || null,
           client_business_name: admin.client_business_name || null,
+          permissions,
         },
       });
     } catch (err) {

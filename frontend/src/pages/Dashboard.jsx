@@ -164,7 +164,7 @@ export default function Dashboard() {
 
   return (
     <div className="h-screen overflow-hidden bg-[#f2f0f7] text-slate-900">
-      <div className="flex h-full">
+      <div className="flex h-full min-h-0">
         <aside className="hidden lg:flex w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white rounded-r-[42px] flex-col shadow-2xl shadow-purple-900/25 z-20">
           <div className="px-8 pt-7 pb-7">
             <div className="flex items-center gap-3">
@@ -198,7 +198,7 @@ export default function Dashboard() {
           </div>
         </aside>
 
-        <section className="flex-1 min-w-0 flex flex-col overflow-hidden">
+        <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <header className="h-[84px] shrink-0 px-4 sm:px-7 lg:px-9 flex items-center justify-between gap-5">
             <div className="flex items-center gap-4 min-w-0">
               <button
@@ -258,7 +258,7 @@ export default function Dashboard() {
           </header>
 
           <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-9 pb-7 overflow-hidden">
-            <div className="h-full rounded-[34px] overflow-hidden bg-white shadow-2xl shadow-slate-200/70 border border-white">
+            <div className="h-full min-h-0 rounded-[34px] overflow-hidden bg-white shadow-2xl shadow-slate-200/70 border border-white flex flex-col">
               <Outlet />
             </div>
           </main>

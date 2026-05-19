@@ -20,10 +20,59 @@ import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
 
+const ALL_PERMISSIONS = [
+  'statistics',
+  'conversations',
+  'escalations',
+  'installations',
+  'complaints',
+  'ai_health',
+  'admins',
+  'employees',
+  'workflow',
+  'agent',
+];
+
+function hasPermission(admin, permission) {
+  if (!admin) return false;
+  if (admin.role === 'superadmin') return true;
+  if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
+  return admin.permissions.includes(permission);
+}
+
+function firstAllowedPath(admin) {
+  const first = ALL_PERMISSIONS.find((p) => hasPermission(admin, p)) || 'statistics';
+  const pathMap = {
+    statistics: 'statistics',
+    conversations: 'conversations',
+    escalations: 'escalations',
+    installations: 'installations',
+    complaints: 'complaints',
+    ai_health: 'ai-health',
+    admins: 'admins',
+    employees: 'employees',
+    workflow: 'workflow',
+    agent: 'agent',
+  };
+  return pathMap[first] || 'statistics';
+}
+
 function LoadingScreen() {
   return (
     <div className="flex items-center justify-center h-screen bg-gray-50">
       <div className="text-gray-500 text-sm">Loading...</div>
+    </div>
+  );
+}
+
+function AccessDenied() {
+  return (
+    <div className="flex-1 flex items-center justify-center bg-[#f8f6ff] p-6">
+      <div className="max-w-md text-center bg-white rounded-[28px] border border-purple-50 shadow-xl shadow-purple-100/60 p-8">
+        <div className="w-14 h-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4 text-2xl">!</div>
+        <h1 className="text-xl font-black text-slate-950">Access restricted</h1>
+        <p className="text-sm text-slate-500 mt-2">You do not have permission to access this section. Ask the main admin to update your tab access.</p>
+      </div>
     </div>
   );
 }
@@ -34,6 +83,19 @@ function ProtectedRoute({ children }) {
   if (!admin) return <Navigate to="/login" replace />;
   if (admin.role === 'superadmin') return <Navigate to="/onboarding" replace />;
   return children;
+}
+
+function PermissionRoute({ permission, children }) {
+  const { admin, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!admin) return <Navigate to="/login" replace />;
+  if (!hasPermission(admin, permission)) return <AccessDenied />;
+  return children;
+}
+
+function DashboardIndexRedirect() {
+  const { admin } = useAuth();
+  return <Navigate to={firstAllowedPath(admin)} replace />;
 }
 
 function SuperadminRoute({ children }) {
@@ -73,19 +135,19 @@ export default function App() {
               </ProtectedRoute>
             }
           >
-            <Route index element={<Navigate to="statistics" replace />} />
-            <Route path="conversations" element={<Conversations />}>
+            <Route index element={<DashboardIndexRedirect />} />
+            <Route path="conversations" element={<PermissionRoute permission="conversations"><Conversations /></PermissionRoute>}>
               <Route path=":id" element={<ChatView />} />
             </Route>
-            <Route path="escalations" element={<Escalations />} />
-            <Route path="installations" element={<Installations />} />
-            <Route path="complaints" element={<Complaints />} />
-            <Route path="ai-health" element={<AIHealth />} />
-            <Route path="statistics" element={<Statistics />} />
-            <Route path="admins" element={<AdminManagement />} />
-            <Route path="employees" element={<Employees />} />
-            <Route path="workflow" element={<Workflow />} />
-            <Route path="agent" element={<Agent />} />
+            <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
+            <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
+            <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />
+            <Route path="ai-health" element={<PermissionRoute permission="ai_health"><AIHealth /></PermissionRoute>} />
+            <Route path="statistics" element={<PermissionRoute permission="statistics"><Statistics /></PermissionRoute>} />
+            <Route path="admins" element={<PermissionRoute permission="admins"><AdminManagement /></PermissionRoute>} />
+            <Route path="employees" element={<PermissionRoute permission="employees"><Employees /></PermissionRoute>} />
+            <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />
+            <Route path="agent" element={<PermissionRoute permission="agent"><Agent /></PermissionRoute>} />
             <Route path="settings" element={<Navigate to="../agent" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

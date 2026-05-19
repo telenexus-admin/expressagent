@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
+const { logActivity } = require('../services/audit');
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -16,6 +17,7 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'logs',
 ];
 
 function normalizePermissions(raw, role) {
@@ -27,10 +29,6 @@ function normalizePermissions(raw, role) {
 
 router.use(authMiddleware, scopeMiddleware);
 
-// GET /api/admins
-// Superadmin (no scope): returns all admins across clients, with client name.
-// Superadmin (?clientId=X): returns only admins belonging to that client.
-// Regular admin: returns only admins belonging to their own client.
 router.get('/', async (req, res) => {
   try {
     const params = [];
@@ -57,9 +55,6 @@ router.get('/', async (req, res) => {
   }
 });
 
-// POST /api/admins
-// Superadmin: can create admins for any client (pass client_id in body), or another superadmin (omit client_id).
-// Regular admin: can create another admin within their own client; role is forced to 'admin'.
 router.post(
   '/',
   [
@@ -72,20 +67,15 @@ router.post(
   ],
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { name, email, password } = req.body;
     let role = req.body.role || 'admin';
     let clientId = req.body.client_id || null;
 
     if (req.scope.isSuperadmin) {
-      if (role === 'superadmin') {
-        clientId = null;
-      } else if (!clientId) {
-        return res.status(400).json({ error: 'client_id is required when creating a regular admin' });
-      }
+      if (role === 'superadmin') clientId = null;
+      else if (!clientId) return res.status(400).json({ error: 'client_id is required when creating a regular admin' });
     } else {
       role = 'admin';
       clientId = req.scope.clientId;
@@ -96,9 +86,7 @@ router.post(
     try {
       if (clientId) {
         const check = await db.query(`SELECT id FROM clients WHERE id = $1`, [clientId]);
-        if (check.rows.length === 0) {
-          return res.status(400).json({ error: 'client_id does not exist' });
-        }
+        if (check.rows.length === 0) return res.status(400).json({ error: 'client_id does not exist' });
       }
 
       const hash = await bcrypt.hash(password, 12);
@@ -108,37 +96,45 @@ router.post(
          RETURNING id, name, email, role, client_id, permissions, created_at`,
         [name, email, hash, role, clientId, JSON.stringify(permissions)]
       );
-      res.status(201).json(result.rows[0]);
+      const created = result.rows[0];
+      await logActivity({
+        req,
+        action: 'admin_created',
+        entityType: 'admin',
+        entityId: created.id,
+        description: `${req.user.name} created admin ${created.name}`,
+        metadata: { target_email: created.email, target_role: created.role, permissions: created.permissions, client_id: created.client_id },
+      });
+      res.status(201).json(created);
     } catch (err) {
-      if (err.code === '23505') {
-        return res.status(409).json({ error: 'An admin with that email already exists' });
-      }
+      if (err.code === '23505') return res.status(409).json({ error: 'An admin with that email already exists' });
       console.error('POST /admins error:', err.message);
       res.status(500).json({ error: 'Server error' });
     }
   }
 );
 
-// DELETE /api/admins/:id
 router.delete('/:id', async (req, res) => {
-  if (parseInt(req.params.id, 10) === req.user.id) {
-    return res.status(400).json({ error: 'You cannot delete your own account' });
-  }
+  if (parseInt(req.params.id, 10) === req.user.id) return res.status(400).json({ error: 'You cannot delete your own account' });
 
   try {
-    const target = await db.query(`SELECT id, client_id, role FROM admins WHERE id = $1`, [req.params.id]);
-    if (target.rows.length === 0) {
-      return res.status(404).json({ error: 'Admin not found' });
-    }
+    const target = await db.query(`SELECT id, name, email, client_id, role FROM admins WHERE id = $1`, [req.params.id]);
+    if (target.rows.length === 0) return res.status(404).json({ error: 'Admin not found' });
     const t = target.rows[0];
 
     if (!req.scope.isSuperadmin) {
-      if (t.role === 'superadmin' || t.client_id !== req.scope.clientId) {
-        return res.status(403).json({ error: 'Forbidden' });
-      }
+      if (t.role === 'superadmin' || t.client_id !== req.scope.clientId) return res.status(403).json({ error: 'Forbidden' });
     }
 
     await db.query(`DELETE FROM admins WHERE id = $1`, [req.params.id]);
+    await logActivity({
+      req,
+      action: 'admin_deleted',
+      entityType: 'admin',
+      entityId: t.id,
+      description: `${req.user.name} deleted admin ${t.name}`,
+      metadata: { target_email: t.email, target_role: t.role, client_id: t.client_id },
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /admins error:', err.message);

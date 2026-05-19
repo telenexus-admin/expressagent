@@ -11,6 +11,7 @@ const analyticsRoutes = require('./routes/analytics');
 const clientRoutes = require('./routes/clients');
 const employeeRoutes = require('./routes/employees');
 const workflowRoutes = require('./routes/workflows');
+const activityRoutes = require('./routes/activity');
 const webhookRoutes = require('./routes/webhook');
 
 const app = express();
@@ -22,7 +23,6 @@ app.use(
   })
 );
 
-// Raw body needed before JSON parser for webhook signature verification (future-proofing)
 app.use('/webhook', express.json(), webhookRoutes);
 
 app.use(express.json());
@@ -35,6 +35,7 @@ app.use('/api/analytics', analyticsRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/workflows', workflowRoutes);
+app.use('/api/activity', activityRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

@@ -29,10 +29,12 @@ const schema = `
     password_hash VARCHAR(255) NOT NULL,
     role VARCHAR(50) NOT NULL DEFAULT 'admin' CHECK (role IN ('superadmin', 'admin')),
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    permissions JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
 
   ALTER TABLE admins ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
+  ALTER TABLE admins ADD COLUMN IF NOT EXISTS permissions JSONB NOT NULL DEFAULT '[]'::jsonb;
 
   CREATE TABLE IF NOT EXISTS conversations (
     id SERIAL PRIMARY KEY,
@@ -145,9 +147,6 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_admins_client ON admins(client_id);
 `;
 
-// Migrate single-tenant data (env-var configured) into a default client row,
-// then backfill client_id on existing admins/conversations/escalations that
-// pre-date the multi-tenant schema. Idempotent.
 async function bootstrapDefaultClient() {
   const orphanCheck = await pool.query(`
     SELECT
@@ -166,7 +165,6 @@ async function bootstrapDefaultClient() {
     `Backfilling client_id for ${conv_orphans} conversations, ${admin_orphans} admins, ${esc_orphans} escalations.`
   );
 
-  // Pull old single-tenant settings to seed the default client
   const settingsRes = await pool.query(
     `SELECT key, value FROM settings WHERE key IN ('system_prompt', 'support_number', 'agent_name', 'voice_id')`
   );
@@ -178,7 +176,6 @@ async function bootstrapDefaultClient() {
   const metaVerifyToken = process.env.META_VERIFY_TOKEN || null;
   const metaBusinessAccountId = process.env.META_BUSINESS_ACCOUNT_ID || null;
 
-  // Prefer an existing default client (by name) to avoid duplicates if rerun
   let defaultClient = await pool.query(
     `SELECT id FROM clients WHERE name = 'Default Client' LIMIT 1`
   );

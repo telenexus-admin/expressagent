@@ -19,6 +19,7 @@ import Agent from './pages/Agent';
 import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
+import Logs from './pages/Logs';
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -31,6 +32,7 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'logs',
 ];
 
 function hasPermission(admin, permission) {
@@ -53,16 +55,13 @@ function firstAllowedPath(admin) {
     employees: 'employees',
     workflow: 'workflow',
     agent: 'agent',
+    logs: 'logs',
   };
   return pathMap[first] || 'statistics';
 }
 
 function LoadingScreen() {
-  return (
-    <div className="flex items-center justify-center h-screen bg-gray-50">
-      <div className="text-gray-500 text-sm">Loading...</div>
-    </div>
-  );
+  return <div className="flex items-center justify-center h-screen bg-gray-50"><div className="text-gray-500 text-sm">Loading...</div></div>;
 }
 
 function AccessDenied() {
@@ -113,28 +112,12 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<Login />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />
-
-          <Route
-            path="/onboarding"
-            element={
-              <SuperadminRoute>
-                <OnboardingLayout />
-              </SuperadminRoute>
-            }
-          >
+          <Route path="/onboarding" element={<SuperadminRoute><OnboardingLayout /></SuperadminRoute>}>
             <Route index element={<OnboardingOverview />} />
             <Route path="clients" element={<OnboardingClients />} />
             <Route path="clients/:id" element={<OnboardingClientDetail />} />
           </Route>
-
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          >
+          <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
             <Route index element={<DashboardIndexRedirect />} />
             <Route path="conversations" element={<PermissionRoute permission="conversations"><Conversations /></PermissionRoute>}>
               <Route path=":id" element={<ChatView />} />
@@ -148,6 +131,7 @@ export default function App() {
             <Route path="employees" element={<PermissionRoute permission="employees"><Employees /></PermissionRoute>} />
             <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />
             <Route path="agent" element={<PermissionRoute permission="agent"><Agent /></PermissionRoute>} />
+            <Route path="logs" element={<PermissionRoute permission="logs"><Logs /></PermissionRoute>} />
             <Route path="settings" element={<Navigate to="../agent" replace />} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />

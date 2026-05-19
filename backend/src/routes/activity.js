@@ -2,11 +2,13 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
+const { ensureActivityTable } = require('../services/audit');
 
 router.use(authMiddleware, scopeMiddleware);
 
 router.get('/', async (req, res) => {
   try {
+    await ensureActivityTable();
     const limit = Math.min(parseInt(req.query.limit, 10) || 100, 200);
     const params = [];
     let where = '';

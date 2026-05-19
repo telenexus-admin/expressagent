@@ -16,8 +16,6 @@ function formatErr(err) {
     : (err.response?.data || err.message || 'unknown error');
 }
 
-// Notify the customer support number via both WhatsApp and SMS.
-// Returns aggregate { notifyStatus, notifyError } for the escalations row.
 async function notifySupport(client, supportNumber, message) {
   if (!supportNumber) {
     return { notifyStatus: 'no_support_number', notifyError: null };
@@ -43,8 +41,7 @@ async function notifySupport(client, supportNumber, message) {
     console.error(`Support SMS to ${supportNumber} failed:`, results.smsError);
   }
 
-  const notifyStatus =
-    results.whatsapp === 'sent' || results.sms === 'sent' ? 'sent' : 'failed';
+  const notifyStatus = results.whatsapp === 'sent' || results.sms === 'sent' ? 'sent' : 'failed';
   const errorParts = [];
   if (results.whatsapp !== 'sent') errorParts.push(`whatsapp: ${results.whatsappError || 'failed'}`);
   if (results.sms !== 'sent') errorParts.push(`sms: ${results.smsError || 'failed'}`);
@@ -53,9 +50,6 @@ async function notifySupport(client, supportNumber, message) {
   return { notifyStatus, notifyError };
 }
 
-// Notify the workflow-assigned employee for a detected intent, exactly once per
-// (conversation, intent). Skips silently if no route is configured, no employee
-// is assigned, the route is disabled, or the dispatch was already fired.
 async function dispatchToEmployee({ client, conversation, intent, messageText, phoneNumber }) {
   if (!intent || intent === 'general_inquiry') return;
 
@@ -77,20 +71,17 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
     );
     if (existing.rows.length > 0) return;
 
-    const nameLine = conversation.customer_name
-      ? `Customer: ${conversation.customer_name}\n`
-      : '';
-    const businessName = (client.business_name || client.name || 'the team').trim();
+    const nameLine = conversation.customer_name ? `Customer: ${conversation.customer_name}\n` : '';
     const intentLabelMap = {
       new_installation: 'New installation request',
-      payment_billing: 'Payment / billing issue',
+      payment_billing: 'Payment/billing issue',
       technical_issue: 'Technical problem',
       human_request: 'Customer wants a human agent',
-      compliment_feedback: 'Compliment / feedback',
+      compliment_feedback: 'Compliment/feedback',
     };
     const heading = intentLabelMap[intent] || 'Customer message';
     const notice =
-      `${businessName} workflow alert — ${heading}\n\n` +
+      `${heading}\n\n` +
       nameLine +
       `Customer number: +${phoneNumber}\n` +
       `Their message: "${messageText}"\n\n` +
@@ -100,16 +91,11 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
     let notifyError = null;
     try {
       await sendSMS(route.emp_phone, notice);
-      console.log(
-        `[client ${client.id}] Dispatched intent="${intent}" to employee "${route.emp_name}" (${route.emp_phone}).`
-      );
+      console.log(`[client ${client.id}] Dispatched intent="${intent}" to employee "${route.emp_name}" (${route.emp_phone}).`);
     } catch (err) {
       notifyStatus = 'failed';
       notifyError = formatErr(err);
-      console.error(
-        `Dispatch SMS to employee ${route.emp_name} (${route.emp_phone}) failed:`,
-        notifyError
-      );
+      console.error(`Dispatch SMS to employee ${route.emp_name} (${route.emp_phone}) failed:`, notifyError);
     }
 
     await db.query(
@@ -118,23 +104,13 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
           trigger_message, notify_status, notify_error)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ON CONFLICT (conversation_id, intent_key) DO NOTHING`,
-      [
-        conversation.id,
-        client.id,
-        intent,
-        route.employee_id,
-        phoneNumber,
-        messageText,
-        notifyStatus,
-        notifyError,
-      ]
+      [conversation.id, client.id, intent, route.employee_id, phoneNumber, messageText, notifyStatus, notifyError]
     );
   } catch (err) {
     console.error('dispatchToEmployee error:', err.message);
   }
 }
 
-// Send the AI reply either as a text message or a voice note, mirroring the customer's format.
 async function deliverReply(client, phoneNumber, text, asVoice, voiceId) {
   if (!asVoice) {
     await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, text);
@@ -143,13 +119,7 @@ async function deliverReply(client, phoneNumber, text, asVoice, voiceId) {
   try {
     const voice = voiceId || client.voice_id || 'alloy';
     const audio = await synthesizeVoice(text, voice);
-    const mediaId = await uploadWhatsAppMedia(
-      client.meta_phone_number_id,
-      client.meta_access_token,
-      audio,
-      'audio/ogg',
-      'reply.ogg'
-    );
+    const mediaId = await uploadWhatsAppMedia(client.meta_phone_number_id, client.meta_access_token, audio, 'audio/ogg', 'reply.ogg');
     await sendWhatsAppVoiceNote(client.meta_phone_number_id, client.meta_access_token, phoneNumber, mediaId);
   } catch (err) {
     console.error('Voice reply failed, falling back to text:', err.response?.data || err.message);
@@ -157,24 +127,11 @@ async function deliverReply(client, phoneNumber, text, asVoice, voiceId) {
   }
 }
 
-const OPT_OUT_KEYWORDS = new Set([
-  'stop', 'unsubscribe', 'cancel', 'quit', 'end',
-  'acha', 'simama', 'koma',
-]);
-const RESUME_KEYWORDS = new Set([
-  'start', 'resume', 'subscribe',
-  'anza', 'endelea',
-]);
-const HUMAN_KEYWORDS = new Set([
-  'human', 'agent', 'person', 'representative', 'support',
-  'mtu', 'mwakilishi', 'msaada',
-]);
-const HUMAN_ESCALATION_REGEX = new RegExp(
-  `\\b(${[...HUMAN_KEYWORDS].join('|')})\\b`,
-  'i'
-);
+const OPT_OUT_KEYWORDS = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
+const RESUME_KEYWORDS = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
+const HUMAN_KEYWORDS = new Set(['human', 'agent', 'person', 'representative', 'support', 'mtu', 'mwakilishi', 'msaada']);
+const HUMAN_ESCALATION_REGEX = new RegExp(`\\b(${[...HUMAN_KEYWORDS].join('|')})\\b`, 'i');
 
-// Plans the AI presents while collecting installation details. Edit here when pricing changes.
 const PLAN_LIST_TEXT =
   `• 10 Mbps – KSh 1,500/month\n` +
   `• 15 Mbps – KSh 2,000/month\n` +
@@ -203,21 +160,15 @@ const INSTALL_REGEX = new RegExp(
 const DISCLOSURE_TEMPLATE = (businessName) =>
   `Hi! You're chatting with ${businessName || 'our'} AI assistant. Reply HUMAN any time to reach a person, or STOP to unsubscribe.`;
 
-// GET /webhook — Meta verification handshake. Each client has their own verify_token.
 router.get('/', async (req, res) => {
   const mode = req.query['hub.mode'];
   const token = req.query['hub.verify_token'];
   const challenge = req.query['hub.challenge'];
 
-  if (mode !== 'subscribe' || !token) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
+  if (mode !== 'subscribe' || !token) return res.status(403).json({ error: 'Forbidden' });
 
   try {
-    const result = await db.query(
-      `SELECT id, name FROM clients WHERE meta_verify_token = $1 LIMIT 1`,
-      [token]
-    );
+    const result = await db.query(`SELECT id, name FROM clients WHERE meta_verify_token = $1 LIMIT 1`, [token]);
     if (result.rows.length > 0) {
       console.log(`Webhook verified by Meta for client "${result.rows[0].name}" (id=${result.rows[0].id}).`);
       return res.status(200).send(challenge);
@@ -233,10 +184,7 @@ router.get('/', async (req, res) => {
 
 async function findClientByPhoneNumberId(phoneNumberId) {
   if (!phoneNumberId) return null;
-  const result = await db.query(
-    `SELECT * FROM clients WHERE meta_phone_number_id = $1 AND status = 'active' LIMIT 1`,
-    [phoneNumberId]
-  );
+  const result = await db.query(`SELECT * FROM clients WHERE meta_phone_number_id = $1 AND status = 'active' LIMIT 1`, [phoneNumberId]);
   return result.rows[0] || null;
 }
 
@@ -252,10 +200,7 @@ async function findOrCreateConversation(clientId, phoneNumber, profileName) {
   if (existing.rows.length > 0) {
     const conv = existing.rows[0];
     if (cleanName && cleanName !== conv.customer_name) {
-      const updated = await db.query(
-        `UPDATE conversations SET customer_name = $1 WHERE id = $2 RETURNING *`,
-        [cleanName, conv.id]
-      );
+      const updated = await db.query(`UPDATE conversations SET customer_name = $1 WHERE id = $2 RETURNING *`, [cleanName, conv.id]);
       return { conversation: updated.rows[0], isNew: false };
     }
     return { conversation: conv, isNew: false };
@@ -269,17 +214,10 @@ async function findOrCreateConversation(clientId, phoneNumber, profileName) {
 }
 
 async function persistOutgoing(conversationId, content) {
-  await db.query(
-    `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
-    [conversationId, content]
-  );
-  await db.query(
-    `UPDATE conversations SET updated_at = NOW() WHERE id = $1`,
-    [conversationId]
-  );
+  await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`, [conversationId, content]);
+  await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 }
 
-// POST /webhook — incoming messages from WhatsApp
 router.post('/', async (req, res) => {
   res.status(200).send('EVENT_RECEIVED');
 
@@ -294,7 +232,6 @@ router.post('/', async (req, res) => {
 
     if (!incomingMessages || incomingMessages.length === 0) return;
 
-    // Route by the phone_number_id Meta delivered the message to.
     const phoneNumberId = value?.metadata?.phone_number_id;
     const client = await findClientByPhoneNumberId(phoneNumberId);
     if (!client) {
@@ -327,10 +264,7 @@ router.post('/', async (req, res) => {
         console.log(`[client ${client.id}] Transcribed voice from ${phoneNumber}: "${messageText}"`);
       } catch (err) {
         console.error('Failed to transcribe inbound audio:', err.response?.data || err.message);
-        await db.query(
-          `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`,
-          [conversation.id, '[voice note — transcription failed]', timestamp]
-        );
+        await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, '[voice note — transcription failed]', timestamp]);
         if (conversation.opted_out_at) return;
         const notice = "Sorry, I couldn't understand that voice note. Could you send it again or type your message?";
         await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
@@ -342,10 +276,7 @@ router.post('/', async (req, res) => {
       console.log(`[client ${client.id}] Incoming from ${phoneNumber}: "${messageText}"`);
     } else {
       console.log(`[client ${client.id}] Unsupported message type (${message.type}) from ${phoneNumber}.`);
-      await db.query(
-        `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`,
-        [conversation.id, `[${message.type} message — not processed]`, timestamp]
-      );
+      await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, `[${message.type} message — not processed]`, timestamp]);
       if (conversation.opted_out_at) return;
       const notice = "Sorry, I can only handle text and voice notes right now. Please send one of those.";
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
@@ -355,20 +286,11 @@ router.post('/', async (req, res) => {
 
     const normalized = messageText.toLowerCase();
 
-    await db.query(
-      `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`,
-      [conversation.id, messageText, timestamp]
-    );
-    await db.query(
-      `UPDATE conversations SET updated_at = NOW() WHERE id = $1`,
-      [conversation.id]
-    );
+    await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, messageText, timestamp]);
+    await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {
-      await db.query(
-        `UPDATE conversations SET opted_out_at = NULL WHERE id = $1`,
-        [conversation.id]
-      );
+      await db.query(`UPDATE conversations SET opted_out_at = NULL WHERE id = $1`, [conversation.id]);
       const reply = "You're resubscribed. How can I help you today?";
       await deliverReply(client, phoneNumber, reply, inboundIsVoice);
       await persistOutgoing(conversation.id, reply);
@@ -381,10 +303,7 @@ router.post('/', async (req, res) => {
     }
 
     if (OPT_OUT_KEYWORDS.has(normalized)) {
-      await db.query(
-        `UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`,
-        [conversation.id]
-      );
+      await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
       const reply = "You've been unsubscribed. You will not receive further messages from this assistant. Reply START at any time to resume.";
       await deliverReply(client, phoneNumber, reply, inboundIsVoice);
       await persistOutgoing(conversation.id, reply);
@@ -399,14 +318,9 @@ router.post('/', async (req, res) => {
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
 
     if (HUMAN_ESCALATION_REGEX.test(normalized)) {
-      await db.query(
-        `UPDATE conversations SET status = 'human_takeover' WHERE id = $1`,
-        [conversation.id]
-      );
+      await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
 
-      const nameLine = conversation.customer_name
-        ? `Customer name: ${conversation.customer_name}\n`
-        : '';
+      const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';
       const notice =
         `Customer support request\n\n` +
         nameLine +
@@ -415,27 +329,15 @@ router.post('/', async (req, res) => {
         `Please reach out to them directly.`;
 
       const { notifyStatus, notifyError } = await notifySupport(client, supportNumber, notice);
-      if (notifyStatus === 'sent') {
-        console.log(`Forwarded escalation to support (${supportNumber}) for customer ${phoneNumber}.`);
-      } else if (notifyStatus === 'no_support_number') {
-        console.warn(`[client ${client.id}] Human escalation but no support_number configured.`);
-      }
+      if (notifyStatus === 'sent') console.log(`Forwarded escalation to support (${supportNumber}) for customer ${phoneNumber}.`);
+      else if (notifyStatus === 'no_support_number') console.warn(`[client ${client.id}] Human escalation but no support_number configured.`);
 
       await db.query(
         `INSERT INTO escalations
            (conversation_id, client_id, customer_phone, customer_name, trigger_message,
             support_number, notify_status, notify_error, type)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'human')`,
-        [
-          conversation.id,
-          client.id,
-          phoneNumber,
-          conversation.customer_name,
-          messageText,
-          supportNumber || null,
-          notifyStatus,
-          notifyError,
-        ]
+        [conversation.id, client.id, phoneNumber, conversation.customer_name, messageText, supportNumber || null, notifyStatus, notifyError]
       );
 
       const reply = supportNumber
@@ -448,10 +350,7 @@ router.post('/', async (req, res) => {
 
     let installationState = conversation.installation_state || null;
     if (!installationState && INSTALL_REGEX.test(normalized)) {
-      await db.query(
-        `UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`,
-        [conversation.id]
-      );
+      await db.query(`UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`, [conversation.id]);
       installationState = 'collecting';
     }
 
@@ -471,9 +370,7 @@ router.post('/', async (req, res) => {
     const voiceId = (client.voice_id || '').trim() || 'alloy';
 
     let systemPrompt = basePrompt;
-    if (agentName) {
-      systemPrompt = `Your name is ${agentName}. If a customer asks your name, introduce yourself as ${agentName}.\n\n${systemPrompt}`;
-    }
+    if (agentName) systemPrompt = `Your name is ${agentName}. If a customer asks your name, introduce yourself as ${agentName}.\n\n${systemPrompt}`;
     if (conversation.customer_name) {
       const firstName = conversation.customer_name.split(/\s+/)[0];
       systemPrompt +=
@@ -483,9 +380,7 @@ router.post('/', async (req, res) => {
         `"Hi ${firstName}!" (or the Swahili equivalent "Habari ${firstName}!" if the customer wrote in Swahili). ` +
         `For follow-up messages, use their first name occasionally to keep it natural — do not start every message with it.`;
     }
-    if (supportNumber) {
-      systemPrompt += `\n\nLive support escalation: If the customer explicitly asks to speak with a human, is frustrated, or has an issue you cannot resolve, tell them they can reach our live customer support team directly at ${supportNumber}. Share this number only when escalation is appropriate — do not volunteer it on every message.`;
-    }
+    if (supportNumber) systemPrompt += `\n\nLive support escalation: If the customer explicitly asks to speak with a human, is frustrated, or has an issue you cannot resolve, tell them they can reach our live customer support team directly at ${supportNumber}. Share this number only when escalation is appropriate — do not volunteer it on every message.`;
     if (installationState === 'collecting') {
       systemPrompt +=
         `\n\nINSTALLATION ONBOARDING — IN PROGRESS\n` +
@@ -540,64 +435,39 @@ router.post('/', async (req, res) => {
           `Please reach out to schedule the installation.`;
 
         const { notifyStatus, notifyError } = await notifySupport(client, supportNumber, notice);
-        if (notifyStatus === 'sent') {
-          console.log(`Forwarded installation request to support (${supportNumber}) for customer ${phoneNumber}.`);
-        } else if (notifyStatus === 'no_support_number') {
-          console.warn(`[client ${client.id}] Installation submitted but no support_number configured.`);
-        }
+        if (notifyStatus === 'sent') console.log(`Forwarded installation request to support (${supportNumber}) for customer ${phoneNumber}.`);
+        else if (notifyStatus === 'no_support_number') console.warn(`[client ${client.id}] Installation submitted but no support_number configured.`);
 
         await db.query(
           `INSERT INTO escalations
              (conversation_id, client_id, customer_phone, customer_name, trigger_message,
               support_number, notify_status, notify_error, type)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'installation')`,
-          [
-            conversation.id,
-            client.id,
-            phoneNumber,
-            installName,
-            `Plan: ${installPlan} | Location: ${installLocation}`,
-            supportNumber || null,
-            notifyStatus,
-            notifyError,
-          ]
+          [conversation.id, client.id, phoneNumber, installName, `Plan: ${installPlan} | Location: ${installLocation}`, supportNumber || null, notifyStatus, notifyError]
         );
 
-        await db.query(
-          `UPDATE conversations SET installation_state = 'submitted', customer_name = COALESCE($1, customer_name) WHERE id = $2`,
-          [installName || null, conversation.id]
-        );
+        await db.query(`UPDATE conversations SET installation_state = 'submitted', customer_name = COALESCE($1, customer_name) WHERE id = $2`, [installName || null, conversation.id]);
         installationState = 'submitted';
 
         const firstName = installName.split(/\s+/)[0];
         const greeting = firstName ? `Hi ${firstName}, ` : '';
-        const businessName = (client.business_name || client.name || 'our team').trim();
         const customerSms =
-          `${greeting}thanks for your ${businessName} installation request. ` +
+          `${greeting}thanks for your installation request. ` +
           `Plan: ${installPlan}. Location: ${installLocation}. ` +
           `Our team has been notified and will contact you shortly to schedule.` +
-          (supportNumber ? ` Urgent? Call/WhatsApp +${supportNumber}.` : '');
+          (supportNumber ? ` For urgent help, call/WhatsApp +${supportNumber}.` : '');
         try {
           await sendSMS(phoneNumber, customerSms);
           console.log(`Installation confirmation SMS sent to ${phoneNumber}.`);
         } catch (err) {
-          console.error(
-            `Installation confirmation SMS to ${phoneNumber} failed:`,
-            formatErr(err)
-          );
+          console.error(`Installation confirmation SMS to ${phoneNumber} failed:`, formatErr(err));
         }
       }
     }
     customerReply = stripInstallMarker(customerReply);
 
     if (intentResult && intentResult.intent) {
-      await dispatchToEmployee({
-        client,
-        conversation,
-        intent: intentResult.intent,
-        messageText,
-        phoneNumber,
-      });
+      await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText, phoneNumber });
     }
 
     if (complaint && complaint.isComplaint && complaint.summary) {
@@ -607,14 +477,7 @@ router.post('/', async (req, res) => {
              (conversation_id, client_id, customer_phone, customer_name, trigger_message,
               support_number, notify_status, notify_error, type, summary)
            VALUES ($1, $2, $3, $4, $5, NULL, 'logged', NULL, 'complaint', $6)`,
-          [
-            conversation.id,
-            client.id,
-            phoneNumber,
-            conversation.customer_name,
-            `[${complaint.category}] ${messageText}`,
-            complaint.summary,
-          ]
+          [conversation.id, client.id, phoneNumber, conversation.customer_name, `[${complaint.category}] ${messageText}`, complaint.summary]
         );
         console.log(`Logged complaint from ${phoneNumber}: "${complaint.summary}"`);
       } catch (err) {
@@ -624,10 +487,7 @@ router.post('/', async (req, res) => {
 
     const isFirstReply = isNew && !conversation.disclosure_sent_at;
     if (isFirstReply) {
-      await db.query(
-        `UPDATE conversations SET disclosure_sent_at = NOW() WHERE id = $1`,
-        [conversation.id]
-      );
+      await db.query(`UPDATE conversations SET disclosure_sent_at = NOW() WHERE id = $1`, [conversation.id]);
     }
 
     const disclosure = DISCLOSURE_TEMPLATE(client.business_name || client.name);

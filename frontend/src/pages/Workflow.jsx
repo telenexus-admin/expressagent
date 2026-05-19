@@ -1,0 +1,453 @@
+import React, { useState, useEffect, useRef, useLayoutEffect, useCallback } from 'react';
+import api from '../utils/api';
+import {
+  BoltIcon,
+  CreditCardIcon,
+  WrenchIcon,
+  PhoneIcon,
+  HeartIcon,
+  QuestionIcon,
+  BrainIcon,
+  ChatIcon,
+  CheckCircleIcon,
+  WarningIcon,
+} from '../components/Icons';
+
+const INTENT_STYLE = {
+  new_installation:    { Icon: BoltIcon,       accent: '#0EA5E9', bg: 'bg-sky-50',     ring: 'ring-sky-200' },
+  payment_billing:     { Icon: CreditCardIcon, accent: '#F59E0B', bg: 'bg-amber-50',   ring: 'ring-amber-200' },
+  technical_issue:     { Icon: WrenchIcon,     accent: '#EF4444', bg: 'bg-red-50',     ring: 'ring-red-200' },
+  human_request:       { Icon: PhoneIcon,      accent: '#8B5CF6', bg: 'bg-violet-50',  ring: 'ring-violet-200' },
+  compliment_feedback: { Icon: HeartIcon,      accent: '#EC4899', bg: 'bg-pink-50',    ring: 'ring-pink-200' },
+  general_inquiry:     { Icon: QuestionIcon,   accent: '#10B981', bg: 'bg-emerald-50', ring: 'ring-emerald-200' },
+};
+
+const INTENT_LABELS = {
+  new_installation: 'New Installation',
+  payment_billing: 'Payment / Billing',
+  technical_issue: 'Technical Problem',
+  human_request: 'Wants a Human',
+  compliment_feedback: 'Compliment / Feedback',
+  general_inquiry: 'General Inquiry',
+};
+
+export default function Workflow() {
+  const [intents, setIntents] = useState([]);
+  const [employees, setEmployees] = useState([]);
+  const [dispatches, setDispatches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saveState, setSaveState] = useState({}); // { [intentKey]: 'saving' | 'saved' | 'error' }
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [{ data: workflow }, { data: disp }] = await Promise.all([
+        api.get('/workflows'),
+        api.get('/workflows/dispatches?limit=10').catch(() => ({ data: [] })),
+      ]);
+      setIntents(workflow.intents || []);
+      setEmployees(workflow.employees || []);
+      setDispatches(disp || []);
+    } catch (err) {
+      console.error('Failed to fetch workflows:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAll();
+  }, [fetchAll]);
+
+  const assign = async (intentKey, employeeId) => {
+    setSaveState((s) => ({ ...s, [intentKey]: 'saving' }));
+    try {
+      await api.put(`/workflows/${intentKey}`, {
+        employee_id: employeeId === '' ? null : parseInt(employeeId, 10),
+        is_enabled: true,
+      });
+      setIntents((prev) =>
+        prev.map((i) =>
+          i.key === intentKey
+            ? { ...i, assignedEmployeeId: employeeId === '' ? null : parseInt(employeeId, 10) }
+            : i
+        )
+      );
+      setSaveState((s) => ({ ...s, [intentKey]: 'saved' }));
+      setTimeout(() => {
+        setSaveState((s) => {
+          const next = { ...s };
+          if (next[intentKey] === 'saved') delete next[intentKey];
+          return next;
+        });
+      }, 1800);
+    } catch (err) {
+      console.error(err);
+      setSaveState((s) => ({ ...s, [intentKey]: 'error' }));
+    }
+  };
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center text-sm text-gray-400">
+        Loading workflow…
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+      <div className="max-w-6xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-bold text-gray-900">Workflow</h1>
+          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+            This is how your AI agent decides what to do with every customer message.
+            For each scenario below, pick the employee who should get an SMS alert when it happens.
+          </p>
+        </div>
+
+        {employees.length === 0 && (
+          <div className="bg-amber-50 border border-amber-200 text-amber-800 rounded-2xl px-4 py-3 mb-6 flex items-start gap-2">
+            <WarningIcon className="w-5 h-5 mt-0.5 shrink-0" />
+            <div className="text-sm">
+              <strong>No active employees yet.</strong> Add team members on the{' '}
+              <a href="/dashboard/employees" className="underline font-semibold">Employees</a>{' '}
+              tab before assigning them to workflow scenarios.
+            </div>
+          </div>
+        )}
+
+        <FlowDiagram intents={intents} employees={employees} onAssign={assign} saveState={saveState} />
+
+        <RecentActivity dispatches={dispatches} />
+      </div>
+    </div>
+  );
+}
+
+function FlowDiagram({ intents, employees, onAssign, saveState }) {
+  const containerRef = useRef(null);
+  const aiNodeRef = useRef(null);
+  const cardRefs = useRef({});
+  const [paths, setPaths] = useState([]);
+  const [svgSize, setSvgSize] = useState({ width: 0, height: 0 });
+
+  const recompute = useCallback(() => {
+    const container = containerRef.current;
+    const aiNode = aiNodeRef.current;
+    if (!container || !aiNode) return;
+
+    const cRect = container.getBoundingClientRect();
+    const aRect = aiNode.getBoundingClientRect();
+
+    const startX = aRect.left + aRect.width / 2 - cRect.left;
+    const startY = aRect.bottom - cRect.top;
+
+    const newPaths = intents
+      .map((intent) => {
+        const node = cardRefs.current[intent.key];
+        if (!node) return null;
+        const nRect = node.getBoundingClientRect();
+        const endX = nRect.left + nRect.width / 2 - cRect.left;
+        const endY = nRect.top - cRect.top;
+        // Smooth cubic curve from AI node down to top of each card
+        const midY = startY + (endY - startY) / 2;
+        const d = `M ${startX} ${startY} C ${startX} ${midY}, ${endX} ${midY}, ${endX} ${endY}`;
+        return { key: intent.key, d, accent: INTENT_STYLE[intent.key]?.accent || '#3535FF' };
+      })
+      .filter(Boolean);
+
+    setPaths(newPaths);
+    setSvgSize({ width: cRect.width, height: cRect.height });
+  }, [intents]);
+
+  useLayoutEffect(() => {
+    recompute();
+  }, [recompute]);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const ro = new ResizeObserver(() => recompute());
+    ro.observe(containerRef.current);
+    window.addEventListener('resize', recompute);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', recompute);
+    };
+  }, [recompute]);
+
+  return (
+    <div
+      ref={containerRef}
+      className="relative bg-white rounded-3xl border border-gray-100 p-6 sm:p-10 mb-8"
+    >
+      {/* SVG connection layer */}
+      <svg
+        className="absolute inset-0 pointer-events-none"
+        width={svgSize.width}
+        height={svgSize.height}
+        style={{ overflow: 'visible' }}
+      >
+        <defs>
+          {paths.map((p) => (
+            <marker
+              key={`arrow-${p.key}`}
+              id={`arrow-${p.key}`}
+              viewBox="0 0 10 10"
+              refX="5"
+              refY="5"
+              markerWidth="5"
+              markerHeight="5"
+              orient="auto-start-reverse"
+            >
+              <path d="M 0 0 L 10 5 L 0 10 z" fill={p.accent} />
+            </marker>
+          ))}
+        </defs>
+        {paths.map((p) => (
+          <path
+            key={p.key}
+            d={p.d}
+            fill="none"
+            stroke={p.accent}
+            strokeWidth="2"
+            strokeOpacity="0.6"
+            strokeDasharray="4 4"
+            markerEnd={`url(#arrow-${p.key})`}
+          />
+        ))}
+      </svg>
+
+      {/* Customer message node */}
+      <div className="relative flex flex-col items-center mb-6">
+        <TopNode
+          icon={<ChatIcon className="w-5 h-5" />}
+          title="Customer sends a message"
+          subtitle="WhatsApp text or voice note"
+          accent="#3535FF"
+        />
+        <div className="w-px h-6 bg-gray-300" />
+        <div ref={aiNodeRef}>
+          <TopNode
+            icon={<BrainIcon className="w-5 h-5" />}
+            title="AI reads & classifies the message"
+            subtitle="Detects what the customer needs"
+            accent="#0A0A0F"
+            primary
+          />
+        </div>
+      </div>
+
+      {/* Branch label */}
+      <div className="relative flex justify-center mb-8 mt-2">
+        <span className="bg-white px-3 text-[10px] uppercase tracking-widest font-bold text-gray-400">
+          Branches by intent
+        </span>
+      </div>
+
+      {/* Intent cards grid */}
+      <div className="relative grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+        {intents.map((intent) => (
+          <IntentCard
+            key={intent.key}
+            ref={(el) => (cardRefs.current[intent.key] = el)}
+            intent={intent}
+            employees={employees}
+            onAssign={onAssign}
+            saveState={saveState[intent.key]}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TopNode({ icon, title, subtitle, accent, primary = false }) {
+  return (
+    <div
+      className={`flex items-center gap-3 rounded-2xl px-5 py-3 shadow-sm border ${
+        primary ? 'bg-[#0A0A0F] text-white border-[#0A0A0F]' : 'bg-white border-gray-200'
+      }`}
+      style={{ borderLeftWidth: 4, borderLeftColor: accent }}
+    >
+      <div
+        className="w-9 h-9 rounded-full flex items-center justify-center shrink-0"
+        style={{ background: primary ? 'rgba(255,255,255,0.1)' : `${accent}1a`, color: primary ? '#fff' : accent }}
+      >
+        {icon}
+      </div>
+      <div>
+        <div className={`text-sm font-bold ${primary ? 'text-white' : 'text-gray-900'}`}>{title}</div>
+        <div className={`text-xs ${primary ? 'text-gray-300' : 'text-gray-500'}`}>{subtitle}</div>
+      </div>
+    </div>
+  );
+}
+
+const IntentCard = React.forwardRef(function IntentCard(
+  { intent, employees, onAssign, saveState },
+  ref
+) {
+  const style = INTENT_STYLE[intent.key] || { Icon: QuestionIcon, accent: '#6B7280', bg: 'bg-gray-50' };
+  const { Icon, accent, bg } = style;
+  const assignedEmployee = employees.find((e) => e.id === intent.assignedEmployeeId);
+  const isPassthrough = intent.isPassthrough;
+
+  return (
+    <div
+      ref={ref}
+      className="relative bg-white border border-gray-200 rounded-2xl overflow-hidden hover:shadow-md transition-shadow"
+      style={{ borderTopWidth: 3, borderTopColor: accent }}
+    >
+      <div className={`${bg} px-4 py-3 flex items-center gap-2.5`}>
+        <div
+          className="w-8 h-8 rounded-full flex items-center justify-center shrink-0"
+          style={{ background: `${accent}26`, color: accent }}
+        >
+          <Icon className="w-4 h-4" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-sm font-bold text-gray-900 truncate">{intent.label}</div>
+          <div className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">
+            {intent.department}
+          </div>
+        </div>
+      </div>
+
+      <div className="px-4 py-3 space-y-2.5">
+        <p className="text-xs text-gray-600 leading-relaxed">{intent.description}</p>
+
+        {intent.examples && intent.examples.length > 0 && (
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1">
+              What customer might say
+            </div>
+            <ul className="space-y-0.5">
+              {intent.examples.slice(0, 3).map((ex, i) => (
+                <li key={i} className="text-xs text-gray-700 italic flex gap-1.5">
+                  <span className="text-gray-300">"</span>
+                  <span>{ex}</span>
+                  <span className="text-gray-300">"</span>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+
+        <div className="pt-2 border-t border-gray-100">
+          {isPassthrough ? (
+            <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
+              <CheckCircleIcon className="w-3.5 h-3.5" />
+              AI answers directly — no employee alert
+            </div>
+          ) : (
+            <>
+              <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1.5">
+                Then notify
+              </div>
+              <select
+                value={intent.assignedEmployeeId ?? ''}
+                onChange={(e) => onAssign(intent.key, e.target.value)}
+                disabled={employees.length === 0}
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:opacity-50"
+              >
+                <option value="">— No one (skip alert) —</option>
+                {employees.map((emp) => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.name} · {emp.phone}
+                  </option>
+                ))}
+              </select>
+
+              <div className="mt-1.5 h-4 text-[10px]">
+                {saveState === 'saving' && <span className="text-gray-400">Saving…</span>}
+                {saveState === 'saved' && (
+                  <span className="text-emerald-600 flex items-center gap-1">
+                    <CheckCircleIcon className="w-3 h-3" /> Saved
+                  </span>
+                )}
+                {saveState === 'error' && (
+                  <span className="text-red-600 flex items-center gap-1">
+                    <WarningIcon className="w-3 h-3" /> Failed to save
+                  </span>
+                )}
+                {!saveState && assignedEmployee && (
+                  <span className="text-gray-400">
+                    SMS will go to <span className="font-mono">{assignedEmployee.phone}</span>
+                  </span>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+});
+
+function RecentActivity({ dispatches }) {
+  if (!dispatches || dispatches.length === 0) {
+    return (
+      <div className="bg-white rounded-3xl border border-gray-100 p-6 text-center">
+        <div className="text-sm font-bold text-gray-900 mb-1">Recent workflow alerts</div>
+        <div className="text-xs text-gray-400">
+          No alerts dispatched yet. Once a customer message triggers an intent with an assigned employee, it'll show up here.
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden">
+      <div className="px-5 py-4 border-b border-gray-100">
+        <div className="text-sm font-bold text-gray-900">Recent workflow alerts</div>
+        <div className="text-xs text-gray-500">SMS alerts sent to employees based on detected intent</div>
+      </div>
+      <div className="divide-y divide-gray-50">
+        {dispatches.map((d) => {
+          const style = INTENT_STYLE[d.intent_key];
+          const Icon = style?.Icon || QuestionIcon;
+          const accent = style?.accent || '#6B7280';
+          return (
+            <div key={d.id} className="px-5 py-3 flex items-start gap-3">
+              <div
+                className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 mt-0.5"
+                style={{ background: `${accent}1a`, color: accent }}
+              >
+                <Icon className="w-4 h-4" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-semibold text-gray-900">
+                    {INTENT_LABELS[d.intent_key] || d.intent_key}
+                  </span>
+                  <span className="text-xs text-gray-400">→</span>
+                  <span className="text-xs text-gray-700">
+                    {d.employee_name || <em className="text-gray-400">employee removed</em>}
+                  </span>
+                  <span
+                    className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${
+                      d.notify_status === 'sent'
+                        ? 'bg-emerald-50 text-emerald-700'
+                        : d.notify_status === 'failed'
+                        ? 'bg-red-50 text-red-700'
+                        : 'bg-gray-100 text-gray-600'
+                    }`}
+                  >
+                    {d.notify_status}
+                  </span>
+                </div>
+                <div className="text-xs text-gray-600 mt-0.5 truncate">
+                  <span className="font-mono">+{d.customer_phone}</span>:{' '}
+                  <span className="italic">"{d.trigger_message}"</span>
+                </div>
+                <div className="text-[10px] text-gray-400 mt-0.5">
+                  {new Date(d.created_at).toLocaleString()}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}

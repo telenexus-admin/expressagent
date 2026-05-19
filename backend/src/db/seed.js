@@ -4,29 +4,18 @@ const bcrypt = require('bcryptjs');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful and professional customer support agent. Your goals are:
-- Answer customer questions accurately and concisely
-- Be polite, empathetic, and solution-focused
-- If you cannot resolve an issue, let the customer know a human agent will follow up soon
-- Never make up information you are unsure about
-- Keep responses brief and easy to read on a mobile device`;
-
+// Seed a single bootstrap superadmin. All other configuration (clients,
+// per-client agent prompts, Meta credentials) is created through the
+// admin UI's Clients page after first login.
 async function seed() {
   try {
     const hash = await bcrypt.hash('admin123', 12);
 
     await pool.query(
-      `INSERT INTO admins (name, email, password_hash, role)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO admins (name, email, password_hash, role, client_id)
+       VALUES ($1, $2, $3, 'superadmin', NULL)
        ON CONFLICT (email) DO NOTHING`,
-      ['Super Admin', 'admin@example.com', hash, 'superadmin']
-    );
-
-    await pool.query(
-      `INSERT INTO settings (key, value)
-       VALUES ('system_prompt', $1)
-       ON CONFLICT (key) DO NOTHING`,
-      [DEFAULT_SYSTEM_PROMPT]
+      ['Super Admin', 'admin@example.com', hash]
     );
 
     console.log('Seed completed.');

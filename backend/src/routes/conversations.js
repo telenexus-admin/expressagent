@@ -1,10 +1,55 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { authMiddleware } = require('../middleware/auth');
+const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
+const { sendSMS } = require('../services/sms');
 
-router.use(authMiddleware);
+router.use(authMiddleware, scopeMiddleware);
+
+// For routes that act on a single conversation, fetch the conversation + its
+// owning client's credentials in one shot, AND enforce that a non-superadmin
+// admin can only act on conversations within their own client_id.
+async function loadConversationWithClient(conversationId, scope) {
+  const result = await db.query(
+    `SELECT
+       conv.*,
+       cl.id AS cl_id,
+       cl.name AS cl_name,
+       cl.business_name AS cl_business_name,
+       cl.meta_phone_number_id AS cl_meta_phone_number_id,
+       cl.meta_access_token AS cl_meta_access_token,
+       cl.agent_name AS cl_agent_name,
+       cl.support_number AS cl_support_number
+     FROM conversations conv
+     JOIN clients cl ON cl.id = conv.client_id
+     WHERE conv.id = $1`,
+    [conversationId]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  if (!scope.isSuperadmin && row.client_id !== scope.clientId) return null;
+  return {
+    conversation: {
+      id: row.id,
+      customer_phone: row.customer_phone,
+      customer_name: row.customer_name,
+      status: row.status,
+      client_id: row.client_id,
+      installation_state: row.installation_state,
+      opted_out_at: row.opted_out_at,
+    },
+    client: {
+      id: row.cl_id,
+      name: row.cl_name,
+      business_name: row.cl_business_name,
+      meta_phone_number_id: row.cl_meta_phone_number_id,
+      meta_access_token: row.cl_meta_access_token,
+      agent_name: row.cl_agent_name,
+      support_number: row.cl_support_number,
+    },
+  };
+}
 
 // GET /api/conversations
 router.get('/', async (req, res) => {
@@ -12,6 +57,11 @@ router.get('/', async (req, res) => {
     const { status, search } = req.query;
     const params = [];
     let where = 'WHERE 1=1';
+
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND c.client_id = $${params.length}`;
+    }
 
     if (status) {
       params.push(status);
@@ -52,6 +102,18 @@ router.get('/', async (req, res) => {
 // GET /api/conversations/:id/messages
 router.get('/:id/messages', async (req, res) => {
   try {
+    // Enforce client scope: confirm conversation belongs to caller's client first.
+    const ownership = await db.query(
+      `SELECT client_id FROM conversations WHERE id = $1`,
+      [req.params.id]
+    );
+    if (ownership.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    if (!req.scope.isSuperadmin && ownership.rows[0].client_id !== req.scope.clientId) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     const result = await db.query(
       `SELECT * FROM messages WHERE conversation_id = $1 ORDER BY timestamp ASC`,
       [req.params.id]
@@ -71,15 +133,10 @@ router.post('/:id/reply', async (req, res) => {
   }
 
   try {
-    const convResult = await db.query(
-      `SELECT * FROM conversations WHERE id = $1`,
-      [req.params.id]
-    );
-    if (convResult.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
-    }
+    const loaded = await loadConversationWithClient(req.params.id, req.scope);
+    if (!loaded) return res.status(404).json({ error: 'Conversation not found' });
 
-    const conversation = convResult.rows[0];
+    const { conversation, client } = loaded;
 
     await db.query(
       `INSERT INTO messages (conversation_id, role, content, sender_name, timestamp)
@@ -92,12 +149,59 @@ router.post('/:id/reply', async (req, res) => {
       [req.params.id]
     );
 
-    await sendWhatsAppMessage(conversation.customer_phone, message.trim());
+    await sendWhatsAppMessage(
+      client.meta_phone_number_id,
+      client.meta_access_token,
+      conversation.customer_phone,
+      message.trim()
+    );
 
     res.json({ success: true });
   } catch (err) {
     console.error('POST reply error:', err.message);
-    res.status(500).json({ error: 'Server error' });
+    res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+// POST /api/conversations/:id/confirm-installation — send installation confirmation SMS to customer
+router.post('/:id/confirm-installation', async (req, res) => {
+  try {
+    const loaded = await loadConversationWithClient(req.params.id, req.scope);
+    if (!loaded) return res.status(404).json({ error: 'Conversation not found' });
+    const { conversation, client } = loaded;
+
+    const firstName = (conversation.customer_name || '').split(' ')[0].trim();
+    const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
+    const signoff = (client.agent_name || '').trim() || client.business_name || client.name || 'Support';
+    const businessName = client.business_name || client.name || 'our team';
+
+    const customMessage = (req.body?.message || '').trim();
+    const message =
+      customMessage ||
+      `${greeting} your installation with ${businessName} has been confirmed. Our team will reach out shortly to coordinate the visit. — ${signoff}`;
+
+    await sendSMS(conversation.customer_phone, message);
+
+    await db.query(
+      `INSERT INTO messages (conversation_id, role, content, sender_name, timestamp)
+       VALUES ($1, 'admin', $2, $3, NOW())`,
+      [conversation.id, `[Installation confirmation SMS] ${message}`, req.user.name]
+    );
+    await db.query(
+      `UPDATE conversations SET updated_at = NOW() WHERE id = $1`,
+      [conversation.id]
+    );
+
+    await db.query(
+      `UPDATE escalations SET resolved_at = NOW()
+       WHERE conversation_id = $1 AND type = 'installation' AND resolved_at IS NULL`,
+      [conversation.id]
+    );
+
+    res.json({ success: true, message });
+  } catch (err) {
+    console.error('POST /conversations/:id/confirm-installation error:', err.message);
+    res.status(500).json({ error: err.message || 'Failed to send confirmation SMS' });
   }
 });
 
@@ -110,12 +214,25 @@ router.patch('/:id/status', async (req, res) => {
   }
 
   try {
+    // Scope guard
+    const ownership = await db.query(`SELECT client_id FROM conversations WHERE id = $1`, [req.params.id]);
+    if (ownership.rows.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+    if (!req.scope.isSuperadmin && ownership.rows[0].client_id !== req.scope.clientId) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
     const result = await db.query(
       `UPDATE conversations SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
       [status, req.params.id]
     );
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Conversation not found' });
+    if (status === 'resolved') {
+      await db.query(
+        `UPDATE escalations SET resolved_at = NOW()
+         WHERE conversation_id = $1 AND resolved_at IS NULL`,
+        [req.params.id]
+      );
     }
     res.json(result.rows[0]);
   } catch (err) {

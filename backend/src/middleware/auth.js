@@ -22,4 +22,26 @@ function superadminMiddleware(req, res, next) {
   next();
 }
 
-module.exports = { authMiddleware, superadminMiddleware };
+// Resolves the effective client_id for a request:
+//   - Regular admins: locked to their own client_id (query param is ignored).
+//   - Superadmins: may pass ?clientId= to scope to a specific client; otherwise null = all clients.
+// Sets req.scope = { clientId: number | null, isSuperadmin: boolean }
+function scopeMiddleware(req, res, next) {
+  const isSuperadmin = req.user.role === 'superadmin';
+  if (isSuperadmin) {
+    const raw = req.query.clientId;
+    const parsed = raw ? parseInt(raw, 10) : null;
+    req.scope = {
+      isSuperadmin: true,
+      clientId: Number.isInteger(parsed) && parsed > 0 ? parsed : null,
+    };
+  } else {
+    if (!req.user.client_id) {
+      return res.status(403).json({ error: 'Forbidden: admin account is not assigned to a client' });
+    }
+    req.scope = { isSuperadmin: false, clientId: req.user.client_id };
+  }
+  next();
+}
+
+module.exports = { authMiddleware, superadminMiddleware, scopeMiddleware };

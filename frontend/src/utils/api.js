@@ -18,7 +18,8 @@ api.interceptors.response.use(
     if (error.response?.status === 401) {
       localStorage.removeItem('token');
       localStorage.removeItem('admin');
-      window.location.href = '/login';
+      const onOnboarding = window.location.pathname.startsWith('/onboarding');
+      window.location.href = onOnboarding ? '/onboarding/login' : '/login';
     }
     return Promise.reject(error);
   }

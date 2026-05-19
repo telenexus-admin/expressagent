@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
 const STATUS_STYLES = {
-  active: 'bg-green-100 text-green-700',
+  active: 'bg-emerald-100 text-emerald-700',
   resolved: 'bg-gray-100 text-gray-500',
   human_takeover: 'bg-orange-100 text-orange-700',
 };
@@ -23,7 +23,7 @@ function formatTime(ts) {
     : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
-export default function ConversationList({ conversations }) {
+export default function ConversationList({ conversations, compact = false }) {
   const [search, setSearch] = useState('');
   const [filter, setFilter] = useState('all');
   const { id } = useParams();
@@ -39,65 +39,101 @@ export default function ConversationList({ conversations }) {
 
   return (
     <div className="flex flex-col h-full">
-      <div className="p-3 space-y-2">
-        <input
-          type="text"
-          placeholder="Search by phone or message..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-full border border-gray-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-green-500"
-        />
+      <div className={`${compact ? 'px-3 pb-3' : 'px-5 pt-5 pb-3'} space-y-2 border-b border-gray-100`}>
+        <div className="relative">
+          <svg
+            className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth="2"
+              d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z"
+            />
+          </svg>
+          <input
+            type="text"
+            placeholder="Search by phone or message..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-full pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:border-transparent"
+          />
+        </div>
         <div className="flex gap-1">
           {['all', 'active', 'human_takeover', 'resolved'].map((s) => (
             <button
               key={s}
               onClick={() => setFilter(s)}
-              className={`flex-1 text-xs py-1 rounded-md capitalize transition-colors ${
+              className={`flex-1 text-[10px] py-1.5 rounded-full capitalize transition-colors font-medium ${
                 filter === s
-                  ? 'bg-green-600 text-white'
+                  ? 'bg-[#3535FF] text-white'
                   : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
               }`}
             >
-              {s === 'all' ? 'All' : s === 'human_takeover' ? 'Human' : s.charAt(0).toUpperCase() + s.slice(1)}
+              {s === 'all'
+                ? 'All'
+                : s === 'human_takeover'
+                ? 'Human'
+                : s.charAt(0).toUpperCase() + s.slice(1)}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto">
+      <div className="flex-1 overflow-y-auto px-2 py-2">
         {filtered.length === 0 ? (
           <p className="text-center text-gray-400 text-xs mt-10 px-4">
             No conversations match your filter.
           </p>
         ) : (
-          filtered.map((conv) => (
-            <button
-              key={conv.id}
-              onClick={() => navigate(`/dashboard/conversations/${conv.id}`)}
-              className={`w-full text-left p-3 border-b border-gray-100 hover:bg-gray-50 transition-colors ${
-                String(id) === String(conv.id)
-                  ? 'bg-green-50 border-l-[3px] border-l-green-500'
-                  : 'border-l-[3px] border-l-transparent'
-              }`}
-            >
-              <div className="flex items-center justify-between mb-0.5">
-                <span className="font-semibold text-xs text-gray-900 truncate max-w-[120px]">
-                  {conv.customer_phone}
-                </span>
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <span className="text-xs text-gray-400">{formatTime(conv.last_message_at)}</span>
-                  <span
-                    className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium ${STATUS_STYLES[conv.status]}`}
-                  >
-                    {STATUS_LABELS[conv.status]}
-                  </span>
-                </div>
-              </div>
-              <p className="text-xs text-gray-500 truncate">
-                {conv.last_message || 'No messages yet'}
-              </p>
-            </button>
-          ))
+          <div className="space-y-1">
+            {filtered.map((conv) => {
+              const isCurrent = String(id) === String(conv.id);
+              return (
+                <button
+                  key={conv.id}
+                  onClick={() => navigate(`/dashboard/conversations/${conv.id}`)}
+                  className={`w-full text-left p-3 rounded-xl transition-colors ${
+                    isCurrent
+                      ? 'bg-[#3535FF] text-white'
+                      : 'text-gray-900 hover:bg-gray-50'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-0.5">
+                    <span
+                      className={`font-semibold text-xs truncate max-w-[140px] ${
+                        isCurrent ? 'text-white' : 'text-gray-900'
+                      }`}
+                    >
+                      {conv.customer_phone}
+                    </span>
+                    <span className={`text-[10px] ${isCurrent ? 'text-white/70' : 'text-gray-400'}`}>
+                      {formatTime(conv.last_message_at)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <p
+                      className={`text-[11px] truncate ${
+                        isCurrent ? 'text-white/80' : 'text-gray-500'
+                      }`}
+                    >
+                      {conv.last_message || 'No messages yet'}
+                    </p>
+                    <span
+                      className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+                        isCurrent ? 'bg-white/20 text-white' : STATUS_STYLES[conv.status]
+                      }`}
+                    >
+                      {STATUS_LABELS[conv.status]}
+                    </span>
+                  </div>
+                </button>
+              );
+            })}
+          </div>
         )}
       </div>
     </div>

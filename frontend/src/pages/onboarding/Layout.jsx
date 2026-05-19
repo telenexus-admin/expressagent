@@ -1,27 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Outlet, useNavigate, useLocation } from 'react-router-dom';
-import { useAuth } from '../context/AuthContext';
-import api from '../utils/api';
+import { Outlet, NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { useAuth } from '../../context/AuthContext';
 import {
-  ChatIcon,
-  LifebuoyIcon,
-  PulseIcon,
-  UsersIcon,
-  BriefcaseIcon,
-  FlowIcon,
-  AgentIcon,
-  LogoutIcon,
-  WrenchIcon,
-  WarningIcon,
   HomeIcon,
+  BuildingIcon,
+  LogoutIcon,
   MenuIcon,
   CloseIcon,
   DotsVerticalIcon,
-} from '../components/Icons';
-import InstallAppButton from '../components/InstallAppButton';
+} from '../../components/Icons';
 
 const NEXA_MARK = (
-  <svg viewBox="0 0 24 24" className="w-5 h-5 text-white" fill="none">
+  <svg viewBox="0 0 24 24" className="w-5 h-5 text-[#3535FF]" fill="none">
     <path
       d="M5 19V5l14 14V5"
       stroke="currentColor"
@@ -32,50 +22,19 @@ const NEXA_MARK = (
   </svg>
 );
 
-export default function Dashboard() {
+const NAV_ITEMS = [
+  { to: '/onboarding', label: 'Overview', Icon: HomeIcon, end: true },
+  { to: '/onboarding/clients', label: 'Clients', Icon: BuildingIcon },
+];
+
+export default function OnboardingLayout() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const [badges, setBadges] = useState({ conversations: 0, escalations: 0, installations: 0, complaints: 0 });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    const fetchBadges = async () => {
-      try {
-        const [convRes, escRes, installRes, complaintRes] = await Promise.all([
-          api.get('/conversations'),
-          api.get('/escalations?status=open&type=human'),
-          api.get('/escalations?status=open&type=installation'),
-          api.get('/escalations?status=open&type=complaint'),
-        ]);
-        if (cancelled) return;
-        const convCount = convRes.data.filter(
-          (c) => c.status === 'active' || c.status === 'human_takeover'
-        ).length;
-        setBadges({
-          conversations: convCount,
-          escalations: escRes.data.length,
-          installations: installRes.data.length,
-          complaints: complaintRes.data.length,
-        });
-      } catch (err) {
-        if (err.response?.status !== 401) {
-          console.error('Failed to fetch sidebar badges:', err.message);
-        }
-      }
-    };
-    fetchBadges();
-    const interval = setInterval(fetchBadges, 15000);
-    return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, []);
-
-  // Close drawer on Escape
   useEffect(() => {
     if (!drawerOpen && !menuOpen) return undefined;
     const onKey = (e) => {
@@ -88,7 +47,6 @@ export default function Dashboard() {
     return () => window.removeEventListener('keydown', onKey);
   }, [drawerOpen, menuOpen]);
 
-  // Click-outside for the overflow menu
   useEffect(() => {
     if (!menuOpen) return undefined;
     const onClick = (e) => {
@@ -102,38 +60,16 @@ export default function Dashboard() {
 
   const handleLogout = () => {
     logout();
-    navigate('/login');
+    navigate('/onboarding/login');
   };
 
-  const isActive = (path) => {
-    if (path === '/dashboard/statistics' && location.pathname === '/dashboard') return true;
-    return location.pathname === path || location.pathname.startsWith(path + '/');
-  };
-
-  const navItems = [
-    { path: '/dashboard/statistics', label: 'Dashboard', Icon: HomeIcon },
-    { path: '/dashboard/conversations', label: 'Conversations', Icon: ChatIcon, badge: badges.conversations },
-    { path: '/dashboard/escalations', label: 'Human Handover', Icon: LifebuoyIcon, badge: badges.escalations },
-    { path: '/dashboard/installations', label: 'Installations', Icon: WrenchIcon, badge: badges.installations },
-    { path: '/dashboard/complaints', label: 'Complaints', Icon: WarningIcon, badge: badges.complaints },
-    { path: '/dashboard/ai-health', label: 'AI Health', Icon: PulseIcon },
-    { path: '/dashboard/admins', label: 'Admin Management', Icon: UsersIcon },
-    { path: '/dashboard/employees', label: 'Employees', Icon: BriefcaseIcon },
-    { path: '/dashboard/workflow', label: 'Workflow', Icon: FlowIcon },
-    { path: '/dashboard/agent', label: 'Agent', Icon: AgentIcon },
-  ];
-
-  const currentLabel =
-    navItems.find((i) => isActive(i.path))?.label || 'Dashboard';
-
-  const goTo = (path) => {
-    navigate(path);
-    setDrawerOpen(false);
-  };
+  const currentLabel = (() => {
+    if (location.pathname.startsWith('/onboarding/clients')) return 'Clients';
+    return 'Overview';
+  })();
 
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-[#E8E9FF]">
-      {/* Top bar */}
       <header className="flex items-center justify-between px-3 sm:px-5 h-14 bg-[#0A0A0F] text-white shrink-0 relative z-30">
         <div className="flex items-center gap-3 min-w-0">
           <button
@@ -144,11 +80,11 @@ export default function Dashboard() {
             <MenuIcon className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 bg-[#3535FF] rounded-xl flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shrink-0">
               {NEXA_MARK}
             </div>
             <div className="min-w-0 leading-tight">
-              <div className="font-bold text-base tracking-tight truncate">Nexa</div>
+              <div className="font-bold text-base tracking-tight truncate">Nexa Operator</div>
               <div className="text-[11px] text-gray-400 truncate">{currentLabel}</div>
             </div>
           </div>
@@ -183,12 +119,10 @@ export default function Dashboard() {
         </div>
       </header>
 
-      {/* Main content */}
-      <main className="flex-1 flex overflow-hidden bg-white relative">
+      <main className="flex-1 overflow-y-auto bg-white relative">
         <Outlet />
       </main>
 
-      {/* Drawer backdrop */}
       <div
         className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-200 ${
           drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
@@ -197,22 +131,20 @@ export default function Dashboard() {
         aria-hidden="true"
       />
 
-      {/* Drawer */}
       <aside
         className={`fixed left-0 top-0 bottom-0 z-50 w-72 max-w-[85vw] bg-[#0A0A0F] text-white flex flex-col shadow-2xl transition-transform duration-200 ease-out ${
           drawerOpen ? 'translate-x-0' : '-translate-x-full'
         }`}
         aria-hidden={!drawerOpen}
       >
-        {/* Drawer header */}
         <div className="px-5 pt-5 pb-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 bg-[#3535FF] rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0">
                 {NEXA_MARK}
               </div>
               <div className="min-w-0 leading-tight">
-                <div className="font-bold text-white text-base">Nexa</div>
+                <div className="font-bold text-white text-base">Operator</div>
                 <div className="text-xs text-gray-400 truncate">{admin?.name}</div>
               </div>
             </div>
@@ -226,40 +158,31 @@ export default function Dashboard() {
           </div>
         </div>
 
-        {/* Nav */}
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-1">
-          {navItems.map((item) => {
-            const active = isActive(item.path);
+          {NAV_ITEMS.map((item) => {
             const Icon = item.Icon;
             return (
-              <button
-                key={item.path}
-                onClick={() => goTo(item.path)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
-                  active
-                    ? 'bg-[#3535FF] text-white font-medium shadow-sm'
-                    : 'text-gray-300 hover:bg-white/5'
-                }`}
+              <NavLink
+                key={item.to}
+                to={item.to}
+                end={item.end}
+                onClick={() => setDrawerOpen(false)}
+                className={({ isActive }) =>
+                  `w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-colors ${
+                    isActive
+                      ? 'bg-[#3535FF] text-white font-medium shadow-sm'
+                      : 'text-gray-300 hover:bg-white/5'
+                  }`
+                }
               >
                 <Icon className="w-5 h-5 shrink-0" />
                 <span className="flex-1 text-left">{item.label}</span>
-                {item.badge > 0 && (
-                  <span
-                    className={`text-[10px] font-bold rounded-full min-w-[20px] h-5 flex items-center justify-center px-1.5 ${
-                      active ? 'bg-white/25 text-white' : 'bg-[#3535FF] text-white'
-                    }`}
-                  >
-                    {item.badge > 99 ? '99+' : item.badge}
-                  </span>
-                )}
-              </button>
+              </NavLink>
             );
           })}
         </nav>
 
-        {/* Footer actions */}
-        <div className="px-3 pt-3 pb-4 border-t border-white/5 space-y-2">
-          <InstallAppButton />
+        <div className="px-3 pt-3 pb-4 border-t border-white/5">
           <button
             onClick={handleLogout}
             className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold bg-[#3535FF] hover:bg-[#2828DD] text-white transition-colors"

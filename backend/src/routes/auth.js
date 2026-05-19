@@ -16,6 +16,7 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'logs',
 ];
 
 function normalizePermissions(raw, role) {
@@ -25,7 +26,6 @@ function normalizePermissions(raw, role) {
   return clean.length > 0 ? clean : ['statistics'];
 }
 
-// POST /api/auth/login
 router.post(
   '/login',
   [
@@ -34,9 +34,7 @@ router.post(
   ],
   async (req, res) => {
     const errors = validationResult(req);
-    if (!errors.isEmpty()) {
-      return res.status(400).json({ errors: errors.array() });
-    }
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
     const { email, password } = req.body;
 
@@ -48,15 +46,11 @@ router.post(
          WHERE a.email = $1`,
         [email]
       );
-      if (result.rows.length === 0) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
+      if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid credentials' });
 
       const admin = result.rows[0];
       const valid = await bcrypt.compare(password, admin.password_hash);
-      if (!valid) {
-        return res.status(401).json({ error: 'Invalid credentials' });
-      }
+      if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
       if (admin.role !== 'superadmin' && admin.client_status === 'suspended') {
         return res.status(403).json({ error: 'This account has been suspended. Contact support.' });

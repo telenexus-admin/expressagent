@@ -63,8 +63,8 @@ router.get('/', async (req, res) => {
       ? db.query(
           `SELECT
              COUNT(*)::int AS total_30d,
-             SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END)::int AS open_count,
-             SUM(CASE WHEN notify_status = 'failed' THEN 1 ELSE 0 END)::int AS failed_notify_count
+             COALESCE(SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END), 0)::int AS open_count,
+             COALESCE(SUM(CASE WHEN notify_status = 'failed' THEN 1 ELSE 0 END), 0)::int AS failed_notify_count
            FROM escalations
            WHERE client_id = $1 AND created_at >= NOW() - INTERVAL '30 days'`,
           [clientId]
@@ -72,8 +72,8 @@ router.get('/', async (req, res) => {
       : db.query(`
           SELECT
             COUNT(*)::int AS total_30d,
-            SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END)::int AS open_count,
-            SUM(CASE WHEN notify_status = 'failed' THEN 1 ELSE 0 END)::int AS failed_notify_count
+            COALESCE(SUM(CASE WHEN resolved_at IS NULL THEN 1 ELSE 0 END), 0)::int AS open_count,
+            COALESCE(SUM(CASE WHEN notify_status = 'failed' THEN 1 ELSE 0 END), 0)::int AS failed_notify_count
           FROM escalations
           WHERE created_at >= NOW() - INTERVAL '30 days'
         `);
@@ -81,9 +81,9 @@ router.get('/', async (req, res) => {
     const msgRoles = scoped
       ? db.query(
           `SELECT
-             SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END)::int AS user_total,
-             SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END)::int AS assistant_total,
-             SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END)::int AS admin_total
+             COALESCE(SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END), 0)::int AS user_total,
+             COALESCE(SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END), 0)::int AS assistant_total,
+             COALESCE(SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END), 0)::int AS admin_total
            FROM messages
            WHERE timestamp >= NOW() - INTERVAL '30 days'
              AND conversation_id IN (SELECT id FROM conversations WHERE client_id = $1)`,
@@ -91,9 +91,9 @@ router.get('/', async (req, res) => {
         )
       : db.query(`
           SELECT
-            SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END)::int AS user_total,
-            SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END)::int AS assistant_total,
-            SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END)::int AS admin_total
+            COALESCE(SUM(CASE WHEN role = 'user' THEN 1 ELSE 0 END), 0)::int AS user_total,
+            COALESCE(SUM(CASE WHEN role = 'assistant' THEN 1 ELSE 0 END), 0)::int AS assistant_total,
+            COALESCE(SUM(CASE WHEN role = 'admin' THEN 1 ELSE 0 END), 0)::int AS admin_total
           FROM messages
           WHERE timestamp >= NOW() - INTERVAL '30 days'
         `);
@@ -108,8 +108,18 @@ router.get('/', async (req, res) => {
     }
     const totalConvos = statusCounts.active + statusCounts.resolved + statusCounts.human_takeover;
 
-    const escalationStats = escalationRes.rows[0] || { total_30d: 0, open_count: 0, failed_notify_count: 0 };
-    const msgRolesRow = msgRoleRes.rows[0] || { user_total: 0, assistant_total: 0, admin_total: 0 };
+    const rawEscalationStats = escalationRes.rows[0] || {};
+    const escalationStats = {
+      total_30d: Number(rawEscalationStats.total_30d) || 0,
+      open_count: Number(rawEscalationStats.open_count) || 0,
+      failed_notify_count: Number(rawEscalationStats.failed_notify_count) || 0,
+    };
+    const rawMsgRoles = msgRoleRes.rows[0] || {};
+    const msgRolesRow = {
+      user_total: Number(rawMsgRoles.user_total) || 0,
+      assistant_total: Number(rawMsgRoles.assistant_total) || 0,
+      admin_total: Number(rawMsgRoles.admin_total) || 0,
+    };
 
     const aiHandleRate = msgRolesRow.user_total > 0
       ? Math.min(100, Math.round((msgRolesRow.assistant_total / msgRolesRow.user_total) * 100))

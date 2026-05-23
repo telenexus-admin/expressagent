@@ -1,0 +1,163 @@
+import React, { useEffect, useRef, useState } from 'react';
+import { Outlet, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
+import api from '../utils/api';
+import {
+  AgentIcon,
+  BriefcaseIcon,
+  ChartIcon,
+  ChatIcon,
+  CloseIcon,
+  DotsVerticalIcon,
+  FlowIcon,
+  HomeIcon,
+  LifebuoyIcon,
+  LogoutIcon,
+  MenuIcon,
+  PulseIcon,
+  UsersIcon,
+  WarningIcon,
+  WrenchIcon,
+} from '../components/Icons';
+import GlobalConversationSearch from '../components/GlobalConversationSearch';
+import InstallAppButton from '../components/InstallAppButton';
+import expressnetLogo from '../assets/expressnetLogo';
+
+const NexaMark = () => (
+  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none">
+    <path d="M5 19V5l14 14V5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+function canAccess(admin, permission) {
+  if (!admin) return false;
+  if (admin.role === 'superadmin') return true;
+  if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
+  return admin.permissions.includes(permission);
+}
+
+function Brand({ expressnet, compact = false }) {
+  if (expressnet) {
+    return (
+      <div className={`bg-white rounded-2xl shadow-lg shadow-black/10 ${compact ? 'px-2.5 py-2 max-w-[184px]' : 'px-3 py-3 w-full'}`}>
+        <img src={expressnetLogo} alt="ExpressNet Solutions" className="w-full h-auto object-contain" />
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`${compact ? 'w-11 h-11' : 'w-12 h-12'} rounded-2xl bg-white text-[#4b16b5] flex items-center justify-center shadow-lg shrink-0`}><NexaMark /></div>
+      <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-black`}>Nexa</div>{!compact && <div className="text-xs text-white/50">AI Support Portal</div>}</div>
+    </div>
+  );
+}
+
+export default function ClientDashboard() {
+  const { admin, logout } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const [badges, setBadges] = useState({ conversations: 0, escalations: 0, installations: 0, complaints: 0 });
+  const [drawerOpen, setDrawerOpen] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
+  const expressnet = Number(admin?.client_id) === 1;
+
+  useEffect(() => {
+    let stopped = false;
+    async function loadBadges() {
+      try {
+        const [conv, human, install, complaint] = await Promise.all([
+          api.get('/conversations'),
+          api.get('/escalations?status=open&type=human'),
+          api.get('/escalations?status=open&type=installation'),
+          api.get('/escalations?status=open&type=complaint'),
+        ]);
+        if (!stopped) setBadges({
+          conversations: conv.data.filter((item) => item.status === 'active' || item.status === 'human_takeover').length,
+          escalations: human.data.length,
+          installations: install.data.length,
+          complaints: complaint.data.length,
+        });
+      } catch (error) {
+        if (error.response?.status !== 401) console.error('Failed to fetch sidebar badges:', error.message);
+      }
+    }
+    loadBadges();
+    const timer = setInterval(loadBadges, 15000);
+    return () => { stopped = true; clearInterval(timer); };
+  }, []);
+
+  useEffect(() => {
+    const keydown = (event) => {
+      if (event.key === 'Escape') { setDrawerOpen(false); setMenuOpen(false); }
+    };
+    const outside = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false);
+    };
+    window.addEventListener('keydown', keydown);
+    window.addEventListener('mousedown', outside);
+    return () => { window.removeEventListener('keydown', keydown); window.removeEventListener('mousedown', outside); };
+  }, []);
+
+  const nav = [
+    ['/dashboard/statistics', 'Dashboard', HomeIcon, 'statistics'],
+    ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
+    ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
+    ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
+    ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],
+    ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
+    ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
+    ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
+    ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
+    ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
+    ['/dashboard/agent', 'Agent', AgentIcon, 'agent'],
+  ].filter((item) => canAccess(admin, item[3]));
+
+  const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
+  const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
+  const signOut = () => { logout(); navigate('/login'); };
+
+  const itemButton = (item, mobile = false) => {
+    const [path, label, Icon, , badge] = item;
+    const selected = active(path);
+    return (
+      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`group relative w-full flex items-center gap-3 px-5 py-3 text-sm transition-all ${selected ? `${mobile ? 'rounded-[22px]' : 'sidebar-active-link'} bg-white text-[#42149b] font-black` : 'rounded-[22px] text-white/75 hover:bg-white/10 hover:text-white'}`}>
+        <span className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${selected ? 'bg-[#efe9ff] text-[#4d1ab8]' : 'bg-white/10 text-white/80'}`}><Icon className="w-5 h-5" /></span>
+        <span className="flex-1 text-left truncate">{label}</span>
+        {badge > 0 && <span className={`text-[10px] font-black rounded-full min-w-[22px] h-6 flex items-center justify-center px-2 ${selected ? 'bg-[#4d1ab8] text-white' : 'bg-white text-[#4d1ab8]'}`}>{badge > 99 ? '99+' : badge}</span>}
+      </button>
+    );
+  };
+
+  return (
+    <div className="h-screen overflow-hidden bg-[#f2f0f7] text-slate-900">
+      <div className="flex h-full min-h-0">
+        <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
+          <div className={expressnet ? 'px-6 pt-6 pb-6' : 'px-8 pt-7 pb-7'}><Brand expressnet={expressnet} /></div>
+          <nav className="no-visible-scrollbar pl-5 pr-0 space-y-2 flex-1 overflow-y-auto pb-5">{nav.map((item) => itemButton(item))}</nav>
+          <div className="px-6 pb-6 pt-4"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+        </aside>
+
+        <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
+          <header className="h-[84px] shrink-0 px-4 sm:px-7 lg:px-9 flex items-center justify-between gap-5">
+            <div className="flex items-center gap-4 min-w-0">
+              <button onClick={() => setDrawerOpen(true)} className="lg:hidden w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-600"><MenuIcon className="w-6 h-6" /></button>
+              <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-11 h-11 rounded-2xl bg-white shadow-sm items-center justify-center text-slate-600 hover:text-[#4b16b5]"><MenuIcon className="w-5 h-5" /></button>
+              <div className="min-w-0"><h1 className="text-2xl font-black truncate">{title}</h1><p className="text-xs text-slate-400 mt-1 truncate">Monitor support, installations, complaints and AI performance.</p></div>
+            </div>
+            <div className="flex items-center gap-4"><GlobalConversationSearch /><div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-500"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
+          </header>
+          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-9 pb-7 overflow-hidden"><div className="h-full min-h-0 rounded-[34px] overflow-hidden bg-white shadow-2xl shadow-slate-200/70 border border-white flex flex-col"><Outlet /></div></main>
+        </section>
+      </div>
+
+      <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
+      <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="px-5 pt-5 pb-4 border-b border-white/10 flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
+        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 space-y-2">{nav.map((item) => itemButton(item, true))}</nav>
+        <div className="px-4 pt-3 pb-4 border-t border-white/10"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+      </aside>
+    </div>
+  );
+}

@@ -74,18 +74,32 @@ function cleanNumber(number) {
   return String(number || '').replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
 }
 
-async function sendEvolutionText(settings, number, text) {
+function evolutionAuth(settings) {
   const baseUrl = cleanBaseUrl(settings.evolution_base_url);
   const instance = String(settings.evolution_instance || '').trim();
   const apiKey = settings.evolution_api_key;
   if (!baseUrl || !instance || !apiKey) throw new Error('Evolution API URL, instance and API key must be configured.');
+  return { baseUrl, instance, headers: { apikey: apiKey, 'Content-Type': 'application/json' } };
+}
+
+async function sendEvolutionText(settings, number, text) {
+  const { baseUrl, instance, headers } = evolutionAuth(settings);
   const phone = cleanNumber(number);
   if (!phone) throw new Error('A valid WhatsApp phone number is required.');
   const url = `${baseUrl}/message/sendText/${encodeURIComponent(instance)}`;
-  return axios.post(url, { number: phone, text }, {
-    headers: { apikey: apiKey, 'Content-Type': 'application/json' },
-    timeout: 30000,
-  });
+  return axios.post(url, { number: phone, text }, { headers, timeout: 30000 });
+}
+
+async function setEvolutionWebhook(settings, webhookUrl) {
+  const { baseUrl, instance, headers } = evolutionAuth(settings);
+  const url = `${baseUrl}/webhook/set/${encodeURIComponent(instance)}`;
+  return axios.post(url, {
+    enabled: true,
+    url: webhookUrl,
+    webhookByEvents: false,
+    webhookBase64: false,
+    events: ['MESSAGES_UPSERT'],
+  }, { headers, timeout: 30000 });
 }
 
 function parseEvolutionInbound(payload) {
@@ -135,6 +149,7 @@ module.exports = {
   ensureOperatorAgentTables,
   getOperatorSettings,
   sendEvolutionText,
+  setEvolutionWebhook,
   parseEvolutionInbound,
   findOrCreateOperatorConversation,
 };

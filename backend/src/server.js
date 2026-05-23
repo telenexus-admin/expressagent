@@ -12,7 +12,9 @@ const clientRoutes = require('./routes/clients');
 const employeeRoutes = require('./routes/employees');
 const workflowRoutes = require('./routes/workflows');
 const activityRoutes = require('./routes/activity');
+const reportRoutes = require('./routes/reports');
 const webhookRoutes = require('./routes/webhook');
+const { startDailyReportScheduler } = require('./services/dailyReports');
 
 const app = express();
 
@@ -36,6 +38,7 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/activity', activityRoutes);
+app.use('/api/reports', reportRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 
@@ -47,4 +50,5 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`WhatsApp Support backend running on port ${PORT}`);
+  startDailyReportScheduler();
 });

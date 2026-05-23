@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import {
   HomeIcon,
   BuildingIcon,
+  AgentIcon,
   LogoutIcon,
   MenuIcon,
   CloseIcon,
@@ -25,6 +26,7 @@ const NEXA_MARK = (
 const NAV_ITEMS = [
   { to: '/onboarding', label: 'Overview', Icon: HomeIcon, end: true },
   { to: '/onboarding/clients', label: 'Clients', Icon: BuildingIcon },
+  { to: '/onboarding/nexa-whatsapp', label: 'Nexa Official WhatsApp', Icon: AgentIcon },
 ];
 
 export default function OnboardingLayout() {
@@ -64,6 +66,7 @@ export default function OnboardingLayout() {
   };
 
   const currentLabel = (() => {
+    if (location.pathname.startsWith('/onboarding/nexa-whatsapp')) return 'Nexa Official WhatsApp';
     if (location.pathname.startsWith('/onboarding/clients')) return 'Clients';
     return 'Overview';
   })();

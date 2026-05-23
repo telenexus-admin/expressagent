@@ -8,6 +8,7 @@ import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
 import OnboardingClients from './pages/onboarding/Clients';
 import OnboardingClientDetail from './pages/onboarding/ClientDetail';
+import NexaWhatsApp from './pages/onboarding/NexaWhatsApp';
 import Dashboard from './pages/DashboardShell';
 import Conversations from './pages/Conversations';
 import ChatView from './components/ChatView';
@@ -119,6 +120,7 @@ export default function App() {
             <Route index element={<OnboardingOverview />} />
             <Route path="clients" element={<OnboardingClients />} />
             <Route path="clients/:id" element={<OnboardingClientDetail />} />
+            <Route path="nexa-whatsapp" element={<NexaWhatsApp />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
             <Route index element={<DashboardIndexRedirect />} />

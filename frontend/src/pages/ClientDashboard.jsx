@@ -125,6 +125,7 @@ export default function ClientDashboard() {
 
   const nav = [
     ['/dashboard/statistics', 'Dashboard', HomeIcon, 'statistics'],
+    ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],
     ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
     ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
     ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],

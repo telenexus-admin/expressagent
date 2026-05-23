@@ -1,10 +1,12 @@
 import React, { useState, useEffect } from 'react';
-import { Outlet, useParams } from 'react-router-dom';
+import { Outlet, useParams, useSearchParams } from 'react-router-dom';
 import api from '../utils/api';
 import ConversationList from '../components/ConversationList';
 
 export default function Conversations() {
   const { id } = useParams();
+  const [searchParams] = useSearchParams();
+  const headerSearch = searchParams.get('search') || '';
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
 
@@ -31,7 +33,6 @@ export default function Conversations() {
 
   return (
     <div className="flex w-full h-full overflow-hidden">
-      {/* List column — full-width on mobile when no chat open; hidden on mobile when chat open; always visible on md+ */}
       <div
         className={`border-r border-gray-100 ${
           hasOpenChat
@@ -48,11 +49,10 @@ export default function Conversations() {
           </div>
         )}
         <div className="flex-1 min-h-0">
-          <ConversationList conversations={conversations} compact={hasOpenChat} />
+          <ConversationList conversations={conversations} compact={hasOpenChat} initialSearch={headerSearch} />
         </div>
       </div>
 
-      {/* Chat panel — full-width on mobile when chat open */}
       {hasOpenChat ? (
         <div className="flex-1 flex flex-col min-w-0 min-h-0 overflow-hidden">
           <Outlet context={{ conversations, refetch: fetchConversations }} />

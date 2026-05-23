@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
+import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
+import aiBotArtwork from '../assets/aiBotArtwork';
 import {
   ChatIcon,
   CheckCircleIcon,
@@ -149,7 +151,46 @@ function MiniInsight({ label, value, helper, tone = 'purple' }) {
   );
 }
 
+function AIHealthCard({ aiHealth, expressnet }) {
+  return (
+    <div className="rounded-[34px] bg-gradient-to-br from-[#4B16B5] to-[#2B086F] text-white p-6 shadow-xl shadow-purple-200 relative overflow-hidden min-h-[285px]">
+      {expressnet ? (
+        <>
+          <div className="absolute -right-7 -top-7 h-40 w-40 rounded-full bg-sky-400/10 blur-2xl" />
+          <div className="absolute right-0 top-0 bottom-0 w-[48%] bg-gradient-to-l from-[#36117f]/20 to-transparent" />
+          <img
+            src={aiBotArtwork}
+            alt="Nexa AI health assistant"
+            className="absolute z-0 -right-6 top-3 h-[172px] w-[152px] object-cover object-[62%_28%] mix-blend-multiply opacity-90 drop-shadow-[0_0_18px_rgba(72,176,255,0.65)]"
+          />
+        </>
+      ) : (
+        <div className="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-white/10" />
+      )}
+      <div className="relative z-10">
+        <div className="text-white/65 text-xs font-bold">AI Health Score</div>
+        <div className="text-6xl font-black tracking-tight mt-3">{aiHealth.score}<span className="text-2xl text-white/60">%</span></div>
+        <div className={`mt-4 rounded-2xl bg-white/12 p-4 ${expressnet ? 'max-w-[82%]' : ''}`}>
+          <div className="flex items-center justify-between text-xs mb-2">
+            <span className="text-white/70">Handle rate</span>
+            <span className="font-black">{aiHealth.ai_handle_rate}%</span>
+          </div>
+          <div className="h-2 rounded-full bg-white/15 overflow-hidden">
+            <div className="h-full rounded-full bg-[#95D13D]" style={{ width: `${Math.min(100, aiHealth.ai_handle_rate)}%` }} />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+          <div className="rounded-2xl bg-white/10 p-3"><div className="text-white/55">Open escalations</div><div className="text-xl font-black mt-1">{aiHealth.open_escalations}</div></div>
+          <div className="rounded-2xl bg-white/10 p-3"><div className="text-white/55">Failed alerts</div><div className="text-xl font-black mt-1">{aiHealth.failed_notifications}</div></div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function Statistics() {
+  const { admin } = useAuth();
+  const expressnet = Number(admin?.client_id) === 1;
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -238,26 +279,7 @@ export default function Statistics() {
           </div>
 
           <div className="space-y-6">
-            <div className="rounded-[34px] bg-gradient-to-br from-[#4B16B5] to-[#2B086F] text-white p-6 shadow-xl shadow-purple-200 relative overflow-hidden">
-              <div className="absolute -right-12 -top-12 w-40 h-40 rounded-full bg-white/10" />
-              <div className="relative">
-                <div className="text-white/65 text-xs font-bold">AI Health Score</div>
-                <div className="text-6xl font-black tracking-tight mt-3">{ai_health.score}<span className="text-2xl text-white/60">%</span></div>
-                <div className="mt-4 rounded-2xl bg-white/12 p-4">
-                  <div className="flex items-center justify-between text-xs mb-2">
-                    <span className="text-white/70">Handle rate</span>
-                    <span className="font-black">{ai_health.ai_handle_rate}%</span>
-                  </div>
-                  <div className="h-2 rounded-full bg-white/15 overflow-hidden">
-                    <div className="h-full rounded-full bg-[#95D13D]" style={{ width: `${Math.min(100, ai_health.ai_handle_rate)}%` }} />
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-                  <div className="rounded-2xl bg-white/10 p-3"><div className="text-white/55">Open escalations</div><div className="text-xl font-black mt-1">{ai_health.open_escalations}</div></div>
-                  <div className="rounded-2xl bg-white/10 p-3"><div className="text-white/55">Failed alerts</div><div className="text-xl font-black mt-1">{ai_health.failed_notifications}</div></div>
-                </div>
-              </div>
-            </div>
+            <AIHealthCard aiHealth={ai_health} expressnet={expressnet} />
 
             <div className="rounded-[34px] bg-white p-5 shadow-lg shadow-purple-100/60 border border-white">
               <h3 className="text-sm font-black text-slate-950 mb-4">30-day role breakdown</h3>

@@ -8,7 +8,7 @@ import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
 import OnboardingClients from './pages/onboarding/Clients';
 import OnboardingClientDetail from './pages/onboarding/ClientDetail';
-import Dashboard from './pages/Dashboard';
+import Dashboard from './pages/DashboardShell';
 import Conversations from './pages/Conversations';
 import ChatView from './components/ChatView';
 import AIHealth from './pages/AIHealth';

@@ -29,8 +29,10 @@ router.get('/', async (req, res) => {
 
     const result = await db.query(
       `SELECT
-         e.id, e.conversation_id, e.customer_phone, e.customer_name,
+         e.id, e.conversation_id, e.customer_phone, e.customer_name, e.customer_email,
          e.trigger_message, e.support_number, e.notify_status, e.notify_error,
+         e.request_email_status, e.request_email_error,
+         e.confirmation_email_status, e.confirmation_email_error,
          e.resolved_at, e.created_at, e.type, e.summary,
          c.status AS conversation_status
        FROM escalations e

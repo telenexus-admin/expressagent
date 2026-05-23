@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
+import ExpressnetLogin from './pages/ExpressnetLogin';
 import OnboardingLogin from './pages/OnboardingLogin';
 import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
@@ -111,6 +112,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />
           <Route path="/onboarding" element={<SuperadminRoute><OnboardingLayout /></SuperadminRoute>}>
             <Route index element={<OnboardingOverview />} />

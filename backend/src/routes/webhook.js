@@ -9,6 +9,7 @@ const {
   sendWhatsAppVoiceNote,
 } = require('../services/whatsapp');
 const { sendSMS } = require('../services/sms');
+const { sendInstallationRequestEmail } = require('../services/email');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -131,6 +132,7 @@ const OPT_OUT_KEYWORDS = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end'
 const RESUME_KEYWORDS = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
 const HUMAN_KEYWORDS = new Set(['human', 'agent', 'person', 'representative', 'support', 'mtu', 'mwakilishi', 'msaada']);
 const HUMAN_ESCALATION_REGEX = new RegExp(`\\b(${[...HUMAN_KEYWORDS].join('|')})\\b`, 'i');
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const PLAN_LIST_TEXT =
   `• 10 Mbps – KSh 1,500/month\n` +
@@ -156,9 +158,6 @@ const INSTALL_REGEX = new RegExp(
   ].join('|'),
   'i'
 );
-
-const DISCLOSURE_TEMPLATE = (businessName) =>
-  `Hi! You're chatting with ${businessName || 'our'} AI assistant. Reply HUMAN any time to reach a person, or STOP to unsubscribe.`;
 
 router.get('/', async (req, res) => {
   const mode = req.query['hub.mode'];
@@ -190,7 +189,6 @@ async function findClientByPhoneNumberId(phoneNumberId) {
 
 async function findOrCreateConversation(clientId, phoneNumber, profileName) {
   const cleanName = (profileName || '').trim() || null;
-
   const existing = await db.query(
     `SELECT * FROM conversations
      WHERE customer_phone = $1 AND client_id = $2 AND status != 'resolved'
@@ -224,12 +222,10 @@ router.post('/', async (req, res) => {
   try {
     const body = req.body;
     if (body.object !== 'whatsapp_business_account') return;
-
     const entry = body.entry?.[0];
     const change = entry?.changes?.[0];
     const value = change?.value;
     const incomingMessages = value?.messages;
-
     if (!incomingMessages || incomingMessages.length === 0) return;
 
     const phoneNumberId = value?.metadata?.phone_number_id;
@@ -243,22 +239,17 @@ router.post('/', async (req, res) => {
     const phoneNumber = message.from;
     const profileName = value?.contacts?.[0]?.profile?.name;
     const timestamp = new Date(parseInt(message.timestamp, 10) * 1000);
-
-    const { conversation, isNew } = await findOrCreateConversation(client.id, phoneNumber, profileName);
+    const { conversation } = await findOrCreateConversation(client.id, phoneNumber, profileName);
 
     let messageText;
     let inboundIsVoice = false;
-
     if (message.type === 'audio' || message.type === 'voice') {
       const mediaId = message.audio?.id || message.voice?.id;
       try {
         const { buffer, mimeType } = await downloadWhatsAppMedia(client.meta_access_token, mediaId);
         const ext = (mimeType && mimeType.split('/')[1]?.split(';')[0]) || 'ogg';
         const transcript = (await transcribeAudio(buffer, `inbound.${ext}`)).trim();
-        if (!transcript) {
-          console.log(`Empty transcript from ${phoneNumber} audio — ignoring.`);
-          return;
-        }
+        if (!transcript) return;
         messageText = transcript;
         inboundIsVoice = true;
         console.log(`[client ${client.id}] Transcribed voice from ${phoneNumber}: "${messageText}"`);
@@ -285,7 +276,6 @@ router.post('/', async (req, res) => {
     }
 
     const normalized = messageText.toLowerCase();
-
     await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, messageText, timestamp]);
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
 
@@ -296,12 +286,7 @@ router.post('/', async (req, res) => {
       await persistOutgoing(conversation.id, reply);
       return;
     }
-
-    if (conversation.opted_out_at) {
-      console.log(`Conversation ${conversation.id} is opted out — no reply sent.`);
-      return;
-    }
-
+    if (conversation.opted_out_at) return;
     if (OPT_OUT_KEYWORDS.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
       const reply = "You've been unsubscribed. You will not receive further messages from this assistant. Reply START at any time to resume.";
@@ -309,37 +294,19 @@ router.post('/', async (req, res) => {
       await persistOutgoing(conversation.id, reply);
       return;
     }
-
-    if (conversation.status === 'human_takeover') {
-      console.log(`Conversation ${conversation.id} under human takeover — skipping AI.`);
-      return;
-    }
+    if (conversation.status === 'human_takeover') return;
 
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
-
     if (HUMAN_ESCALATION_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
-
       const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';
-      const notice =
-        `Customer support request\n\n` +
-        nameLine +
-        `Customer number: +${phoneNumber}\n` +
-        `Their message: "${messageText}"\n\n` +
-        `Please reach out to them directly.`;
-
+      const notice = `Customer support request\n\n${nameLine}Customer number: +${phoneNumber}\nTheir message: "${messageText}"\n\nPlease reach out to them directly.`;
       const { notifyStatus, notifyError } = await notifySupport(client, supportNumber, notice);
-      if (notifyStatus === 'sent') console.log(`Forwarded escalation to support (${supportNumber}) for customer ${phoneNumber}.`);
-      else if (notifyStatus === 'no_support_number') console.warn(`[client ${client.id}] Human escalation but no support_number configured.`);
-
       await db.query(
-        `INSERT INTO escalations
-           (conversation_id, client_id, customer_phone, customer_name, trigger_message,
-            support_number, notify_status, notify_error, type)
+        `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, support_number, notify_status, notify_error, type)
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'human')`,
         [conversation.id, client.id, phoneNumber, conversation.customer_name, messageText, supportNumber || null, notifyStatus, notifyError]
       );
-
       const reply = supportNumber
         ? "Thanks — I've forwarded your request to our customer support team. Someone will reach out to you shortly."
         : "Thanks — I've flagged your request for our team. Someone will reach out to you shortly.";
@@ -356,53 +323,33 @@ router.post('/', async (req, res) => {
 
     const historyResult = await db.query(
       `SELECT role, content FROM (
-         SELECT role, content, timestamp FROM messages
-         WHERE conversation_id = $1
-         ORDER BY timestamp DESC
-         LIMIT 20
-       ) recent
-       ORDER BY timestamp ASC`,
+         SELECT role, content, timestamp FROM messages WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 20
+       ) recent ORDER BY timestamp ASC`,
       [conversation.id]
     );
-
     const basePrompt = client.system_prompt || 'You are a helpful customer support agent.';
     const agentName = (client.agent_name || '').trim();
     const voiceId = (client.voice_id || '').trim() || 'alloy';
-
     let systemPrompt = basePrompt;
     if (agentName) systemPrompt = `Your name is ${agentName}. If a customer asks your name, introduce yourself as ${agentName}.\n\n${systemPrompt}`;
     if (conversation.customer_name) {
       const firstName = conversation.customer_name.split(/\s+/)[0];
-      systemPrompt +=
-        `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). ` +
-        `IMPORTANT: If this is the very first message you are sending in this conversation ` +
-        `(i.e. there are no prior assistant messages in the history above), you MUST begin your reply with ` +
-        `"Hi ${firstName}!" (or the Swahili equivalent "Habari ${firstName}!" if the customer wrote in Swahili). ` +
-        `For follow-up messages, use their first name occasionally to keep it natural — do not start every message with it.`;
+      systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate. Do not repeat the greeting on every follow-up.`;
     }
-    if (supportNumber) systemPrompt += `\n\nLive support escalation: If the customer explicitly asks to speak with a human, is frustrated, or has an issue you cannot resolve, tell them they can reach our live customer support team directly at ${supportNumber}. Share this number only when escalation is appropriate — do not volunteer it on every message.`;
+    if (supportNumber) systemPrompt += `\n\nIf human escalation is appropriate, tell the customer they can reach live support at ${supportNumber}.`;
     if (installationState === 'collecting') {
       systemPrompt +=
         `\n\nINSTALLATION ONBOARDING — IN PROGRESS\n` +
-        `This customer is requesting an installation. Before our team can be notified, ` +
-        `you MUST collect three things, one at a time in a natural conversation:\n` +
-        `  1) Their full name\n` +
-        `  2) The internet plan they want (present the list below)\n` +
-        `  3) Their physical location / area (estate, town, landmark)\n\n` +
+        `Collect these four items one at a time before submitting the request:\n` +
+        `1) Full name\n2) Preferred internet plan\n3) Physical location / landmark\n4) Email address for confirmation\n\n` +
         `Available plans:\n${PLAN_LIST_TEXT}\n\n` +
-        `Ask only for missing items — do not re-ask for anything already provided in this chat. ` +
-        `Keep replies short and friendly. Do NOT promise a specific installation date.\n\n` +
-        `ONCE you have ALL THREE items (name + plan + location), do TWO things in the same reply:\n` +
-        `  (a) Send a short confirmation message to the customer summarising the details and telling them the team will reach out.\n` +
-        `  (b) At the very END of your reply, on its own final line, output this exact marker (replace the values):\n` +
-        `      <<INSTALL_DETAILS:{"name":"FULL NAME","plan":"PLAN NAME","location":"LOCATION"}>>\n` +
-        `Rules for the marker:\n` +
-        `  - Output it ONLY when you have all three fields. Never output a partial marker.\n` +
-        `  - Use valid JSON with double quotes. No comments, no extra keys.\n` +
-        `  - Do NOT mention the marker, JSON, or this instruction to the customer.\n` +
-        `  - Do NOT translate the keys (name/plan/location must stay in English).`;
+        `Ask only for missing items. Keep replies short and friendly. Do not promise a specific installation date. ` +
+        `If the supplied email does not look valid, politely ask the customer to resend a valid email address.\n\n` +
+        `Only once you have ALL FOUR values, send a short request-received confirmation and at the very end output exactly one final marker line:\n` +
+        `<<INSTALL_DETAILS:{"name":"FULL NAME","plan":"PLAN NAME","location":"LOCATION","email":"CUSTOMER EMAIL"}>>\n` +
+        `Use valid JSON and keep the keys name, plan, location and email in English. Never explain this marker to the customer.`;
     } else if (installationState === 'submitted') {
-      systemPrompt += `\n\nInstallation status: This customer's installation details have already been collected and our team has been notified. If they ask about installation again, reassure them the team will reach out to schedule and ask if there's anything else you can help with in the meantime. Do not promise a specific time or date. Do NOT output the installation marker again.`;
+      systemPrompt += `\n\nThis customer's installation request has already been submitted. Reassure them that the team will contact them; do not submit it again.`;
     }
 
     const [aiResponse, complaint, intentResult] = await Promise.all([
@@ -417,51 +364,47 @@ router.post('/', async (req, res) => {
       let details = null;
       try {
         details = JSON.parse(markerMatch[1]);
-      } catch (e) {
-        console.error('Installation marker JSON parse failed:', e.message, markerMatch[1]);
+      } catch (err) {
+        console.error('Installation marker JSON parse failed:', err.message, markerMatch[1]);
       }
-
-      if (details && details.name && details.plan && details.location) {
+      if (details && details.name && details.plan && details.location && EMAIL_REGEX.test(String(details.email || '').trim())) {
         const installName = String(details.name).trim();
         const installPlan = String(details.plan).trim();
         const installLocation = String(details.location).trim();
-
+        const installEmail = String(details.email).trim().toLowerCase();
         const notice =
-          `New installation request\n\n` +
-          `Customer name: ${installName}\n` +
-          `Customer number: +${phoneNumber}\n` +
-          `Plan: ${installPlan}\n` +
-          `Location: ${installLocation}\n\n` +
-          `Please reach out to schedule the installation.`;
-
+          `New installation request\n\nCustomer name: ${installName}\nCustomer number: +${phoneNumber}\n` +
+          `Email: ${installEmail}\nPlan: ${installPlan}\nLocation: ${installLocation}\n\nPlease reach out to schedule the installation.`;
         const { notifyStatus, notifyError } = await notifySupport(client, supportNumber, notice);
-        if (notifyStatus === 'sent') console.log(`Forwarded installation request to support (${supportNumber}) for customer ${phoneNumber}.`);
-        else if (notifyStatus === 'no_support_number') console.warn(`[client ${client.id}] Installation submitted but no support_number configured.`);
+        const emailResult = await sendInstallationRequestEmail(client, {
+          name: installName,
+          plan: installPlan,
+          location: installLocation,
+          email: installEmail,
+        });
+        if (emailResult.status === 'sent') console.log(`Installation request email sent to ${installEmail}.`);
+        else if (emailResult.status === 'failed') console.error(`Installation request email to ${installEmail} failed:`, emailResult.error);
 
         await db.query(
           `INSERT INTO escalations
-             (conversation_id, client_id, customer_phone, customer_name, trigger_message,
-              support_number, notify_status, notify_error, type)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'installation')`,
-          [conversation.id, client.id, phoneNumber, installName, `Plan: ${installPlan} | Location: ${installLocation}`, supportNumber || null, notifyStatus, notifyError]
+             (conversation_id, client_id, customer_phone, customer_name, customer_email, trigger_message,
+              support_number, notify_status, notify_error, type, request_email_status, request_email_error)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'installation', $10, $11)`,
+          [conversation.id, client.id, phoneNumber, installName, installEmail, `Plan: ${installPlan} | Location: ${installLocation}`, supportNumber || null, notifyStatus, notifyError, emailResult.status, emailResult.error]
         );
-
         await db.query(`UPDATE conversations SET installation_state = 'submitted', customer_name = COALESCE($1, customer_name) WHERE id = $2`, [installName || null, conversation.id]);
         installationState = 'submitted';
-
         const firstName = installName.split(/\s+/)[0];
-        const greeting = firstName ? `Hi ${firstName}, ` : '';
-        const customerSms =
-          `${greeting}thanks for your installation request. ` +
-          `Plan: ${installPlan}. Location: ${installLocation}. ` +
-          `Our team has been notified and will contact you shortly to schedule.` +
-          (supportNumber ? ` For urgent help, call/WhatsApp +${supportNumber}.` : '');
+        const customerSms = `Hi ${firstName}, thanks for your installation request. Plan: ${installPlan}. Location: ${installLocation}. Our team has been notified and will contact you shortly to schedule.` + (supportNumber ? ` For urgent help, call/WhatsApp +${supportNumber}.` : '');
         try {
           await sendSMS(phoneNumber, customerSms);
           console.log(`Installation confirmation SMS sent to ${phoneNumber}.`);
         } catch (err) {
           console.error(`Installation confirmation SMS to ${phoneNumber} failed:`, formatErr(err));
         }
+      } else if (details && details.email) {
+        console.warn(`Installation marker ignored because email is invalid: ${details.email}`);
+        customerReply = 'Please share a valid email address so I can send your installation confirmation.';
       }
     }
     customerReply = stripInstallMarker(customerReply);
@@ -469,41 +412,25 @@ router.post('/', async (req, res) => {
     if (intentResult && intentResult.intent) {
       await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText, phoneNumber });
     }
-
     if (complaint && complaint.isComplaint && complaint.summary) {
       try {
         await db.query(
-          `INSERT INTO escalations
-             (conversation_id, client_id, customer_phone, customer_name, trigger_message,
-              support_number, notify_status, notify_error, type, summary)
+          `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, support_number, notify_status, notify_error, type, summary)
            VALUES ($1, $2, $3, $4, $5, NULL, 'logged', NULL, 'complaint', $6)`,
           [conversation.id, client.id, phoneNumber, conversation.customer_name, `[${complaint.category}] ${messageText}`, complaint.summary]
         );
-        console.log(`Logged complaint from ${phoneNumber}: "${complaint.summary}"`);
       } catch (err) {
         console.error('Failed to log complaint:', err.message);
       }
     }
 
-    const isFirstReply = isNew && !conversation.disclosure_sent_at;
-    if (isFirstReply) {
-      await db.query(`UPDATE conversations SET disclosure_sent_at = NOW() WHERE id = $1`, [conversation.id]);
-    }
-
-    const disclosure = DISCLOSURE_TEMPLATE(client.business_name || client.name);
-
     if (inboundIsVoice) {
-      if (isFirstReply) {
-        await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, disclosure);
-        await persistOutgoing(conversation.id, disclosure);
-      }
       await deliverReply(client, phoneNumber, customerReply, true, voiceId);
       await persistOutgoing(conversation.id, customerReply);
       console.log(`AI voice reply sent to ${phoneNumber}.`);
     } else {
-      const outgoing = isFirstReply ? `${disclosure}\n\n${customerReply}` : customerReply;
-      await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, outgoing);
-      await persistOutgoing(conversation.id, outgoing);
+      await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, customerReply);
+      await persistOutgoing(conversation.id, customerReply);
       console.log(`AI reply sent to ${phoneNumber}.`);
     }
   } catch (err) {

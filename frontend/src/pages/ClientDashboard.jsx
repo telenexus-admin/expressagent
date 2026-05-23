@@ -22,6 +22,7 @@ import {
 import GlobalConversationSearch from '../components/GlobalConversationSearch';
 import InstallAppButton from '../components/InstallAppButton';
 import expressnetLogo from '../assets/expressnetLogo';
+import aiBotArtwork from '../assets/aiBotArtwork';
 
 const NexaMark = () => (
   <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none">
@@ -48,6 +49,28 @@ function Brand({ expressnet, compact = false }) {
     <div className="flex items-center gap-3">
       <div className={`${compact ? 'w-11 h-11' : 'w-12 h-12'} rounded-2xl bg-white text-[#4b16b5] flex items-center justify-center shadow-lg shrink-0`}><NexaMark /></div>
       <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-black`}>Nexa</div>{!compact && <div className="text-xs text-white/50">AI Support Portal</div>}</div>
+    </div>
+  );
+}
+
+function AiSidebarHero({ compact = false }) {
+  return (
+    <div className={`${compact ? 'mx-4 mb-3 h-[118px]' : 'mx-5 mb-4 h-[168px]'} relative shrink-0 overflow-hidden rounded-[26px] border border-white/10 bg-gradient-to-b from-[#301273] via-[#27105f] to-[#19083e] shadow-xl shadow-black/20`}>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_32%,rgba(33,167,255,0.42),transparent_32%),radial-gradient(circle_at_50%_100%,rgba(87,36,211,0.75),transparent_60%)]" />
+      <div className="absolute left-3 top-4 h-1.5 w-1.5 rounded-full bg-sky-300/80 shadow-[0_0_12px_3px_rgba(125,211,252,0.85)]" />
+      <div className="absolute right-7 top-8 h-1 w-1 rounded-full bg-white/75 shadow-[0_0_10px_2px_rgba(255,255,255,0.6)]" />
+      <div className="absolute bottom-3 left-6 h-1 w-1 rounded-full bg-blue-300/75 shadow-[0_0_12px_3px_rgba(96,165,250,0.7)]" />
+      <img
+        src={aiBotArtwork}
+        alt="Nexa AI assistant"
+        className={`${compact ? 'h-[143px] -bottom-11 right-2' : 'h-[205px] -bottom-16 right-1'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_0_18px_rgba(48,167,255,0.5)]`}
+      />
+      {!compact && (
+        <div className="absolute bottom-4 left-4 z-20">
+          <p className="text-[10px] font-black uppercase tracking-[0.17em] text-sky-300">Nexa AI</p>
+          <p className="mt-1 text-[10px] text-white/65">Always ready to assist</p>
+        </div>
+      )}
     </div>
   );
 }
@@ -122,7 +145,7 @@ export default function ClientDashboard() {
     const [path, label, Icon, , badge] = item;
     const selected = active(path);
     return (
-      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`group relative w-full flex items-center gap-3 px-5 py-3 text-sm transition-all ${selected ? `${mobile ? 'rounded-[22px]' : 'sidebar-active-link'} bg-white text-[#42149b] font-black` : 'rounded-[22px] text-white/75 hover:bg-white/10 hover:text-white'}`}>
+      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`group relative w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-all ${selected ? `${mobile ? 'rounded-[22px]' : 'sidebar-active-link'} bg-white text-[#42149b] font-black` : 'rounded-[22px] text-white/75 hover:bg-white/10 hover:text-white'}`}>
         <span className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${selected ? 'bg-[#efe9ff] text-[#4d1ab8]' : 'bg-white/10 text-white/80'}`}><Icon className="w-5 h-5" /></span>
         <span className="flex-1 text-left truncate">{label}</span>
         {badge > 0 && <span className={`text-[10px] font-black rounded-full min-w-[22px] h-6 flex items-center justify-center px-2 ${selected ? 'bg-[#4d1ab8] text-white' : 'bg-white text-[#4d1ab8]'}`}>{badge > 99 ? '99+' : badge}</span>}
@@ -134,9 +157,10 @@ export default function ClientDashboard() {
     <div className="h-screen overflow-hidden bg-[#f2f0f7] text-slate-900">
       <div className="flex h-full min-h-0">
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
-          <div className={expressnet ? 'px-6 pt-6 pb-6' : 'px-8 pt-7 pb-7'}><Brand expressnet={expressnet} /></div>
-          <nav className="no-visible-scrollbar pl-5 pr-0 space-y-2 flex-1 overflow-y-auto pb-5">{nav.map((item) => itemButton(item))}</nav>
-          <div className="px-6 pb-6 pt-4"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+          <div className={expressnet ? 'px-6 pt-5 pb-4' : 'px-8 pt-6 pb-4'}><Brand expressnet={expressnet} /></div>
+          <AiSidebarHero />
+          <nav className="no-visible-scrollbar pl-5 pr-0 space-y-1 flex-1 overflow-y-auto pb-5">{nav.map((item) => itemButton(item))}</nav>
+          <div className="px-6 pb-6 pt-3"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
         </aside>
 
         <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
@@ -154,8 +178,9 @@ export default function ClientDashboard() {
 
       <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="px-5 pt-5 pb-4 border-b border-white/10 flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
-        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 space-y-2">{nav.map((item) => itemButton(item, true))}</nav>
+        <div className="px-5 pt-5 pb-3 border-b border-white/10 flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
+        <AiSidebarHero compact />
+        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 space-y-1">{nav.map((item) => itemButton(item, true))}</nav>
         <div className="px-4 pt-3 pb-4 border-t border-white/10"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
       </aside>
     </div>

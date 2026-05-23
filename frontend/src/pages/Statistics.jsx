@@ -16,12 +16,12 @@ function getVolumeSummary(data) {
   const safe = data || [];
   const totals = safe.map((d) => ({
     ...d,
-    total: d.user_count + d.assistant_count + d.admin_count,
+    total: Number(d.user_count || 0) + Number(d.assistant_count || 0) + Number(d.admin_count || 0),
   }));
   const totalMessages = totals.reduce((sum, d) => sum + d.total, 0);
-  const userMessages = totals.reduce((sum, d) => sum + d.user_count, 0);
-  const aiMessages = totals.reduce((sum, d) => sum + d.assistant_count, 0);
-  const adminMessages = totals.reduce((sum, d) => sum + d.admin_count, 0);
+  const userMessages = totals.reduce((sum, d) => sum + Number(d.user_count || 0), 0);
+  const aiMessages = totals.reduce((sum, d) => sum + Number(d.assistant_count || 0), 0);
+  const adminMessages = totals.reduce((sum, d) => sum + Number(d.admin_count || 0), 0);
   const peak = totals.reduce((best, d) => (d.total > best.total ? d : best), totals[0] || { total: 0 });
   const avg = totals.length ? Math.round(totalMessages / totals.length) : 0;
   const automationRate = userMessages ? Math.round((aiMessages / userMessages) * 100) : 0;
@@ -37,85 +37,78 @@ function MessageVolumeChart({ data }) {
 
   const rows = data.map((d) => ({
     ...d,
-    total: d.user_count + d.assistant_count + d.admin_count,
+    user_count: Number(d.user_count || 0),
+    assistant_count: Number(d.assistant_count || 0),
+    admin_count: Number(d.admin_count || 0),
+    total: Number(d.user_count || 0) + Number(d.assistant_count || 0) + Number(d.admin_count || 0),
   }));
-  const max = Math.max(1, ...rows.map((d) => d.total));
-  const W = 860;
-  const H = 260;
-  const padL = 34;
+
+  const maxValue = Math.max(1, ...rows.flatMap((d) => [d.total, d.user_count, d.assistant_count, d.admin_count]));
+  const W = 880;
+  const H = 300;
+  const padL = 46;
   const padR = 18;
-  const padT = 18;
-  const padB = 36;
+  const padT = 24;
+  const padB = 48;
   const innerW = W - padL - padR;
   const innerH = H - padT - padB;
-  const barGap = 10;
-  const barW = Math.max(18, (innerW - barGap * (rows.length - 1)) / rows.length);
-
-  const xFor = (i) => padL + i * (barW + barGap);
-  const hFor = (v) => (v / max) * innerH;
-  const yFor = (v) => padT + innerH - hFor(v);
-  const peakIndex = rows.findIndex((d) => d.total === Math.max(...rows.map((r) => r.total)));
+  const stepX = rows.length > 1 ? innerW / (rows.length - 1) : 0;
+  const xFor = (i) => padL + stepX * i;
+  const yFor = (v) => padT + innerH - (v / maxValue) * innerH;
+  const pointsFor = (key) => rows.map((row, i) => `${xFor(i)},${yFor(row[key])}`).join(' ');
+  const totalLine = pointsFor('total');
+  const customerLine = pointsFor('user_count');
+  const aiLine = pointsFor('assistant_count');
+  const adminLine = pointsFor('admin_count');
+  const areaPoints = `${padL},${padT + innerH} ${totalLine} ${xFor(rows.length - 1)},${padT + innerH}`;
+  const peakIndex = rows.findIndex((row) => row.total === Math.max(...rows.map((d) => d.total)));
+  const peak = rows[peakIndex];
+  const guides = [0, 0.25, 0.5, 0.75, 1];
 
   return (
     <div className="w-full overflow-x-auto pb-1">
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[760px]" preserveAspectRatio="xMidYMid meet">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[720px]" role="img" aria-label="Daily message traffic trend graph">
         <defs>
-          <linearGradient id="volumeBarPrimary" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#7C3AED" />
-            <stop offset="100%" stopColor="#4B16B5" />
-          </linearGradient>
-          <linearGradient id="volumeBarAi" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#38BDF8" />
-            <stop offset="100%" stopColor="#2563EB" />
-          </linearGradient>
-          <linearGradient id="volumeBarAdmin" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#86EFAC" />
-            <stop offset="100%" stopColor="#16A34A" />
+          <linearGradient id="trafficArea" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stopColor="#6D3DEB" stopOpacity="0.16" />
+            <stop offset="100%" stopColor="#6D3DEB" stopOpacity="0.01" />
           </linearGradient>
         </defs>
 
-        {[0, 0.5, 1].map((t, i) => {
-          const value = Math.round(max * t);
+        {guides.map((guide) => {
+          const value = Math.round(maxValue * guide);
           const y = yFor(value);
           return (
-            <g key={i}>
-              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#E8E3F8" strokeDasharray="4 8" />
-              <text x={padL - 8} y={y + 3} fontSize="10" fill="#A59ABF" textAnchor="end">
-                {value}
-              </text>
+            <g key={guide}>
+              <line x1={padL} y1={y} x2={W - padR} y2={y} stroke="#EEE9F8" strokeWidth="1" />
+              <text x={padL - 12} y={y + 4} fontSize="10" fill="#968EA9" textAnchor="end">{value}</text>
             </g>
           );
         })}
 
-        {rows.map((d, i) => {
-          const x = xFor(i);
-          const userH = hFor(d.user_count);
-          const aiH = hFor(d.assistant_count);
-          const adminH = hFor(d.admin_count);
-          const totalY = yFor(d.total);
-          const userY = padT + innerH - userH;
-          const aiY = userY - aiH;
-          const adminY = aiY - adminH;
-          const rounded = i === peakIndex ? 10 : 8;
-          return (
-            <g key={d.day}>
-              <rect x={x} y={adminY} width={barW} height={Math.max(0, adminH)} rx={rounded} fill="url(#volumeBarAdmin)" opacity="0.95" />
-              <rect x={x} y={aiY} width={barW} height={Math.max(0, aiH)} rx={rounded} fill="url(#volumeBarAi)" opacity="0.95" />
-              <rect x={x} y={userY} width={barW} height={Math.max(2, userH)} rx={rounded} fill="url(#volumeBarPrimary)" opacity="0.98" />
-              {i === peakIndex && d.total > 0 && (
-                <g transform={`translate(${x + barW / 2}, ${totalY - 16})`}>
-                  <rect x="-24" y="-13" width="48" height="22" rx="11" fill="#22104F" />
-                  <text x="0" y="-1" fontSize="10" fontWeight="800" fill="white" textAnchor="middle" dominantBaseline="middle">
-                    {d.total}
-                  </text>
-                </g>
-              )}
-              <text x={x + barW / 2} y={H - 14} fontSize="10" fill="#A59ABF" textAnchor="middle">
-                {i % 2 === 0 || i === rows.length - 1 ? formatDayLabel(d.day) : ''}
-              </text>
-            </g>
-          );
-        })}
+        <polygon points={areaPoints} fill="url(#trafficArea)" />
+        <polyline points={totalLine} fill="none" stroke="#C7B8F4" strokeWidth="2" strokeDasharray="5 5" />
+        <polyline points={customerLine} fill="none" stroke="#5426D8" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={aiLine} fill="none" stroke="#25A5EA" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+        <polyline points={adminLine} fill="none" stroke="#1FB77A" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+
+        {rows.map((row, i) => (
+          <g key={row.day}>
+            <circle cx={xFor(i)} cy={yFor(row.user_count)} r="4" fill="white" stroke="#5426D8" strokeWidth="2" />
+            <circle cx={xFor(i)} cy={yFor(row.assistant_count)} r="4" fill="white" stroke="#25A5EA" strokeWidth="2" />
+            {row.admin_count > 0 && <circle cx={xFor(i)} cy={yFor(row.admin_count)} r="4" fill="white" stroke="#1FB77A" strokeWidth="2" />}
+            <text x={xFor(i)} y={H - 18} fontSize="10" fill="#968EA9" textAnchor="middle">
+              {i % 2 === 0 || i === rows.length - 1 ? formatDayLabel(row.day) : ''}
+            </text>
+          </g>
+        ))}
+
+        {peak && peak.total > 0 && (
+          <g transform={`translate(${xFor(peakIndex)}, ${Math.max(14, yFor(peak.total) - 24)})`}>
+            <rect x="-26" y="-13" width="52" height="24" rx="12" fill="#241052" />
+            <text x="0" y="2" fontSize="11" fontWeight="700" fill="white" textAnchor="middle">{peak.total}</text>
+          </g>
+        )}
       </svg>
     </div>
   );
@@ -181,7 +174,7 @@ export default function Statistics() {
   if (loading) {
     return (
       <div className="flex-1 flex items-center justify-center bg-[#f8f6ff]">
-        <div className="text-[#4B16B5] text-sm font-bold">Loading premium dashboard...</div>
+        <div className="text-[#4B16B5] text-sm font-bold">Loading dashboard...</div>
       </div>
     );
   }
@@ -204,9 +197,6 @@ export default function Statistics() {
       <div className="max-w-7xl mx-auto pb-10">
         <div className="mb-7 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <div className="inline-flex items-center gap-2 rounded-full bg-[#efe9ff] text-[#4B16B5] px-4 py-2 text-xs font-black mb-3">
-              Premium dashboard live
-            </div>
             <h1 className="text-3xl font-black text-slate-950 tracking-tight">Support Performance</h1>
             <p className="text-sm text-slate-500 mt-1">A clean overview of messages, AI replies, handovers and service health.</p>
           </div>
@@ -216,48 +206,24 @@ export default function Statistics() {
         </div>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-5 mb-6">
-          <PremiumStatCard
-            Icon={ChatIcon}
-            label="Total Messages"
-            value={summary.totalMessages.toLocaleString()}
-            note="Across all conversations"
-            gradient="bg-gradient-to-br from-[#5B35E5] to-[#3922C9]"
-          />
-          <PremiumStatCard
-            Icon={ActivityIcon}
-            label="Active Conversations"
-            value={conversations.active}
-            note="Currently handled by AI"
-            gradient="bg-gradient-to-br from-[#2FA8F7] to-[#2779D8]"
-          />
-          <PremiumStatCard
-            Icon={LifebuoyIcon}
-            label="Human Takeover"
-            value={conversations.human_takeover}
-            note="Needs admin attention"
-            gradient="bg-gradient-to-br from-[#20C985] to-[#159E63]"
-          />
-          <PremiumStatCard
-            Icon={CheckCircleIcon}
-            label="Resolved"
-            value={conversations.resolved}
-            note="Closed support cases"
-            gradient="bg-gradient-to-br from-[#95D13D] to-[#6FBB2F]"
-          />
+          <PremiumStatCard Icon={ChatIcon} label="Total Messages" value={summary.totalMessages.toLocaleString()} note="Across all conversations" gradient="bg-gradient-to-br from-[#5B35E5] to-[#3922C9]" />
+          <PremiumStatCard Icon={ActivityIcon} label="Active Conversations" value={conversations.active} note="Currently handled by AI" gradient="bg-gradient-to-br from-[#2FA8F7] to-[#2779D8]" />
+          <PremiumStatCard Icon={LifebuoyIcon} label="Human Takeover" value={conversations.human_takeover} note="Needs admin attention" gradient="bg-gradient-to-br from-[#20C985] to-[#159E63]" />
+          <PremiumStatCard Icon={CheckCircleIcon} label="Resolved" value={conversations.resolved} note="Closed support cases" gradient="bg-gradient-to-br from-[#95D13D] to-[#6FBB2F]" />
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-[1.55fr_0.95fr] gap-6">
           <div className="rounded-[34px] bg-white p-5 sm:p-6 shadow-xl shadow-purple-100/70 border border-white overflow-hidden">
             <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between mb-5">
               <div>
-                <div className="text-[11px] font-black text-[#4B16B5] uppercase tracking-[0.18em]">Message volume</div>
-                <h2 className="text-2xl font-black text-slate-950 mt-1">Traffic by role</h2>
-                <p className="text-xs text-slate-400 mt-1">Stacked daily activity: customer messages, AI responses and admin replies.</p>
+                <div className="text-[11px] font-black text-[#4B16B5] uppercase tracking-[0.18em]">Message activity</div>
+                <h2 className="text-2xl font-black text-slate-950 mt-1">14-day traffic trend</h2>
+                <p className="text-xs text-slate-400 mt-1">Customer messages, AI responses and admin replies over time.</p>
               </div>
               <div className="grid grid-cols-3 gap-2 text-[10px] font-bold">
-                <span className="flex items-center gap-1.5 rounded-full bg-[#F0EAFF] text-[#4B16B5] px-3 py-2"><span className="w-2 h-2 rounded-full bg-[#4B16B5]" />Customer</span>
-                <span className="flex items-center gap-1.5 rounded-full bg-sky-50 text-sky-700 px-3 py-2"><span className="w-2 h-2 rounded-full bg-sky-500" />AI</span>
-                <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 px-3 py-2"><span className="w-2 h-2 rounded-full bg-emerald-500" />Admin</span>
+                <span className="flex items-center gap-1.5 rounded-full bg-[#F0EAFF] text-[#4B16B5] px-3 py-2"><span className="w-2 h-2 rounded-full bg-[#5426D8]" />Customer</span>
+                <span className="flex items-center gap-1.5 rounded-full bg-sky-50 text-sky-700 px-3 py-2"><span className="w-2 h-2 rounded-full bg-[#25A5EA]" />AI</span>
+                <span className="flex items-center gap-1.5 rounded-full bg-emerald-50 text-emerald-700 px-3 py-2"><span className="w-2 h-2 rounded-full bg-[#1FB77A]" />Admin</span>
               </div>
             </div>
 
@@ -287,14 +253,8 @@ export default function Statistics() {
                   </div>
                 </div>
                 <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-white/55">Open escalations</div>
-                    <div className="text-xl font-black mt-1">{ai_health.open_escalations}</div>
-                  </div>
-                  <div className="rounded-2xl bg-white/10 p-3">
-                    <div className="text-white/55">Failed alerts</div>
-                    <div className="text-xl font-black mt-1">{ai_health.failed_notifications}</div>
-                  </div>
+                  <div className="rounded-2xl bg-white/10 p-3"><div className="text-white/55">Open escalations</div><div className="text-xl font-black mt-1">{ai_health.open_escalations}</div></div>
+                  <div className="rounded-2xl bg-white/10 p-3"><div className="text-white/55">Failed alerts</div><div className="text-xl font-black mt-1">{ai_health.failed_notifications}</div></div>
                 </div>
               </div>
             </div>

@@ -30,7 +30,12 @@ async function ensureDailyReportTables() {
 }
 
 function nairobiDate(date = new Date()) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TIME_ZONE, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
+  const parts = new Intl.DateTimeFormat('en-GB', {
+    timeZone: TIME_ZONE,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+  }).formatToParts(date);
+  const part = (type) => parts.find((item) => item.type === type)?.value;
+  return `${part('year')}-${part('month')}-${part('day')}`;
 }
 
 function nairobiClock(date = new Date()) {
@@ -103,14 +108,18 @@ async function buildMetrics(clientId, reportDate) {
     [clientId, TIME_ZONE, reportDate]
   );
 
+  const details = handoverDetails.rows.map((row) => ({
+    ...row,
+    outcome: row.resolved_at ? 'resolved' : row.admin_replies > 0 ? 'followed_up' : 'pending_follow_up',
+  }));
+
   return {
     ...metrics.rows[0],
     ...cases.rows[0],
     replies_after_handover: escalationFollowUp.rows[0]?.replies_after_handover || 0,
-    handover_details: handoverDetails.rows.map((row) => ({
-      ...row,
-      outcome: row.resolved_at ? 'resolved' : row.admin_replies > 0 ? 'followed_up' : 'pending_follow_up',
-    })),
+    handovers_followed_up: details.filter((row) => row.outcome === 'followed_up').length,
+    handovers_unattended: details.filter((row) => row.outcome === 'pending_follow_up').length,
+    handover_details: details,
   };
 }
 
@@ -120,10 +129,10 @@ function formatReport(client, reportDate, metrics) {
     `${business} Daily Report - ${reportDate}`,
     `Customers engaged: ${metrics.customers_texted} (${metrics.customer_messages} msgs)`,
     `AI handled: ${metrics.ai_cases_handled} cases / ${metrics.ai_replies} replies`,
-    `Forwarded to human: ${metrics.handovers} | Resolved: ${metrics.handovers_resolved} | Pending: ${metrics.handovers_pending}`,
-    `Human follow-up: ${metrics.replies_after_handover} replies recorded`,
+    `Forwarded to human: ${metrics.handovers}`,
+    `Human outcome: ${metrics.handovers_resolved} resolved, ${metrics.handovers_followed_up} replied/open, ${metrics.handovers_unattended} no reply`,
     `Installations: ${metrics.installations} | Complaints: ${metrics.complaints}`,
-    `Open dashboard for case-by-case action details. - Nexa`,
+    `View dashboard for case details. - Nexa`,
   ].join('\n');
 }
 

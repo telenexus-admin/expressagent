@@ -4,6 +4,7 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendSMS } = require('../services/sms');
+const { sendInstallationConfirmedEmail } = require('../services/email');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -17,7 +18,8 @@ async function loadConversationWithClient(conversationId, scope) {
        cl.meta_phone_number_id AS cl_meta_phone_number_id,
        cl.meta_access_token AS cl_meta_access_token,
        cl.agent_name AS cl_agent_name,
-       cl.support_number AS cl_support_number
+       cl.support_number AS cl_support_number,
+       cl.installation_email_enabled AS cl_installation_email_enabled
      FROM conversations conv
      JOIN clients cl ON cl.id = conv.client_id
      WHERE conv.id = $1`,
@@ -44,6 +46,7 @@ async function loadConversationWithClient(conversationId, scope) {
       meta_access_token: row.cl_meta_access_token,
       agent_name: row.cl_agent_name,
       support_number: row.cl_support_number,
+      installation_email_enabled: row.cl_installation_email_enabled,
     },
   };
 }
@@ -149,6 +152,14 @@ router.post('/:id/confirm-installation', async (req, res) => {
     if (!loaded) return res.status(404).json({ error: 'Conversation not found' });
     const { conversation, client } = loaded;
 
+    const installationRes = await db.query(
+      `SELECT id, customer_email FROM escalations
+       WHERE conversation_id = $1 AND type = 'installation'
+       ORDER BY created_at DESC LIMIT 1`,
+      [conversation.id]
+    );
+    const installation = installationRes.rows[0] || null;
+
     const firstName = (conversation.customer_name || '').split(' ')[0].trim();
     const greeting = firstName ? `Hi ${firstName},` : 'Hello,';
     const signoff = (client.agent_name || '').trim() || 'Support';
@@ -167,13 +178,28 @@ router.post('/:id/confirm-installation', async (req, res) => {
     );
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
 
+    let emailResult = { status: 'skipped', error: null };
+    if (installation) {
+      emailResult = await sendInstallationConfirmedEmail(client, {
+        name: conversation.customer_name,
+        email: installation.customer_email,
+      });
+      if (emailResult.status === 'sent') {
+        console.log(`Installation confirmation email sent to ${installation.customer_email}.`);
+      } else if (emailResult.status === 'failed') {
+        console.error(`Installation confirmation email to ${installation.customer_email} failed:`, emailResult.error);
+      }
+    }
+
     await db.query(
-      `UPDATE escalations SET resolved_at = NOW()
+      `UPDATE escalations SET resolved_at = NOW(),
+         confirmation_email_status = $2,
+         confirmation_email_error = $3
        WHERE conversation_id = $1 AND type = 'installation' AND resolved_at IS NULL`,
-      [conversation.id]
+      [conversation.id, emailResult.status, emailResult.error]
     );
 
-    res.json({ success: true, message });
+    res.json({ success: true, message, email_status: emailResult.status });
   } catch (err) {
     console.error('POST /conversations/:id/confirm-installation error:', err.message);
     res.status(500).json({ error: err.message || 'Failed to send confirmation SMS' });

@@ -13,6 +13,7 @@ import Conversations from './pages/Conversations';
 import ChatView from './components/ChatView';
 import AIHealth from './pages/AIHealth';
 import Statistics from './pages/Statistics';
+import DailyReports from './pages/DailyReports';
 import AdminManagement from './pages/AdminManagement';
 import Employees from './pages/Employees';
 import Workflow from './pages/Workflow';
@@ -129,6 +130,7 @@ export default function App() {
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />
             <Route path="ai-health" element={<PermissionRoute permission="ai_health"><AIHealth /></PermissionRoute>} />
             <Route path="statistics" element={<PermissionRoute permission="statistics"><Statistics /></PermissionRoute>} />
+            <Route path="reports" element={<PermissionRoute permission="statistics"><DailyReports /></PermissionRoute>} />
             <Route path="admins" element={<PermissionRoute permission="admins"><AdminManagement /></PermissionRoute>} />
             <Route path="employees" element={<PermissionRoute permission="employees"><Employees /></PermissionRoute>} />
             <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />

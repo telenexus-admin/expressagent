@@ -70,15 +70,6 @@ async function buildMetrics(clientId, reportDate) {
     [clientId, TIME_ZONE, reportDate]
   );
 
-  const actions = await db.query(
-    `SELECT COUNT(*)::int AS human_actions
-     FROM admin_activity_logs
-     WHERE client_id = $1
-       AND (created_at AT TIME ZONE $2)::date = $3::date
-       AND action IN ('reply_sent', 'conversation_status_changed')`,
-    [clientId, TIME_ZONE, reportDate]
-  ).catch(() => ({ rows: [{ human_actions: 0 }] }));
-
   const escalationFollowUp = await db.query(
     `SELECT COUNT(admin_msg.id)::int AS replies_after_handover
      FROM escalations e
@@ -92,11 +83,34 @@ async function buildMetrics(clientId, reportDate) {
     [clientId, TIME_ZONE, reportDate]
   );
 
+  const handoverDetails = await db.query(
+    `SELECT e.id, e.conversation_id, e.customer_name, e.customer_phone, e.trigger_message, e.created_at, e.resolved_at,
+            COUNT(admin_msg.id)::int AS admin_replies,
+            MAX(admin_msg.timestamp) AS last_admin_reply_at,
+            COALESCE((ARRAY_AGG(admin_msg.sender_name ORDER BY admin_msg.timestamp DESC)
+              FILTER (WHERE admin_msg.sender_name IS NOT NULL))[1], '') AS last_responded_by
+     FROM escalations e
+     LEFT JOIN messages admin_msg
+       ON admin_msg.conversation_id = e.conversation_id
+      AND admin_msg.role = 'admin'
+      AND admin_msg.timestamp >= e.created_at
+     WHERE e.client_id = $1
+       AND e.type = 'human'
+       AND (e.created_at AT TIME ZONE $2)::date = $3::date
+     GROUP BY e.id
+     ORDER BY e.created_at DESC
+     LIMIT 20`,
+    [clientId, TIME_ZONE, reportDate]
+  );
+
   return {
     ...metrics.rows[0],
     ...cases.rows[0],
-    human_actions: actions.rows[0]?.human_actions || 0,
     replies_after_handover: escalationFollowUp.rows[0]?.replies_after_handover || 0,
+    handover_details: handoverDetails.rows.map((row) => ({
+      ...row,
+      outcome: row.resolved_at ? 'resolved' : row.admin_replies > 0 ? 'followed_up' : 'pending_follow_up',
+    })),
   };
 }
 
@@ -106,10 +120,10 @@ function formatReport(client, reportDate, metrics) {
     `${business} Daily Report - ${reportDate}`,
     `Customers engaged: ${metrics.customers_texted} (${metrics.customer_messages} msgs)`,
     `AI handled: ${metrics.ai_cases_handled} cases / ${metrics.ai_replies} replies`,
-    `Human handovers: ${metrics.handovers} | Resolved: ${metrics.handovers_resolved} | Pending: ${metrics.handovers_pending}`,
+    `Forwarded to human: ${metrics.handovers} | Resolved: ${metrics.handovers_resolved} | Pending: ${metrics.handovers_pending}`,
     `Human follow-up: ${metrics.replies_after_handover} replies recorded`,
     `Installations: ${metrics.installations} | Complaints: ${metrics.complaints}`,
-    `Open dashboard for full conversation details. - Nexa`,
+    `Open dashboard for case-by-case action details. - Nexa`,
   ].join('\n');
 }
 
@@ -126,7 +140,7 @@ async function sendClientReport(client, reportDate, { force = false } = {}) {
   if (!phone) return { status: 'skipped', error: 'No daily report SMS phone configured' };
 
   const existing = await db.query(`SELECT id, delivery_status FROM daily_reports WHERE client_id = $1 AND report_date = $2::date`, [client.id, reportDate]);
-  if (!force && existing.rows[0]?.delivery_status === 'sent') return { status: 'already_sent' };
+  if (!force && existing.rows[0]?.delivery_status === 'sent') return { status: 'already_sent', report: existing.rows[0] };
 
   const { metrics, reportText } = await createReport(client, reportDate);
   let status = 'sent';

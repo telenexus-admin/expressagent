@@ -14,6 +14,7 @@ const workflowRoutes = require('./routes/workflows');
 const activityRoutes = require('./routes/activity');
 const reportRoutes = require('./routes/reports');
 const operatorAgentRoutes = require('./routes/operatorAgent');
+const operatorEvolutionRoutes = require('./routes/operatorEvolution');
 const webhookRoutes = require('./routes/webhook');
 const evolutionWebhookRoutes = require('./routes/evolutionWebhook');
 const { startDailyReportScheduler } = require('./services/dailyReports');
@@ -43,6 +44,7 @@ app.use('/api/workflows', workflowRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/operator-agent', operatorAgentRoutes);
+app.use('/api/operator-evolution', operatorEvolutionRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

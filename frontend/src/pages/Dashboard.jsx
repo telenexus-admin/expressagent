@@ -20,6 +20,7 @@ import {
   ChartIcon,
 } from '../components/Icons';
 import InstallAppButton from '../components/InstallAppButton';
+import expressnetLogo from '../assets/expressnetLogo';
 
 const NEXA_MARK = (
   <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none">
@@ -34,6 +35,26 @@ function canAccess(admin, permission) {
   return admin.permissions.includes(permission);
 }
 
+function SidebarBrand({ expressnet, mobile = false }) {
+  if (expressnet) {
+    return (
+      <div className={`bg-white rounded-2xl shadow-lg shadow-black/10 ${mobile ? 'px-3 py-2 max-w-[190px]' : 'px-3 py-3 w-full'}`}>
+        <img src={expressnetLogo} alt="ExpressNet Solutions" className="w-full h-auto object-contain" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-3">
+      <div className={`${mobile ? 'w-11 h-11' : 'w-12 h-12'} rounded-2xl bg-white text-[#4b16b5] flex items-center justify-center shadow-2xl shadow-black/10 shrink-0`}>{NEXA_MARK}</div>
+      <div className="min-w-0 leading-tight">
+        <div className={`${mobile ? 'text-lg' : 'text-2xl'} font-black tracking-tight`}>Nexa</div>
+        {!mobile && <div className="text-xs text-white/50">AI Support Portal</div>}
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
@@ -43,6 +64,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+  const isExpressnetClient = Number(admin?.client_id) === 1;
 
   useEffect(() => {
     let cancelled = false;
@@ -123,7 +145,7 @@ export default function Dashboard() {
     <div className="h-screen overflow-hidden bg-[#f2f0f7] text-slate-900">
       <div className="flex h-full min-h-0">
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white rounded-r-[42px] flex-col shadow-2xl shadow-purple-900/25 z-20`}>
-          <div className="px-8 pt-7 pb-7"><div className="flex items-center gap-3"><div className="w-12 h-12 rounded-2xl bg-white text-[#4b16b5] flex items-center justify-center shadow-2xl shadow-black/10">{NEXA_MARK}</div><div><div className="text-2xl font-black tracking-tight">Nexa</div><div className="text-xs text-white/50">AI Support Portal</div></div></div></div>
+          <div className={`${isExpressnetClient ? 'px-6 pt-6 pb-6' : 'px-8 pt-7 pb-7'}`}><SidebarBrand expressnet={isExpressnetClient} /></div>
           <nav className="px-5 space-y-2 flex-1 overflow-y-auto pb-5">{visibleNavItems.length > 0 ? visibleNavItems.map(navButton) : <div className="text-xs text-white/55 px-4 py-3">No tabs have been assigned to this account.</div>}</nav>
           <div className="px-6 pb-6 pt-4"><InstallAppButton /><button onClick={handleLogout} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white transition-all"><LogoutIcon className="w-4 h-4" /><span>Sign Out</span></button></div>
         </aside>
@@ -134,7 +156,7 @@ export default function Dashboard() {
       </div>
       <div className={`fixed inset-0 z-40 bg-black/50 transition-opacity duration-200 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} aria-hidden="true" />
       <aside className={`fixed left-0 top-0 bottom-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform duration-200 ease-out lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`} aria-hidden={!drawerOpen}>
-        <div className="px-5 pt-5 pb-4 border-b border-white/10"><div className="flex items-center justify-between mb-3"><div className="flex items-center gap-3"><div className="w-11 h-11 bg-white text-[#4b16b5] rounded-2xl flex items-center justify-center shrink-0">{NEXA_MARK}</div><div className="min-w-0 leading-tight"><div className="font-black text-white text-lg">Nexa</div></div></div><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10" aria-label="Close menu"><CloseIcon className="w-5 h-5" /></button></div></div>
+        <div className="px-5 pt-5 pb-4 border-b border-white/10"><div className="flex items-center justify-between mb-3"><SidebarBrand expressnet={isExpressnetClient} mobile /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 rounded-full flex items-center justify-center hover:bg-white/10 shrink-0" aria-label="Close menu"><CloseIcon className="w-5 h-5" /></button></div></div>
         <nav className="flex-1 overflow-y-auto px-3 py-3 space-y-2">{visibleNavItems.length > 0 ? visibleNavItems.map(navButton) : <div className="text-xs text-white/55 px-4 py-3">No tabs have been assigned to this account.</div>}</nav>
         <div className="px-4 pt-3 pb-4 border-t border-white/10 space-y-2"><InstallAppButton /><button onClick={handleLogout} className="w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white transition-colors"><LogoutIcon className="w-4 h-4" /><span>Sign Out</span></button></div>
       </aside>

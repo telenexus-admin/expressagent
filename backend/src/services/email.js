@@ -7,6 +7,10 @@ function isEmailConfigured() {
   );
 }
 
+function emailEnabled(client) {
+  return client.installation_email_enabled === true || client.installation_email_enabled === 'true';
+}
+
 function escapeHtml(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -55,7 +59,7 @@ async function sendViaResend(payload) {
 }
 
 async function sendInstallationRequestEmail(client, details) {
-  if (!details.email) return { status: 'skipped', error: null };
+  if (!emailEnabled(client) || !details.email) return { status: 'skipped', error: null };
 
   const { company, address, from } = emailBrand(client);
   const firstName = String(details.name || '').trim().split(/\s+/)[0] || 'there';
@@ -72,7 +76,7 @@ async function sendInstallationRequestEmail(client, details) {
 }
 
 async function sendInstallationConfirmedEmail(client, details) {
-  if (!details.email) return { status: 'skipped', error: null };
+  if (!emailEnabled(client) || !details.email) return { status: 'skipped', error: null };
 
   const { company, address, from } = emailBrand(client);
   const firstName = String(details.name || '').trim().split(/\s+/)[0] || 'there';

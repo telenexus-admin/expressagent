@@ -1,0 +1,48 @@
+services:
+  evolution-postgres:
+    image: postgres:15-alpine
+    container_name: evolution_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - evolution_postgres_data:/var/lib/postgresql/data
+    networks:
+      - evolution_internal
+
+  evolution-redis:
+    image: redis:7-alpine
+    container_name: evolution_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--requirepass", "${REDIS_PASSWORD}"]
+    volumes:
+      - evolution_redis_data:/data
+    networks:
+      - evolution_internal
+
+  evolution-api:
+    image: atendai/evolution-api:v2.1.1
+    container_name: evolution_api
+    restart: unless-stopped
+    depends_on:
+      - evolution-postgres
+      - evolution-redis
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - evolution_instances:/evolution/instances
+    networks:
+      - evolution_internal
+
+networks:
+  evolution_internal:
+    driver: bridge
+
+volumes:
+  evolution_instances:
+  evolution_postgres_data:
+  evolution_redis_data:

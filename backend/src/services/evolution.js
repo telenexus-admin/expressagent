@@ -94,11 +94,13 @@ async function setEvolutionWebhook(settings, webhookUrl) {
   const { baseUrl, instance, headers } = evolutionAuth(settings);
   const url = `${baseUrl}/webhook/set/${encodeURIComponent(instance)}`;
   return axios.post(url, {
-    enabled: true,
-    url: webhookUrl,
-    webhookByEvents: false,
-    webhookBase64: false,
-    events: ['MESSAGES_UPSERT'],
+    webhook: {
+      enabled: true,
+      url: webhookUrl,
+      webhookByEvents: false,
+      webhookBase64: false,
+      events: ['MESSAGES_UPSERT'],
+    },
   }, { headers, timeout: 30000 });
 }
 

@@ -35,8 +35,8 @@ export default function ClientRemarks() {
   const load = async () => {
     try {
       const [summaryResult, listResult] = await Promise.all([
-        api.get('/remarks/summary'),
-        api.get('/remarks'),
+        api.get('/escalations/remarks-summary'),
+        api.get('/escalations/remarks-list'),
       ]);
       setSummary(summaryResult.data);
       setRemarks(listResult.data);
@@ -62,7 +62,7 @@ export default function ClientRemarks() {
   const markReviewed = async (id) => {
     setReviewingId(id);
     try {
-      await api.patch(`/remarks/${id}/review`);
+      await api.patch(`/escalations/remarks/${id}/review`);
       await load();
     } finally {
       setReviewingId(null);

@@ -35,6 +35,38 @@ async function sendWhatsAppMessage(phoneNumberId, accessToken, phoneNumber, mess
   );
 }
 
+// Send up to three Meta WhatsApp reply buttons. Each id is returned to the webhook when tapped.
+async function sendWhatsAppButtons(phoneNumberId, accessToken, phoneNumber, bodyText, buttons, footerText = '') {
+  assertCreds(phoneNumberId, accessToken);
+  const safeButtons = (buttons || []).slice(0, 3).map((button) => ({
+    type: 'reply',
+    reply: {
+      id: String(button.id).slice(0, 256),
+      title: String(button.title).slice(0, 20),
+    },
+  }));
+  if (safeButtons.length === 0) throw new Error('At least one WhatsApp reply button is required.');
+
+  const interactive = {
+    type: 'button',
+    body: { text: String(bodyText).slice(0, 1024) },
+    action: { buttons: safeButtons },
+  };
+  if (footerText) interactive.footer = { text: String(footerText).slice(0, 60) };
+
+  await axios.post(
+    `${GRAPH_BASE}/${phoneNumberId}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneNumber,
+      type: 'interactive',
+      interactive,
+    },
+    { headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }) }
+  );
+}
+
 // Fetch a media URL by ID, then download the bytes. Returns { buffer, mimeType }.
 async function downloadWhatsAppMedia(accessToken, mediaId) {
   if (!accessToken) throw new Error('WhatsApp access token required to download media.');
@@ -89,6 +121,7 @@ async function sendWhatsAppVoiceNote(phoneNumberId, accessToken, phoneNumber, me
 
 module.exports = {
   sendWhatsAppMessage,
+  sendWhatsAppButtons,
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
   sendWhatsAppVoiceNote,

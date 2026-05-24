@@ -15,6 +15,7 @@ import ChatView from './components/ChatView';
 import AIHealth from './pages/AIHealth';
 import Statistics from './pages/Statistics';
 import DailyReports from './pages/DailyReports';
+import ClientRemarks from './pages/ClientRemarks';
 import AdminManagement from './pages/AdminManagement';
 import Employees from './pages/Employees';
 import Workflow from './pages/Workflow';
@@ -130,6 +131,7 @@ export default function App() {
             <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
             <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />
+            <Route path="remarks" element={<PermissionRoute permission="complaints"><ClientRemarks /></PermissionRoute>} />
             <Route path="ai-health" element={<PermissionRoute permission="ai_health"><AIHealth /></PermissionRoute>} />
             <Route path="statistics" element={<PermissionRoute permission="statistics"><Statistics /></PermissionRoute>} />
             <Route path="reports" element={<PermissionRoute permission="statistics"><DailyReports /></PermissionRoute>} />

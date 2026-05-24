@@ -90,6 +90,48 @@ async function sendEvolutionText(settings, number, text) {
   return axios.post(url, { number: phone, text }, { headers, timeout: 30000 });
 }
 
+async function sendEvolutionVoiceNote(settings, number, audioBuffer) {
+  const { baseUrl, instance, headers } = evolutionAuth(settings);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp phone number is required.');
+  if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) throw new Error('Audio buffer is empty.');
+  const url = `${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`;
+  return axios.post(url, {
+    number: phone,
+    audio: audioBuffer.toString('base64'),
+    delay: 400,
+  }, { headers, timeout: 60000 });
+}
+
+function getMediaBase64(responseData) {
+  if (typeof responseData === 'string') return responseData;
+  return (
+    responseData?.base64 ||
+    responseData?.data?.base64 ||
+    responseData?.media?.base64 ||
+    responseData?.data?.media?.base64 ||
+    null
+  );
+}
+
+async function downloadEvolutionAudio(settings, messageKey) {
+  const { baseUrl, instance, headers } = evolutionAuth(settings);
+  if (!messageKey?.id) throw new Error('Incoming voice note has no Evolution message id.');
+  const key = { id: messageKey.id };
+  if (messageKey.remoteJid) key.remoteJid = messageKey.remoteJid;
+  if (typeof messageKey.fromMe === 'boolean') key.fromMe = messageKey.fromMe;
+  const url = `${baseUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(instance)}`;
+  const response = await axios.post(url, {
+    message: { key },
+    convertToMp4: false,
+  }, { headers, timeout: 60000 });
+  let base64 = getMediaBase64(response.data);
+  if (!base64) throw new Error('Evolution returned no audio data for the voice note.');
+  const mimeType = response.data?.mimetype || response.data?.mimeType || response.data?.data?.mimetype || 'audio/ogg';
+  if (base64.includes(',')) base64 = base64.split(',', 2)[1];
+  return { buffer: Buffer.from(base64, 'base64'), mimeType };
+}
+
 async function setEvolutionWebhook(settings, webhookUrl) {
   const { baseUrl, instance, headers } = evolutionAuth(settings);
   const url = `${baseUrl}/webhook/set/${encodeURIComponent(instance)}`;
@@ -111,8 +153,9 @@ function parseEvolutionInbound(payload) {
   const key = data?.key || data?.data?.key || {};
   if (key.fromMe === true) return null;
   const remoteJid = key.remoteJid || data?.remoteJid || '';
-  if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast')) return null;
+  if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;
   const message = data?.message || data?.data?.message || {};
+  const isVoice = Boolean(message.audioMessage || message.voiceMessage);
   const text = (
     message.conversation ||
     message.extendedTextMessage?.text ||
@@ -121,11 +164,13 @@ function parseEvolutionInbound(payload) {
     data?.body ||
     ''
   ).trim();
-  if (!text) return null;
+  if (!text && !isVoice) return null;
   return {
     phone: cleanNumber(remoteJid),
     name: data?.pushName || data?.data?.pushName || payload?.senderName || null,
     text,
+    isVoice,
+    messageKey: key,
   };
 }
 
@@ -151,6 +196,8 @@ module.exports = {
   ensureOperatorAgentTables,
   getOperatorSettings,
   sendEvolutionText,
+  sendEvolutionVoiceNote,
+  downloadEvolutionAudio,
   setEvolutionWebhook,
   parseEvolutionInbound,
   findOrCreateOperatorConversation,

@@ -288,14 +288,7 @@ router.post('/', async (req, res) => {
       messageText = message.text.body.trim();
       console.log(`[client ${client.id}] Incoming from ${phoneNumber}: "${messageText}"`);
     } else {
-      console.log(`[client ${client.id}] Unsupported message type (${message.type}) from ${phoneNumber}.`);
-      await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, `[${message.type} message — not processed]`, timestamp]);
-      if (conversation.opted_out_at) return;
-      const notice = client.photo_troubleshooting_enabled === true
-        ? "Sorry, I can handle text, voice notes and router/support photos. Please send one of those."
-        : "Sorry, I can only handle text and voice notes right now. Please send one of those.";
-      await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
-      await persistOutgoing(conversation.id, notice);
+      console.log(`[client ${client.id}] Ignoring unsupported message type (${message.type}) from ${phoneNumber} without sending a customer reply.`);
       return;
     }
 

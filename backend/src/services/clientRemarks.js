@@ -1,14 +1,14 @@
 const db = require('../db');
 
 const FEEDBACK_BUTTONS = [
-  { id: 'cx_excellent', title: 'Excellent' },
-  { id: 'cx_okay', title: 'Okay' },
+  { id: 'cx_excellent', title: 'Loved it' },
+  { id: 'cx_okay', title: 'It was okay' },
   { id: 'cx_need_help', title: 'Need help' },
 ];
 
 const FEEDBACK_CHOICES = {
-  cx_excellent: { key: 'excellent', label: 'Excellent', score: 5, requiresFollowup: false },
-  cx_okay: { key: 'okay', label: 'Okay', score: 3, requiresFollowup: false },
+  cx_excellent: { key: 'excellent', label: 'Loved it', score: 5, requiresFollowup: false },
+  cx_okay: { key: 'okay', label: 'It was okay', score: 3, requiresFollowup: false },
   cx_need_help: { key: 'need_help', label: 'Still needs help', score: 1, requiresFollowup: true },
 };
 
@@ -43,16 +43,18 @@ async function ensureRemarksSchema() {
   return schemaPromise;
 }
 
-function looksLikeConversationComplete(customerMessage, agentReply = '') {
+function looksLikeConversationComplete(customerMessage) {
   const text = String(customerMessage || '').toLowerCase().trim();
-  const reply = String(agentReply || '').toLowerCase();
   if (!text || text.length > 180) return false;
-  if (/\b(not working|still not|still down|no internet|not fixed|didn'?t work|red los|problem|issue remains|help me|same issue)\b/i.test(text)) return false;
-  const clearClosure = /\b(thank you|thanks|asante|sorted|resolved|fixed now|working now|it works now|it is working|it works|all good|that'?s all|i'?m good)\b/i;
-  const politeClosure = /^(okay|ok|sawa|poa|great|nice|perfect|good)\s*(thanks|thank you|asante)?[.! ]*$/i;
-  if (!(clearClosure.test(text) || politeClosure.test(text))) return false;
-  if (/share|send|provide|what is your|please confirm|try these steps|close-up photo/i.test(reply)) return false;
-  return true;
+
+  const unresolved = /\b(not working|still not|still down|no internet|not fixed|didn'?t work|red los|problem|issue remains|help me|same issue|but|however)\b/i;
+  if (unresolved.test(text)) return false;
+
+  // Survey only on clear closure/success signals; ordinary “okay” must continue through normal support.
+  const thanks = /\b(thank you|thanks|asante sana|shukran)\b/i;
+  const fixed = /\b(sorted|resolved|fixed now|working now|it works now|it is working now|all good now|problem solved)\b/i;
+  const clearEnding = /\b(that'?s all|no more help|i'?m good now|im good now)\b/i;
+  return thanks.test(text) || fixed.test(text) || clearEnding.test(text);
 }
 
 async function hasSurveyForConversation(conversationId) {

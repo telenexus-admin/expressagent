@@ -15,6 +15,7 @@ const activityRoutes = require('./routes/activity');
 const reportRoutes = require('./routes/reports');
 const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
+const customerSurveyRoutes = require('./routes/feedbackWebhook');
 const webhookRoutes = require('./routes/webhook');
 const evolutionWebhookRoutes = require('./routes/evolutionWebhook');
 const { startDailyReportScheduler } = require('./services/dailyReports');
@@ -28,7 +29,7 @@ app.use(
   })
 );
 
-app.use('/webhook', express.json(), webhookRoutes);
+app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes);
 
 app.use(express.json());

@@ -55,6 +55,7 @@ export default function ClientDetail() {
         voice_id: data.voice_id || 'alloy',
         system_prompt: data.system_prompt || '',
         opening_message: data.opening_message || '',
+        photo_troubleshooting_enabled: data.photo_troubleshooting_enabled === true,
       });
     } catch (err) {
       setLoadError(err.response?.data?.error || 'Failed to load client');
@@ -95,6 +96,7 @@ export default function ClientDetail() {
         voice_id: form.voice_id,
         system_prompt: form.system_prompt,
         opening_message: form.opening_message,
+        photo_troubleshooting_enabled: form.photo_troubleshooting_enabled,
       };
       if (form.meta_access_token && form.meta_access_token.trim()) {
         payload.meta_access_token = form.meta_access_token.trim();
@@ -295,6 +297,33 @@ export default function ClientDetail() {
                 <option key={v} value={v}>{v}</option>
               ))}
             </select>
+          </div>
+          <div className={`rounded-2xl border p-4 transition-colors ${form.photo_troubleshooting_enabled ? 'border-[#D8CAFF] bg-[#F5F1FF]' : 'border-gray-200 bg-gray-50'}`}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-semibold text-gray-900">Enable Photo Troubleshooting</h3>
+                  {form.photo_troubleshooting_enabled && (
+                    <span className="rounded-full bg-[#4B16B5] px-2 py-0.5 text-[10px] font-bold text-white">ACTIVE</span>
+                  )}
+                </div>
+                <p className="mt-1 text-xs leading-relaxed text-gray-500">
+                  Let this client's AI accept router and fibre terminal photos, inspect visible lights, and guide troubleshooting safely.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.photo_troubleshooting_enabled}
+                onClick={() => updateField('photo_troubleshooting_enabled', !form.photo_troubleshooting_enabled)}
+                className={`relative mt-1 h-7 w-12 shrink-0 rounded-full transition-colors ${form.photo_troubleshooting_enabled ? 'bg-[#4B16B5]' : 'bg-gray-300'}`}
+              >
+                <span className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${form.photo_troubleshooting_enabled ? 'left-6' : 'left-1'}`} />
+              </button>
+            </div>
+            <p className="mt-3 rounded-xl bg-white/75 px-3 py-2 text-[11px] text-gray-500">
+              Safety note: the AI will describe only visible indicators and will not claim a definite fault or technician dispatch without confirmation.
+            </p>
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">System Prompt</label>

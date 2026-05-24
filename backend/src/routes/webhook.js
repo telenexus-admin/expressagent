@@ -133,7 +133,6 @@ const RESUME_KEYWORDS = new Set(['start', 'resume', 'subscribe', 'anza', 'endele
 const HUMAN_KEYWORDS = new Set(['human', 'agent', 'person', 'representative', 'support', 'mtu', 'mwakilishi', 'msaada']);
 const HUMAN_ESCALATION_REGEX = new RegExp(`\\b(${[...HUMAN_KEYWORDS].join('|')})\\b`, 'i');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-const EXPRESSNET_CLIENT_ID = 1;
 
 const PLAN_LIST_TEXT =
   `• 10 Mbps – KSh 1,500/month\n` +
@@ -267,7 +266,7 @@ router.post('/', async (req, res) => {
         await persistOutgoing(conversation.id, notice);
         return;
       }
-    } else if (message.type === 'image' && client.id === EXPRESSNET_CLIENT_ID) {
+    } else if (message.type === 'image' && client.photo_troubleshooting_enabled === true) {
       const mediaId = message.image?.id;
       inboundImageCaption = String(message.image?.caption || '').trim();
       try {
@@ -292,7 +291,7 @@ router.post('/', async (req, res) => {
       console.log(`[client ${client.id}] Unsupported message type (${message.type}) from ${phoneNumber}.`);
       await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, `[${message.type} message — not processed]`, timestamp]);
       if (conversation.opted_out_at) return;
-      const notice = client.id === EXPRESSNET_CLIENT_ID
+      const notice = client.photo_troubleshooting_enabled === true
         ? "Sorry, I can handle text, voice notes and router/support photos. Please send one of those."
         : "Sorry, I can only handle text and voice notes right now. Please send one of those.";
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
@@ -365,9 +364,9 @@ router.post('/', async (req, res) => {
       systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate. Do not repeat the greeting on every follow-up.`;
     }
     if (supportNumber) systemPrompt += `\n\nIf human escalation is appropriate, tell the customer they can reach live support at ${supportNumber}.`;
-    if (client.id === EXPRESSNET_CLIENT_ID) {
+    if (client.photo_troubleshooting_enabled === true) {
       systemPrompt +=
-        `\n\nPHOTO-ASSISTED TROUBLESHOOTING FOR EXPRESSNET:\n` +
+        `\n\nPHOTO-ASSISTED TROUBLESHOOTING:\n` +
         `When a customer is reporting internet trouble but cannot clearly describe the router or fibre terminal lights, you may politely ask them to send a clear photo of the device front panel showing the indicator lights and connected cables. ` +
         `Ask them not to include Wi-Fi passwords, account labels or private information in the photo. ` +
         `When a photo is provided, describe only what is clearly visible. Common guidance: a visible red LOS light may indicate a fibre signal problem requiring technical follow-up; a missing power light may suggest checking power; Wi-Fi/WLAN light alone does not confirm internet availability. ` +

@@ -73,6 +73,7 @@ export default function ExpressnetDashboard() {
     ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
     ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
     ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],
+    ['/dashboard/remarks', 'AI Client Remarks', ChatIcon, 'complaints'],
     ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
     ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
     ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],

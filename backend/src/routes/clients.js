@@ -28,7 +28,7 @@ router.get('/', async (_req, res) => {
       `SELECT
          c.id, c.name, c.business_name, c.contact_email, c.status,
          c.meta_phone_number_id, c.meta_business_account_id,
-         c.support_number, c.agent_name, c.voice_id, c.created_at,
+         c.support_number, c.agent_name, c.voice_id, c.photo_troubleshooting_enabled, c.created_at,
          (SELECT COUNT(*)::int FROM admins WHERE client_id = c.id) AS admin_count,
          (SELECT COUNT(*)::int FROM conversations WHERE client_id = c.id) AS conversation_count
        FROM clients c
@@ -47,7 +47,8 @@ router.get('/:id', async (req, res) => {
     const result = await db.query(
       `SELECT id, name, business_name, contact_email, status,
               meta_phone_number_id, meta_business_account_id, meta_verify_token,
-              support_number, system_prompt, agent_name, voice_id, opening_message, created_at
+              support_number, system_prompt, agent_name, voice_id, opening_message,
+              photo_troubleshooting_enabled, created_at
        FROM clients WHERE id = $1`,
       [req.params.id]
     );
@@ -77,6 +78,7 @@ router.post(
     body('agent_name').optional().isLength({ max: 80 }).withMessage('Agent name max 80 chars'),
     body('voice_id').optional().isIn(ALLOWED_VOICES).withMessage(`Voice must be one of ${ALLOWED_VOICES.join(', ')}`),
     body('opening_message').optional().isString(),
+    body('photo_troubleshooting_enabled').optional().isBoolean().withMessage('Photo troubleshooting must be true or false'),
     body('admin_name').trim().notEmpty().withMessage('Admin name is required'),
     body('admin_email').isEmail().normalizeEmail().withMessage('Valid admin email required'),
     body('admin_password').isLength({ min: 8 }).withMessage('Admin password must be at least 8 characters'),
@@ -100,6 +102,7 @@ router.post(
       agent_name,
       voice_id,
       opening_message,
+      photo_troubleshooting_enabled,
       admin_name,
       admin_email,
       admin_password,
@@ -115,14 +118,14 @@ router.post(
         `INSERT INTO clients (
            name, business_name, contact_email, status,
            meta_phone_number_id, meta_access_token, meta_business_account_id, meta_verify_token,
-           support_number, system_prompt, agent_name, voice_id, opening_message
+           support_number, system_prompt, agent_name, voice_id, opening_message, photo_troubleshooting_enabled
          ) VALUES (
            $1, $2, $3, 'active',
            $4, $5, $6, $7,
-           $8, $9, $10, $11, $12
+           $8, $9, $10, $11, $12, $13
          ) RETURNING id, name, business_name, contact_email, status,
                     meta_phone_number_id, meta_business_account_id, meta_verify_token,
-                    support_number, agent_name, voice_id, created_at`,
+                    support_number, agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
         [
           name.trim(),
           (business_name || '').trim() || null,
@@ -136,6 +139,7 @@ router.post(
           (agent_name || '').trim() || null,
           (voice_id || 'alloy').trim(),
           (opening_message || '').trim() || null,
+          photo_troubleshooting_enabled === true,
         ]
       );
 
@@ -190,6 +194,7 @@ router.put(
     body('agent_name').optional().isLength({ max: 80 }),
     body('voice_id').optional().isIn(ALLOWED_VOICES),
     body('opening_message').optional().isString(),
+    body('photo_troubleshooting_enabled').optional().isBoolean(),
   ],
   async (req, res) => {
     const errors = validationResult(req);
@@ -201,6 +206,7 @@ router.put(
       'name', 'business_name', 'contact_email', 'status',
       'meta_phone_number_id', 'meta_access_token', 'meta_business_account_id', 'meta_verify_token',
       'support_number', 'system_prompt', 'agent_name', 'voice_id', 'opening_message',
+      'photo_troubleshooting_enabled',
     ];
 
     const updates = [];
@@ -224,7 +230,7 @@ router.put(
         `UPDATE clients SET ${updates.join(', ')} WHERE id = $${params.length}
          RETURNING id, name, business_name, contact_email, status,
                    meta_phone_number_id, meta_business_account_id, meta_verify_token,
-                   support_number, agent_name, voice_id, created_at`,
+                   support_number, agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
         params
       );
       if (result.rows.length === 0) {

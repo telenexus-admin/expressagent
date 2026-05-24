@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { generateAIResponse, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent } = require('../services/openai');
+const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent } = require('../services/openai');
 const {
   sendWhatsAppMessage,
   downloadWhatsAppMedia,
@@ -133,6 +133,7 @@ const RESUME_KEYWORDS = new Set(['start', 'resume', 'subscribe', 'anza', 'endele
 const HUMAN_KEYWORDS = new Set(['human', 'agent', 'person', 'representative', 'support', 'mtu', 'mwakilishi', 'msaada']);
 const HUMAN_ESCALATION_REGEX = new RegExp(`\\b(${[...HUMAN_KEYWORDS].join('|')})\\b`, 'i');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const EXPRESSNET_CLIENT_ID = 1;
 
 const PLAN_LIST_TEXT =
   `• 10 Mbps – KSh 1,500/month\n` +
@@ -243,6 +244,10 @@ router.post('/', async (req, res) => {
 
     let messageText;
     let inboundIsVoice = false;
+    let inboundIsImage = false;
+    let inboundImageBuffer = null;
+    let inboundImageMimeType = null;
+    let inboundImageCaption = '';
     if (message.type === 'audio' || message.type === 'voice') {
       const mediaId = message.audio?.id || message.voice?.id;
       try {
@@ -262,6 +267,24 @@ router.post('/', async (req, res) => {
         await persistOutgoing(conversation.id, notice);
         return;
       }
+    } else if (message.type === 'image' && client.id === EXPRESSNET_CLIENT_ID) {
+      const mediaId = message.image?.id;
+      inboundImageCaption = String(message.image?.caption || '').trim();
+      try {
+        const { buffer, mimeType } = await downloadWhatsAppMedia(client.meta_access_token, mediaId);
+        if (!String(mimeType || '').startsWith('image/')) throw new Error('Received media is not an image.');
+        inboundImageBuffer = buffer;
+        inboundImageMimeType = mimeType;
+        inboundIsImage = true;
+        messageText = inboundImageCaption || '[Customer sent a router/support photo for checking]';
+        console.log(`[client ${client.id}] Received support image from ${phoneNumber}${inboundImageCaption ? `: "${inboundImageCaption}"` : '.'}`);
+      } catch (err) {
+        console.error('Failed to process inbound support image:', err.response?.data || err.message);
+        const notice = "Sorry, I couldn't open that photo. Please send a clear photo again, showing the router lights and cables.";
+        await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
+        await persistOutgoing(conversation.id, notice);
+        return;
+      }
     } else if (message.type === 'text') {
       messageText = message.text.body.trim();
       console.log(`[client ${client.id}] Incoming from ${phoneNumber}: "${messageText}"`);
@@ -269,14 +292,19 @@ router.post('/', async (req, res) => {
       console.log(`[client ${client.id}] Unsupported message type (${message.type}) from ${phoneNumber}.`);
       await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, `[${message.type} message — not processed]`, timestamp]);
       if (conversation.opted_out_at) return;
-      const notice = "Sorry, I can only handle text and voice notes right now. Please send one of those.";
+      const notice = client.id === EXPRESSNET_CLIENT_ID
+        ? "Sorry, I can handle text, voice notes and router/support photos. Please send one of those."
+        : "Sorry, I can only handle text and voice notes right now. Please send one of those.";
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
       await persistOutgoing(conversation.id, notice);
       return;
     }
 
     const normalized = messageText.toLowerCase();
-    await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, messageText, timestamp]);
+    const persistedMessageText = inboundIsImage
+      ? `[Image received] ${inboundImageCaption || 'Customer sent a router/support photo for checking.'}`
+      : messageText;
+    await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, persistedMessageText, timestamp]);
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {
@@ -297,7 +325,7 @@ router.post('/', async (req, res) => {
     if (conversation.status === 'human_takeover') return;
 
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
-    if (HUMAN_ESCALATION_REGEX.test(normalized)) {
+    if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
       const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';
       const notice = `Customer support request\n\n${nameLine}Customer number: +${phoneNumber}\nTheir message: "${messageText}"\n\nPlease reach out to them directly.`;
@@ -316,7 +344,7 @@ router.post('/', async (req, res) => {
     }
 
     let installationState = conversation.installation_state || null;
-    if (!installationState && INSTALL_REGEX.test(normalized)) {
+    if (!inboundIsImage && !installationState && INSTALL_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`, [conversation.id]);
       installationState = 'collecting';
     }
@@ -337,6 +365,14 @@ router.post('/', async (req, res) => {
       systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate. Do not repeat the greeting on every follow-up.`;
     }
     if (supportNumber) systemPrompt += `\n\nIf human escalation is appropriate, tell the customer they can reach live support at ${supportNumber}.`;
+    if (client.id === EXPRESSNET_CLIENT_ID) {
+      systemPrompt +=
+        `\n\nPHOTO-ASSISTED TROUBLESHOOTING FOR EXPRESSNET:\n` +
+        `When a customer is reporting internet trouble but cannot clearly describe the router or fibre terminal lights, you may politely ask them to send a clear photo of the device front panel showing the indicator lights and connected cables. ` +
+        `Ask them not to include Wi-Fi passwords, account labels or private information in the photo. ` +
+        `When a photo is provided, describe only what is clearly visible. Common guidance: a visible red LOS light may indicate a fibre signal problem requiring technical follow-up; a missing power light may suggest checking power; Wi-Fi/WLAN light alone does not confirm internet availability. ` +
+        `Never claim that a photo proves the complete fault or that a technician has been dispatched unless the workflow confirms it. If the photo is unclear, ask for a clearer close-up or escalate appropriately.`;
+    }
     if (installationState === 'collecting') {
       systemPrompt +=
         `\n\nINSTALLATION ONBOARDING — IN PROGRESS\n` +
@@ -352,10 +388,16 @@ router.post('/', async (req, res) => {
       systemPrompt += `\n\nThis customer's installation request has already been submitted. Reassure them that the team will contact them; do not submit it again.`;
     }
 
+    const aiTask = inboundIsImage
+      ? analyzeSupportImage(systemPrompt, historyResult.rows, inboundImageBuffer, inboundImageMimeType, inboundImageCaption)
+      : generateAIResponse(systemPrompt, historyResult.rows);
+    const classificationText = inboundIsImage
+      ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
+      : messageText;
     const [aiResponse, complaint, intentResult] = await Promise.all([
-      generateAIResponse(systemPrompt, historyResult.rows),
-      classifyComplaint(messageText),
-      classifyIntent(messageText),
+      aiTask,
+      classifyComplaint(classificationText),
+      classifyIntent(classificationText),
     ]);
 
     let customerReply = aiResponse;
@@ -410,14 +452,14 @@ router.post('/', async (req, res) => {
     customerReply = stripInstallMarker(customerReply);
 
     if (intentResult && intentResult.intent) {
-      await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText, phoneNumber });
+      await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText: classificationText, phoneNumber });
     }
     if (complaint && complaint.isComplaint && complaint.summary) {
       try {
         await db.query(
           `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, support_number, notify_status, notify_error, type, summary)
            VALUES ($1, $2, $3, $4, $5, NULL, 'logged', NULL, 'complaint', $6)`,
-          [conversation.id, client.id, phoneNumber, conversation.customer_name, `[${complaint.category}] ${messageText}`, complaint.summary]
+          [conversation.id, client.id, phoneNumber, conversation.customer_name, `[${complaint.category}] ${classificationText}`, complaint.summary]
         );
       } catch (err) {
         console.error('Failed to log complaint:', err.message);
@@ -431,7 +473,7 @@ router.post('/', async (req, res) => {
     } else {
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, customerReply);
       await persistOutgoing(conversation.id, customerReply);
-      console.log(`AI reply sent to ${phoneNumber}.`);
+      console.log(inboundIsImage ? `AI image-guided reply sent to ${phoneNumber}.` : `AI reply sent to ${phoneNumber}.`);
     }
   } catch (err) {
     console.error('Error processing webhook:', err.message);

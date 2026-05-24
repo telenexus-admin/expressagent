@@ -29,6 +29,43 @@ async function generateAIResponse(systemPrompt, messageHistory) {
   return response.choices[0].message.content;
 }
 
+// Inspect a customer-supplied support image, such as router LEDs or cabling.
+// The model receives prior chat context plus the latest image as a multimodal turn.
+async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mimeType = 'image/jpeg', caption = '') {
+  if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
+    throw new Error('Image buffer is empty.');
+  }
+
+  const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}`;
+  const latestText = caption
+    ? `The customer has sent a troubleshooting photo with this caption: "${caption}". Examine the image and reply helpfully based only on what is visible.`
+    : 'The customer has sent a troubleshooting photo. Examine it and reply helpfully based only on what is visible.';
+
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    ...messageHistory.map((msg) => ({
+      role: msg.role === 'user' ? 'user' : 'assistant',
+      content: msg.content,
+    })),
+    {
+      role: 'user',
+      content: [
+        { type: 'text', text: latestText },
+        { type: 'image_url', image_url: { url: dataUrl, detail: 'high' } },
+      ],
+    },
+  ];
+
+  const response = await getClient().chat.completions.create({
+    model: 'gpt-4o',
+    messages,
+    max_tokens: 1024,
+    temperature: 0.4,
+  });
+
+  return response.choices[0].message.content;
+}
+
 // Transcribe an audio buffer to text via Whisper.
 async function transcribeAudio(buffer, filename = 'audio.ogg') {
   const file = await toFile(buffer, filename);
@@ -132,4 +169,4 @@ async function classifyIntent(userMessage) {
   }
 }
 
-module.exports = { generateAIResponse, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent };
+module.exports = { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent };

@@ -48,7 +48,9 @@ const schema = `
     assigned_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     opted_out_at TIMESTAMP WITH TIME ZONE,
-    disclosure_sent_at TIMESTAMP WITH TIME ZONE
+    disclosure_sent_at TIMESTAMP WITH TIME ZONE,
+    latest_image_analysis TEXT,
+    latest_image_analyzed_at TIMESTAMP WITH TIME ZONE
   );
 
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS opted_out_at TIMESTAMP WITH TIME ZONE;
@@ -56,6 +58,8 @@ const schema = `
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS installation_state VARCHAR(20);
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
+  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analysis TEXT;
+  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analyzed_at TIMESTAMP WITH TIME ZONE;
 
   CREATE TABLE IF NOT EXISTS messages (
     id SERIAL PRIMARY KEY,

@@ -19,8 +19,11 @@ const schema = `
     agent_name VARCHAR(80),
     voice_id VARCHAR(20) DEFAULT 'alloy',
     opening_message TEXT,
+    photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
+
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE;
 
   CREATE TABLE IF NOT EXISTS admins (
     id SERIAL PRIMARY KEY,

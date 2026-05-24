@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { sendWhatsAppMessage, sendWhatsAppButtons } = require('../services/whatsapp');
+const { sendSMS } = require('../services/sms');
 const {
   FEEDBACK_BUTTONS,
   ensureRemarksSchema,
@@ -34,6 +35,41 @@ async function saveChatLine(conversationId, role, content) {
   await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 }
 
+async function alertSupport(client, conversation, customerPhone) {
+  const supportNumber = String(client.support_number || '').replace(/[^0-9]/g, '');
+  if (!supportNumber) {
+    return { supportNumber: null, notifyStatus: 'no_support_number', notifyError: null };
+  }
+
+  const notice =
+    `Customer needs more help after AI support\n\n` +
+    `Customer: ${conversation.customer_name || 'WhatsApp customer'}\n` +
+    `Phone: +${customerPhone}\n\n` +
+    `They selected "Need help" in the experience survey. Please follow up.`;
+  const errors = [];
+  let sent = false;
+
+  try {
+    await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, supportNumber, notice);
+    sent = true;
+  } catch (err) {
+    errors.push(`WhatsApp: ${err.message}`);
+  }
+
+  try {
+    await sendSMS(supportNumber, notice);
+    sent = true;
+  } catch (err) {
+    errors.push(`SMS: ${err.message}`);
+  }
+
+  return {
+    supportNumber,
+    notifyStatus: sent ? 'sent' : 'failed',
+    notifyError: errors.length ? errors.join(' | ') : null,
+  };
+}
+
 router.use(async (req, res, next) => {
   if (req.method !== 'POST') return next();
   try {
@@ -54,12 +90,27 @@ router.use(async (req, res, next) => {
       await saveChatLine(conversation.id, 'user', `[Experience feedback: ${result.choice.label}]`);
       if (result.choice.requiresFollowup) {
         await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
+        const alert = await alertSupport(client, conversation, message.from);
         await db.query(
-          `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, notify_status, type, summary)
-           VALUES ($1, $2, $3, $4, $5, 'logged', 'human', $6)`,
-          [conversation.id, client.id, message.from, conversation.customer_name, 'Customer selected Need help in experience survey.', 'Customer needs further help after AI assistance.']
+          `INSERT INTO escalations
+             (conversation_id, client_id, customer_phone, customer_name, trigger_message,
+              support_number, notify_status, notify_error, type, summary)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'human', $9)`,
+          [
+            conversation.id,
+            client.id,
+            message.from,
+            conversation.customer_name,
+            'Customer selected Need help in experience survey.',
+            alert.supportNumber,
+            alert.notifyStatus,
+            alert.notifyError,
+            'Customer needs further help after AI assistance.',
+          ]
         );
-        const reply = 'Thank you. I have flagged this for our support team so that someone can follow up and assist you.';
+        const reply = alert.notifyStatus === 'sent'
+          ? 'Thank you for telling us. I have notified our support team so someone can follow up and assist you.'
+          : 'Thank you for telling us. I have flagged this for our support team so someone can follow up and assist you.';
         await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, message.from, reply);
         await saveChatLine(conversation.id, 'assistant', reply);
       } else {
@@ -76,12 +127,25 @@ router.use(async (req, res, next) => {
     if (message.type !== 'text' || conversation.status === 'human_takeover') return next();
     const customerText = String(message.text.body || '').trim();
     if (!looksLikeConversationComplete(customerText) || await hasSurveyForConversation(conversation.id)) return next();
-    const saved = await createSurveyRequest({ clientId: client.id, conversationId: conversation.id, customerPhone: message.from, customerName: conversation.customer_name, reason: 'Customer indicated completion.' });
+    const saved = await createSurveyRequest({
+      clientId: client.id,
+      conversationId: conversation.id,
+      customerPhone: message.from,
+      customerName: conversation.customer_name,
+      reason: 'Customer indicated completion.',
+    });
     if (!saved) return next();
     await saveChatLine(conversation.id, 'user', customerText);
     const survey = 'Glad I could assist. Before you go, how was your experience with our AI support today?';
-    await sendWhatsAppButtons(client.meta_phone_number_id, client.meta_access_token, message.from, survey, FEEDBACK_BUTTONS, 'Your feedback helps us improve.');
-    await saveChatLine(conversation.id, 'assistant', `${survey} [Excellent | Okay | Need help]`);
+    await sendWhatsAppButtons(
+      client.meta_phone_number_id,
+      client.meta_access_token,
+      message.from,
+      survey,
+      FEEDBACK_BUTTONS,
+      'Your feedback helps us improve.'
+    );
+    await saveChatLine(conversation.id, 'assistant', `${survey} [Loved it | It was okay | Need help]`);
     return res.status(200).send('EVENT_RECEIVED');
   } catch (err) {
     console.error('Feedback webhook handling failed:', err.message);

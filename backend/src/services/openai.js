@@ -11,8 +11,13 @@ function getClient() {
 }
 
 async function generateAIResponse(systemPrompt, messageHistory) {
+  const continuityInstruction =
+    `\n\nVISUAL SUPPORT CONTINUITY:\n` +
+    `If the earlier conversation includes a reply about a customer photo, treat the visible device names, labels, lights and cable observations already stated in that reply as available context for follow-up questions. ` +
+    `For example, if an earlier photo reply identified a MikroTik RouterBOARD hEX, answer a later question about the router using that recorded identification. ` +
+    `Do not claim you cannot identify a device simply because the customer asks about it after the image message. Never invent details that were not previously observed.`;
   const messages = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: `${systemPrompt}${continuityInstruction}` },
     ...messageHistory.map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
@@ -23,23 +28,33 @@ async function generateAIResponse(systemPrompt, messageHistory) {
     model: 'gpt-4o',
     messages,
     max_tokens: 1024,
-    temperature: 0.7,
+    temperature: 0.45,
   });
 
   return response.choices[0].message.content;
 }
 
 // Inspect a customer-supplied support image, such as router LEDs or cabling.
-// The model receives prior chat context plus the latest image as a multimodal turn.
+// The reply is intentionally self-contained because it is persisted in chat history
+// and becomes reliable context when the customer asks follow-up questions later.
 async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mimeType = 'image/jpeg', caption = '') {
   if (!Buffer.isBuffer(imageBuffer) || imageBuffer.length === 0) {
     throw new Error('Image buffer is empty.');
   }
 
   const dataUrl = `data:${mimeType || 'image/jpeg'};base64,${imageBuffer.toString('base64')}`;
-  const latestText = caption
-    ? `The customer has sent a troubleshooting photo with this caption: "${caption}". Examine the image and reply helpfully based only on what is visible.`
-    : 'The customer has sent a troubleshooting photo. Examine it and reply helpfully based only on what is visible.';
+  const latestText =
+    `You are now performing a careful visual inspection of an ISP customer's troubleshooting photo. ` +
+    `${caption ? `The customer caption is: "${caption}". ` : ''}` +
+    `Give a useful WhatsApp reply based only on what is actually visible.\n\n` +
+    `REQUIRED INSPECTION BEHAVIOUR:\n` +
+    `1. First look for visible brand names, model markings and printed labels on every networking device. If any are readable, state them clearly (for example RouterBOARD, hEX, MikroTik, Huawei, TP-Link, LOS, PON, WLAN). Do not hide a readable identification behind generic advice.\n` +
+    `2. Describe the visible equipment and physical setup briefly: devices, ports, power adapters, cable connections and visible LEDs.\n` +
+    `3. State what cannot be confirmed from the current angle or lighting, especially if indicator lights are not visible.\n` +
+    `4. Give the best next troubleshooting step or request the exact close-up photo needed next.\n` +
+    `5. Be honest: do not invent a model number, light colour, outage cause or technician dispatch.\n\n` +
+    `Your answer must be self-contained because it will be remembered as the visual inspection summary for later customer follow-up. ` +
+    `Use a natural, confident and helpful tone; do not say you cannot identify models through photos when a visible label allows identification.`;
 
   const messages = [
     { role: 'system', content: systemPrompt },
@@ -59,8 +74,8 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
   const response = await getClient().chat.completions.create({
     model: 'gpt-4o',
     messages,
-    max_tokens: 1024,
-    temperature: 0.4,
+    max_tokens: 1200,
+    temperature: 0.2,
   });
 
   return response.choices[0].message.content;

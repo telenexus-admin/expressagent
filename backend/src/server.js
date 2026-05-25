@@ -17,9 +17,11 @@ const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
 const evoSelfOnboardingRoutes = require('./routes/evoSelfOnboarding');
 const evoClientRoutes = require('./routes/evoClients');
+const evoRoutingRoutes = require('./routes/evoRouting');
 const customerSurveyRoutes = require('./routes/feedbackWebhook');
 const webhookRoutes = require('./routes/webhook');
 const evolutionWebhookRoutes = require('./routes/evolutionWebhook');
+const clientEvolutionWebhookRoutes = require('./routes/clientEvolutionWebhook');
 const { startDailyReportScheduler } = require('./services/dailyReports');
 
 const app = express();
@@ -32,7 +34,7 @@ app.use(
 );
 
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
-app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes);
+app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);
 
 app.use(express.json());
 app.use('/api/public/evo-onboarding', evoSelfOnboardingRoutes);
@@ -44,6 +46,7 @@ app.use('/api/escalations', escalationsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/evo-clients', evoClientRoutes);
+app.use('/api/evo-routing', evoRoutingRoutes);
 app.use('/api/employees', employeeRoutes);
 app.use('/api/workflows', workflowRoutes);
 app.use('/api/activity', activityRoutes);

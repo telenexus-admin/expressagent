@@ -38,10 +38,18 @@ async function ensureOperatorAgentTables() {
       customer_phone VARCHAR(80) NOT NULL UNIQUE,
       customer_name VARCHAR(255),
       status VARCHAR(30) NOT NULL DEFAULT 'active',
+      ai_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto' CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent')),
+      internal_note TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS internal_note TEXT`);
+  await db.query(`ALTER TABLE operator_conversations DROP CONSTRAINT IF EXISTS operator_conversations_reply_mode_check`);
+  await db.query(`ALTER TABLE operator_conversations ADD CONSTRAINT operator_conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS operator_messages (
       id SERIAL PRIMARY KEY,

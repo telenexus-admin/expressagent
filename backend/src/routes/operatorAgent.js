@@ -3,7 +3,13 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
-const { ensureOperatorAgentTables, getOperatorSettings, sendEvolutionText } = require('../services/evolution');
+const { synthesizeVoice } = require('../services/openai');
+const {
+  ensureOperatorAgentTables,
+  getOperatorSettings,
+  sendEvolutionText,
+  sendEvolutionVoiceNote,
+} = require('../services/evolution');
 
 const router = express.Router();
 router.use(authMiddleware, superadminMiddleware);
@@ -20,59 +26,51 @@ function webhookUrl(req, secret) {
 router.get('/config', async (req, res) => {
   try {
     const settings = await getOperatorSettings();
-    res.json({
-      ...settings,
-      webhook_url: webhookUrl(req, settings.webhook_secret),
-    });
+    res.json({ ...settings, webhook_url: webhookUrl(req, settings.webhook_secret) });
   } catch (err) {
     console.error('GET /operator-agent/config error:', err.message);
     res.status(500).json({ error: 'Failed to load Nexa WhatsApp configuration' });
   }
 });
 
-router.put(
-  '/config',
-  [
-    body('enabled').optional().isBoolean(),
-    body('evolution_base_url').optional({ checkFalsy: true }).isURL({ require_tld: false }).withMessage('Enter a valid Evolution API URL'),
-    body('evolution_instance').optional().isString().isLength({ max: 120 }),
-    body('evolution_api_key').optional().isString(),
-    body('agent_name').optional().isString().isLength({ max: 80 }),
-    body('system_prompt').optional().isString().isLength({ min: 20 }),
-    body('owner_phone').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter a valid owner phone number'),
-  ],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    try {
-      await ensureOperatorAgentTables();
-      const current = await getOperatorSettings({ includeKey: true });
-      const values = {
-        enabled: req.body.enabled !== undefined ? Boolean(req.body.enabled) : current.enabled,
-        evolution_base_url: req.body.evolution_base_url !== undefined ? clean(req.body.evolution_base_url) || null : current.evolution_base_url,
-        evolution_instance: req.body.evolution_instance !== undefined ? clean(req.body.evolution_instance) || null : current.evolution_instance,
-        evolution_api_key: req.body.evolution_api_key !== undefined && clean(req.body.evolution_api_key) ? clean(req.body.evolution_api_key) : current.evolution_api_key,
-        agent_name: req.body.agent_name !== undefined ? clean(req.body.agent_name) || 'Nexa' : current.agent_name,
-        system_prompt: req.body.system_prompt !== undefined ? clean(req.body.system_prompt) : current.system_prompt,
-        owner_phone: req.body.owner_phone !== undefined ? clean(req.body.owner_phone) || null : current.owner_phone,
-      };
-      if (values.enabled && (!values.evolution_base_url || !values.evolution_instance || !values.evolution_api_key)) {
-        return res.status(400).json({ error: 'Enter the Evolution API URL, instance name and API key before switching Nexa live.' });
-      }
-      await db.query(
-        `UPDATE operator_agent_settings SET enabled = $1, evolution_base_url = $2, evolution_instance = $3,
-          evolution_api_key = $4, agent_name = $5, system_prompt = $6, owner_phone = $7, updated_at = NOW()
-         WHERE id = 1`,
-        [values.enabled, values.evolution_base_url, values.evolution_instance, values.evolution_api_key, values.agent_name, values.system_prompt, values.owner_phone]
-      );
-      const saved = await getOperatorSettings();
-      res.json({ ...saved, webhook_url: webhookUrl(req, saved.webhook_secret) });
-    } catch (err) {
-      console.error('PUT /operator-agent/config error:', err.message);
-      res.status(500).json({ error: 'Failed to save Nexa WhatsApp configuration' });
+router.put('/config', [
+  body('enabled').optional().isBoolean(),
+  body('evolution_base_url').optional({ checkFalsy: true }).isURL({ require_tld: false }).withMessage('Enter a valid Evolution API URL'),
+  body('evolution_instance').optional().isString().isLength({ max: 120 }),
+  body('evolution_api_key').optional().isString(),
+  body('agent_name').optional().isString().isLength({ max: 80 }),
+  body('system_prompt').optional().isString().isLength({ min: 20 }),
+  body('owner_phone').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter a valid owner phone number'),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    await ensureOperatorAgentTables();
+    const current = await getOperatorSettings({ includeKey: true });
+    const values = {
+      enabled: req.body.enabled !== undefined ? Boolean(req.body.enabled) : current.enabled,
+      evolution_base_url: req.body.evolution_base_url !== undefined ? clean(req.body.evolution_base_url) || null : current.evolution_base_url,
+      evolution_instance: req.body.evolution_instance !== undefined ? clean(req.body.evolution_instance) || null : current.evolution_instance,
+      evolution_api_key: req.body.evolution_api_key !== undefined && clean(req.body.evolution_api_key) ? clean(req.body.evolution_api_key) : current.evolution_api_key,
+      agent_name: req.body.agent_name !== undefined ? clean(req.body.agent_name) || 'Nexa' : current.agent_name,
+      system_prompt: req.body.system_prompt !== undefined ? clean(req.body.system_prompt) : current.system_prompt,
+      owner_phone: req.body.owner_phone !== undefined ? clean(req.body.owner_phone) || null : current.owner_phone,
+    };
+    if (values.enabled && (!values.evolution_base_url || !values.evolution_instance || !values.evolution_api_key)) {
+      return res.status(400).json({ error: 'Enter the Evolution API URL, instance name and API key before switching Nexa live.' });
     }
+    await db.query(
+      `UPDATE operator_agent_settings SET enabled = $1, evolution_base_url = $2, evolution_instance = $3,
+       evolution_api_key = $4, agent_name = $5, system_prompt = $6, owner_phone = $7, updated_at = NOW() WHERE id = 1`,
+      [values.enabled, values.evolution_base_url, values.evolution_instance, values.evolution_api_key, values.agent_name, values.system_prompt, values.owner_phone]
+    );
+    const saved = await getOperatorSettings();
+    res.json({ ...saved, webhook_url: webhookUrl(req, saved.webhook_secret) });
+  } catch (err) {
+    console.error('PUT /operator-agent/config error:', err.message);
+    res.status(500).json({ error: 'Failed to save Nexa WhatsApp configuration' });
   }
-);
+});
 
 router.post('/regenerate-webhook-secret', async (req, res) => {
   try {
@@ -86,23 +84,19 @@ router.post('/regenerate-webhook-secret', async (req, res) => {
   }
 });
 
-router.post(
-  '/test-message',
-  [body('phone').matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter a valid test WhatsApp number')],
-  async (req, res) => {
-    const errors = validationResult(req);
-    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
-    try {
-      const settings = await getOperatorSettings({ includeKey: true });
-      await sendEvolutionText(settings, req.body.phone, `Hello! This is ${settings.agent_name || 'Nexa'}. Your Evolution API connection is working successfully.`);
-      res.json({ success: true });
-    } catch (err) {
-      const message = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
-      console.error('POST /operator-agent/test-message error:', message);
-      res.status(500).json({ error: `Test WhatsApp message failed: ${message}` });
-    }
+router.post('/test-message', [body('phone').matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter a valid test WhatsApp number')], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const settings = await getOperatorSettings({ includeKey: true });
+    await sendEvolutionText(settings, req.body.phone, `Hello! This is ${settings.agent_name || 'Nexa'}. Your Evolution API connection is working successfully.`);
+    res.json({ success: true });
+  } catch (err) {
+    const message = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    console.error('POST /operator-agent/test-message error:', message);
+    res.status(500).json({ error: `Test WhatsApp message failed: ${message}` });
   }
-);
+});
 
 router.get('/conversations', async (_req, res) => {
   try {
@@ -120,6 +114,81 @@ router.get('/conversations', async (_req, res) => {
   } catch (err) {
     console.error('GET /operator-agent/conversations error:', err.message);
     res.status(500).json({ error: 'Failed to load Nexa conversations' });
+  }
+});
+
+router.get('/conversations/:id', async (req, res) => {
+  try {
+    await ensureOperatorAgentTables();
+    const conversation = await db.query(`SELECT * FROM operator_conversations WHERE id = $1 LIMIT 1`, [req.params.id]);
+    if (!conversation.rows[0]) return res.status(404).json({ error: 'Conversation not found' });
+    const messages = await db.query(
+      `SELECT id, role, content, timestamp FROM operator_messages WHERE conversation_id = $1 ORDER BY timestamp ASC LIMIT 500`,
+      [req.params.id]
+    );
+    res.json({ conversation: conversation.rows[0], messages: messages.rows });
+  } catch (err) {
+    console.error('GET /operator-agent/conversations/:id error:', err.message);
+    res.status(500).json({ error: 'Failed to load Nexa chat' });
+  }
+});
+
+router.patch('/conversations/:id', [
+  body('ai_enabled').optional().isBoolean(),
+  body('reply_mode').optional().isIn(['auto', 'text', 'voice', 'silent']),
+  body('internal_note').optional().isString().isLength({ max: 1000 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    await ensureOperatorAgentTables();
+    const result = await db.query(
+      `UPDATE operator_conversations SET
+         ai_enabled = COALESCE($1, ai_enabled),
+         reply_mode = COALESCE($2, reply_mode),
+         internal_note = COALESCE($3, internal_note),
+         updated_at = NOW()
+       WHERE id = $4 RETURNING *`,
+      [req.body.ai_enabled, req.body.reply_mode, req.body.internal_note, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Conversation not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PATCH /operator-agent/conversations/:id error:', err.message);
+    res.status(500).json({ error: 'Failed to update conversation controls' });
+  }
+});
+
+router.post('/conversations/:id/send', [
+  body('content').isString().trim().isLength({ min: 1, max: 4000 }).withMessage('Type a message first.'),
+  body('mode').optional().isIn(['text', 'voice']),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    await ensureOperatorAgentTables();
+    const convResult = await db.query(`SELECT * FROM operator_conversations WHERE id = $1 LIMIT 1`, [req.params.id]);
+    const conversation = convResult.rows[0];
+    if (!conversation) return res.status(404).json({ error: 'Conversation not found' });
+    const settings = await getOperatorSettings({ includeKey: true });
+    const content = clean(req.body.content);
+    const mode = req.body.mode || 'text';
+    if (mode === 'voice') {
+      const audio = await synthesizeVoice(content, 'alloy');
+      await sendEvolutionVoiceNote(settings, conversation.customer_phone, audio);
+    } else {
+      await sendEvolutionText(settings, conversation.customer_phone, content);
+    }
+    const stored = mode === 'voice' ? `[Manual voice reply] ${content}` : content;
+    const inserted = await db.query(
+      `INSERT INTO operator_messages (conversation_id, role, content, timestamp) VALUES ($1, 'admin', $2, NOW()) RETURNING *`,
+      [conversation.id, stored]
+    );
+    await db.query(`UPDATE operator_conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
+    res.json(inserted.rows[0]);
+  } catch (err) {
+    console.error('POST /operator-agent/conversations/:id/send error:', err.message);
+    res.status(500).json({ error: 'Failed to send operator message' });
   }
 });
 

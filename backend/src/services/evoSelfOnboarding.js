@@ -45,9 +45,7 @@ async function ensureEvoOnboardingTable() {
 function providerConfig() {
   const baseUrl = String(process.env.EVOLUTION_API_URL || '').trim().replace(/\/$/, '');
   const apiKey = String(process.env.EVOLUTION_API_KEY || '').trim();
-  if (!baseUrl || !apiKey) {
-    throw new Error('Evolution self-onboarding is not configured on the platform yet.');
-  }
+  if (!baseUrl || !apiKey) throw new Error('Evolution self-onboarding is not configured on the platform yet.');
   return { baseUrl, headers: { apikey: apiKey, 'Content-Type': 'application/json' } };
 }
 
@@ -60,11 +58,7 @@ function makeSessionToken() {
 }
 
 function makeInstanceName(businessName) {
-  const slug = String(businessName || 'client')
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '')
-    .slice(0, 32) || 'client';
+  const slug = String(businessName || 'client').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 32) || 'client';
   return `nexa-${slug}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
@@ -88,28 +82,43 @@ async function fetchQr(instanceName) {
   return findQr(result.data);
 }
 
-async function requestPairingCode(instanceName, phoneNumber) {
+async function createInstance(instanceName) {
+  const { baseUrl, headers } = providerConfig();
+  const result = await axios.post(`${baseUrl}/instance/create`, { instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' }, { headers, timeout: 30000 });
+  return findQr(result.data) || fetchQr(instanceName);
+}
+
+async function createPairingInstance(instanceName, phoneNumber) {
   const { baseUrl, headers } = providerConfig();
   const number = cleanPhone(phoneNumber);
   if (!number || number.length < 8) throw new Error('A valid WhatsApp number with country code is required.');
-  const result = await axios.get(`${baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`, {
-    headers,
-    params: { number },
-    timeout: 30000,
-  });
-  const pairingCode = findPairingCode(result.data);
-  if (!pairingCode) throw new Error('Evolution did not return a pairing code. Please try again.');
+
+  const created = await axios.post(
+    `${baseUrl}/instance/create`,
+    { instanceName, qrcode: false, number, integration: 'WHATSAPP-BAILEYS' },
+    { headers, timeout: 30000 }
+  );
+  let pairingCode = findPairingCode(created.data);
+  if (!pairingCode) {
+    const connected = await axios.get(`${baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`, {
+      headers,
+      params: { number },
+      timeout: 30000,
+    });
+    pairingCode = findPairingCode(connected.data);
+  }
+  if (!pairingCode) throw new Error('Evolution did not return a pairing code after creating a phone-pairing instance.');
   return { pairingCode: String(pairingCode), number };
 }
 
-async function createInstance(instanceName) {
+async function removeInstance(instanceName) {
   const { baseUrl, headers } = providerConfig();
-  const result = await axios.post(
-    `${baseUrl}/instance/create`,
-    { instanceName, qrcode: true, integration: 'WHATSAPP-BAILEYS' },
-    { headers, timeout: 30000 }
-  );
-  return findQr(result.data) || fetchQr(instanceName);
+  if (!instanceName) return;
+  try {
+    await axios.delete(`${baseUrl}/instance/delete/${encodeURIComponent(instanceName)}`, { headers, timeout: 30000 });
+  } catch (err) {
+    console.warn(`Could not clean unused Evolution instance ${instanceName}:`, err.response?.status || err.message);
+  }
 }
 
 async function getInstanceState(instanceName) {
@@ -119,9 +128,7 @@ async function getInstanceState(instanceName) {
 }
 
 function cleanProviderError(err) {
-  const providerMessage = typeof err.response?.data === 'object'
-    ? JSON.stringify(err.response.data)
-    : (err.response?.data || err.message || 'Unknown provider error');
+  const providerMessage = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'Unknown provider error');
   return String(providerMessage).slice(0, 500);
 }
 
@@ -136,8 +143,7 @@ async function refreshOnboarding(row) {
          SET status = CASE WHEN status = 'active' THEN status ELSE 'connected' END,
              connection_state = $1, connected_at = COALESCE(connected_at, NOW()),
              qr_code = NULL, pairing_code = NULL, provider_error = NULL, updated_at = NOW()
-         WHERE id = $2 RETURNING *`,
-        [stateResult.state, row.id]
+         WHERE id = $2 RETURNING *`, [stateResult.state, row.id]
       );
       return result.rows[0];
     }
@@ -147,16 +153,12 @@ async function refreshOnboarding(row) {
       `UPDATE evo_client_onboardings
        SET status = CASE WHEN status = 'failed' THEN status ELSE 'pending_qr' END,
            connection_state = $1, qr_code = COALESCE($2, qr_code), updated_at = NOW()
-       WHERE id = $3 RETURNING *`,
-      [stateResult.state || 'waiting_connection', qr, row.id]
+       WHERE id = $3 RETURNING *`, [stateResult.state || 'waiting_connection', qr, row.id]
     );
     return result.rows[0];
   } catch (err) {
     const error = cleanProviderError(err);
-    const result = await db.query(
-      `UPDATE evo_client_onboardings SET provider_error = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-      [error, row.id]
-    );
+    const result = await db.query(`UPDATE evo_client_onboardings SET provider_error = $1, updated_at = NOW() WHERE id = $2 RETURNING *`, [error, row.id]);
     return result.rows[0];
   }
 }
@@ -166,7 +168,8 @@ module.exports = {
   makeSessionToken,
   makeInstanceName,
   createInstance,
-  requestPairingCode,
+  createPairingInstance,
+  removeInstance,
   refreshOnboarding,
   cleanProviderError,
 };

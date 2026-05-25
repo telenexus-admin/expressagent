@@ -80,9 +80,14 @@ router.patch('/:id/status', [body('status').isIn(['reviewed', 'active', 'archive
     await ensureEvoOnboardingTable();
     const result = await db.query(
       `UPDATE evo_client_onboardings
-       SET status = $1, reviewed_at = CASE WHEN $1 IN ('reviewed', 'active') THEN COALESCE(reviewed_at, NOW()) ELSE reviewed_at END,
+       SET status = $1::varchar,
+           reviewed_at = CASE
+             WHEN $1::varchar IN ('reviewed', 'active') THEN COALESCE(reviewed_at, NOW())
+             ELSE reviewed_at
+           END,
            updated_at = NOW()
-       WHERE id = $2 RETURNING *`,
+       WHERE id = $2
+       RETURNING *`,
       [req.body.status, req.params.id]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Evolution client not found' });

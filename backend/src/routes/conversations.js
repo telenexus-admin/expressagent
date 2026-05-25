@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
+const { sendClientText } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
 const { sendInstallationConfirmedEmail } = require('../services/email');
 
@@ -15,6 +16,8 @@ async function loadConversationWithClient(conversationId, scope) {
        cl.id AS cl_id,
        cl.name AS cl_name,
        cl.business_name AS cl_business_name,
+       cl.connection_provider AS cl_connection_provider,
+       cl.evolution_instance_name AS cl_evolution_instance_name,
        cl.meta_phone_number_id AS cl_meta_phone_number_id,
        cl.meta_access_token AS cl_meta_access_token,
        cl.agent_name AS cl_agent_name,
@@ -42,6 +45,8 @@ async function loadConversationWithClient(conversationId, scope) {
       id: row.cl_id,
       name: row.cl_name,
       business_name: row.cl_business_name,
+      connection_provider: row.cl_connection_provider,
+      evolution_instance_name: row.cl_evolution_instance_name,
       meta_phone_number_id: row.cl_meta_phone_number_id,
       meta_access_token: row.cl_meta_access_token,
       agent_name: row.cl_agent_name,
@@ -124,20 +129,23 @@ router.post('/:id/reply', async (req, res) => {
 
     const { conversation, client } = loaded;
 
+    if (client.connection_provider === 'evolution') {
+      await sendClientText(client, conversation.customer_phone, message.trim());
+    } else {
+      await sendWhatsAppMessage(
+        client.meta_phone_number_id,
+        client.meta_access_token,
+        conversation.customer_phone,
+        message.trim()
+      );
+    }
+
     await db.query(
       `INSERT INTO messages (conversation_id, role, content, sender_name, timestamp)
        VALUES ($1, 'admin', $2, $3, NOW())`,
       [req.params.id, message.trim(), req.user.name]
     );
-
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [req.params.id]);
-
-    await sendWhatsAppMessage(
-      client.meta_phone_number_id,
-      client.meta_access_token,
-      conversation.customer_phone,
-      message.trim()
-    );
 
     res.json({ success: true });
   } catch (err) {
@@ -165,12 +173,9 @@ router.post('/:id/confirm-installation', async (req, res) => {
     const signoff = (client.agent_name || '').trim() || 'Support';
 
     const customMessage = (req.body?.message || '').trim();
-    const message =
-      customMessage ||
-      `${greeting} your installation has been confirmed. Our team will reach out shortly to coordinate the visit. — ${signoff}`;
+    const message = customMessage || `${greeting} your installation has been confirmed. Our team will reach out shortly to coordinate the visit. — ${signoff}`;
 
     await sendSMS(conversation.customer_phone, message);
-
     await db.query(
       `INSERT INTO messages (conversation_id, role, content, sender_name, timestamp)
        VALUES ($1, 'admin', $2, $3, NOW())`,
@@ -184,17 +189,12 @@ router.post('/:id/confirm-installation', async (req, res) => {
         name: conversation.customer_name,
         email: installation.customer_email,
       });
-      if (emailResult.status === 'sent') {
-        console.log(`Installation confirmation email sent to ${installation.customer_email}.`);
-      } else if (emailResult.status === 'failed') {
-        console.error(`Installation confirmation email to ${installation.customer_email} failed:`, emailResult.error);
-      }
+      if (emailResult.status === 'sent') console.log(`Installation confirmation email sent to ${installation.customer_email}.`);
+      else if (emailResult.status === 'failed') console.error(`Installation confirmation email to ${installation.customer_email} failed:`, emailResult.error);
     }
 
     await db.query(
-      `UPDATE escalations SET resolved_at = NOW(),
-         confirmation_email_status = $2,
-         confirmation_email_error = $3
+      `UPDATE escalations SET resolved_at = NOW(), confirmation_email_status = $2, confirmation_email_error = $3
        WHERE conversation_id = $1 AND type = 'installation' AND resolved_at IS NULL`,
       [conversation.id, emailResult.status, emailResult.error]
     );
@@ -224,8 +224,7 @@ router.patch('/:id/status', async (req, res) => {
     );
     if (status === 'resolved') {
       await db.query(
-        `UPDATE escalations SET resolved_at = NOW()
-         WHERE conversation_id = $1 AND resolved_at IS NULL`,
+        `UPDATE escalations SET resolved_at = NOW() WHERE conversation_id = $1 AND resolved_at IS NULL`,
         [req.params.id]
       );
     }

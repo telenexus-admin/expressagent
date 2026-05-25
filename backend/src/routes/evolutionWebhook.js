@@ -25,6 +25,15 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+async function storeMessage(conversationId, role, content) {
+  await db.query(
+    `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
+     VALUES ($1, $2, $3, NOW())`,
+    [conversationId, role, content]
+  );
+  await db.query(`UPDATE operator_conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+}
+
 router.post('/nexa', async (req, res) => {
   res.status(200).json({ received: true });
 
@@ -59,12 +68,12 @@ router.post('/nexa', async (req, res) => {
     if (!userText || !userText.trim()) return;
 
     const conversation = await findOrCreateOperatorConversation(incoming.phone, incoming.name);
-    await db.query(
-      `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
-       VALUES ($1, 'user', $2, NOW())`,
-      [conversation.id, incoming.isVoice ? `[Voice note] ${userText}` : userText]
-    );
-    await db.query(`UPDATE operator_conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
+    await storeMessage(conversation.id, 'user', incoming.isVoice ? `[Voice note] ${userText}` : userText);
+
+    if (!conversation.ai_enabled || conversation.reply_mode === 'silent') {
+      console.log(`Nexa reply paused for conversation ${conversation.id} (${incoming.phone}). Message saved for manual follow-up.`);
+      return;
+    }
 
     const recent = await db.query(
       `SELECT role, content FROM (
@@ -81,35 +90,31 @@ router.post('/nexa', async (req, res) => {
     if (conversation.customer_name) {
       prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Use their first name naturally when helpful, but do not greet repeatedly in every message.`;
     }
-    if (incoming.isVoice) {
-      prompt += `\n\nThe latest customer message was received as a WhatsApp voice note and your response will be spoken aloud. Keep this particular reply natural, concise and easy to listen to. Avoid long lists unless necessary.`;
+
+    const voiceReply = conversation.reply_mode === 'voice' || (conversation.reply_mode === 'auto' && incoming.isVoice);
+    if (voiceReply) {
+      prompt += `\n\nYour response will be spoken aloud as a WhatsApp voice note. Keep this reply natural, concise and easy to listen to. Avoid long lists unless necessary.`;
     }
 
     const reply = await generateAIResponse(prompt, recent.rows);
     if (!reply || !reply.trim()) return;
     const cleanReply = reply.trim();
 
-    if (incoming.isVoice) {
+    if (voiceReply) {
       try {
         const audio = await synthesizeVoice(cleanReply, 'alloy');
         await sendEvolutionVoiceNote(settings, incoming.phone, audio);
-        console.log(`Nexa Evolution voice reply sent to ${incoming.phone}.`);
+        console.log(`Nexa Evolution voice reply sent to ${incoming.phone} using mode=${conversation.reply_mode}.`);
       } catch (err) {
         console.error(`Nexa Evolution voice reply failed for ${incoming.phone}, falling back to text:`, safeError(err));
         await sendEvolutionText(settings, incoming.phone, cleanReply);
-        console.log(`Nexa Evolution text fallback reply sent to ${incoming.phone}.`);
       }
     } else {
       await sendEvolutionText(settings, incoming.phone, cleanReply);
-      console.log(`Nexa Evolution reply sent to ${incoming.phone}.`);
+      console.log(`Nexa Evolution text reply sent to ${incoming.phone} using mode=${conversation.reply_mode}.`);
     }
 
-    await db.query(
-      `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
-       VALUES ($1, 'assistant', $2, NOW())`,
-      [conversation.id, cleanReply]
-    );
-    await db.query(`UPDATE operator_conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
+    await storeMessage(conversation.id, 'assistant', voiceReply ? `[Voice reply] ${cleanReply}` : cleanReply);
   } catch (err) {
     console.error('Nexa Evolution webhook processing failed:', safeError(err));
   }

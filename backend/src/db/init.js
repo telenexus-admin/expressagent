@@ -20,10 +20,19 @@ const schema = `
     voice_id VARCHAR(20) DEFAULT 'alloy',
     opening_message TEXT,
     photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta' CHECK (connection_provider IN ('meta', 'evolution')),
+    evolution_instance_name VARCHAR(120) UNIQUE,
+    evolution_webhook_secret VARCHAR(96),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
 
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_instance_name VARCHAR(120);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_webhook_secret VARCHAR(96);
+  ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_connection_provider_check;
+  ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution'));
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_evolution_instance_unique ON clients(evolution_instance_name) WHERE evolution_instance_name IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS admins (
     id SERIAL PRIMARY KEY,
@@ -168,13 +177,9 @@ async function bootstrapDefaultClient() {
     return;
   }
 
-  console.log(
-    `Backfilling client_id for ${conv_orphans} conversations, ${admin_orphans} admins, ${esc_orphans} escalations.`
-  );
+  console.log(`Backfilling client_id for ${conv_orphans} conversations, ${admin_orphans} admins, ${esc_orphans} escalations.`);
 
-  const settingsRes = await pool.query(
-    `SELECT key, value FROM settings WHERE key IN ('system_prompt', 'support_number', 'agent_name', 'voice_id')`
-  );
+  const settingsRes = await pool.query(`SELECT key, value FROM settings WHERE key IN ('system_prompt', 'support_number', 'agent_name', 'voice_id')`);
   const oldSettings = {};
   settingsRes.rows.forEach((r) => (oldSettings[r.key] = r.value));
 
@@ -183,34 +188,22 @@ async function bootstrapDefaultClient() {
   const metaVerifyToken = process.env.META_VERIFY_TOKEN || null;
   const metaBusinessAccountId = process.env.META_BUSINESS_ACCOUNT_ID || null;
 
-  let defaultClient = await pool.query(
-    `SELECT id FROM clients WHERE name = 'Default Client' LIMIT 1`
-  );
-
+  let defaultClient = await pool.query(`SELECT id FROM clients WHERE name = 'Default Client' LIMIT 1`);
   let clientId;
   if (defaultClient.rows.length > 0) {
     clientId = defaultClient.rows[0].id;
   } else {
     const inserted = await pool.query(
       `INSERT INTO clients (
-        name, business_name, status,
+        name, business_name, status, connection_provider,
         meta_phone_number_id, meta_access_token, meta_business_account_id, meta_verify_token,
         support_number, system_prompt, agent_name, voice_id
       ) VALUES (
-        'Default Client', 'Default Client', 'active',
+        'Default Client', 'Default Client', 'active', 'meta',
         $1, $2, $3, $4,
         $5, $6, $7, $8
       ) RETURNING id`,
-      [
-        metaPhoneNumberId,
-        metaAccessToken,
-        metaBusinessAccountId,
-        metaVerifyToken,
-        (oldSettings.support_number || '').trim() || null,
-        oldSettings.system_prompt || 'You are a helpful customer support agent.',
-        (oldSettings.agent_name || '').trim() || null,
-        (oldSettings.voice_id || '').trim() || 'alloy',
-      ]
+      [metaPhoneNumberId, metaAccessToken, metaBusinessAccountId, metaVerifyToken, (oldSettings.support_number || '').trim() || null, oldSettings.system_prompt || 'You are a helpful customer support agent.', (oldSettings.agent_name || '').trim() || null, (oldSettings.voice_id || '').trim() || 'alloy']
     );
     clientId = inserted.rows[0].id;
     console.log(`Created Default Client (id=${clientId}) from environment variables.`);
@@ -218,10 +211,7 @@ async function bootstrapDefaultClient() {
 
   await pool.query(`UPDATE conversations SET client_id = $1 WHERE client_id IS NULL`, [clientId]);
   await pool.query(`UPDATE escalations SET client_id = $1 WHERE client_id IS NULL`, [clientId]);
-  await pool.query(
-    `UPDATE admins SET client_id = $1 WHERE client_id IS NULL AND role = 'admin'`,
-    [clientId]
-  );
+  await pool.query(`UPDATE admins SET client_id = $1 WHERE client_id IS NULL AND role = 'admin'`, [clientId]);
 }
 
 async function init() {

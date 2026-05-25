@@ -3,11 +3,13 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import ExpressnetLogin from './pages/ExpressnetLogin';
+import SelfOnboarding from './pages/SelfOnboarding';
 import OnboardingLogin from './pages/OnboardingLogin';
 import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
 import OnboardingClients from './pages/onboarding/Clients';
 import OnboardingClientDetail from './pages/onboarding/ClientDetail';
+import EvoClients from './pages/onboarding/EvoClients';
 import NexaWhatsApp from './pages/onboarding/NexaWhatsApp';
 import Dashboard from './pages/DashboardShell';
 import Conversations from './pages/Conversations';
@@ -114,6 +116,7 @@ export default function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
+          <Route path="/self-onboarding" element={<SelfOnboarding />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />
@@ -121,6 +124,7 @@ export default function App() {
             <Route index element={<OnboardingOverview />} />
             <Route path="clients" element={<OnboardingClients />} />
             <Route path="clients/:id" element={<OnboardingClientDetail />} />
+            <Route path="evo-clients" element={<EvoClients />} />
             <Route path="nexa-whatsapp" element={<NexaWhatsApp />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>

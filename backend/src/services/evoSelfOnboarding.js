@@ -92,7 +92,6 @@ async function createPairingInstance(instanceName, phoneNumber) {
   const { baseUrl, headers } = providerConfig();
   const number = cleanPhone(phoneNumber);
   if (!number || number.length < 8) throw new Error('A valid WhatsApp number with country code is required.');
-
   const created = await axios.post(
     `${baseUrl}/instance/create`,
     { instanceName, qrcode: false, number, integration: 'WHATSAPP-BAILEYS' },
@@ -100,11 +99,7 @@ async function createPairingInstance(instanceName, phoneNumber) {
   );
   let pairingCode = findPairingCode(created.data);
   if (!pairingCode) {
-    const connected = await axios.get(`${baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`, {
-      headers,
-      params: { number },
-      timeout: 30000,
-    });
+    const connected = await axios.get(`${baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`, { headers, params: { number }, timeout: 30000 });
     pairingCode = findPairingCode(connected.data);
   }
   if (!pairingCode) throw new Error('Evolution did not return a pairing code after creating a phone-pairing instance.');
@@ -119,6 +114,11 @@ async function removeInstance(instanceName) {
   } catch (err) {
     console.warn(`Could not clean unused Evolution instance ${instanceName}:`, err.response?.status || err.message);
   }
+}
+
+async function requestPairingCode(instanceName, phoneNumber) {
+  await removeInstance(instanceName);
+  return createPairingInstance(instanceName, phoneNumber);
 }
 
 async function getInstanceState(instanceName) {
@@ -169,6 +169,7 @@ module.exports = {
   makeInstanceName,
   createInstance,
   createPairingInstance,
+  requestPairingCode,
   removeInstance,
   refreshOnboarding,
   cleanProviderError,

@@ -148,6 +148,21 @@ function stripInstallMarker(text) {
   return text.replace(INSTALL_MARKER_RE, '').trim();
 }
 
+function imageFilename(mimeType) {
+  const subtype = String(mimeType || 'image/jpeg').split('/')[1]?.split(';')[0] || 'jpg';
+  const safeSubtype = subtype.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
+  return `whatsapp-image.${safeSubtype === 'jpeg' ? 'jpg' : safeSubtype}`;
+}
+
+function audioFilename(mimeType) {
+  const value = String(mimeType || '').toLowerCase();
+  if (value.includes('mpeg')) return 'voice-note.mp3';
+  if (value.includes('mp4')) return 'voice-note.m4a';
+  if (value.includes('wav')) return 'voice-note.wav';
+  if (value.includes('webm')) return 'voice-note.webm';
+  return 'voice-note.ogg';
+}
+
 const INSTALL_REGEX = new RegExp(
   [
     '\\b(want|need|looking for|book|schedule|please|can\\s*(?:you|i)|how\\s*(?:do|to))\\b' +
@@ -247,19 +262,40 @@ router.post('/', async (req, res) => {
     let inboundImageBuffer = null;
     let inboundImageMimeType = null;
     let inboundImageCaption = '';
+    let inboundVoiceBuffer = null;
+    let inboundVoiceMimeType = null;
     if (message.type === 'audio' || message.type === 'voice') {
       const mediaId = message.audio?.id || message.voice?.id;
+      inboundIsVoice = true;
       try {
         const { buffer, mimeType } = await downloadWhatsAppMedia(client.meta_access_token, mediaId);
+        inboundVoiceBuffer = buffer;
+        inboundVoiceMimeType = mimeType || 'audio/ogg';
         const ext = (mimeType && mimeType.split('/')[1]?.split(';')[0]) || 'ogg';
         const transcript = (await transcribeAudio(buffer, `inbound.${ext}`)).trim();
-        if (!transcript) return;
+        if (!transcript) throw new Error('Voice note transcription was empty.');
         messageText = transcript;
-        inboundIsVoice = true;
         console.log(`[client ${client.id}] Transcribed voice from ${phoneNumber}: "${messageText}"`);
       } catch (err) {
         console.error('Failed to transcribe inbound audio:', err.response?.data || err.message);
-        await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, '[voice note — transcription failed]', timestamp]);
+        const failedVoiceMessage = await db.query(
+          `INSERT INTO messages (conversation_id, role, content, timestamp)
+           VALUES ($1, 'user', $2, $3)
+           RETURNING id`,
+          [conversation.id, '[voice note - transcription failed]', timestamp]
+        );
+        if (inboundVoiceBuffer) {
+          await db.query(
+            `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)
+             VALUES ($1, 'audio', $2, $3, $4)`,
+            [
+              failedVoiceMessage.rows[0].id,
+              inboundVoiceMimeType || 'audio/ogg',
+              audioFilename(inboundVoiceMimeType),
+              inboundVoiceBuffer,
+            ]
+          );
+        }
         if (conversation.opted_out_at) return;
         const notice = "Sorry, I couldn't understand that voice note. Could you send it again or type your message?";
         await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, notice);
@@ -295,8 +331,38 @@ router.post('/', async (req, res) => {
     const normalized = messageText.toLowerCase();
     const persistedMessageText = inboundIsImage
       ? `[Image received] ${inboundImageCaption || 'Customer sent a router/support photo for checking.'}`
+      : inboundIsVoice
+      ? `[Voice note] ${messageText}`
       : messageText;
-    await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, persistedMessageText, timestamp]);
+    const storedMessage = await db.query(
+      `INSERT INTO messages (conversation_id, role, content, timestamp)
+       VALUES ($1, 'user', $2, $3)
+       RETURNING id`,
+      [conversation.id, persistedMessageText, timestamp]
+    );
+    if (inboundIsImage && inboundImageBuffer) {
+      await db.query(
+        `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)
+         VALUES ($1, 'image', $2, $3, $4)`,
+        [
+          storedMessage.rows[0].id,
+          inboundImageMimeType || 'image/jpeg',
+          imageFilename(inboundImageMimeType),
+          inboundImageBuffer,
+        ]
+      );
+    } else if (inboundIsVoice && inboundVoiceBuffer) {
+      await db.query(
+        `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)
+         VALUES ($1, 'audio', $2, $3, $4)`,
+        [
+          storedMessage.rows[0].id,
+          inboundVoiceMimeType || 'audio/ogg',
+          audioFilename(inboundVoiceMimeType),
+          inboundVoiceBuffer,
+        ]
+      );
+    }
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {

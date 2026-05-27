@@ -79,6 +79,19 @@ const schema = `
     timestamp TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS message_attachments (
+    id SERIAL PRIMARY KEY,
+    message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
+    media_type VARCHAR(30) NOT NULL CHECK (media_type IN ('image', 'audio')),
+    mime_type VARCHAR(100) NOT NULL,
+    filename VARCHAR(255),
+    data BYTEA NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+
+  ALTER TABLE message_attachments DROP CONSTRAINT IF EXISTS message_attachments_media_type_check;
+  ALTER TABLE message_attachments ADD CONSTRAINT message_attachments_media_type_check CHECK (media_type IN ('image', 'audio'));
+
   CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,
@@ -158,6 +171,7 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
   CREATE INDEX IF NOT EXISTS idx_conversations_client ON conversations(client_id);
   CREATE INDEX IF NOT EXISTS idx_messages_conversation ON messages(conversation_id);
+  CREATE INDEX IF NOT EXISTS idx_message_attachments_message ON message_attachments(message_id);
   CREATE INDEX IF NOT EXISTS idx_escalations_created ON escalations(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_escalations_client ON escalations(client_id);
   CREATE INDEX IF NOT EXISTS idx_admins_client ON admins(client_id);

@@ -24,6 +24,74 @@ function formatTimestamp(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function messageText(msg) {
+  if (msg.attachment_media_type === 'image') {
+    return String(msg.content || '').replace(/^\[Image received\]\s*/, '').trim();
+  }
+  if (msg.attachment_media_type === 'audio') {
+    return String(msg.content || '').replace(/^\[Voice note\]\s*/, '').trim();
+  }
+  return msg.content;
+}
+
+function MessageAttachment({ msg }) {
+  const [src, setSrc] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (!['image', 'audio'].includes(msg.attachment_media_type)) return undefined;
+
+    let active = true;
+    let objectUrl = '';
+    setSrc('');
+    setFailed(false);
+
+    api
+      .get(`/conversations/messages/${msg.id}/attachment`, { responseType: 'blob' })
+      .then((response) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(response.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [msg.id, msg.attachment_media_type]);
+
+  if (!['image', 'audio'].includes(msg.attachment_media_type)) return null;
+  if (failed) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white/70 px-3 py-2 text-xs text-gray-500">
+        Attachment unavailable
+      </div>
+    );
+  }
+  if (!src) {
+    return (
+      <div className="h-32 w-52 max-w-full animate-pulse rounded-xl bg-black/10" />
+    );
+  }
+
+  if (msg.attachment_media_type === 'image') {
+    return (
+    <a href={src} target="_blank" rel="noreferrer" className="block">
+      <img
+        src={src}
+        alt={msg.attachment_filename || 'Customer attachment'}
+        className="max-h-80 w-auto max-w-full rounded-xl border border-black/5 object-contain"
+      />
+    </a>
+    );
+  }
+
+  return <audio controls preload="metadata" src={src} className="w-64 max-w-full" />;
+}
+
 export default function ChatView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -35,18 +103,28 @@ export default function ChatView() {
   const [confirming, setConfirming] = useState(false);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
+  const messagesRef = useRef(null);
   const bottomRef = useRef(null);
   const prevIdRef = useRef(null);
+  const shouldStickToBottomRef = useRef(true);
+  const lastMessageCountRef = useRef(0);
+
+  const isNearBottom = useCallback(() => {
+    const el = messagesRef.current;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 96;
+  }, []);
 
   const fetchMessages = useCallback(async () => {
     if (!id) return;
     try {
+      shouldStickToBottomRef.current = isNearBottom();
       const { data } = await api.get(`/conversations/${id}/messages`);
       setMessages(data);
     } catch {
       // silent — poll will retry
     }
-  }, [id]);
+  }, [id, isNearBottom]);
 
   const fetchConversation = useCallback(async () => {
     if (!id) return;
@@ -65,6 +143,8 @@ export default function ChatView() {
       setConversation(null);
       setReply('');
       setError('');
+      shouldStickToBottomRef.current = true;
+      lastMessageCountRef.current = 0;
       prevIdRef.current = id;
     }
     if (id) {
@@ -80,7 +160,11 @@ export default function ChatView() {
   }, [id, fetchMessages]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (!messages.length) return;
+    const messageCountChanged = messages.length !== lastMessageCountRef.current;
+    lastMessageCountRef.current = messages.length;
+    if (!messageCountChanged || !shouldStickToBottomRef.current) return;
+    bottomRef.current?.scrollIntoView({ behavior: 'auto' });
   }, [messages]);
 
   const sendReply = async () => {
@@ -272,12 +356,19 @@ export default function ChatView() {
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 bg-[#FAFAFF]">
+      <div
+        ref={messagesRef}
+        onScroll={() => {
+          shouldStickToBottomRef.current = isNearBottom();
+        }}
+        className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 bg-[#FAFAFF]"
+      >
         {messages.length === 0 && (
           <p className="text-center text-gray-400 text-sm mt-8">No messages yet</p>
         )}
         {messages.map((msg) => {
           const style = BUBBLE[msg.role] || BUBBLE.user;
+          const text = messageText(msg);
           return (
             <div key={msg.id} className={`flex ${style.wrap}`}>
               <div className="max-w-[85%] sm:max-w-[70%]">
@@ -289,7 +380,12 @@ export default function ChatView() {
                     : `Admin — ${msg.sender_name || 'Unknown'}`}
                 </div>
                 <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${style.bubble}`}>
-                  {msg.content}
+                  <MessageAttachment msg={msg} />
+                  {text && (
+                    <div className={msg.attachment_media_type ? 'mt-2' : ''}>
+                      {text}
+                    </div>
+                  )}
                 </div>
                 <div className={`text-[10px] text-gray-400 mt-1 ${msg.role !== 'user' ? 'text-right' : ''}`}>
                   {formatTimestamp(msg.timestamp)}

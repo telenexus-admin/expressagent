@@ -1,4 +1,5 @@
 const db = require('../db');
+const { sendSMS } = require('./sms');
 
 let schemaReady = false;
 
@@ -23,6 +24,9 @@ async function ensureTicketSchema() {
       last_message TEXT,
       assigned_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
       assigned_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+      assignment_notify_status VARCHAR(20),
+      assignment_notify_error TEXT,
+      assignment_notified_at TIMESTAMP WITH TIME ZONE,
       opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       resolved_at TIMESTAMP WITH TIME ZONE
@@ -43,6 +47,13 @@ async function ensureTicketSchema() {
     ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_source_check;
     ALTER TABLE tickets ADD CONSTRAINT tickets_source_check
       CHECK (source IN ('whatsapp_meta', 'whatsapp_evolution', 'admin', 'system'));
+
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_status VARCHAR(20);
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_error TEXT;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notified_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_assignment_notify_status_check;
+    ALTER TABLE tickets ADD CONSTRAINT tickets_assignment_notify_status_check
+      CHECK (assignment_notify_status IS NULL OR assignment_notify_status IN ('sent', 'skipped', 'failed'));
 
     CREATE TABLE IF NOT EXISTS ticket_events (
       id SERIAL PRIMARY KEY,
@@ -128,7 +139,7 @@ async function findWorkflowAssignment(clientId, category, intent) {
   const intentKey = intent || intentFromCategory(category);
   if (!intentKey) return null;
   const result = await db.query(
-    `SELECT e.id, e.name
+    `SELECT e.id, e.name, e.phone
      FROM workflow_routes wr
      JOIN employees e ON e.id = wr.employee_id
      WHERE wr.client_id = $1
@@ -139,7 +150,7 @@ async function findWorkflowAssignment(clientId, category, intent) {
     [clientId, intentKey]
   );
   const employee = result.rows[0];
-  return employee ? { employeeId: employee.id, employeeName: employee.name, intentKey } : null;
+  return employee ? { employeeId: employee.id, employeeName: employee.name, employeePhone: employee.phone, intentKey } : null;
 }
 
 function titleForCategory(category) {
@@ -153,6 +164,38 @@ function titleForCategory(category) {
     general: 'Customer support ticket',
   };
   return titles[category] || titles.general;
+}
+
+function ticketLink(ticketId) {
+  const base = String(process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  return base ? `${base}/dashboard/tickets?ticket=${ticketId}` : null;
+}
+
+function notificationEnabled() {
+  return String(process.env.TICKET_ASSIGNMENT_SMS_ENABLED || '').toLowerCase() === 'true';
+}
+
+async function notifyAssignedEmployee({ ticket, assignment, customerPhone, customerName, summary }) {
+  if (!assignment?.employeeId) return { status: null, error: null };
+  if (!notificationEnabled()) return { status: 'skipped', error: 'Ticket assignment SMS is disabled' };
+  if (!assignment.employeePhone) return { status: 'skipped', error: 'Assigned employee has no phone number' };
+
+  const customer = customerName ? `${customerName} (+${customerPhone})` : `+${customerPhone}`;
+  const link = ticketLink(ticket.id);
+  const message =
+    `New ticket assigned to you\n\n` +
+    `Ticket #${ticket.id}: ${ticket.title}\n` +
+    `Priority: ${ticket.priority}\n` +
+    `Customer: ${customer}\n` +
+    `Issue: ${summary || ticket.summary || ticket.last_message || 'No summary yet'}` +
+    (link ? `\n\nOpen: ${link}` : '');
+
+  try {
+    await sendSMS(assignment.employeePhone, message);
+    return { status: 'sent', error: null };
+  } catch (err) {
+    return { status: 'failed', error: err.message || 'Failed to send assignment SMS' };
+  }
 }
 
 async function addTicketEvent(ticketId, event) {
@@ -170,6 +213,37 @@ async function addTicketEvent(ticketId, event) {
       JSON.stringify(event.metadata || {}),
     ]
   );
+}
+
+async function recordAssignmentNotification(ticket, assignment, details) {
+  const notification = await notifyAssignedEmployee({ ticket, assignment, ...details });
+  if (!notification.status) return ticket;
+
+  const updated = await db.query(
+    `UPDATE tickets
+     SET assignment_notify_status = $2,
+         assignment_notify_error = $3,
+         assignment_notified_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE assignment_notified_at END
+     WHERE id = $1
+     RETURNING *`,
+    [ticket.id, notification.status, notification.error]
+  );
+
+  await addTicketEvent(ticket.id, {
+    actor_type: 'system',
+    event_type: 'assigned',
+    body:
+      notification.status === 'sent'
+        ? `Assignment SMS sent to ${assignment.employeeName}`
+        : `Assignment SMS ${notification.status}: ${notification.error}`,
+    metadata: {
+      employee_id: assignment.employeeId,
+      notify_status: notification.status,
+      notify_error: notification.error,
+    },
+  });
+
+  return updated.rows[0] || ticket;
 }
 
 async function createOrUpdateTicket(signal) {
@@ -219,12 +293,18 @@ async function createOrUpdateTicket(signal) {
        RETURNING *`,
       [ticket.id, signal.customerName || signal.customer_name || null, nextPriority, summary || null, body || null, assignment?.employeeId || null]
     );
+    let latestTicket = updated.rows[0];
     if (assignment?.employeeId && !ticket.assigned_employee_id) {
       await addTicketEvent(ticket.id, {
         actor_type: 'system',
         event_type: 'assigned',
         body: `Assigned to ${assignment.employeeName}`,
         metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
+      });
+      latestTicket = await recordAssignmentNotification(latestTicket, assignment, {
+        customerPhone,
+        customerName: signal.customerName || signal.customer_name || null,
+        summary,
       });
     }
     if (body) {
@@ -235,7 +315,7 @@ async function createOrUpdateTicket(signal) {
         metadata: { source, category },
       });
     }
-    return updated.rows[0];
+    return latestTicket;
   }
 
   const inserted = await db.query(
@@ -270,6 +350,11 @@ async function createOrUpdateTicket(signal) {
       event_type: 'assigned',
       body: `Assigned to ${assignment.employeeName}`,
       metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
+    });
+    return recordAssignmentNotification(ticket, assignment, {
+      customerPhone,
+      customerName: signal.customerName || signal.customer_name || null,
+      summary,
     });
   }
   return ticket;

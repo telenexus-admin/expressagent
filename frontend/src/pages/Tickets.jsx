@@ -56,6 +56,18 @@ const PRIORITY_STYLES = {
   low: 'bg-slate-50 text-slate-600 border-slate-100',
 };
 
+const NOTIFY_LABELS = {
+  sent: 'Alert sent',
+  skipped: 'Alert skipped',
+  failed: 'Alert failed',
+};
+
+const NOTIFY_STYLES = {
+  sent: 'border-emerald-100 bg-emerald-50 text-emerald-700',
+  skipped: 'border-slate-100 bg-slate-50 text-slate-600',
+  failed: 'border-red-100 bg-red-50 text-red-700',
+};
+
 function formatDate(value) {
   if (!value) return '';
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -217,6 +229,13 @@ export default function Tickets() {
                 <div className="mt-3 text-[11px] font-black text-slate-500">
                   Assigned: <span className="text-slate-700">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</span>
                 </div>
+                {ticket.assignment_notify_status && (
+                  <div className="mt-2">
+                    <Pill className={NOTIFY_STYLES[ticket.assignment_notify_status] || NOTIFY_STYLES.skipped}>
+                      {NOTIFY_LABELS[ticket.assignment_notify_status] || ticket.assignment_notify_status}
+                    </Pill>
+                  </div>
+                )}
                 <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-slate-500">{ticket.summary || ticket.last_message || 'No summary yet'}</p>
                 <div className="mt-3 text-[11px] font-semibold text-slate-400">Updated {formatDate(ticket.updated_at)}</div>
               </button>
@@ -244,6 +263,7 @@ export default function Tickets() {
                       <div><span className="font-black text-slate-700">Customer:</span> {selectedTicket.customer_name || 'Unknown'}</div>
                       <div><span className="font-black text-slate-700">Phone:</span> +{selectedTicket.customer_phone}</div>
                       <div><span className="font-black text-slate-700">Assigned:</span> {selectedTicket.assigned_employee_name || selectedTicket.assigned_admin_name || 'Unassigned'}</div>
+                      <div><span className="font-black text-slate-700">Employee alert:</span> {NOTIFY_LABELS[selectedTicket.assignment_notify_status] || selectedTicket.assignment_notify_status || 'Not sent'}</div>
                       <div><span className="font-black text-slate-700">Source:</span> {selectedTicket.source}</div>
                       <div><span className="font-black text-slate-700">Opened:</span> {formatDate(selectedTicket.opened_at)}</div>
                     </div>

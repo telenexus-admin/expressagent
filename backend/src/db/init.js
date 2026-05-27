@@ -182,6 +182,9 @@ const schema = `
     last_message TEXT,
     assigned_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
     assigned_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    assignment_notify_status VARCHAR(20),
+    assignment_notify_error TEXT,
+    assignment_notified_at TIMESTAMP WITH TIME ZONE,
     opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     resolved_at TIMESTAMP WITH TIME ZONE
@@ -195,6 +198,11 @@ const schema = `
   ALTER TABLE tickets ADD CONSTRAINT tickets_status_check CHECK (status IN ('open', 'in_progress', 'waiting_customer', 'resolved', 'closed'));
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_source_check;
   ALTER TABLE tickets ADD CONSTRAINT tickets_source_check CHECK (source IN ('whatsapp_meta', 'whatsapp_evolution', 'admin', 'system'));
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_status VARCHAR(20);
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_error TEXT;
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notified_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_assignment_notify_status_check;
+  ALTER TABLE tickets ADD CONSTRAINT tickets_assignment_notify_status_check CHECK (assignment_notify_status IS NULL OR assignment_notify_status IN ('sent', 'skipped', 'failed'));
 
   CREATE TABLE IF NOT EXISTS ticket_events (
     id SERIAL PRIMARY KEY,

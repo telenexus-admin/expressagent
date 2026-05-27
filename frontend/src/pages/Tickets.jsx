@@ -214,6 +214,9 @@ export default function Tickets() {
                   <Pill className="border-purple-100 bg-purple-50 text-purple-700">{CATEGORY_LABELS[ticket.category] || ticket.category}</Pill>
                   <Pill className="border-slate-100 bg-slate-50 text-slate-600">{STATUS_LABELS[ticket.status] || ticket.status}</Pill>
                 </div>
+                <div className="mt-3 text-[11px] font-black text-slate-500">
+                  Assigned: <span className="text-slate-700">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</span>
+                </div>
                 <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-slate-500">{ticket.summary || ticket.last_message || 'No summary yet'}</p>
                 <div className="mt-3 text-[11px] font-semibold text-slate-400">Updated {formatDate(ticket.updated_at)}</div>
               </button>
@@ -240,6 +243,7 @@ export default function Tickets() {
                     <div className="mt-4 grid gap-2 text-xs text-slate-500 sm:grid-cols-2">
                       <div><span className="font-black text-slate-700">Customer:</span> {selectedTicket.customer_name || 'Unknown'}</div>
                       <div><span className="font-black text-slate-700">Phone:</span> +{selectedTicket.customer_phone}</div>
+                      <div><span className="font-black text-slate-700">Assigned:</span> {selectedTicket.assigned_employee_name || selectedTicket.assigned_admin_name || 'Unassigned'}</div>
                       <div><span className="font-black text-slate-700">Source:</span> {selectedTicket.source}</div>
                       <div><span className="font-black text-slate-700">Opened:</span> {formatDate(selectedTicket.opened_at)}</div>
                     </div>

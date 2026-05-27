@@ -131,6 +131,7 @@ router.post('/client/:clientId', async (req, res) => {
         title: 'Human support requested',
         category: 'human_support',
         priority: 'high',
+        intent: 'human_request',
         source: 'whatsapp_evolution',
         summary: userText,
         messageText: userText,

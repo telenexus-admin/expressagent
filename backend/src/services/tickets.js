@@ -106,12 +106,40 @@ function categoryFromIntent(intent) {
   return map[intent] || null;
 }
 
+function intentFromCategory(category) {
+  const map = {
+    technical: 'technical_issue',
+    billing: 'payment_billing',
+    installation: 'new_installation',
+    human_support: 'human_request',
+  };
+  return map[category] || null;
+}
+
 function categoryFromComplaint(complaint) {
   const category = clean(complaint?.category, 'complaint').toLowerCase();
   if (['connectivity', 'speed', 'hardware'].includes(category)) return 'technical';
   if (category === 'billing') return 'billing';
   if (category === 'support') return 'human_support';
   return 'complaint';
+}
+
+async function findWorkflowAssignment(clientId, category, intent) {
+  const intentKey = intent || intentFromCategory(category);
+  if (!intentKey) return null;
+  const result = await db.query(
+    `SELECT e.id, e.name
+     FROM workflow_routes wr
+     JOIN employees e ON e.id = wr.employee_id
+     WHERE wr.client_id = $1
+       AND wr.intent_key = $2
+       AND wr.is_enabled = TRUE
+       AND e.is_active = TRUE
+     LIMIT 1`,
+    [clientId, intentKey]
+  );
+  const employee = result.rows[0];
+  return employee ? { employeeId: employee.id, employeeName: employee.name, intentKey } : null;
 }
 
 function titleForCategory(category) {
@@ -158,6 +186,7 @@ async function createOrUpdateTicket(signal) {
   const body = clean(signal.messageText || signal.last_message || signal.summary);
   const source = clean(signal.source, 'system');
   const summary = clean(signal.summary, body || title);
+  const assignment = await findWorkflowAssignment(clientId, category, signal.intent);
 
   const params = [clientId, category];
   let lookup = `client_id = $1 AND category = $2 AND status = ANY($${params.length + 1}::text[])`;
@@ -184,11 +213,20 @@ async function createOrUpdateTicket(signal) {
            priority = $3,
            summary = COALESCE($4, summary),
            last_message = COALESCE($5, last_message),
+           assigned_employee_id = COALESCE(assigned_employee_id, $6),
            updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [ticket.id, signal.customerName || signal.customer_name || null, nextPriority, summary || null, body || null]
+      [ticket.id, signal.customerName || signal.customer_name || null, nextPriority, summary || null, body || null, assignment?.employeeId || null]
     );
+    if (assignment?.employeeId && !ticket.assigned_employee_id) {
+      await addTicketEvent(ticket.id, {
+        actor_type: 'system',
+        event_type: 'assigned',
+        body: `Assigned to ${assignment.employeeName}`,
+        metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
+      });
+    }
     if (body) {
       await addTicketEvent(ticket.id, {
         actor_type: 'customer',
@@ -202,8 +240,8 @@ async function createOrUpdateTicket(signal) {
 
   const inserted = await db.query(
     `INSERT INTO tickets
-       (client_id, conversation_id, customer_phone, customer_name, title, category, priority, status, source, summary, last_message)
-     VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $10)
+       (client_id, conversation_id, customer_phone, customer_name, title, category, priority, status, source, summary, last_message, assigned_employee_id)
+     VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', $8, $9, $10, $11)
      RETURNING *`,
     [
       clientId,
@@ -216,6 +254,7 @@ async function createOrUpdateTicket(signal) {
       source,
       summary || null,
       body || null,
+      assignment?.employeeId || null,
     ]
   );
   const ticket = inserted.rows[0];
@@ -225,6 +264,14 @@ async function createOrUpdateTicket(signal) {
     body,
     metadata: { source, category, priority },
   });
+  if (assignment?.employeeId) {
+    await addTicketEvent(ticket.id, {
+      actor_type: 'system',
+      event_type: 'assigned',
+      body: `Assigned to ${assignment.employeeName}`,
+      metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
+    });
+  }
   return ticket;
 }
 
@@ -240,6 +287,7 @@ async function ticketFromIntent({ client, conversation, intent, messageText, sou
     title: titleForCategory(category),
     category,
     priority,
+    intent,
     source,
     summary: messageText,
     messageText,
@@ -257,6 +305,7 @@ async function ticketFromComplaint({ client, conversation, complaint, messageTex
     title: titleForCategory(category),
     category,
     priority: category === 'technical' || category === 'human_support' ? 'high' : 'normal',
+    intent: intentFromCategory(category),
     source,
     summary: complaint.summary || messageText,
     messageText,
@@ -270,4 +319,5 @@ module.exports = {
   ticketFromIntent,
   ticketFromComplaint,
   categoryFromIntent,
+  intentFromCategory,
 };

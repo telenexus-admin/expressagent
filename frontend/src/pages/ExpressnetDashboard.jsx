@@ -9,6 +9,7 @@ import {
 } from '../components/Icons';
 import GlobalConversationSearch from '../components/GlobalConversationSearch';
 import InstallAppButton from '../components/InstallAppButton';
+import PushNotificationsButton from '../components/PushNotificationsButton';
 import expressnetLogo from '../assets/expressnetLogo';
 
 function canAccess(admin, permission) {
@@ -106,7 +107,7 @@ export default function ExpressnetDashboard() {
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
           <div className="px-6 pt-5 pb-5"><ExpressnetBrand /></div>
           <nav className="no-visible-scrollbar pl-5 pr-0 space-y-1 flex-1 overflow-y-auto pb-5">{nav.map((item) => itemButton(item))}</nav>
-          <div className="px-6 pb-6 pt-3"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+          <div className="px-6 pb-6 pt-3"><InstallAppButton /><PushNotificationsButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
         </aside>
         <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <header className="h-[84px] shrink-0 px-4 sm:px-7 lg:px-9 flex items-center justify-between gap-5">
@@ -124,7 +125,7 @@ export default function ExpressnetDashboard() {
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-4 border-b border-white/10 flex items-center justify-between gap-3"><ExpressnetBrand compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
         <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 space-y-1">{nav.map((item) => itemButton(item, true))}</nav>
-        <div className="px-4 pt-3 pb-4 border-t border-white/10"><InstallAppButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+        <div className="px-4 pt-3 pb-4 border-t border-white/10"><InstallAppButton /><PushNotificationsButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
       </aside>
     </div>
   );

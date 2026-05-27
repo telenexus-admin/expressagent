@@ -242,6 +242,20 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_tickets_conversation ON tickets(conversation_id);
   CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id, created_at ASC);
 
+  CREATE TABLE IF NOT EXISTS admin_push_subscriptions (
+    id SERIAL PRIMARY KEY,
+    admin_id INTEGER NOT NULL REFERENCES admins(id) ON DELETE CASCADE,
+    client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    endpoint TEXT NOT NULL UNIQUE,
+    subscription JSONB NOT NULL,
+    user_agent TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_admin ON admin_push_subscriptions(admin_id);
+  CREATE INDEX IF NOT EXISTS idx_push_subscriptions_client ON admin_push_subscriptions(client_id);
+
   CREATE INDEX IF NOT EXISTS idx_conversations_phone ON conversations(customer_phone);
   CREATE INDEX IF NOT EXISTS idx_conversations_status ON conversations(status);
   CREATE INDEX IF NOT EXISTS idx_conversations_client ON conversations(client_id);

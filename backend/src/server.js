@@ -14,6 +14,7 @@ const workflowRoutes = require('./routes/workflows');
 const activityRoutes = require('./routes/activity');
 const reportRoutes = require('./routes/reports');
 const ticketRoutes = require('./routes/tickets');
+const pushRoutes = require('./routes/pushNotifications');
 const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
 const evoSelfOnboardingRoutes = require('./routes/evoSelfOnboarding');
@@ -53,6 +54,7 @@ app.use('/api/workflows', workflowRoutes);
 app.use('/api/activity', activityRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/tickets', ticketRoutes);
+app.use('/api/push', pushRoutes);
 app.use('/api/operator-agent', operatorAgentRoutes);
 app.use('/api/operator-evolution', operatorEvolutionRoutes);
 

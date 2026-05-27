@@ -4,6 +4,7 @@ const { generateAIResponse, transcribeAudio, classifyComplaint, classifyIntent }
 const { parseEvolutionInbound } = require('../services/evolution');
 const { sendClientText, downloadClientAudio } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
+const { notifyClientAdmins } = require('../services/pushNotifications');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -108,6 +109,13 @@ router.post('/client/:clientId', async (req, res) => {
 
     const conversation = await findOrCreateConversation(client.id, incoming.phone, incoming.name);
     await saveMessage(conversation.id, 'user', storedText);
+    runAfterReply('Push notification for inbound Evolution message', () => notifyClientAdmins({
+      clientId: client.id,
+      conversationId: conversation.id,
+      customerName: conversation.customer_name,
+      customerPhone: incoming.phone,
+      messageText: storedText,
+    }));
     console.log(`[evo client ${client.id}] Incoming from ${incoming.phone}: "${userText}"`);
 
     const normalized = userText.toLowerCase();

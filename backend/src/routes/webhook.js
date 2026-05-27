@@ -11,6 +11,7 @@ const {
 const { sendSMS } = require('../services/sms');
 const { sendInstallationRequestEmail } = require('../services/email');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
+const { notifyClientAdmins } = require('../services/pushNotifications');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -373,6 +374,13 @@ router.post('/', async (req, res) => {
       );
     }
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
+    runAfterReply('Push notification for inbound Meta message', () => notifyClientAdmins({
+      clientId: client.id,
+      conversationId: conversation.id,
+      customerName: conversation.customer_name,
+      customerPhone: phoneNumber,
+      messageText: persistedMessageText,
+    }));
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NULL WHERE id = $1`, [conversation.id]);

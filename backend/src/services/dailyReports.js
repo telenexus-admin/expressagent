@@ -113,9 +113,23 @@ async function buildMetrics(clientId, reportDate) {
     outcome: row.resolved_at ? 'resolved' : row.admin_replies > 0 ? 'followed_up' : 'pending_follow_up',
   }));
 
+  let feedbackReviews = 0;
+  const remarksTable = await db.query(`SELECT to_regclass('public.client_remarks') AS table_name`);
+  if (remarksTable.rows[0]?.table_name) {
+    const feedback = await db.query(
+      `SELECT COUNT(*) FILTER (WHERE response_key IS NOT NULL)::int AS feedback_reviews
+       FROM client_remarks
+       WHERE client_id = $1
+         AND (responded_at AT TIME ZONE $2)::date = $3::date`,
+      [clientId, TIME_ZONE, reportDate]
+    );
+    feedbackReviews = feedback.rows[0]?.feedback_reviews || 0;
+  }
+
   return {
     ...metrics.rows[0],
     ...cases.rows[0],
+    feedback_reviews: feedbackReviews,
     replies_after_handover: escalationFollowUp.rows[0]?.replies_after_handover || 0,
     handovers_followed_up: details.filter((row) => row.outcome === 'followed_up').length,
     handovers_unattended: details.filter((row) => row.outcome === 'pending_follow_up').length,
@@ -123,16 +137,51 @@ async function buildMetrics(clientId, reportDate) {
   };
 }
 
+function mainIssue(metrics) {
+  const items = [
+    { label: 'installation requests', count: Number(metrics.installations) || 0 },
+    { label: 'service complaints', count: Number(metrics.complaints) || 0 },
+    { label: 'requests for human support', count: Number(metrics.handovers) || 0 },
+  ].sort((a, b) => b.count - a.count);
+
+  if (items[0].count > 0) return items[0].label;
+  if ((Number(metrics.customer_messages) || 0) > 0) return 'general support questions';
+  return 'low customer activity';
+}
+
+function engagementLevel(metrics) {
+  const customers = Number(metrics.customers_texted) || 0;
+  if (customers >= 30) return 'high';
+  if (customers >= 8) return 'moderate';
+  return 'low';
+}
+
+function customerMood(metrics) {
+  const complaints = Number(metrics.complaints) || 0;
+  const handovers = Number(metrics.handovers) || 0;
+  const customers = Number(metrics.customers_texted) || 0;
+  if (customers === 0) return 'quiet';
+  if (complaints + handovers > customers / 2) return 'concerned';
+  if (complaints > 0 || handovers > 0) return 'mixed';
+  return 'positive';
+}
+
 function formatReport(client, reportDate, metrics) {
   const business = client.business_name || client.name || 'ISP';
+  const agentName = (client.agent_name || '').trim() || 'AI Customer Support Agent';
   return [
-    `${business} Daily Report - ${reportDate}`,
-    `Customers engaged: ${metrics.customers_texted} (${metrics.customer_messages} msgs)`,
-    `AI handled: ${metrics.ai_cases_handled} cases / ${metrics.ai_replies} replies`,
-    `Forwarded to human: ${metrics.handovers}`,
-    `Human outcome: ${metrics.handovers_resolved} resolved, ${metrics.handovers_followed_up} replied/open, ${metrics.handovers_unattended} no reply`,
-    `Installations: ${metrics.installations} | Complaints: ${metrics.complaints}`,
-    `View dashboard for case details. - Nexa`,
+    `Good evening Boss,`,
+    ``,
+    `Here is today's customer engagement report for *${business}*:`,
+    ``,
+    `👥 Clients assisted: *${metrics.customers_texted || 0}*`,
+    `💬 Total replies sent: *${metrics.ai_replies || 0}*`,
+    `🤝 Handovers to human support: *${metrics.handovers || 0}*`,
+    `⭐ Clients who gave feedback/reviews: *${metrics.feedback_reviews || 0}*`,
+    ``,
+    `📌 Insight: Today, most clients contacted us about *${mainIssue(metrics)}*. Engagement was *${engagementLevel(metrics)}*, and customers generally showed *${customerMood(metrics)}* responses toward our services.`,
+    ``,
+    `— ${agentName}, AI Customer Support Agent`,
   ].join('\n');
 }
 
@@ -190,7 +239,7 @@ async function runDueReports() {
     if (clock.hour < 20) return;
     const reportDate = nairobiDate();
     const clients = await db.query(
-      `SELECT id, name, business_name, support_number, daily_report_phone
+      `SELECT id, name, business_name, support_number, daily_report_phone, agent_name
        FROM clients
        WHERE status = 'active' AND daily_report_enabled = TRUE`
     );

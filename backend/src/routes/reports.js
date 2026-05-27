@@ -19,7 +19,7 @@ function cleanPhone(phone) {
 
 async function loadClient(id) {
   const result = await db.query(
-    `SELECT id, name, business_name, support_number, daily_report_enabled, daily_report_phone
+    `SELECT id, name, business_name, support_number, daily_report_enabled, daily_report_phone, agent_name
      FROM clients WHERE id = $1`,
     [id]
   );

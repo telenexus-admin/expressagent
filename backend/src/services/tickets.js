@@ -6,6 +6,7 @@ let schemaReady = false;
 
 const OPEN_STATUSES = ['open', 'in_progress', 'waiting_customer'];
 const PRIORITY_RANK = { low: 1, normal: 2, high: 3, urgent: 4 };
+const URGENT_SIGNAL_RE = /\b(urgent|emergency|asap|immediately|critical|serious|down|offline|outage|no\s+internet|not\s+working|not\s+connecting|cannot\s+connect|can't\s+connect|los|red\s+light|business\s+is\s+down)\b/i;
 
 async function ensureTicketSchema() {
   if (schemaReady) return;
@@ -124,6 +125,13 @@ function strongerPriority(current, next) {
   const currentValue = normalizePriority(current);
   const nextValue = normalizePriority(next);
   return PRIORITY_RANK[nextValue] > PRIORITY_RANK[currentValue] ? nextValue : currentValue;
+}
+
+function priorityForSignal(category, messageText, fallback = 'normal') {
+  const text = String(messageText || '');
+  if (URGENT_SIGNAL_RE.test(text)) return 'urgent';
+  if (category === 'technical' || category === 'human_support') return 'high';
+  return normalizePriority(fallback);
 }
 
 function categoryFromIntent(intent) {
@@ -459,7 +467,7 @@ async function createOrUpdateTicket(signal) {
 async function ticketFromIntent({ client, conversation, intent, messageText, source }) {
   const category = categoryFromIntent(intent);
   if (!category || category === 'feedback') return null;
-  const priority = category === 'human_support' ? 'high' : 'normal';
+  const priority = priorityForSignal(category, messageText);
   return createOrUpdateTicket({
     clientId: client.id,
     conversationId: conversation.id,
@@ -478,6 +486,7 @@ async function ticketFromIntent({ client, conversation, intent, messageText, sou
 async function ticketFromComplaint({ client, conversation, complaint, messageText, source }) {
   if (!complaint?.isComplaint) return null;
   const category = categoryFromComplaint(complaint);
+  const priority = priorityForSignal(category, messageText, category === 'complaint' ? 'high' : 'normal');
   return createOrUpdateTicket({
     clientId: client.id,
     conversationId: conversation.id,
@@ -485,7 +494,7 @@ async function ticketFromComplaint({ client, conversation, complaint, messageTex
     customerName: conversation.customer_name,
     title: titleForCategory(category),
     category,
-    priority: category === 'technical' || category === 'human_support' ? 'high' : 'normal',
+    priority,
     intent: intentFromCategory(category),
     source,
     summary: complaint.summary || messageText,

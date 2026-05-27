@@ -24,6 +24,66 @@ function formatTimestamp(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
 
+function messageText(msg) {
+  if (msg.attachment_media_type === 'image') {
+    return String(msg.content || '').replace(/^\[Image received\]\s*/, '').trim();
+  }
+  return msg.content;
+}
+
+function MessageAttachment({ msg }) {
+  const [src, setSrc] = useState('');
+  const [failed, setFailed] = useState(false);
+
+  useEffect(() => {
+    if (msg.attachment_media_type !== 'image') return undefined;
+
+    let active = true;
+    let objectUrl = '';
+    setFailed(false);
+
+    api
+      .get(`/conversations/messages/${msg.id}/attachment`, { responseType: 'blob' })
+      .then((response) => {
+        if (!active) return;
+        objectUrl = URL.createObjectURL(response.data);
+        setSrc(objectUrl);
+      })
+      .catch(() => {
+        if (active) setFailed(true);
+      });
+
+    return () => {
+      active = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [msg.id, msg.attachment_media_type]);
+
+  if (msg.attachment_media_type !== 'image') return null;
+  if (failed) {
+    return (
+      <div className="rounded-xl border border-gray-200 bg-white/70 px-3 py-2 text-xs text-gray-500">
+        Image unavailable
+      </div>
+    );
+  }
+  if (!src) {
+    return (
+      <div className="h-32 w-52 max-w-full animate-pulse rounded-xl bg-black/10" />
+    );
+  }
+
+  return (
+    <a href={src} target="_blank" rel="noreferrer" className="block">
+      <img
+        src={src}
+        alt={msg.attachment_filename || 'Customer attachment'}
+        className="max-h-80 w-auto max-w-full rounded-xl border border-black/5 object-contain"
+      />
+    </a>
+  );
+}
+
 export default function ChatView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -278,6 +338,7 @@ export default function ChatView() {
         )}
         {messages.map((msg) => {
           const style = BUBBLE[msg.role] || BUBBLE.user;
+          const text = messageText(msg);
           return (
             <div key={msg.id} className={`flex ${style.wrap}`}>
               <div className="max-w-[85%] sm:max-w-[70%]">
@@ -289,7 +350,12 @@ export default function ChatView() {
                     : `Admin — ${msg.sender_name || 'Unknown'}`}
                 </div>
                 <div className={`px-4 py-2.5 rounded-2xl text-sm leading-relaxed shadow-sm ${style.bubble}`}>
-                  {msg.content}
+                  <MessageAttachment msg={msg} />
+                  {text && (
+                    <div className={msg.attachment_media_type === 'image' ? 'mt-2' : ''}>
+                      {text}
+                    </div>
+                  )}
                 </div>
                 <div className={`text-[10px] text-gray-400 mt-1 ${msg.role !== 'user' ? 'text-right' : ''}`}>
                   {formatTimestamp(msg.timestamp)}

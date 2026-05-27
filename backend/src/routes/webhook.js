@@ -148,6 +148,12 @@ function stripInstallMarker(text) {
   return text.replace(INSTALL_MARKER_RE, '').trim();
 }
 
+function imageFilename(mimeType) {
+  const subtype = String(mimeType || 'image/jpeg').split('/')[1]?.split(';')[0] || 'jpg';
+  const safeSubtype = subtype.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
+  return `whatsapp-image.${safeSubtype === 'jpeg' ? 'jpg' : safeSubtype}`;
+}
+
 const INSTALL_REGEX = new RegExp(
   [
     '\\b(want|need|looking for|book|schedule|please|can\\s*(?:you|i)|how\\s*(?:do|to))\\b' +
@@ -296,7 +302,24 @@ router.post('/', async (req, res) => {
     const persistedMessageText = inboundIsImage
       ? `[Image received] ${inboundImageCaption || 'Customer sent a router/support photo for checking.'}`
       : messageText;
-    await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'user', $2, $3)`, [conversation.id, persistedMessageText, timestamp]);
+    const storedMessage = await db.query(
+      `INSERT INTO messages (conversation_id, role, content, timestamp)
+       VALUES ($1, 'user', $2, $3)
+       RETURNING id`,
+      [conversation.id, persistedMessageText, timestamp]
+    );
+    if (inboundIsImage && inboundImageBuffer) {
+      await db.query(
+        `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)
+         VALUES ($1, 'image', $2, $3, $4)`,
+        [
+          storedMessage.rows[0].id,
+          inboundImageMimeType || 'image/jpeg',
+          imageFilename(inboundImageMimeType),
+          inboundImageBuffer,
+        ]
+      );
+    }
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversation.id]);
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {

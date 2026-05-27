@@ -18,6 +18,14 @@ function formatErr(err) {
     : (err.response?.data || err.message || 'unknown error');
 }
 
+function runAfterReply(label, task) {
+  setImmediate(() => {
+    task().catch((err) => {
+      console.error(`${label} failed:`, err.message || err);
+    });
+  });
+}
+
 async function notifySupport(client, supportNumber, message) {
   if (!supportNumber) {
     return { notifyStatus: 'no_support_number', notifyError: null };
@@ -394,7 +402,7 @@ router.post('/', async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'human')`,
         [conversation.id, client.id, phoneNumber, conversation.customer_name, messageText, supportNumber || null, notifyStatus, notifyError]
       );
-      await createOrUpdateTicket({
+      runAfterReply('Human support ticket creation', () => createOrUpdateTicket({
         clientId: client.id,
         conversationId: conversation.id,
         customerPhone: phoneNumber,
@@ -406,7 +414,7 @@ router.post('/', async (req, res) => {
         source: 'whatsapp_meta',
         summary: messageText,
         messageText,
-      });
+      }));
       const reply = supportNumber
         ? "Thanks — I've forwarded your request to our customer support team. Someone will reach out to you shortly."
         : "Thanks — I've flagged your request for our team. Someone will reach out to you shortly.";
@@ -466,11 +474,7 @@ router.post('/', async (req, res) => {
     const classificationText = inboundIsImage
       ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
       : messageText;
-    const [aiResponse, complaint, intentResult] = await Promise.all([
-      aiTask,
-      classifyComplaint(classificationText),
-      classifyIntent(classificationText),
-    ]);
+    const aiResponse = await aiTask;
 
     let customerReply = aiResponse;
     const markerMatch = aiResponse.match(INSTALL_MARKER_RE);
@@ -506,7 +510,7 @@ router.post('/', async (req, res) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'installation', $10, $11)`,
           [conversation.id, client.id, phoneNumber, installName, installEmail, `Plan: ${installPlan} | Location: ${installLocation}`, supportNumber || null, notifyStatus, notifyError, emailResult.status, emailResult.error]
         );
-        await createOrUpdateTicket({
+        runAfterReply('Installation ticket creation', () => createOrUpdateTicket({
           clientId: client.id,
           conversationId: conversation.id,
           customerPhone: phoneNumber,
@@ -518,7 +522,7 @@ router.post('/', async (req, res) => {
           source: 'whatsapp_meta',
           summary: `Plan: ${installPlan} | Location: ${installLocation} | Email: ${installEmail}`,
           messageText: classificationText,
-        });
+        }));
         await db.query(`UPDATE conversations SET installation_state = 'submitted', customer_name = COALESCE($1, customer_name) WHERE id = $2`, [installName || null, conversation.id]);
         installationState = 'submitted';
         const firstName = installName.split(/\s+/)[0];
@@ -536,35 +540,6 @@ router.post('/', async (req, res) => {
     }
     customerReply = stripInstallMarker(customerReply);
 
-    if (intentResult && intentResult.intent) {
-      await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText: classificationText, phoneNumber });
-      await ticketFromIntent({
-        client,
-        conversation: { ...conversation, customer_phone: phoneNumber },
-        intent: intentResult.intent,
-        messageText: classificationText,
-        source: 'whatsapp_meta',
-      });
-    }
-    if (complaint && complaint.isComplaint && complaint.summary) {
-      try {
-        await db.query(
-          `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, support_number, notify_status, notify_error, type, summary)
-           VALUES ($1, $2, $3, $4, $5, NULL, 'logged', NULL, 'complaint', $6)`,
-          [conversation.id, client.id, phoneNumber, conversation.customer_name, `[${complaint.category}] ${classificationText}`, complaint.summary]
-        );
-      } catch (err) {
-        console.error('Failed to log complaint:', err.message);
-      }
-      await ticketFromComplaint({
-        client,
-        conversation: { ...conversation, customer_phone: phoneNumber },
-        complaint,
-        messageText: classificationText,
-        source: 'whatsapp_meta',
-      });
-    }
-
     if (inboundIsVoice) {
       await deliverReply(client, phoneNumber, customerReply, true, voiceId);
       await persistOutgoing(conversation.id, customerReply);
@@ -574,6 +549,41 @@ router.post('/', async (req, res) => {
       await persistOutgoing(conversation.id, customerReply);
       console.log(inboundIsImage ? `AI image-guided reply sent to ${phoneNumber}.` : `AI reply sent to ${phoneNumber}.`);
     }
+
+    runAfterReply('Post-reply ticket workflow', async () => {
+      const [complaint, intentResult] = await Promise.all([
+        classifyComplaint(classificationText),
+        classifyIntent(classificationText),
+      ]);
+      if (intentResult && intentResult.intent) {
+        await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText: classificationText, phoneNumber });
+        await ticketFromIntent({
+          client,
+          conversation: { ...conversation, customer_phone: phoneNumber },
+          intent: intentResult.intent,
+          messageText: classificationText,
+          source: 'whatsapp_meta',
+        });
+      }
+      if (complaint && complaint.isComplaint && complaint.summary) {
+        try {
+          await db.query(
+            `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, support_number, notify_status, notify_error, type, summary)
+             VALUES ($1, $2, $3, $4, $5, NULL, 'logged', NULL, 'complaint', $6)`,
+            [conversation.id, client.id, phoneNumber, conversation.customer_name, `[${complaint.category}] ${classificationText}`, complaint.summary]
+          );
+        } catch (err) {
+          console.error('Failed to log complaint:', err.message);
+        }
+        await ticketFromComplaint({
+          client,
+          conversation: { ...conversation, customer_phone: phoneNumber },
+          complaint,
+          messageText: classificationText,
+          source: 'whatsapp_meta',
+        });
+      }
+    });
   } catch (err) {
     console.error('Error processing webhook:', err.message);
   }

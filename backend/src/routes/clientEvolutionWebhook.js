@@ -14,6 +14,14 @@ function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
 }
 
+function runAfterReply(label, task) {
+  setImmediate(() => {
+    task().catch((err) => {
+      console.error(`${label} failed:`, safeError(err));
+    });
+  });
+}
+
 function audioFilename(mimeType) {
   if (String(mimeType || '').includes('mpeg')) return 'voice-note.mp3';
   if (String(mimeType || '').includes('mp4')) return 'voice-note.m4a';
@@ -123,7 +131,7 @@ router.post('/client/:clientId', async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, 'logged', NULL, 'human')`,
         [conversation.id, client.id, incoming.phone, conversation.customer_name, userText, client.support_number || null]
       );
-      await createOrUpdateTicket({
+      runAfterReply('Evolution human support ticket creation', () => createOrUpdateTicket({
         clientId: client.id,
         conversationId: conversation.id,
         customerPhone: incoming.phone,
@@ -135,7 +143,7 @@ router.post('/client/:clientId', async (req, res) => {
         source: 'whatsapp_evolution',
         summary: userText,
         messageText: userText,
-      });
+      }));
       const answer = client.support_number
         ? `Thanks — I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
         : "Thanks — I've flagged your request for the support team. Someone will follow up shortly.";
@@ -160,32 +168,34 @@ router.post('/client/:clientId', async (req, res) => {
     if (client.support_number) {
       prompt += `\n\nWhen a human is required, tell the customer they can reach support at ${client.support_number}.`;
     }
-    const [aiReply, complaint, intentResult] = await Promise.all([
-      generateAIResponse(prompt, recent.rows),
-      classifyComplaint(userText),
-      classifyIntent(userText),
-    ]);
-    if (intentResult?.intent) {
-      await ticketFromIntent({
-        client,
-        conversation,
-        intent: intentResult.intent,
-        messageText: userText,
-        source: 'whatsapp_evolution',
-      });
-    }
-    if (complaint?.isComplaint) {
-      await ticketFromComplaint({
-        client,
-        conversation,
-        complaint,
-        messageText: userText,
-        source: 'whatsapp_evolution',
-      });
-    }
+    const aiReply = await generateAIResponse(prompt, recent.rows);
     if (!aiReply || !aiReply.trim()) return;
     await reply(client, conversation.id, incoming.phone, aiReply.trim());
     console.log(`[evo client ${client.id}] AI reply sent to ${incoming.phone}.`);
+    runAfterReply('Evolution post-reply ticket workflow', async () => {
+      const [complaint, intentResult] = await Promise.all([
+        classifyComplaint(userText),
+        classifyIntent(userText),
+      ]);
+      if (intentResult?.intent) {
+        await ticketFromIntent({
+          client,
+          conversation,
+          intent: intentResult.intent,
+          messageText: userText,
+          source: 'whatsapp_evolution',
+        });
+      }
+      if (complaint?.isComplaint) {
+        await ticketFromComplaint({
+          client,
+          conversation,
+          complaint,
+          messageText: userText,
+          source: 'whatsapp_evolution',
+        });
+      }
+    });
   } catch (err) {
     console.error('Evolution client webhook processing failed:', safeError(err));
   }

@@ -5,7 +5,7 @@ import api from '../utils/api';
 import {
   AgentIcon, BriefcaseIcon, ChartIcon, ChatIcon, CloseIcon, DotsVerticalIcon,
   FlowIcon, HomeIcon, LifebuoyIcon, LogoutIcon, MenuIcon, PulseIcon,
-  UsersIcon, WarningIcon, WrenchIcon,
+  TicketIcon, UsersIcon, WarningIcon, WrenchIcon,
 } from '../components/Icons';
 import GlobalConversationSearch from '../components/GlobalConversationSearch';
 import InstallAppButton from '../components/InstallAppButton';
@@ -30,7 +30,7 @@ export default function ExpressnetDashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const menuRef = useRef(null);
-  const [badges, setBadges] = useState({ conversations: 0, escalations: 0, installations: 0, complaints: 0 });
+  const [badges, setBadges] = useState({ conversations: 0, tickets: 0, escalations: 0, installations: 0, complaints: 0 });
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
@@ -39,13 +39,15 @@ export default function ExpressnetDashboard() {
     let stopped = false;
     async function loadBadges() {
       try {
-        const [conv, human, install, complaint] = await Promise.all([
-          api.get('/conversations'), api.get('/escalations?status=open&type=human'),
+        const [conv, tickets, human, install, complaint] = await Promise.all([
+          api.get('/conversations'),
+          api.get('/tickets/summary'),
+          api.get('/escalations?status=open&type=human'),
           api.get('/escalations?status=open&type=installation'), api.get('/escalations?status=open&type=complaint'),
         ]);
         if (!stopped) setBadges({
           conversations: conv.data.filter((item) => item.status === 'active' || item.status === 'human_takeover').length,
-          escalations: human.data.length, installations: install.data.length, complaints: complaint.data.length,
+          tickets: tickets.data.active || 0, escalations: human.data.length, installations: install.data.length, complaints: complaint.data.length,
         });
       } catch (error) {
         if (error.response?.status !== 401) console.error('Failed to fetch sidebar badges:', error.message);
@@ -70,6 +72,7 @@ export default function ExpressnetDashboard() {
     ['/dashboard/statistics', 'Dashboard', HomeIcon, 'statistics'],
     ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],
     ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
+    ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
     ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
     ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
     ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],

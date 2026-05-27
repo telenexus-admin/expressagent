@@ -25,11 +25,13 @@ import Agent from './pages/Agent';
 import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
+import Tickets from './pages/Tickets';
 import Logs from './pages/Logs';
 
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
+  'tickets',
   'escalations',
   'installations',
   'complaints',
@@ -53,6 +55,7 @@ function firstAllowedPath(admin) {
   const pathMap = {
     statistics: 'statistics',
     conversations: 'conversations',
+    tickets: 'tickets',
     escalations: 'escalations',
     installations: 'installations',
     complaints: 'complaints',
@@ -132,6 +135,7 @@ export default function App() {
             <Route path="conversations" element={<PermissionRoute permission="conversations"><Conversations /></PermissionRoute>}>
               <Route path=":id" element={<ChatView />} />
             </Route>
+            <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
             <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
             <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />

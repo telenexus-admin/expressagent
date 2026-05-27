@@ -1,8 +1,9 @@
 const express = require('express');
 const db = require('../db');
-const { generateAIResponse, transcribeAudio } = require('../services/openai');
+const { generateAIResponse, transcribeAudio, classifyComplaint, classifyIntent } = require('../services/openai');
 const { parseEvolutionInbound } = require('../services/evolution');
 const { sendClientText, downloadClientAudio } = require('../services/clientEvolution');
+const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -122,6 +123,18 @@ router.post('/client/:clientId', async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, 'logged', NULL, 'human')`,
         [conversation.id, client.id, incoming.phone, conversation.customer_name, userText, client.support_number || null]
       );
+      await createOrUpdateTicket({
+        clientId: client.id,
+        conversationId: conversation.id,
+        customerPhone: incoming.phone,
+        customerName: conversation.customer_name,
+        title: 'Human support requested',
+        category: 'human_support',
+        priority: 'high',
+        source: 'whatsapp_evolution',
+        summary: userText,
+        messageText: userText,
+      });
       const answer = client.support_number
         ? `Thanks — I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
         : "Thanks — I've flagged your request for the support team. Someone will follow up shortly.";
@@ -146,7 +159,29 @@ router.post('/client/:clientId', async (req, res) => {
     if (client.support_number) {
       prompt += `\n\nWhen a human is required, tell the customer they can reach support at ${client.support_number}.`;
     }
-    const aiReply = await generateAIResponse(prompt, recent.rows);
+    const [aiReply, complaint, intentResult] = await Promise.all([
+      generateAIResponse(prompt, recent.rows),
+      classifyComplaint(userText),
+      classifyIntent(userText),
+    ]);
+    if (intentResult?.intent) {
+      await ticketFromIntent({
+        client,
+        conversation,
+        intent: intentResult.intent,
+        messageText: userText,
+        source: 'whatsapp_evolution',
+      });
+    }
+    if (complaint?.isComplaint) {
+      await ticketFromComplaint({
+        client,
+        conversation,
+        complaint,
+        messageText: userText,
+        source: 'whatsapp_evolution',
+      });
+    }
     if (!aiReply || !aiReply.trim()) return;
     await reply(client, conversation.id, incoming.phone, aiReply.trim());
     console.log(`[evo client ${client.id}] AI reply sent to ${incoming.phone}.`);

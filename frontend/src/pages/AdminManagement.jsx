@@ -10,6 +10,7 @@ const ROLE_STYLES = {
 const PERMISSION_OPTIONS = [
   { key: 'statistics', label: 'Dashboard' },
   { key: 'conversations', label: 'Conversations' },
+  { key: 'tickets', label: 'Tickets' },
   { key: 'escalations', label: 'Human Handover' },
   { key: 'installations', label: 'Installations' },
   { key: 'complaints', label: 'Complaints' },
@@ -20,7 +21,7 @@ const PERMISSION_OPTIONS = [
   { key: 'agent', label: 'Agent' },
 ];
 
-const DEFAULT_PERMISSIONS = ['statistics', 'conversations'];
+const DEFAULT_PERMISSIONS = ['statistics', 'conversations', 'tickets'];
 
 function permissionLabel(key) {
   return PERMISSION_OPTIONS.find((p) => p.key === key)?.label || key;

@@ -10,6 +10,7 @@ const {
 } = require('../services/whatsapp');
 const { sendSMS } = require('../services/sms');
 const { sendInstallationRequestEmail } = require('../services/email');
+const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -393,6 +394,18 @@ router.post('/', async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'human')`,
         [conversation.id, client.id, phoneNumber, conversation.customer_name, messageText, supportNumber || null, notifyStatus, notifyError]
       );
+      await createOrUpdateTicket({
+        clientId: client.id,
+        conversationId: conversation.id,
+        customerPhone: phoneNumber,
+        customerName: conversation.customer_name,
+        title: 'Human support requested',
+        category: 'human_support',
+        priority: 'high',
+        source: 'whatsapp_meta',
+        summary: messageText,
+        messageText,
+      });
       const reply = supportNumber
         ? "Thanks — I've forwarded your request to our customer support team. Someone will reach out to you shortly."
         : "Thanks — I've flagged your request for our team. Someone will reach out to you shortly.";
@@ -492,6 +505,18 @@ router.post('/', async (req, res) => {
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 'installation', $10, $11)`,
           [conversation.id, client.id, phoneNumber, installName, installEmail, `Plan: ${installPlan} | Location: ${installLocation}`, supportNumber || null, notifyStatus, notifyError, emailResult.status, emailResult.error]
         );
+        await createOrUpdateTicket({
+          clientId: client.id,
+          conversationId: conversation.id,
+          customerPhone: phoneNumber,
+          customerName: installName,
+          title: 'Installation request',
+          category: 'installation',
+          priority: 'normal',
+          source: 'whatsapp_meta',
+          summary: `Plan: ${installPlan} | Location: ${installLocation} | Email: ${installEmail}`,
+          messageText: classificationText,
+        });
         await db.query(`UPDATE conversations SET installation_state = 'submitted', customer_name = COALESCE($1, customer_name) WHERE id = $2`, [installName || null, conversation.id]);
         installationState = 'submitted';
         const firstName = installName.split(/\s+/)[0];
@@ -511,6 +536,13 @@ router.post('/', async (req, res) => {
 
     if (intentResult && intentResult.intent) {
       await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText: classificationText, phoneNumber });
+      await ticketFromIntent({
+        client,
+        conversation: { ...conversation, customer_phone: phoneNumber },
+        intent: intentResult.intent,
+        messageText: classificationText,
+        source: 'whatsapp_meta',
+      });
     }
     if (complaint && complaint.isComplaint && complaint.summary) {
       try {
@@ -522,6 +554,13 @@ router.post('/', async (req, res) => {
       } catch (err) {
         console.error('Failed to log complaint:', err.message);
       }
+      await ticketFromComplaint({
+        client,
+        conversation: { ...conversation, customer_phone: phoneNumber },
+        complaint,
+        messageText: classificationText,
+        source: 'whatsapp_meta',
+      });
     }
 
     if (inboundIsVoice) {

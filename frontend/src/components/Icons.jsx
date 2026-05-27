@@ -31,6 +31,13 @@ export const LifebuoyIcon = makeIcon(
   </>
 );
 
+export const TicketIcon = makeIcon(
+  <>
+    <path d="M4 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v2.2a2.8 2.8 0 0 0 0 5.6V17a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-2.2a2.8 2.8 0 0 0 0-5.6V7Z" />
+    <path d="M9 8h6M9 12h6M9 16h4" />
+  </>
+);
+
 export const PulseIcon = makeIcon(
   <path d="M3 12h3l2-5 4 10 2-5h7" />
 );

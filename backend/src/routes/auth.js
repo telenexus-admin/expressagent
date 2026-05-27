@@ -8,6 +8,7 @@ const db = require('../db');
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
+  'tickets',
   'escalations',
   'installations',
   'complaints',

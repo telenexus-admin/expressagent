@@ -9,6 +9,7 @@ const { logActivity } = require('../services/audit');
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
+  'tickets',
   'escalations',
   'installations',
   'complaints',

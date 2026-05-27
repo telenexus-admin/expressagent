@@ -73,12 +73,15 @@ const schema = `
   CREATE TABLE IF NOT EXISTS message_attachments (
     id SERIAL PRIMARY KEY,
     message_id INTEGER NOT NULL REFERENCES messages(id) ON DELETE CASCADE,
-    media_type VARCHAR(30) NOT NULL CHECK (media_type IN ('image')),
+    media_type VARCHAR(30) NOT NULL CHECK (media_type IN ('image', 'audio')),
     mime_type VARCHAR(100) NOT NULL,
     filename VARCHAR(255),
     data BYTEA NOT NULL,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
+
+  ALTER TABLE message_attachments DROP CONSTRAINT IF EXISTS message_attachments_media_type_check;
+  ALTER TABLE message_attachments ADD CONSTRAINT message_attachments_media_type_check CHECK (media_type IN ('image', 'audio'));
 
   CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,

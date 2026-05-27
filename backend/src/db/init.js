@@ -185,6 +185,12 @@ const schema = `
     assignment_notify_status VARCHAR(20),
     assignment_notify_error TEXT,
     assignment_notified_at TIMESTAMP WITH TIME ZONE,
+    client_alert_sms_status VARCHAR(20),
+    client_alert_sms_error TEXT,
+    client_alert_sms_sent_at TIMESTAMP WITH TIME ZONE,
+    client_alert_email_status VARCHAR(20),
+    client_alert_email_error TEXT,
+    client_alert_email_sent_at TIMESTAMP WITH TIME ZONE,
     opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     resolved_at TIMESTAMP WITH TIME ZONE
@@ -203,6 +209,16 @@ const schema = `
   ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notified_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_assignment_notify_status_check;
   ALTER TABLE tickets ADD CONSTRAINT tickets_assignment_notify_status_check CHECK (assignment_notify_status IS NULL OR assignment_notify_status IN ('sent', 'skipped', 'failed'));
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_sms_status VARCHAR(20);
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_sms_error TEXT;
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_sms_sent_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_email_status VARCHAR(20);
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_email_error TEXT;
+  ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_email_sent_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_client_alert_sms_status_check;
+  ALTER TABLE tickets ADD CONSTRAINT tickets_client_alert_sms_status_check CHECK (client_alert_sms_status IS NULL OR client_alert_sms_status IN ('sent', 'skipped', 'failed'));
+  ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_client_alert_email_status_check;
+  ALTER TABLE tickets ADD CONSTRAINT tickets_client_alert_email_status_check CHECK (client_alert_email_status IS NULL OR client_alert_email_status IN ('sent', 'skipped', 'failed'));
 
   CREATE TABLE IF NOT EXISTS ticket_events (
     id SERIAL PRIMARY KEY,

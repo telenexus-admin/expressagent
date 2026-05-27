@@ -1,5 +1,6 @@
 const db = require('../db');
 const { sendSMS } = require('./sms');
+const { sendHighPriorityTicketEmail } = require('./email');
 
 let schemaReady = false;
 
@@ -27,6 +28,12 @@ async function ensureTicketSchema() {
       assignment_notify_status VARCHAR(20),
       assignment_notify_error TEXT,
       assignment_notified_at TIMESTAMP WITH TIME ZONE,
+      client_alert_sms_status VARCHAR(20),
+      client_alert_sms_error TEXT,
+      client_alert_sms_sent_at TIMESTAMP WITH TIME ZONE,
+      client_alert_email_status VARCHAR(20),
+      client_alert_email_error TEXT,
+      client_alert_email_sent_at TIMESTAMP WITH TIME ZONE,
       opened_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       resolved_at TIMESTAMP WITH TIME ZONE
@@ -54,6 +61,19 @@ async function ensureTicketSchema() {
     ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_assignment_notify_status_check;
     ALTER TABLE tickets ADD CONSTRAINT tickets_assignment_notify_status_check
       CHECK (assignment_notify_status IS NULL OR assignment_notify_status IN ('sent', 'skipped', 'failed'));
+
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_sms_status VARCHAR(20);
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_sms_error TEXT;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_sms_sent_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_email_status VARCHAR(20);
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_email_error TEXT;
+    ALTER TABLE tickets ADD COLUMN IF NOT EXISTS client_alert_email_sent_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_client_alert_sms_status_check;
+    ALTER TABLE tickets ADD CONSTRAINT tickets_client_alert_sms_status_check
+      CHECK (client_alert_sms_status IS NULL OR client_alert_sms_status IN ('sent', 'skipped', 'failed'));
+    ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_client_alert_email_status_check;
+    ALTER TABLE tickets ADD CONSTRAINT tickets_client_alert_email_status_check
+      CHECK (client_alert_email_status IS NULL OR client_alert_email_status IN ('sent', 'skipped', 'failed'));
 
     CREATE TABLE IF NOT EXISTS ticket_events (
       id SERIAL PRIMARY KEY,
@@ -175,6 +195,10 @@ function notificationEnabled() {
   return String(process.env.TICKET_ASSIGNMENT_SMS_ENABLED || '').toLowerCase() === 'true';
 }
 
+function smsConfigured() {
+  return Boolean(process.env.BLESSED_API_KEY && process.env.BLESSED_SENDER_ID);
+}
+
 async function notifyAssignedEmployee({ ticket, assignment, customerPhone, customerName, summary }) {
   if (!assignment?.employeeId) return { status: null, error: null };
   if (!notificationEnabled()) return { status: 'skipped', error: 'Ticket assignment SMS is disabled' };
@@ -196,6 +220,76 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
   } catch (err) {
     return { status: 'failed', error: err.message || 'Failed to send assignment SMS' };
   }
+}
+
+async function loadClientForAlert(clientId) {
+  const result = await db.query(
+    `SELECT id, name, business_name, contact_email, support_number, agent_name
+     FROM clients WHERE id = $1 LIMIT 1`,
+    [clientId]
+  );
+  return result.rows[0] || null;
+}
+
+async function sendClientHighPrioritySms(client, ticket) {
+  if (!client?.support_number) return { status: 'skipped', error: 'Client support number is not set' };
+  if (!smsConfigured()) return { status: 'skipped', error: 'SMS provider is not configured on the server' };
+
+  const link = ticketLink(ticket.id);
+  const message =
+    `High priority ticket created\n\n` +
+    `Ticket #${ticket.id}: ${ticket.title}\n` +
+    `Priority: ${ticket.priority}\n` +
+    `Customer: ${ticket.customer_name || 'Unknown'} (+${ticket.customer_phone})\n` +
+    `Issue: ${ticket.summary || ticket.last_message || 'No summary yet'}` +
+    (link ? `\n\nOpen: ${link}` : '');
+
+  try {
+    await sendSMS(client.support_number, message);
+    return { status: 'sent', error: null };
+  } catch (err) {
+    return { status: 'failed', error: err.message || 'Failed to send client SMS alert' };
+  }
+}
+
+async function recordHighPriorityClientAlerts(ticket) {
+  if (!['high', 'urgent'].includes(ticket.priority)) return ticket;
+  if (ticket.client_alert_sms_status && ticket.client_alert_email_status) return ticket;
+
+  const client = await loadClientForAlert(ticket.client_id);
+  if (!client) return ticket;
+
+  const [smsResult, emailResult] = await Promise.all([
+    sendClientHighPrioritySms(client, ticket),
+    sendHighPriorityTicketEmail(client, ticket),
+  ]);
+
+  const updated = await db.query(
+    `UPDATE tickets
+     SET client_alert_sms_status = $2,
+         client_alert_sms_error = $3,
+         client_alert_sms_sent_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE client_alert_sms_sent_at END,
+         client_alert_email_status = $4,
+         client_alert_email_error = $5,
+         client_alert_email_sent_at = CASE WHEN $4 = 'sent' THEN NOW() ELSE client_alert_email_sent_at END
+     WHERE id = $1
+     RETURNING *`,
+    [ticket.id, smsResult.status, smsResult.error, emailResult.status, emailResult.error]
+  );
+
+  await addTicketEvent(ticket.id, {
+    actor_type: 'system',
+    event_type: 'note',
+    body: `Client high-priority alerts - SMS: ${smsResult.status}, Email: ${emailResult.status}`,
+    metadata: {
+      client_alert_sms_status: smsResult.status,
+      client_alert_sms_error: smsResult.error,
+      client_alert_email_status: emailResult.status,
+      client_alert_email_error: emailResult.error,
+    },
+  });
+
+  return updated.rows[0] || ticket;
 }
 
 async function addTicketEvent(ticketId, event) {
@@ -315,6 +409,7 @@ async function createOrUpdateTicket(signal) {
         metadata: { source, category },
       });
     }
+    latestTicket = await recordHighPriorityClientAlerts(latestTicket);
     return latestTicket;
   }
 
@@ -351,13 +446,14 @@ async function createOrUpdateTicket(signal) {
       body: `Assigned to ${assignment.employeeName}`,
       metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
     });
-    return recordAssignmentNotification(ticket, assignment, {
+    const notified = await recordAssignmentNotification(ticket, assignment, {
       customerPhone,
       customerName: signal.customerName || signal.customer_name || null,
       summary,
     });
+    return recordHighPriorityClientAlerts(notified);
   }
-  return ticket;
+  return recordHighPriorityClientAlerts(ticket);
 }
 
 async function ticketFromIntent({ client, conversation, intent, messageText, source }) {

@@ -232,8 +232,22 @@ export default function Tickets() {
                 {ticket.assignment_notify_status && (
                   <div className="mt-2">
                     <Pill className={NOTIFY_STYLES[ticket.assignment_notify_status] || NOTIFY_STYLES.skipped}>
-                      {NOTIFY_LABELS[ticket.assignment_notify_status] || ticket.assignment_notify_status}
+                      Employee: {NOTIFY_LABELS[ticket.assignment_notify_status] || ticket.assignment_notify_status}
                     </Pill>
+                  </div>
+                )}
+                {(ticket.client_alert_sms_status || ticket.client_alert_email_status) && (
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {ticket.client_alert_sms_status && (
+                      <Pill className={NOTIFY_STYLES[ticket.client_alert_sms_status] || NOTIFY_STYLES.skipped}>
+                        Client SMS: {NOTIFY_LABELS[ticket.client_alert_sms_status] || ticket.client_alert_sms_status}
+                      </Pill>
+                    )}
+                    {ticket.client_alert_email_status && (
+                      <Pill className={NOTIFY_STYLES[ticket.client_alert_email_status] || NOTIFY_STYLES.skipped}>
+                        Client email: {NOTIFY_LABELS[ticket.client_alert_email_status] || ticket.client_alert_email_status}
+                      </Pill>
+                    )}
                   </div>
                 )}
                 <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-slate-500">{ticket.summary || ticket.last_message || 'No summary yet'}</p>
@@ -264,6 +278,8 @@ export default function Tickets() {
                       <div><span className="font-black text-slate-700">Phone:</span> +{selectedTicket.customer_phone}</div>
                       <div><span className="font-black text-slate-700">Assigned:</span> {selectedTicket.assigned_employee_name || selectedTicket.assigned_admin_name || 'Unassigned'}</div>
                       <div><span className="font-black text-slate-700">Employee alert:</span> {NOTIFY_LABELS[selectedTicket.assignment_notify_status] || selectedTicket.assignment_notify_status || 'Not sent'}</div>
+                      <div><span className="font-black text-slate-700">Client SMS:</span> {NOTIFY_LABELS[selectedTicket.client_alert_sms_status] || selectedTicket.client_alert_sms_status || 'Not sent'}</div>
+                      <div><span className="font-black text-slate-700">Client email:</span> {NOTIFY_LABELS[selectedTicket.client_alert_email_status] || selectedTicket.client_alert_email_status || 'Not sent'}</div>
                       <div><span className="font-black text-slate-700">Source:</span> {selectedTicket.source}</div>
                       <div><span className="font-black text-slate-700">Opened:</span> {formatDate(selectedTicket.opened_at)}</div>
                     </div>

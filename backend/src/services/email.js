@@ -92,8 +92,46 @@ async function sendInstallationConfirmedEmail(client, details) {
   });
 }
 
+async function sendHighPriorityTicketEmail(client, ticket) {
+  if (!client.contact_email) return { status: 'skipped', error: 'Client contact email is not set' };
+  if (!isEmailConfigured()) return { status: 'skipped', error: 'Email provider is not configured on the server' };
+
+  const { company, address, from } = emailBrand(client);
+  const link = String(process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+  const ticketUrl = link ? `${link}/dashboard/tickets?ticket=${ticket.id}` : null;
+  const subject = `High Priority Ticket #${ticket.id} - ${company}`;
+  const summary = ticket.summary || ticket.last_message || 'No summary yet';
+
+  return sendViaResend({
+    from,
+    to: [client.contact_email],
+    reply_to: address,
+    subject,
+    text:
+      `A high priority support ticket has been created for ${company}.\n\n` +
+      `Ticket #${ticket.id}: ${ticket.title}\n` +
+      `Priority: ${ticket.priority}\n` +
+      `Customer: ${ticket.customer_name || 'Unknown'} (+${ticket.customer_phone})\n` +
+      `Issue: ${summary}` +
+      (ticketUrl ? `\n\nOpen ticket: ${ticketUrl}` : ''),
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6">` +
+      `<h2 style="color:#b42318">High Priority Ticket Created</h2>` +
+      `<p>A high priority support ticket has been created for <strong>${escapeHtml(company)}</strong>.</p>` +
+      `<div style="background:#fff4ed;border:1px solid #fed7aa;border-radius:14px;padding:16px;margin:18px 0">` +
+      `<strong>Ticket #${ticket.id}: ${escapeHtml(ticket.title)}</strong>` +
+      `<p style="margin:8px 0 0">Priority: ${escapeHtml(ticket.priority)}<br>` +
+      `Customer: ${escapeHtml(ticket.customer_name || 'Unknown')} (+${escapeHtml(ticket.customer_phone)})<br>` +
+      `Issue: ${escapeHtml(summary)}</p>` +
+      `</div>` +
+      (ticketUrl ? `<p><a href="${escapeHtml(ticketUrl)}" style="color:#203fcd;font-weight:bold">Open ticket</a></p>` : '') +
+      `</div>`,
+  });
+}
+
 module.exports = {
   sendInstallationRequestEmail,
   sendInstallationConfirmedEmail,
+  sendHighPriorityTicketEmail,
   isEmailConfigured,
 };

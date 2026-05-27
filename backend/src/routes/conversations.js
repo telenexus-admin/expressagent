@@ -111,10 +111,60 @@ router.get('/:id/messages', async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    const result = await db.query(`SELECT * FROM messages WHERE conversation_id = $1 ORDER BY timestamp ASC`, [req.params.id]);
+    const result = await db.query(
+      `SELECT
+         m.*,
+         a.id AS attachment_id,
+         a.media_type AS attachment_media_type,
+         a.mime_type AS attachment_mime_type,
+         a.filename AS attachment_filename
+       FROM messages m
+       LEFT JOIN LATERAL (
+         SELECT id, media_type, mime_type, filename
+         FROM message_attachments
+         WHERE message_id = m.id
+         ORDER BY id ASC
+         LIMIT 1
+       ) a ON true
+       WHERE m.conversation_id = $1
+       ORDER BY m.timestamp ASC`,
+      [req.params.id]
+    );
     res.json(result.rows);
   } catch (err) {
     console.error('GET messages error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/messages/:messageId/attachment', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT
+         a.mime_type,
+         a.filename,
+         a.data,
+         c.client_id
+       FROM message_attachments a
+       JOIN messages m ON m.id = a.message_id
+       JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.id = $1
+       LIMIT 1`,
+      [req.params.messageId]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Attachment not found' });
+
+    const attachment = result.rows[0];
+    if (!req.scope.isSuperadmin && attachment.client_id !== req.scope.clientId) {
+      return res.status(404).json({ error: 'Attachment not found' });
+    }
+
+    res.setHeader('Content-Type', attachment.mime_type || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'private, max-age=300');
+    res.setHeader('Content-Disposition', `inline; filename="${attachment.filename || 'attachment'}"`);
+    res.send(attachment.data);
+  } catch (err) {
+    console.error('GET message attachment error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

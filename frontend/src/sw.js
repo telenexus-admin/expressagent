@@ -12,12 +12,19 @@ self.addEventListener('push', (event) => {
   }
 
   const title = data.title || 'New customer message';
+  const actions = Array.isArray(data.actions)
+    ? data.actions.slice(0, 2).map((item) => ({ action: item.action, title: item.title }))
+    : [];
   const options = {
     body: data.body || 'Open the dashboard to reply.',
     icon: data.icon || '/pwa-192x192.png',
     badge: data.badge || '/pwa-192x192.png',
     tag: data.tag || 'nexa-message',
-    data: { url: data.url || '/dashboard/conversations' },
+    actions,
+    data: {
+      url: data.url || '/dashboard/conversations',
+      actions: Array.isArray(data.actions) ? data.actions : [],
+    },
   };
 
   event.waitUntil(self.registration.showNotification(title, options));
@@ -28,6 +35,37 @@ self.addEventListener('notificationclick', (event) => {
   const targetUrl = new URL(event.notification.data?.url || '/dashboard/conversations', self.location.origin).href;
 
   event.waitUntil((async () => {
+    if (event.action === 'toggle_ai') {
+      const action = (event.notification.data?.actions || []).find((item) => item.action === 'toggle_ai');
+      if (action?.token) {
+        try {
+          const response = await fetch('/api/push/actions', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ action: 'toggle_ai', token: action.token }),
+          });
+          if (response.ok) {
+            const result = await response.json();
+            await self.registration.showNotification(
+              result.status === 'human_takeover' ? 'AI agent turned off' : 'AI agent turned on',
+              {
+                body: result.status === 'human_takeover'
+                  ? 'The customer will now wait for a human reply.'
+                  : 'The AI agent can reply to this customer again.',
+                icon: '/pwa-192x192.png',
+                badge: '/pwa-192x192.png',
+                tag: `conversation-action-${result.conversation_id}`,
+                data: { url: targetUrl },
+              }
+            );
+            return undefined;
+          }
+        } catch {
+          // Fall through to opening the conversation if the quick action fails.
+        }
+      }
+    }
+
     const windows = await clients.matchAll({ type: 'window', includeUncontrolled: true });
     for (const client of windows) {
       if (client.url.startsWith(self.location.origin) && 'focus' in client) {

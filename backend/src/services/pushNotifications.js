@@ -1,4 +1,5 @@
 const db = require('../db');
+const jwt = require('jsonwebtoken');
 
 let webpush = null;
 try {
@@ -74,12 +75,36 @@ function cleanSnippet(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 140);
 }
 
+function createActionToken({ adminId, clientId, conversationId, targetStatus }) {
+  if (!process.env.JWT_SECRET) return null;
+  return jwt.sign(
+    {
+      type: 'push_action',
+      adminId,
+      clientId,
+      conversationId,
+      targetStatus,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '2d' }
+  );
+}
+
 async function notifyClientAdmins({ clientId, conversationId, customerName, customerPhone, messageText }) {
   await ensurePushSchema();
   if (!configurePush()) return { status: 'skipped', reason: 'Web push is not configured' };
 
+  let conversationStatus = 'active';
+  if (conversationId) {
+    const conversation = await db.query(
+      `SELECT status FROM conversations WHERE id = $1 AND client_id = $2 LIMIT 1`,
+      [conversationId, clientId]
+    );
+    conversationStatus = conversation.rows[0]?.status || 'active';
+  }
+
   const result = await db.query(
-    `SELECT ps.id, ps.endpoint, ps.subscription
+    `SELECT ps.id, ps.admin_id, ps.endpoint, ps.subscription
      FROM admin_push_subscriptions ps
      JOIN admins a ON a.id = ps.admin_id
      WHERE a.role = 'superadmin'
@@ -88,18 +113,37 @@ async function notifyClientAdmins({ clientId, conversationId, customerName, cust
   );
 
   const title = customerName ? `New message from ${customerName}` : `New message from +${customerPhone}`;
-  const payload = JSON.stringify({
-    title,
-    body: cleanSnippet(messageText) || 'Customer sent a new message',
-    url: conversationId ? `/dashboard/conversations/${conversationId}` : '/dashboard/conversations',
-    tag: `conversation-${conversationId || customerPhone}`,
-    icon: '/pwa-192x192.png',
-    badge: '/pwa-192x192.png',
-  });
+  const targetStatus = conversationStatus === 'human_takeover' ? 'active' : 'human_takeover';
 
   let sent = 0;
   let failed = 0;
   for (const row of result.rows) {
+    const actionToken = conversationId
+      ? createActionToken({
+          adminId: row.admin_id,
+          clientId,
+          conversationId,
+          targetStatus,
+        })
+      : null;
+    const payload = JSON.stringify({
+      title,
+      body: cleanSnippet(messageText) || 'Customer sent a new message',
+      url: conversationId ? `/dashboard/conversations/${conversationId}` : '/dashboard/conversations',
+      tag: `conversation-${conversationId || customerPhone}`,
+      icon: '/pwa-192x192.png',
+      badge: '/pwa-192x192.png',
+      actions: actionToken
+        ? [
+            {
+              action: 'toggle_ai',
+              title: targetStatus === 'human_takeover' ? 'AI Off' : 'AI On',
+              token: actionToken,
+            },
+            { action: 'reply', title: 'Reply' },
+          ]
+        : [{ action: 'reply', title: 'Reply' }],
+    });
     try {
       await webpush.sendNotification(row.subscription, payload);
       sent += 1;

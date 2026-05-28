@@ -1,11 +1,61 @@
 const express = require('express');
+const jwt = require('jsonwebtoken');
 const router = express.Router();
+const db = require('../db');
 const { authMiddleware } = require('../middleware/auth');
 const {
   deleteSubscription,
   pushConfigured,
   saveSubscription,
 } = require('../services/pushNotifications');
+
+router.get('/action-status', (_req, res) => {
+  res.json({ ok: true });
+});
+
+router.post('/actions', async (req, res) => {
+  try {
+    const { token, action } = req.body || {};
+    if (action !== 'toggle_ai') return res.status(400).json({ error: 'Unsupported push action' });
+    if (!token || !process.env.JWT_SECRET) return res.status(401).json({ error: 'Invalid push action token' });
+
+    const payload = jwt.verify(token, process.env.JWT_SECRET);
+    if (payload.type !== 'push_action') return res.status(401).json({ error: 'Invalid push action token' });
+    if (!['active', 'human_takeover'].includes(payload.targetStatus)) {
+      return res.status(400).json({ error: 'Invalid target status' });
+    }
+
+    const access = await db.query(
+      `SELECT c.id
+       FROM conversations c
+       JOIN admins a ON a.id = $2
+       WHERE c.id = $1
+         AND c.client_id = $3
+         AND (
+           a.role = 'superadmin'
+           OR (
+             a.client_id = c.client_id
+             AND (a.permissions = '[]'::jsonb OR a.permissions ? 'conversations' OR a.permissions ? 'tickets')
+           )
+         )
+       LIMIT 1`,
+      [payload.conversationId, payload.adminId, payload.clientId]
+    );
+    if (access.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+
+    const result = await db.query(
+      `UPDATE conversations SET status = $1, updated_at = NOW()
+       WHERE id = $2 AND client_id = $3
+       RETURNING id, status`,
+      [payload.targetStatus, payload.conversationId, payload.clientId]
+    );
+
+    res.json({ success: true, conversation_id: result.rows[0].id, status: result.rows[0].status });
+  } catch (err) {
+    console.error('POST /push/actions error:', err.message);
+    res.status(401).json({ error: 'Invalid or expired push action' });
+  }
+});
 
 router.use(authMiddleware);
 

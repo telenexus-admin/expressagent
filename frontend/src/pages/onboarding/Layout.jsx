@@ -12,17 +12,10 @@ import {
 } from '../../components/Icons';
 import InstallAppButton from '../../components/InstallAppButton';
 import PushNotificationsButton from '../../components/PushNotificationsButton';
+import nexaLogo from '../../assets/nexa-logo.png';
 
 const NEXA_MARK = (
-  <svg viewBox="0 0 24 24" className="w-5 h-5 text-[#3535FF]" fill="none">
-    <path
-      d="M5 19V5l14 14V5"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
+  <img src={nexaLogo} alt="Nexa" className="h-full w-full object-contain" />
 );
 
 const NAV_ITEMS = [
@@ -105,7 +98,7 @@ export default function OnboardingLayout() {
             <MenuIcon className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 flex items-center justify-center shrink-0">
               {NEXA_MARK}
             </div>
             <div className="min-w-0 leading-tight">
@@ -169,7 +162,7 @@ export default function OnboardingLayout() {
         <div className="px-5 pt-5 pb-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 flex items-center justify-center shrink-0">
                 {NEXA_MARK}
               </div>
               <div className="min-w-0 leading-tight">

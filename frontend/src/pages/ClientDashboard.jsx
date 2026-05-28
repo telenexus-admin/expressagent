@@ -25,11 +25,10 @@ import InstallAppButton from '../components/InstallAppButton';
 import PushNotificationsButton from '../components/PushNotificationsButton';
 import expressnetLogo from '../assets/expressnetLogo';
 import aiBotArtwork from '../assets/aiBotArtwork';
+import nexaLogo from '../assets/nexa-logo.png';
 
 const NexaMark = () => (
-  <svg viewBox="0 0 24 24" className="w-6 h-6" fill="none">
-    <path d="M5 19V5l14 14V5" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" />
-  </svg>
+  <img src={nexaLogo} alt="Nexa" className="h-full w-full object-contain" />
 );
 
 function canAccess(admin, permission) {
@@ -49,7 +48,7 @@ function Brand({ expressnet, compact = false }) {
   }
   return (
     <div className="flex items-center gap-3">
-      <div className={`${compact ? 'w-11 h-11' : 'w-12 h-12'} rounded-2xl bg-white text-[#4b16b5] flex items-center justify-center shadow-lg shrink-0`}><NexaMark /></div>
+      <div className={`${compact ? 'w-11 h-11' : 'w-12 h-12'} flex items-center justify-center shrink-0`}><NexaMark /></div>
       <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-black`}>Nexa</div>{!compact && <div className="text-xs text-white/50">AI Support Portal</div>}</div>
     </div>
   );

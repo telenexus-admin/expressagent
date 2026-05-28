@@ -65,6 +65,10 @@ function normalizeNexusMenuChoice(text) {
   return null;
 }
 
+function isMenuRequest(text) {
+  return ['menu', 'start', 'hi', 'hello', 'options'].includes(String(text || '').trim().toLowerCase());
+}
+
 async function storeMessage(conversationId, role, content) {
   await db.query(
     `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
@@ -85,6 +89,7 @@ async function hasExistingOperatorMessages(conversationId) {
 }
 
 async function sendFirstContactMenu(settings, phone) {
+  let attemptedButtons = false;
   try {
     await sendEvolutionButtons(settings, phone, {
       title: 'Telenexus Technologies',
@@ -92,12 +97,12 @@ async function sendFirstContactMenu(settings, phone) {
       footer: 'Nexus',
       buttons: NEXUS_MENU_BUTTONS,
     });
+    attemptedButtons = true;
   } catch (err) {
-    console.warn(`Nexus button menu failed for ${phone}, sending text fallback:`, safeError(err));
-    await sendEvolutionText(settings, phone, NEXUS_MENU_TEXT);
-    return 'sent as text fallback';
+    console.warn(`Nexus button menu failed for ${phone}; sending text menu instead:`, safeError(err));
   }
-  return 'sent as buttons';
+  await sendEvolutionText(settings, phone, NEXUS_MENU_TEXT);
+  return attemptedButtons ? 'sent as buttons plus text menu' : 'sent as text menu';
 }
 
 router.post('/nexa', async (req, res) => {
@@ -136,6 +141,7 @@ router.post('/nexa', async (req, res) => {
     const conversation = await findOrCreateOperatorConversation(incoming.phone, incoming.name);
     const hasPreviousMessages = await hasExistingOperatorMessages(conversation.id);
     const selectedChoice = hasPreviousMessages ? normalizeNexusMenuChoice(userText) : null;
+    const requestedMenu = hasPreviousMessages && isMenuRequest(userText);
     if (selectedChoice) userText = selectedChoice.label;
     await storeMessage(conversation.id, 'user', incoming.isVoice ? `[Voice note] ${userText}` : userText);
 
@@ -144,7 +150,7 @@ router.post('/nexa', async (req, res) => {
       return;
     }
 
-    if (!hasPreviousMessages) {
+    if (!hasPreviousMessages || requestedMenu) {
       const delivery = await sendFirstContactMenu(settings, incoming.phone);
       await storeMessage(conversation.id, 'assistant', `[Welcome choices ${delivery}]\n${NEXUS_MENU_TEXT}`);
       return;

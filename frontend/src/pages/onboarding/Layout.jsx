@@ -56,6 +56,22 @@ export default function OnboardingLayout() {
   }, []);
 
   useEffect(() => {
+    const lockPortrait = async () => {
+      try {
+        if (window.matchMedia?.('(display-mode: standalone)').matches && screen.orientation?.lock) {
+          await screen.orientation.lock('portrait-primary');
+        }
+      } catch (_err) {
+        // Some mobile browsers only honor the manifest orientation setting.
+      }
+    };
+
+    lockPortrait();
+    window.addEventListener('orientationchange', lockPortrait);
+    return () => window.removeEventListener('orientationchange', lockPortrait);
+  }, []);
+
+  useEffect(() => {
     if (!drawerOpen && !menuOpen) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') {

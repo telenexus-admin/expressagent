@@ -41,6 +41,24 @@ export default function OnboardingLayout() {
   const menuRef = useRef(null);
 
   useEffect(() => {
+    const manifest = document.querySelector('link[rel="manifest"]');
+    const previousManifest = manifest?.getAttribute('href');
+    const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    const previousAppleTitle = appleTitle?.getAttribute('content');
+    const previousTitle = document.title;
+
+    if (manifest) manifest.setAttribute('href', '/nexus-manifest.webmanifest');
+    if (appleTitle) appleTitle.setAttribute('content', 'Nexus');
+    document.title = 'Nexus';
+
+    return () => {
+      if (manifest && previousManifest) manifest.setAttribute('href', previousManifest);
+      if (appleTitle && previousAppleTitle) appleTitle.setAttribute('content', previousAppleTitle);
+      document.title = previousTitle;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!drawerOpen && !menuOpen) return undefined;
     const onKey = (e) => {
       if (e.key === 'Escape') {

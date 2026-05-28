@@ -120,6 +120,21 @@ async function sendEvolutionButtons(settings, number, { title, description, foot
   }, { headers, timeout: 30000 });
 }
 
+async function sendEvolutionPoll(settings, number, { name, values, selectableCount = 1 }) {
+  const { baseUrl, instance, headers } = evolutionAuth(settings);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp phone number is required.');
+  const safeValues = (values || []).map((value) => String(value || '').trim()).filter(Boolean);
+  if (safeValues.length < 2) throw new Error('At least two poll options are required.');
+  const url = `${baseUrl}/message/sendPoll/${encodeURIComponent(instance)}`;
+  return axios.post(url, {
+    number: phone,
+    name,
+    selectableCount,
+    values: safeValues,
+  }, { headers, timeout: 30000 });
+}
+
 async function sendEvolutionVoiceNote(settings, number, audioBuffer) {
   const { baseUrl, instance, headers } = evolutionAuth(settings);
   const phone = cleanNumber(number);
@@ -244,6 +259,7 @@ module.exports = {
   getOperatorSettings,
   sendEvolutionText,
   sendEvolutionButtons,
+  sendEvolutionPoll,
   sendEvolutionVoiceNote,
   downloadEvolutionAudio,
   setEvolutionWebhook,

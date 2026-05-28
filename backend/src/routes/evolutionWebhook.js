@@ -7,6 +7,7 @@ const {
   findOrCreateOperatorConversation,
   sendEvolutionText,
   sendEvolutionButtons,
+  sendEvolutionPoll,
   sendEvolutionVoiceNote,
   downloadEvolutionAudio,
 } = require('../services/evolution');
@@ -89,7 +90,17 @@ async function hasExistingOperatorMessages(conversationId) {
 }
 
 async function sendFirstContactMenu(settings, phone) {
-  let attemptedButtons = false;
+  try {
+    await sendEvolutionPoll(settings, phone, {
+      name: 'Welcome to Telenexus Technologies. What would you like help with today?',
+      selectableCount: 1,
+      values: ['AI services', 'Hotspot customisation', 'Talk to Alex'],
+    });
+    return 'sent as poll';
+  } catch (pollErr) {
+    console.warn(`Nexus poll menu failed for ${phone}; trying Evolution buttons:`, safeError(pollErr));
+  }
+
   try {
     await sendEvolutionButtons(settings, phone, {
       title: 'Telenexus Technologies',
@@ -97,12 +108,14 @@ async function sendFirstContactMenu(settings, phone) {
       footer: 'Nexus',
       buttons: NEXUS_MENU_BUTTONS,
     });
-    attemptedButtons = true;
-  } catch (err) {
-    console.warn(`Nexus button menu failed for ${phone}; sending text menu instead:`, safeError(err));
+    await sendEvolutionText(settings, phone, 'If the buttons do not open on your phone, reply with 1, 2 or 3.');
+    return 'sent as buttons';
+  } catch (buttonErr) {
+    console.warn(`Nexus button menu failed for ${phone}; sending text menu instead:`, safeError(buttonErr));
   }
+
   await sendEvolutionText(settings, phone, NEXUS_MENU_TEXT);
-  return attemptedButtons ? 'sent as buttons plus text menu' : 'sent as text menu';
+  return 'sent as text menu';
 }
 
 router.post('/nexa', async (req, res) => {

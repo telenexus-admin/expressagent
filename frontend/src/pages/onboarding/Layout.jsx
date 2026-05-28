@@ -12,10 +12,10 @@ import {
 } from '../../components/Icons';
 import InstallAppButton from '../../components/InstallAppButton';
 import PushNotificationsButton from '../../components/PushNotificationsButton';
-import nexaLogo from '../../assets/nexa-logo.png';
+import nexusLogo from '../../assets/nexus-logo.png';
 
 const NEXA_MARK = (
-  <img src={nexaLogo} alt="Nexa" className="h-full w-full object-contain" />
+  <img src={nexusLogo} alt="Nexus" className="h-full w-full object-contain" />
 );
 
 const NAV_ITEMS = [
@@ -36,16 +36,20 @@ export default function OnboardingLayout() {
   useEffect(() => {
     const manifest = document.querySelector('link[rel="manifest"]');
     const previousManifest = manifest?.getAttribute('href');
+    const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+    const previousAppleIcon = appleIcon?.getAttribute('href');
     const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
     const previousAppleTitle = appleTitle?.getAttribute('content');
     const previousTitle = document.title;
 
     if (manifest) manifest.setAttribute('href', '/nexus-manifest.webmanifest');
+    if (appleIcon) appleIcon.setAttribute('href', '/nexus-apple-touch-icon.png');
     if (appleTitle) appleTitle.setAttribute('content', 'Nexus');
     document.title = 'Nexus';
 
     return () => {
       if (manifest && previousManifest) manifest.setAttribute('href', previousManifest);
+      if (appleIcon && previousAppleIcon) appleIcon.setAttribute('href', previousAppleIcon);
       if (appleTitle && previousAppleTitle) appleTitle.setAttribute('content', previousAppleTitle);
       document.title = previousTitle;
     };

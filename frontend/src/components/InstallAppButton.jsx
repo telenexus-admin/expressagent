@@ -16,7 +16,7 @@ function isIosSafari() {
 }
 
 export default function InstallAppButton() {
-  const [deferredPrompt, setDeferredPrompt] = useState(null);
+  const [deferredPrompt, setDeferredPrompt] = useState(() => window.__nexaInstallPrompt || null);
   const [installed, setInstalled] = useState(() => isStandalone());
   const [helpOpen, setHelpOpen] = useState(false);
   const isIos = isIosSafari();
@@ -26,17 +26,23 @@ export default function InstallAppButton() {
 
     const onBeforeInstall = (e) => {
       e.preventDefault();
+      window.__nexaInstallPrompt = e;
       setDeferredPrompt(e);
     };
+    const onPromptReady = () => setDeferredPrompt(window.__nexaInstallPrompt || null);
     const onInstalled = () => {
+      window.__nexaInstallPrompt = null;
       setDeferredPrompt(null);
       setInstalled(true);
     };
 
+    setDeferredPrompt(window.__nexaInstallPrompt || null);
     window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('nexa-install-prompt-ready', onPromptReady);
     window.addEventListener('appinstalled', onInstalled);
     return () => {
       window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('nexa-install-prompt-ready', onPromptReady);
       window.removeEventListener('appinstalled', onInstalled);
     };
   }, [installed]);
@@ -54,6 +60,7 @@ export default function InstallAppButton() {
       } catch {
         // ignore — browser may have invalidated the prompt
       } finally {
+        window.__nexaInstallPrompt = null;
         setDeferredPrompt(null);
       }
       return;

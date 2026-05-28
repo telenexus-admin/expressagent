@@ -98,6 +98,28 @@ async function sendEvolutionText(settings, number, text) {
   return axios.post(url, { number: phone, text }, { headers, timeout: 30000 });
 }
 
+async function sendEvolutionButtons(settings, number, { title, description, footer, buttons }) {
+  const { baseUrl, instance, headers } = evolutionAuth(settings);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp phone number is required.');
+  const safeButtons = (buttons || []).slice(0, 3).map((button) => ({
+    type: 'reply',
+    title: String(button.title || button.displayText || '').slice(0, 20),
+    displayText: String(button.displayText || button.title || '').slice(0, 20),
+    id: String(button.id || button.buttonId || '').slice(0, 256),
+  })).filter((button) => button.displayText && button.id);
+  if (safeButtons.length === 0) throw new Error('At least one Evolution button is required.');
+
+  const url = `${baseUrl}/message/sendButtons/${encodeURIComponent(instance)}`;
+  return axios.post(url, {
+    number: phone,
+    title,
+    description,
+    footer,
+    buttons: safeButtons,
+  }, { headers, timeout: 30000 });
+}
+
 async function sendEvolutionVoiceNote(settings, number, audioBuffer) {
   const { baseUrl, instance, headers } = evolutionAuth(settings);
   const phone = cleanNumber(number);
@@ -164,7 +186,24 @@ function parseEvolutionInbound(payload) {
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;
   const message = data?.message || data?.data?.message || {};
   const isVoice = Boolean(message.audioMessage || message.voiceMessage);
+  const buttonResponse = message.buttonsResponseMessage || message.templateButtonReplyMessage || message.interactiveResponseMessage;
+  const selectedButtonId = (
+    buttonResponse?.selectedButtonId ||
+    buttonResponse?.selectedId ||
+    buttonResponse?.id ||
+    buttonResponse?.nativeFlowResponseMessage?.name ||
+    ''
+  );
+  const selectedButtonText = (
+    buttonResponse?.selectedDisplayText ||
+    buttonResponse?.selectedButtonText?.displayText ||
+    buttonResponse?.displayText ||
+    buttonResponse?.title ||
+    ''
+  );
   const text = (
+    selectedButtonText ||
+    selectedButtonId ||
     message.conversation ||
     message.extendedTextMessage?.text ||
     message.imageMessage?.caption ||
@@ -204,6 +243,7 @@ module.exports = {
   ensureOperatorAgentTables,
   getOperatorSettings,
   sendEvolutionText,
+  sendEvolutionButtons,
   sendEvolutionVoiceNote,
   downloadEvolutionAudio,
   setEvolutionWebhook,

@@ -6,6 +6,7 @@ const {
   parseEvolutionInbound,
   findOrCreateOperatorConversation,
   sendEvolutionText,
+  sendEvolutionButtons,
   sendEvolutionVoiceNote,
   downloadEvolutionAudio,
 } = require('../services/evolution');
@@ -25,6 +26,45 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+const NEXUS_MENU_TEXT = `Hi, welcome to Telenexus Technologies.
+
+What would you like help with today?
+
+1. AI services
+2. Hotspot customisation
+3. Talk to Alex`;
+
+const NEXUS_MENU_BUTTONS = [
+  { id: 'nexus_ai_services', title: 'AI services' },
+  { id: 'nexus_hotspot_custom', title: 'Hotspot custom' },
+  { id: 'nexus_talk_to_alex', title: 'Talk to Alex' },
+];
+
+function normalizeNexusMenuChoice(text) {
+  const value = String(text || '').trim().toLowerCase();
+  if (['1', 'ai', 'ai services', 'nexus_ai_services'].includes(value)) {
+    return {
+      key: 'ai_services',
+      label: 'AI services',
+      prompt: 'The person selected "AI services". Explain Nexa AI customer support, WhatsApp agents, workflow automation and how Telenexus can help their business. Ask for their business name, location and the process they want automated.',
+    };
+  }
+  if (['2', 'hotspot', 'hotspot custom', 'hotspot customisation', 'hotspot customization', 'nexus_hotspot_custom'].includes(value)) {
+    return {
+      key: 'hotspot_customisation',
+      label: 'Hotspot customisation',
+      prompt: 'The person selected "Hotspot customisation". Explain that Telenexus can build branded hotspot landing pages, login flows and customer onboarding experiences for ISPs. Ask for their ISP name, MikroTik or billing system context, and what they want customers to see.',
+    };
+  }
+  if (['3', 'talk to alex', 'alex', 'nexus_talk_to_alex'].includes(value)) {
+    return {
+      key: 'talk_to_alex',
+      label: 'Talk to Alex',
+    };
+  }
+  return null;
+}
+
 async function storeMessage(conversationId, role, content) {
   await db.query(
     `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
@@ -32,6 +72,32 @@ async function storeMessage(conversationId, role, content) {
     [conversationId, role, content]
   );
   await db.query(`UPDATE operator_conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+}
+
+async function hasExistingOperatorMessages(conversationId) {
+  const result = await db.query(
+    `SELECT EXISTS (
+       SELECT 1 FROM operator_messages WHERE conversation_id = $1 LIMIT 1
+     ) AS has_messages`,
+    [conversationId]
+  );
+  return Boolean(result.rows[0]?.has_messages);
+}
+
+async function sendFirstContactMenu(settings, phone) {
+  try {
+    await sendEvolutionButtons(settings, phone, {
+      title: 'Telenexus Technologies',
+      description: 'Choose what you want help with:',
+      footer: 'Nexus',
+      buttons: NEXUS_MENU_BUTTONS,
+    });
+  } catch (err) {
+    console.warn(`Nexus button menu failed for ${phone}, sending text fallback:`, safeError(err));
+    await sendEvolutionText(settings, phone, NEXUS_MENU_TEXT);
+    return 'sent as text fallback';
+  }
+  return 'sent as buttons';
 }
 
 router.post('/nexa', async (req, res) => {
@@ -68,10 +134,35 @@ router.post('/nexa', async (req, res) => {
     if (!userText || !userText.trim()) return;
 
     const conversation = await findOrCreateOperatorConversation(incoming.phone, incoming.name);
+    const hasPreviousMessages = await hasExistingOperatorMessages(conversation.id);
+    const selectedChoice = hasPreviousMessages ? normalizeNexusMenuChoice(userText) : null;
+    if (selectedChoice) userText = selectedChoice.label;
     await storeMessage(conversation.id, 'user', incoming.isVoice ? `[Voice note] ${userText}` : userText);
 
     if (!conversation.ai_enabled || conversation.reply_mode === 'silent') {
       console.log(`Nexa reply paused for conversation ${conversation.id} (${incoming.phone}). Message saved for manual follow-up.`);
+      return;
+    }
+
+    if (!hasPreviousMessages) {
+      const delivery = await sendFirstContactMenu(settings, incoming.phone);
+      await storeMessage(conversation.id, 'assistant', `[Welcome choices ${delivery}]\n${NEXUS_MENU_TEXT}`);
+      return;
+    }
+
+    if (selectedChoice?.key === 'talk_to_alex') {
+      const reply = 'Sure. I have paused the AI for this chat so Alex can follow up with you personally.';
+      await sendEvolutionText(settings, incoming.phone, reply);
+      await storeMessage(conversation.id, 'assistant', reply);
+      await db.query(`UPDATE operator_conversations SET ai_enabled = FALSE, updated_at = NOW() WHERE id = $1`, [conversation.id]);
+      if (settings.owner_phone) {
+        const nameLine = conversation.customer_name ? `Name: ${conversation.customer_name}\n` : '';
+        await sendEvolutionText(
+          settings,
+          settings.owner_phone,
+          `Nexus lead wants to talk to Alex.\n\n${nameLine}Phone: +${incoming.phone}\nConversation: ${conversation.id}`
+        );
+      }
       return;
     }
 
@@ -89,6 +180,9 @@ router.post('/nexa', async (req, res) => {
     }
     if (conversation.customer_name) {
       prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Use their first name naturally when helpful, but do not greet repeatedly in every message.`;
+    }
+    if (selectedChoice?.prompt) {
+      prompt += `\n\n${selectedChoice.prompt}`;
     }
 
     const voiceReply = conversation.reply_mode === 'voice' || (conversation.reply_mode === 'auto' && incoming.isVoice);

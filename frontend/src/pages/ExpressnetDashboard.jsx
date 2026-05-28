@@ -69,22 +69,46 @@ export default function ExpressnetDashboard() {
     return () => { window.removeEventListener('keydown', close); window.removeEventListener('mousedown', close); };
   }, []);
 
-  const nav = [
-    ['/dashboard/statistics', 'Dashboard', HomeIcon, 'statistics'],
-    ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],
-    ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
-    ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
-    ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
-    ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
-    ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],
-    ['/dashboard/remarks', 'AI Client Remarks', ChatIcon, 'complaints'],
-    ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
-    ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
-    ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
-    ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
-    ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
-    ['/dashboard/agent', 'Agent', AgentIcon, 'agent'],
-  ].filter((item) => canAccess(admin, item[3]));
+  const navSections = [
+    {
+      label: 'Overview',
+      items: [
+        ['/dashboard/statistics', 'Dashboard', HomeIcon, 'statistics'],
+      ],
+    },
+    {
+      label: 'Inbox',
+      items: [
+        ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
+        ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
+        ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
+        ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
+        ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],
+      ],
+    },
+    {
+      label: 'Agent',
+      items: [
+        ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
+        ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
+        ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
+        ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],
+        ['/dashboard/remarks', 'AI Client Remarks', ChatIcon, 'complaints'],
+      ],
+    },
+    {
+      label: 'Team',
+      items: [
+        ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
+        ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
+        ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
+      ],
+    },
+  ].map((section) => ({
+    ...section,
+    items: section.items.filter((item) => canAccess(admin, item[3])),
+  })).filter((section) => section.items.length > 0);
+  const nav = navSections.flatMap((section) => section.items);
 
   const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
   const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
@@ -100,13 +124,21 @@ export default function ExpressnetDashboard() {
       </button>
     );
   };
+  const navList = (mobile = false) => navSections.map((section) => (
+    <div key={section.label} className="space-y-1">
+      <div className={`px-5 pt-4 pb-1 text-[10px] font-black uppercase tracking-[0.18em] ${mobile ? 'text-white/45' : 'text-white/40'}`}>
+        {section.label}
+      </div>
+      {section.items.map((item) => itemButton(item, mobile))}
+    </div>
+  ));
 
   return (
     <div className="h-screen overflow-hidden bg-[#f2f0f7] text-slate-900">
       <div className="flex h-full min-h-0">
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
           <div className="px-6 pt-5 pb-5"><ExpressnetBrand /></div>
-          <nav className="no-visible-scrollbar pl-5 pr-0 space-y-1 flex-1 overflow-y-auto pb-5">{nav.map((item) => itemButton(item))}</nav>
+          <nav className="no-visible-scrollbar pl-5 pr-0 flex-1 overflow-y-auto pb-5">{navList()}</nav>
           <div className="px-6 pb-6 pt-3"><InstallAppButton /><PushNotificationsButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
         </aside>
         <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
@@ -124,7 +156,7 @@ export default function ExpressnetDashboard() {
       <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-4 border-b border-white/10 flex items-center justify-between gap-3"><ExpressnetBrand compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
-        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 space-y-1">{nav.map((item) => itemButton(item, true))}</nav>
+        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3">{navList(true)}</nav>
         <div className="px-4 pt-3 pb-4 border-t border-white/10"><InstallAppButton /><PushNotificationsButton /><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
       </aside>
     </div>

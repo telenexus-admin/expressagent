@@ -101,6 +101,7 @@ async function handleCallScheduleRequest({ settings, conversation, userText, inc
   }
 
   const timeHint = extractTimeHint(userText);
+  const notificationBody = `${conversation.customer_name ? `${conversation.customer_name} ` : ''}requested a call. Number: ${givenPhone}${timeHint ? `. Time: ${timeHint}` : ''}`;
   if (settings.owner_phone && !conversation.call_schedule_notified_at) {
     const nameLine = conversation.customer_name ? `Name: ${conversation.customer_name}\n` : '';
     const timeLine = timeHint ? `Preferred time: ${timeHint}\n` : '';
@@ -114,6 +115,15 @@ async function handleCallScheduleRequest({ settings, conversation, userText, inc
       [conversation.id]
     );
   }
+  runAfterReply('Nexus call schedule push notification', () => notifyOperatorAdmins({
+    conversationId: conversation.id,
+    customerName: conversation.customer_name,
+    customerPhone: incomingPhone,
+    messageText: userText,
+    title: 'Nexus call scheduled',
+    body: notificationBody,
+    tag: `operator-call-schedule-${conversation.id}`,
+  }));
 
   const reply = timeHint
     ? `Done. I have shared your number and preferred time with Alex.`

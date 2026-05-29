@@ -174,7 +174,7 @@ async function notifyClientAdmins({ clientId, conversationId, customerName, cust
   return { status: 'done', sent, failed };
 }
 
-async function notifyOperatorAdmins({ conversationId, customerName, customerPhone, messageText }) {
+async function notifyOperatorAdmins({ conversationId, customerName, customerPhone, messageText, title: customTitle, body: customBody, tag: customTag }) {
   await ensurePushSchema();
   if (!configurePush()) return { status: 'skipped', reason: 'Web push is not configured' };
 
@@ -194,7 +194,7 @@ async function notifyOperatorAdmins({ conversationId, customerName, customerPhon
      WHERE a.role = 'superadmin'`
   );
 
-  const title = customerName ? `Nexus message from ${customerName}` : `Nexus message from +${customerPhone}`;
+  const title = customTitle || (customerName ? `Nexus message from ${customerName}` : `Nexus message from +${customerPhone}`);
   const targetAiEnabled = !aiEnabled;
   const url = conversationId
     ? `/onboarding/nexa-whatsapp?conversationId=${encodeURIComponent(conversationId)}`
@@ -212,9 +212,9 @@ async function notifyOperatorAdmins({ conversationId, customerName, customerPhon
       : null;
     const payload = JSON.stringify({
       title,
-      body: cleanSnippet(messageText) || 'Someone sent Nexus a new message',
+      body: cleanSnippet(customBody || messageText) || 'Someone sent Nexus a new message',
       url,
-      tag: `operator-conversation-${conversationId || customerPhone}`,
+      tag: customTag || `operator-conversation-${conversationId || customerPhone}`,
       icon: '/nexus-pwa-192x192.png',
       badge: '/nexus-pwa-192x192.png',
       actions: actionToken

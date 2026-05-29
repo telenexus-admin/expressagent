@@ -107,8 +107,14 @@ export default function NexaWhatsApp() {
       const [configRes, conversationsRes] = await Promise.all([api.get('/operator-agent/config'), api.get('/operator-agent/conversations')]);
       setForm({ ...empty, ...configRes.data, evolution_api_key: '' });
       const rows = conversationsRes.data || [];
+      const requestedConversationId = Number(new URLSearchParams(window.location.search).get('conversationId'));
       setConversations(rows);
-      if (rows[0]?.id) setSelectedId((current) => current || rows[0].id);
+      if (requestedConversationId && rows.some((row) => row.id === requestedConversationId)) {
+        setSelectedId(requestedConversationId);
+        setMobileChatOpen(true);
+      } else if (rows[0]?.id) {
+        setSelectedId((current) => current || rows[0].id);
+      }
       setError('');
     } catch (err) {
       setError(err.response?.data?.error || 'Could not load Nexa WhatsApp setup.');

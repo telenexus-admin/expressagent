@@ -21,6 +21,35 @@ router.post('/actions', async (req, res) => {
 
     const payload = jwt.verify(token, process.env.JWT_SECRET);
     if (payload.type !== 'push_action') return res.status(401).json({ error: 'Invalid push action token' });
+    if (payload.scope === 'operator') {
+      if (typeof payload.targetAiEnabled !== 'boolean') {
+        return res.status(400).json({ error: 'Invalid operator AI target' });
+      }
+      const access = await db.query(
+        `SELECT c.id
+         FROM operator_conversations c
+         JOIN admins a ON a.id = $2
+         WHERE c.id = $1 AND a.role = 'superadmin'
+         LIMIT 1`,
+        [payload.conversationId, payload.adminId]
+      );
+      if (access.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+
+      const result = await db.query(
+        `UPDATE operator_conversations SET ai_enabled = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING id, ai_enabled`,
+        [payload.targetAiEnabled, payload.conversationId]
+      );
+
+      return res.json({
+        success: true,
+        scope: 'operator',
+        conversation_id: result.rows[0].id,
+        ai_enabled: result.rows[0].ai_enabled,
+      });
+    }
+
     if (!['active', 'human_takeover'].includes(payload.targetStatus)) {
       return res.status(400).json({ error: 'Invalid target status' });
     }

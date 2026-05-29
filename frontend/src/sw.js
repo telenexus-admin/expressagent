@@ -46,6 +46,22 @@ self.addEventListener('notificationclick', (event) => {
           });
           if (response.ok) {
             const result = await response.json();
+            if (result.scope === 'operator') {
+              await self.registration.showNotification(
+                result.ai_enabled ? 'Nexus AI turned on' : 'Nexus AI turned off',
+                {
+                  body: result.ai_enabled
+                    ? 'Nexus can reply to this conversation again.'
+                    : 'Nexus will wait for your manual reply.',
+                  icon: '/nexus-pwa-192x192.png',
+                  badge: '/nexus-pwa-192x192.png',
+                  tag: `operator-conversation-action-${result.conversation_id}`,
+                  data: { url: targetUrl },
+                }
+              );
+              return undefined;
+            }
+
             await self.registration.showNotification(
               result.status === 'human_takeover' ? 'AI agent turned off' : 'AI agent turned on',
               {

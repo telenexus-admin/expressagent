@@ -1,6 +1,7 @@
 const express = require('express');
 const db = require('../db');
 const { generateAIResponse, transcribeAudio, synthesizeVoice } = require('../services/openai');
+const { notifyOperatorAdmins } = require('../services/pushNotifications');
 const {
   getOperatorSettings,
   parseEvolutionInbound,
@@ -25,6 +26,16 @@ function audioFilename(mimeType) {
   if (String(mimeType || '').includes('mp4')) return 'voice-note.m4a';
   if (String(mimeType || '').includes('wav')) return 'voice-note.wav';
   return 'voice-note.ogg';
+}
+
+function runAfterReply(label, task) {
+  setImmediate(async () => {
+    try {
+      await task();
+    } catch (err) {
+      console.error(`${label} failed:`, safeError(err));
+    }
+  });
 }
 
 const NEXUS_MENU_TEXT = `Hi, welcome to Telenexus Technologies.
@@ -157,6 +168,12 @@ router.post('/nexa', async (req, res) => {
     const requestedMenu = hasPreviousMessages && isMenuRequest(userText);
     if (selectedChoice) userText = selectedChoice.label;
     await storeMessage(conversation.id, 'user', incoming.isVoice ? `[Voice note] ${userText}` : userText);
+    runAfterReply('Nexus operator push notification', () => notifyOperatorAdmins({
+      conversationId: conversation.id,
+      customerName: conversation.customer_name,
+      customerPhone: incoming.phone,
+      messageText: userText,
+    }));
 
     if (!conversation.ai_enabled || conversation.reply_mode === 'silent') {
       console.log(`Nexa reply paused for conversation ${conversation.id} (${incoming.phone}). Message saved for manual follow-up.`);

@@ -90,6 +90,21 @@ function createActionToken({ adminId, clientId, conversationId, targetStatus }) 
   );
 }
 
+function createOperatorActionToken({ adminId, conversationId, targetAiEnabled }) {
+  if (!process.env.JWT_SECRET) return null;
+  return jwt.sign(
+    {
+      type: 'push_action',
+      scope: 'operator',
+      adminId,
+      conversationId,
+      targetAiEnabled,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: '2d' }
+  );
+}
+
 async function notifyClientAdmins({ clientId, conversationId, customerName, customerPhone, messageText }) {
   await ensurePushSchema();
   if (!configurePush()) return { status: 'skipped', reason: 'Web push is not configured' };
@@ -159,10 +174,80 @@ async function notifyClientAdmins({ clientId, conversationId, customerName, cust
   return { status: 'done', sent, failed };
 }
 
+async function notifyOperatorAdmins({ conversationId, customerName, customerPhone, messageText }) {
+  await ensurePushSchema();
+  if (!configurePush()) return { status: 'skipped', reason: 'Web push is not configured' };
+
+  let aiEnabled = true;
+  if (conversationId) {
+    const conversation = await db.query(
+      `SELECT ai_enabled FROM operator_conversations WHERE id = $1 LIMIT 1`,
+      [conversationId]
+    );
+    aiEnabled = conversation.rows[0]?.ai_enabled !== false;
+  }
+
+  const result = await db.query(
+    `SELECT ps.id, ps.admin_id, ps.endpoint, ps.subscription
+     FROM admin_push_subscriptions ps
+     JOIN admins a ON a.id = ps.admin_id
+     WHERE a.role = 'superadmin'`
+  );
+
+  const title = customerName ? `Nexus message from ${customerName}` : `Nexus message from +${customerPhone}`;
+  const targetAiEnabled = !aiEnabled;
+  const url = conversationId
+    ? `/onboarding/nexa-whatsapp?conversationId=${encodeURIComponent(conversationId)}`
+    : '/onboarding/nexa-whatsapp';
+
+  let sent = 0;
+  let failed = 0;
+  for (const row of result.rows) {
+    const actionToken = conversationId
+      ? createOperatorActionToken({
+          adminId: row.admin_id,
+          conversationId,
+          targetAiEnabled,
+        })
+      : null;
+    const payload = JSON.stringify({
+      title,
+      body: cleanSnippet(messageText) || 'Someone sent Nexus a new message',
+      url,
+      tag: `operator-conversation-${conversationId || customerPhone}`,
+      icon: '/nexus-pwa-192x192.png',
+      badge: '/nexus-pwa-192x192.png',
+      actions: actionToken
+        ? [
+            { action: 'reply', title: 'Reply' },
+            {
+              action: 'toggle_ai',
+              title: targetAiEnabled ? 'AI On' : 'AI Off',
+              token: actionToken,
+            },
+          ]
+        : [{ action: 'reply', title: 'Reply' }],
+    });
+    try {
+      await webpush.sendNotification(row.subscription, payload);
+      sent += 1;
+    } catch (err) {
+      failed += 1;
+      if (err.statusCode === 404 || err.statusCode === 410) {
+        await db.query(`DELETE FROM admin_push_subscriptions WHERE id = $1`, [row.id]);
+      } else {
+        console.error('Operator push notification failed:', err.message);
+      }
+    }
+  }
+  return { status: 'done', sent, failed };
+}
+
 module.exports = {
   ensurePushSchema,
   pushConfigured,
   saveSubscription,
   deleteSubscription,
   notifyClientAdmins,
+  notifyOperatorAdmins,
 };

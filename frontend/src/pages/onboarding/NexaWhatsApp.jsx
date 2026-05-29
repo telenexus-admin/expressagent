@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../utils/api';
+import PushNotificationsButton from '../../components/PushNotificationsButton';
 
 const empty = {
   enabled: false,
@@ -238,7 +239,18 @@ export default function NexaWhatsApp() {
         {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">{error}</div>}
 
         {tab === 'inbox' ? (
-          <div className="grid h-[calc(100dvh-205px)] min-h-[560px] grid-cols-1 overflow-hidden rounded-[28px] border border-white bg-white shadow-xl shadow-indigo-100/50 sm:h-[calc(100vh-250px)] sm:min-h-[640px] sm:rounded-[32px] lg:grid-cols-[340px_minmax(420px,1fr)_310px]">
+          <div className="space-y-4">
+            <div className="rounded-[24px] border border-white bg-white p-4 shadow-lg shadow-indigo-100/40 sm:hidden">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black text-slate-950">Phone Alerts</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Get Nexus message alerts with Reply and AI on/off actions.</p>
+                </div>
+                <span className="rounded-full bg-[#ececff] px-3 py-1 text-[10px] font-black text-[#3535FF]">Nexus</span>
+              </div>
+              <PushNotificationsButton variant="light" />
+            </div>
+            <div className="grid h-[calc(100dvh-330px)] min-h-[430px] grid-cols-1 overflow-hidden rounded-[28px] border border-white bg-white shadow-xl shadow-indigo-100/50 sm:h-[calc(100vh-250px)] sm:min-h-[640px] sm:rounded-[32px] lg:grid-cols-[340px_minmax(420px,1fr)_310px]">
             <aside className={`${mobileChatOpen ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col border-r border-slate-100 bg-white`}>
               <div className="border-b border-slate-100 p-5">
                 <div className="flex items-center justify-between"><h2 className="text-lg font-black text-slate-950">Conversations</h2><span className="rounded-full bg-[#ececff] px-3 py-1 text-[10px] font-black text-[#3535FF]">{conversations.length}</span></div>
@@ -283,12 +295,14 @@ export default function NexaWhatsApp() {
 
             <aside className="hidden overflow-y-auto border-l border-slate-100 bg-white p-5 lg:block">
               {!chat ? <p className="mt-10 text-center text-sm text-slate-400">Choose a chat to control Nexa.</p> : <div className="space-y-5">
+                <div className="rounded-2xl bg-[#f6f7ff] p-4"><p className="text-sm font-black text-slate-900">Phone Alerts</p><p className="mt-1 text-xs text-slate-500">Receive Nexus message notifications with quick actions.</p><PushNotificationsButton variant="light" /></div>
                 <div><h2 className="text-lg font-black text-slate-950">AI Controls</h2><p className="mt-1 text-xs text-slate-400">Changes apply to this customer only.</p></div>
                 <div className="rounded-2xl bg-[#f6f7ff] p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-black text-slate-900">Nexa replies</p><p className="text-xs text-slate-500">Switch AI on or off</p></div><Toggle checked={Boolean(chat.conversation.ai_enabled)} disabled={controlSaving} onChange={(value) => updateControls({ ai_enabled: value })} /></div></div>
                 <div><p className="mb-3 text-xs font-black uppercase tracking-wide text-slate-400">Reply style</p><div className="space-y-2">{replyModes.map((mode) => <button key={mode.value} onClick={() => updateControls({ reply_mode: mode.value })} disabled={controlSaving} className={`w-full rounded-2xl border p-3 text-left ${chat.conversation.reply_mode === mode.value ? 'border-[#3535FF] bg-[#f1efff]' : 'border-slate-100 bg-white hover:bg-slate-50'}`}><div className="text-sm font-black text-slate-900">{mode.label}</div><p className="mt-1 text-[11px] leading-4 text-slate-500">{mode.description}</p></button>)}</div></div>
                 <div className="rounded-2xl bg-slate-50 p-4"><p className="text-xs font-black uppercase tracking-wide text-slate-400">Messages</p><p className="mt-2 text-2xl font-black text-slate-900">{chat.messages.length}</p><p className="text-xs text-slate-400">in this conversation</p></div>
               </div>}
             </aside>
+          </div>
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">

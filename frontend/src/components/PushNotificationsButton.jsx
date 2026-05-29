@@ -12,24 +12,42 @@ function supported() {
   return 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
 }
 
-export default function PushNotificationsButton() {
+export default function PushNotificationsButton({ variant = 'dark' }) {
   const [available, setAvailable] = useState(false);
   const [enabled, setEnabled] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [checked, setChecked] = useState(false);
+  const [reason, setReason] = useState('');
 
   useEffect(() => {
     let active = true;
     async function inspect() {
-      if (!supported()) return;
+      if (!supported()) {
+        if (active) {
+          setReason('This browser does not support phone alerts.');
+          setChecked(true);
+        }
+        return;
+      }
       try {
         const { data } = await api.get('/push/public-key');
-        if (!active || !data.enabled || !data.publicKey) return;
+        if (!active) return;
+        if (!data.enabled || !data.publicKey) {
+          setReason('Phone alerts are not configured on this server.');
+          setChecked(true);
+          return;
+        }
         setAvailable(true);
         const registration = await navigator.serviceWorker.ready;
         const current = await registration.pushManager.getSubscription();
         if (active) setEnabled(Boolean(current));
       } catch {
-        // Push is optional.
+        if (active) {
+          setReason('Phone alerts could not be checked.');
+          setChecked(true);
+        }
+      } finally {
+        if (active) setChecked(true);
       }
     }
     inspect();
@@ -76,7 +94,36 @@ export default function PushNotificationsButton() {
     }
   };
 
-  if (!available) return null;
+  const light = variant === 'light';
+
+  if (!checked) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={`mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold opacity-70 ${
+          light ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-white/60'
+        }`}
+      >
+        Checking Phone Alerts...
+      </button>
+    );
+  }
+
+  if (!available) {
+    return (
+      <button
+        type="button"
+        disabled
+        className={`mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold opacity-75 ${
+          light ? 'bg-slate-100 text-slate-500' : 'bg-white/10 text-white/60'
+        }`}
+        title={reason}
+      >
+        Phone Alerts Unavailable
+      </button>
+    );
+  }
 
   return (
     <button
@@ -85,8 +132,12 @@ export default function PushNotificationsButton() {
       disabled={busy}
       className={`mt-2 w-full rounded-2xl px-4 py-3 text-sm font-bold transition disabled:opacity-60 ${
         enabled
-          ? 'bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30'
-          : 'bg-white/10 text-white/75 hover:bg-white/15 hover:text-white'
+          ? light
+            ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100 hover:bg-emerald-100'
+            : 'bg-emerald-500/20 text-emerald-50 hover:bg-emerald-500/30'
+          : light
+            ? 'bg-[#3535FF] text-white shadow-sm hover:bg-[#2828DD]'
+            : 'bg-white/10 text-white/75 hover:bg-white/15 hover:text-white'
       }`}
     >
       {busy ? 'Updating...' : enabled ? 'Phone Alerts On' : 'Turn On Phone Alerts'}

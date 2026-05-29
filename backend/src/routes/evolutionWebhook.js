@@ -67,6 +67,62 @@ function detectReplyPreference(text) {
   return null;
 }
 
+function wantsAlexCall(text) {
+  const value = String(text || '').toLowerCase();
+  return /\b(call|phone|ring|meeting|schedule|book|appointment|talk to alex|speak to alex)\b/.test(value)
+    && /\b(alex|call|meeting|schedule|book|appointment)\b/.test(value);
+}
+
+function extractPhone(text) {
+  const match = String(text || '').match(/(?:\+?\d[\d\s().-]{6,}\d)/);
+  if (!match) return null;
+  return match[0].replace(/[^\d+]/g, '');
+}
+
+function extractTimeHint(text) {
+  const match = String(text || '').match(/\b(today|tomorrow|morning|afternoon|evening|tonight|monday|tuesday|wednesday|thursday|friday|saturday|sunday|\d{1,2}(?::\d{2})?\s*(?:am|pm)?)\b/i);
+  return match ? match[0] : null;
+}
+
+async function handleCallScheduleRequest({ settings, conversation, userText, incomingPhone }) {
+  const schedulingInProgress = Boolean(conversation.call_schedule_requested_at && !conversation.call_schedule_notified_at);
+  if (!wantsAlexCall(userText) && !schedulingInProgress) return false;
+
+  const givenPhone = extractPhone(userText);
+  if (!givenPhone) {
+    const reply = 'Sure. Which phone number should Alex call, and what time works best?';
+    await sendEvolutionText(settings, incomingPhone, reply);
+    await storeMessage(conversation.id, 'assistant', reply);
+    await db.query(
+      `UPDATE operator_conversations SET call_schedule_requested_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [conversation.id]
+    );
+    return true;
+  }
+
+  const timeHint = extractTimeHint(userText);
+  if (settings.owner_phone && !conversation.call_schedule_notified_at) {
+    const nameLine = conversation.customer_name ? `Name: ${conversation.customer_name}\n` : '';
+    const timeLine = timeHint ? `Preferred time: ${timeHint}\n` : '';
+    await sendEvolutionText(
+      settings,
+      settings.owner_phone,
+      `Nexus call request for Alex.\n\n${nameLine}Client WhatsApp: +${incomingPhone}\nCall number: ${givenPhone}\n${timeLine}Message: ${userText}`
+    );
+    await db.query(
+      `UPDATE operator_conversations SET call_schedule_notified_at = NOW(), updated_at = NOW() WHERE id = $1`,
+      [conversation.id]
+    );
+  }
+
+  const reply = timeHint
+    ? `Done. I have shared your number and preferred time with Alex.`
+    : `Done. I have shared your number with Alex.`;
+  await sendEvolutionText(settings, incomingPhone, reply);
+  await storeMessage(conversation.id, 'assistant', reply);
+  return true;
+}
+
 router.post('/nexa', async (req, res) => {
   res.status(200).json({ received: true });
 
@@ -127,6 +183,10 @@ router.post('/nexa', async (req, res) => {
       return;
     }
 
+    if (await handleCallScheduleRequest({ settings, conversation, userText, incomingPhone: incoming.phone })) {
+      return;
+    }
+
     const recent = await db.query(
       `SELECT role, content FROM (
          SELECT role, content, timestamp FROM operator_messages
@@ -144,6 +204,8 @@ Core behavior:
 - If the recent messages are only between the AI and the client, continue helping normally.
 - If any recent message was from Alex/the operator/admin, acknowledge it respectfully once.
 - In that case say you noticed Alex was handling the conversation, you respect that, and you can continue chatting only if the client wants while they wait for Alex.
+- When the client shows interest, ask if they would like you to schedule a call with Alex.
+- If they want a call, ask for the phone number Alex should call and a preferred time.
 - Do not override promises, prices or decisions Alex made.
 - Do not use long lists unless the client asks.`;
     if (settings.agent_name) {

@@ -25,6 +25,7 @@ const webhookRoutes = require('./routes/webhook');
 const evolutionWebhookRoutes = require('./routes/evolutionWebhook');
 const clientEvolutionWebhookRoutes = require('./routes/clientEvolutionWebhook');
 const { startDailyReportScheduler } = require('./services/dailyReports');
+const { startOperatorFollowUpScheduler } = require('./services/evolution');
 
 const app = express();
 
@@ -69,4 +70,5 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`WhatsApp Support backend running on port ${PORT}`);
   startDailyReportScheduler();
+  startOperatorFollowUpScheduler();
 });

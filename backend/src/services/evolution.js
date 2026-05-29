@@ -43,6 +43,9 @@ async function ensureOperatorAgentTables() {
       reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto' CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent')),
       preference_asked_at TIMESTAMP WITH TIME ZONE,
       preference_answered_at TIMESTAMP WITH TIME ZONE,
+      follow_up_sent_at TIMESTAMP WITH TIME ZONE,
+      call_schedule_requested_at TIMESTAMP WITH TIME ZONE,
+      call_schedule_notified_at TIMESTAMP WITH TIME ZONE,
       internal_note TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -52,6 +55,9 @@ async function ensureOperatorAgentTables() {
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS preference_asked_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS preference_answered_at TIMESTAMP WITH TIME ZONE`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS follow_up_sent_at TIMESTAMP WITH TIME ZONE`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS call_schedule_requested_at TIMESTAMP WITH TIME ZONE`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS call_schedule_notified_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS internal_note TEXT`);
   await db.query(`ALTER TABLE operator_conversations DROP CONSTRAINT IF EXISTS operator_conversations_reply_mode_check`);
   await db.query(`ALTER TABLE operator_conversations ADD CONSTRAINT operator_conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
@@ -243,6 +249,81 @@ async function findOrCreateOperatorConversation(phone, name) {
   return inserted.rows[0];
 }
 
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || '';
+}
+
+function followUpText(conversation) {
+  const name = firstName(conversation.customer_name);
+  const greeting = name ? `Hi ${name}.` : 'Hi.';
+  return `${greeting} Just checking if you are still there. Would you like to continue here, or should I help schedule a call with Alex?`;
+}
+
+let followUpTimer = null;
+let followUpRunning = false;
+
+async function runOperatorFollowUps() {
+  if (followUpRunning) return;
+  followUpRunning = true;
+  try {
+    const settings = await getOperatorSettings({ includeKey: true });
+    if (!settings?.enabled) return;
+
+    const result = await db.query(`
+      WITH last_user AS (
+        SELECT conversation_id, MAX(timestamp) AS last_user_at
+        FROM operator_messages
+        WHERE role = 'user'
+        GROUP BY conversation_id
+      )
+      SELECT c.*, lu.last_user_at
+      FROM operator_conversations c
+      JOIN last_user lu ON lu.conversation_id = c.id
+      WHERE c.ai_enabled = TRUE
+        AND c.reply_mode <> 'silent'
+        AND lu.last_user_at <= NOW() - INTERVAL '4 minutes'
+        AND (c.follow_up_sent_at IS NULL OR c.follow_up_sent_at < lu.last_user_at)
+        AND NOT EXISTS (
+          SELECT 1 FROM operator_messages m
+          WHERE m.conversation_id = c.id
+            AND m.timestamp > lu.last_user_at
+            AND m.role IN ('assistant', 'admin')
+        )
+      ORDER BY lu.last_user_at ASC
+      LIMIT 20
+    `);
+
+    for (const conversation of result.rows) {
+      const message = followUpText(conversation);
+      try {
+        await sendEvolutionText(settings, conversation.customer_phone, message);
+        await db.query(
+          `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
+           VALUES ($1, 'assistant', $2, NOW())`,
+          [conversation.id, `[Auto follow-up] ${message}`]
+        );
+        await db.query(
+          `UPDATE operator_conversations SET follow_up_sent_at = NOW(), updated_at = NOW() WHERE id = $1`,
+          [conversation.id]
+        );
+      } catch (err) {
+        console.error(`Nexus auto follow-up failed for conversation ${conversation.id}:`, err.response?.data || err.message);
+      }
+    }
+  } catch (err) {
+    console.error('Nexus auto follow-up scanner failed:', err.message);
+  } finally {
+    followUpRunning = false;
+  }
+}
+
+function startOperatorFollowUpScheduler() {
+  if (followUpTimer) return;
+  runOperatorFollowUps();
+  followUpTimer = setInterval(runOperatorFollowUps, 60 * 1000);
+  console.log('Nexus operator follow-up scheduler started.');
+}
+
 module.exports = {
   DEFAULT_NEXA_PROMPT,
   ensureOperatorAgentTables,
@@ -254,4 +335,5 @@ module.exports = {
   setEvolutionWebhook,
   parseEvolutionInbound,
   findOrCreateOperatorConversation,
+  startOperatorFollowUpScheduler,
 };

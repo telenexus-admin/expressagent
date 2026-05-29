@@ -7,8 +7,6 @@ const {
   parseEvolutionInbound,
   findOrCreateOperatorConversation,
   sendEvolutionText,
-  sendEvolutionButtons,
-  sendEvolutionPoll,
   sendEvolutionVoiceNote,
   downloadEvolutionAudio,
 } = require('../services/evolution');
@@ -38,49 +36,6 @@ function runAfterReply(label, task) {
   });
 }
 
-const NEXUS_MENU_TEXT = `Hi, welcome to Telenexus Technologies.
-
-What would you like help with today?
-
-1. AI services
-2. Hotspot customisation
-3. Talk to Alex`;
-
-const NEXUS_MENU_BUTTONS = [
-  { id: 'nexus_ai_services', title: 'AI services' },
-  { id: 'nexus_hotspot_custom', title: 'Hotspot custom' },
-  { id: 'nexus_talk_to_alex', title: 'Talk to Alex' },
-];
-
-function normalizeNexusMenuChoice(text) {
-  const value = String(text || '').trim().toLowerCase();
-  if (['1', 'ai', 'ai services', 'nexus_ai_services'].includes(value)) {
-    return {
-      key: 'ai_services',
-      label: 'AI services',
-      prompt: 'The person selected "AI services". Explain Nexa AI customer support, WhatsApp agents, workflow automation and how Telenexus can help their business. Ask for their business name, location and the process they want automated.',
-    };
-  }
-  if (['2', 'hotspot', 'hotspot custom', 'hotspot customisation', 'hotspot customization', 'nexus_hotspot_custom'].includes(value)) {
-    return {
-      key: 'hotspot_customisation',
-      label: 'Hotspot customisation',
-      prompt: 'The person selected "Hotspot customisation". Explain that Telenexus can build branded hotspot landing pages, login flows and customer onboarding experiences for ISPs. Ask for their ISP name, MikroTik or billing system context, and what they want customers to see.',
-    };
-  }
-  if (['3', 'talk to alex', 'alex', 'nexus_talk_to_alex'].includes(value)) {
-    return {
-      key: 'talk_to_alex',
-      label: 'Talk to Alex',
-    };
-  }
-  return null;
-}
-
-function isMenuRequest(text) {
-  return ['menu', 'start', 'hi', 'hello', 'options'].includes(String(text || '').trim().toLowerCase());
-}
-
 async function storeMessage(conversationId, role, content) {
   await db.query(
     `INSERT INTO operator_messages (conversation_id, role, content, timestamp)
@@ -90,43 +45,15 @@ async function storeMessage(conversationId, role, content) {
   await db.query(`UPDATE operator_conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
 }
 
-async function hasExistingOperatorMessages(conversationId) {
+async function getRecentOperatorMessages(conversationId, limit = 7) {
   const result = await db.query(
-    `SELECT EXISTS (
-       SELECT 1 FROM operator_messages WHERE conversation_id = $1 LIMIT 1
-     ) AS has_messages`,
-    [conversationId]
+    `SELECT role, content FROM (
+       SELECT role, content, timestamp FROM operator_messages
+       WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT $2
+     ) messages ORDER BY timestamp ASC`,
+    [conversationId, limit]
   );
-  return Boolean(result.rows[0]?.has_messages);
-}
-
-async function sendFirstContactMenu(settings, phone) {
-  try {
-    await sendEvolutionPoll(settings, phone, {
-      name: 'Welcome to Telenexus Technologies. What would you like help with today?',
-      selectableCount: 1,
-      values: ['AI services', 'Hotspot customisation', 'Talk to Alex'],
-    });
-    return 'sent as poll';
-  } catch (pollErr) {
-    console.warn(`Nexus poll menu failed for ${phone}; trying Evolution buttons:`, safeError(pollErr));
-  }
-
-  try {
-    await sendEvolutionButtons(settings, phone, {
-      title: 'Telenexus Technologies',
-      description: 'Choose what you want help with:',
-      footer: 'Nexus',
-      buttons: NEXUS_MENU_BUTTONS,
-    });
-    await sendEvolutionText(settings, phone, 'If the buttons do not open on your phone, reply with 1, 2 or 3.');
-    return 'sent as buttons';
-  } catch (buttonErr) {
-    console.warn(`Nexus button menu failed for ${phone}; sending text menu instead:`, safeError(buttonErr));
-  }
-
-  await sendEvolutionText(settings, phone, NEXUS_MENU_TEXT);
-  return 'sent as text menu';
+  return result.rows;
 }
 
 router.post('/nexa', async (req, res) => {
@@ -163,10 +90,8 @@ router.post('/nexa', async (req, res) => {
     if (!userText || !userText.trim()) return;
 
     const conversation = await findOrCreateOperatorConversation(incoming.phone, incoming.name);
-    const hasPreviousMessages = await hasExistingOperatorMessages(conversation.id);
-    const selectedChoice = hasPreviousMessages ? normalizeNexusMenuChoice(userText) : null;
-    const requestedMenu = hasPreviousMessages && isMenuRequest(userText);
-    if (selectedChoice) userText = selectedChoice.label;
+    const previousMessages = await getRecentOperatorMessages(conversation.id, 7);
+    const alexControlled = previousMessages.some((message) => message.role === 'admin');
     await storeMessage(conversation.id, 'user', incoming.isVoice ? `[Voice note] ${userText}` : userText);
     runAfterReply('Nexus operator push notification', () => notifyOperatorAdmins({
       conversationId: conversation.id,
@@ -180,45 +105,33 @@ router.post('/nexa', async (req, res) => {
       return;
     }
 
-    if (!hasPreviousMessages || requestedMenu) {
-      const delivery = await sendFirstContactMenu(settings, incoming.phone);
-      await storeMessage(conversation.id, 'assistant', `[Welcome choices ${delivery}]\n${NEXUS_MENU_TEXT}`);
-      return;
-    }
-
-    if (selectedChoice?.key === 'talk_to_alex') {
-      const reply = 'Sure. I have paused the AI for this chat so Alex can follow up with you personally.';
-      await sendEvolutionText(settings, incoming.phone, reply);
-      await storeMessage(conversation.id, 'assistant', reply);
-      await db.query(`UPDATE operator_conversations SET ai_enabled = FALSE, updated_at = NOW() WHERE id = $1`, [conversation.id]);
-      if (settings.owner_phone) {
-        const nameLine = conversation.customer_name ? `Name: ${conversation.customer_name}\n` : '';
-        await sendEvolutionText(
-          settings,
-          settings.owner_phone,
-          `Nexus lead wants to talk to Alex.\n\n${nameLine}Phone: +${incoming.phone}\nConversation: ${conversation.id}`
-        );
-      }
-      return;
-    }
-
     const recent = await db.query(
       `SELECT role, content FROM (
          SELECT role, content, timestamp FROM operator_messages
-         WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 20
+         WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 7
        ) messages ORDER BY timestamp ASC`,
       [conversation.id]
     );
 
-    let prompt = settings.system_prompt;
+    let prompt = `${settings.system_prompt}
+
+Core behavior:
+- Use short sentences only.
+- Stay professional, calm and direct.
+- Before answering, consider the last 7 messages in this chat.
+- If the recent messages are only between the AI and the client, continue helping normally.
+- If any recent message was from Alex/the operator/admin, acknowledge it respectfully once.
+- In that case say you noticed Alex was handling the conversation, you respect that, and you can continue chatting only if the client wants while they wait for Alex.
+- Do not override promises, prices or decisions Alex made.
+- Do not use long lists unless the client asks.`;
     if (settings.agent_name) {
       prompt = `Your name is ${settings.agent_name}. When asked who you are, say you are ${settings.agent_name}, the Telenexus Technologies AI assistant.\n\n${prompt}`;
     }
     if (conversation.customer_name) {
       prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Use their first name naturally when helpful, but do not greet repeatedly in every message.`;
     }
-    if (selectedChoice?.prompt) {
-      prompt += `\n\n${selectedChoice.prompt}`;
+    if (alexControlled) {
+      prompt += `\n\nImportant: One of the last 7 messages was written by Alex/the operator. Your next reply must begin by acknowledging that Alex was handling this conversation and that you respect it. Then offer to keep the client company or answer simple questions while they wait for Alex.`;
     }
 
     const voiceReply = conversation.reply_mode === 'voice' || (conversation.reply_mode === 'auto' && incoming.isVoice);

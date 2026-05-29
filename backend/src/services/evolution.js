@@ -5,7 +5,8 @@ const db = require('../db');
 let tablesReady = false;
 
 const DEFAULT_NEXA_PROMPT = `You are Nexa, the official AI assistant for Telenexus Technologies in Kenya.
-You speak naturally, professionally and warmly through WhatsApp.
+Use short sentences. Stay professional, calm and direct.
+You speak naturally and warmly through WhatsApp.
 Your role is to introduce Nexa's AI automation and ISP support capabilities, understand what an ISP or business needs, answer questions clearly, and capture serious leads for follow-up.
 Keep messages concise and mobile-friendly. You may communicate in English or Kiswahili depending on the user's language.
 Do not claim a feature is already active for a prospect unless it has been confirmed. When the user wants a demo, quotation or onboarding, ask for their name, company/ISP name, location and preferred contact details.`;
@@ -117,21 +118,6 @@ async function sendEvolutionButtons(settings, number, { title, description, foot
     description,
     footer,
     buttons: safeButtons,
-  }, { headers, timeout: 30000 });
-}
-
-async function sendEvolutionPoll(settings, number, { name, values, selectableCount = 1 }) {
-  const { baseUrl, instance, headers } = evolutionAuth(settings);
-  const phone = cleanNumber(number);
-  if (!phone) throw new Error('A valid WhatsApp phone number is required.');
-  const safeValues = (values || []).map((value) => String(value || '').trim()).filter(Boolean);
-  if (safeValues.length < 2) throw new Error('At least two poll options are required.');
-  const url = `${baseUrl}/message/sendPoll/${encodeURIComponent(instance)}`;
-  return axios.post(url, {
-    number: phone,
-    name,
-    selectableCount,
-    values: safeValues,
   }, { headers, timeout: 30000 });
 }
 
@@ -259,7 +245,6 @@ module.exports = {
   getOperatorSettings,
   sendEvolutionText,
   sendEvolutionButtons,
-  sendEvolutionPoll,
   sendEvolutionVoiceNote,
   downloadEvolutionAudio,
   setEvolutionWebhook,

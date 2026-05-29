@@ -41,6 +41,8 @@ async function ensureOperatorAgentTables() {
       status VARCHAR(30) NOT NULL DEFAULT 'active',
       ai_enabled BOOLEAN NOT NULL DEFAULT TRUE,
       reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto' CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent')),
+      preference_asked_at TIMESTAMP WITH TIME ZONE,
+      preference_answered_at TIMESTAMP WITH TIME ZONE,
       internal_note TEXT,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -48,6 +50,8 @@ async function ensureOperatorAgentTables() {
   `);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS ai_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS preference_asked_at TIMESTAMP WITH TIME ZONE`);
+  await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS preference_answered_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS internal_note TEXT`);
   await db.query(`ALTER TABLE operator_conversations DROP CONSTRAINT IF EXISTS operator_conversations_reply_mode_check`);
   await db.query(`ALTER TABLE operator_conversations ADD CONSTRAINT operator_conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);

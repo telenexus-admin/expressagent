@@ -56,6 +56,17 @@ async function getRecentOperatorMessages(conversationId, limit = 7) {
   return result.rows;
 }
 
+function firstName(name) {
+  return String(name || '').trim().split(/\s+/)[0] || '';
+}
+
+function detectReplyPreference(text) {
+  const value = String(text || '').trim().toLowerCase();
+  if (/\b(voice|voice note|vn|audio)\b/.test(value)) return 'voice';
+  if (/\b(text|message|chat|typing|type)\b/.test(value)) return 'text';
+  return null;
+}
+
 router.post('/nexa', async (req, res) => {
   res.status(200).json({ received: true });
 
@@ -92,6 +103,17 @@ router.post('/nexa', async (req, res) => {
     const conversation = await findOrCreateOperatorConversation(incoming.phone, incoming.name);
     const previousMessages = await getRecentOperatorMessages(conversation.id, 7);
     const alexControlled = previousMessages.some((message) => message.role === 'admin');
+    const preferredMode = detectReplyPreference(userText);
+    if (preferredMode && conversation.reply_mode !== preferredMode) {
+      const updated = await db.query(
+        `UPDATE operator_conversations
+         SET reply_mode = $1, preference_answered_at = NOW(), updated_at = NOW()
+         WHERE id = $2
+         RETURNING *`,
+        [preferredMode, conversation.id]
+      );
+      Object.assign(conversation, updated.rows[0]);
+    }
     await storeMessage(conversation.id, 'user', incoming.isVoice ? `[Voice note] ${userText}` : userText);
     runAfterReply('Nexus operator push notification', () => notifyOperatorAdmins({
       conversationId: conversation.id,
@@ -128,10 +150,18 @@ Core behavior:
       prompt = `Your name is ${settings.agent_name}. When asked who you are, say you are ${settings.agent_name}, the Telenexus Technologies AI assistant.\n\n${prompt}`;
     }
     if (conversation.customer_name) {
-      prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Use their first name naturally when helpful, but do not greet repeatedly in every message.`;
+      const name = firstName(conversation.customer_name);
+      prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Address them as "${name}" naturally when it fits. Do not overuse the name.`;
     }
     if (alexControlled) {
       prompt += `\n\nImportant: One of the last 7 messages was written by Alex/the operator. Your next reply must begin by acknowledging that Alex was handling this conversation and that you respect it. Then offer to keep the client company or answer simple questions while they wait for Alex.`;
+    }
+    if (!conversation.preference_asked_at && !conversation.preference_answered_at) {
+      prompt += `\n\nAt the end of this reply, ask one short question: "Do you prefer text messages or voice notes?"`;
+    } else if (conversation.reply_mode === 'text') {
+      prompt += `\n\nThe person prefers text messages. Reply by text unless they ask otherwise.`;
+    } else if (conversation.reply_mode === 'voice') {
+      prompt += `\n\nThe person prefers voice notes. Reply by voice unless they ask otherwise.`;
     }
 
     const voiceReply = conversation.reply_mode === 'voice' || (conversation.reply_mode === 'auto' && incoming.isVoice);
@@ -158,6 +188,12 @@ Core behavior:
     }
 
     await storeMessage(conversation.id, 'assistant', voiceReply ? `[Voice reply] ${cleanReply}` : cleanReply);
+    if (!conversation.preference_asked_at && !conversation.preference_answered_at) {
+      await db.query(
+        `UPDATE operator_conversations SET preference_asked_at = NOW(), updated_at = NOW() WHERE id = $1`,
+        [conversation.id]
+      );
+    }
   } catch (err) {
     console.error('Nexa Evolution webhook processing failed:', safeError(err));
   }

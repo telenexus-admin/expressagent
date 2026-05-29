@@ -6,10 +6,11 @@ let tablesReady = false;
 
 const DEFAULT_NEXA_PROMPT = `You are Nexa, the official AI assistant for Telenexus Technologies in Kenya.
 Use short sentences. Stay professional, calm and direct.
+Write at most two short sentences per reply unless the user asks for details.
 You speak naturally and warmly through WhatsApp.
 Your role is to introduce Nexa's AI automation and ISP support capabilities, understand what an ISP or business needs, answer questions clearly, and capture serious leads for follow-up.
 Keep messages concise and mobile-friendly. You may communicate in English or Kiswahili depending on the user's language.
-Do not claim a feature is already active for a prospect unless it has been confirmed. When the user wants a demo, quotation or onboarding, ask for their name, company/ISP name, location and preferred contact details.`;
+Do not claim a feature is already active for a prospect unless it has been confirmed. When the user wants a demo, quotation or onboarding, ask for their company/ISP name, location and preferred contact details.`;
 
 async function ensureOperatorAgentTables() {
   if (tablesReady) return;
@@ -270,26 +271,27 @@ async function runOperatorFollowUps() {
     if (!settings?.enabled) return;
 
     const result = await db.query(`
-      WITH last_user AS (
-        SELECT conversation_id, MAX(timestamp) AS last_user_at
+      WITH last_assistant AS (
+        SELECT conversation_id, MAX(timestamp) AS last_assistant_at
         FROM operator_messages
-        WHERE role = 'user'
+        WHERE role = 'assistant'
+          AND content NOT LIKE '[Auto follow-up]%'
         GROUP BY conversation_id
       )
-      SELECT c.*, lu.last_user_at
+      SELECT c.*, la.last_assistant_at
       FROM operator_conversations c
-      JOIN last_user lu ON lu.conversation_id = c.id
+      JOIN last_assistant la ON la.conversation_id = c.id
       WHERE c.ai_enabled = TRUE
         AND c.reply_mode <> 'silent'
-        AND lu.last_user_at <= NOW() - INTERVAL '4 minutes'
-        AND (c.follow_up_sent_at IS NULL OR c.follow_up_sent_at < lu.last_user_at)
+        AND la.last_assistant_at <= NOW() - INTERVAL '4 minutes'
+        AND (c.follow_up_sent_at IS NULL OR c.follow_up_sent_at < la.last_assistant_at)
         AND NOT EXISTS (
           SELECT 1 FROM operator_messages m
           WHERE m.conversation_id = c.id
-            AND m.timestamp > lu.last_user_at
-            AND m.role IN ('assistant', 'admin')
+            AND m.timestamp > la.last_assistant_at
+            AND m.role IN ('user', 'admin')
         )
-      ORDER BY lu.last_user_at ASC
+      ORDER BY la.last_assistant_at ASC
       LIMIT 20
     `);
 

@@ -209,6 +209,7 @@ router.post('/nexa', async (req, res) => {
 
 Core behavior:
 - Use short sentences only.
+- Write at most two short sentences per reply unless the client asks for details.
 - Stay professional, calm and direct.
 - Before answering, consider the last 7 messages in this chat.
 - If the recent messages are only between the AI and the client, continue helping normally.
@@ -223,7 +224,9 @@ Core behavior:
     }
     if (conversation.customer_name) {
       const name = firstName(conversation.customer_name);
-      prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Address them as "${name}" naturally when it fits. Do not overuse the name.`;
+      prompt += `\n\nThe person's WhatsApp display name is "${conversation.customer_name}". Address them as "${name}" naturally when it fits. Do not overuse the name. Never ask for their name because WhatsApp already provided it. If you need lead details, ask for company/ISP name, location or preferred contact only.`;
+    } else {
+      prompt += `\n\nDo not ask for a personal name unless it is truly needed. Prioritize company/ISP name, location and contact details.`;
     }
     if (alexControlled) {
       prompt += `\n\nImportant: One of the last 7 messages was written by Alex/the operator. Your next reply must begin by acknowledging that Alex was handling this conversation and that you respect it. Then offer to keep the client company or answer simple questions while they wait for Alex.`;

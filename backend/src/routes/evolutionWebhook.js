@@ -84,13 +84,17 @@ function extractTimeHint(text) {
   return match ? match[0] : null;
 }
 
+function confirmsCurrentNumber(text) {
+  return /\b(yes|yeah|yep|sure|okay|ok|use it|that number|this number|same number|whatsapp number|my whatsapp)\b/i.test(String(text || ''));
+}
+
 async function handleCallScheduleRequest({ settings, conversation, userText, incomingPhone }) {
   const schedulingInProgress = Boolean(conversation.call_schedule_requested_at && !conversation.call_schedule_notified_at);
   if (!wantsAlexCall(userText) && !schedulingInProgress) return false;
 
-  const givenPhone = extractPhone(userText);
+  const givenPhone = extractPhone(userText) || (schedulingInProgress && confirmsCurrentNumber(userText) ? incomingPhone : null);
   if (!givenPhone) {
-    const reply = 'Sure. Which phone number should Alex call, and what time works best?';
+    const reply = `Should Alex call you on this WhatsApp number, +${incomingPhone}, or another number? What time works best?`;
     await sendEvolutionText(settings, incomingPhone, reply);
     await storeMessage(conversation.id, 'assistant', reply);
     await db.query(
@@ -126,8 +130,8 @@ async function handleCallScheduleRequest({ settings, conversation, userText, inc
   }));
 
   const reply = timeHint
-    ? `Done. I have shared your number and preferred time with Alex.`
-    : `Done. I have shared your number with Alex.`;
+    ? `Done. I have shared +${givenPhone} and your preferred time with Alex.`
+    : `Done. I have shared +${givenPhone} with Alex.`;
   await sendEvolutionText(settings, incomingPhone, reply);
   await storeMessage(conversation.id, 'assistant', reply);
   return true;

@@ -27,6 +27,7 @@ import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
 import Tickets from './pages/Tickets';
 import Logs from './pages/Logs';
+import Settings from './pages/Settings';
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -40,11 +41,13 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'settings',
   'logs',
 ];
 
 function hasPermission(admin, permission) {
   if (!admin) return false;
+  if (permission === 'settings') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
@@ -64,6 +67,7 @@ function firstAllowedPath(admin) {
     employees: 'employees',
     workflow: 'workflow',
     agent: 'agent',
+    settings: 'settings',
     logs: 'logs',
   };
   return pathMap[first] || 'statistics';
@@ -148,7 +152,7 @@ export default function App() {
             <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />
             <Route path="agent" element={<PermissionRoute permission="agent"><Agent /></PermissionRoute>} />
             <Route path="logs" element={<PermissionRoute permission="logs"><Logs /></PermissionRoute>} />
-            <Route path="settings" element={<Navigate to="../agent" replace />} />
+            <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

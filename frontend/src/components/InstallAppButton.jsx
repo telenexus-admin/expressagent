@@ -15,11 +15,12 @@ function isIosSafari() {
   return isIos && isSafari;
 }
 
-export default function InstallAppButton() {
+export default function InstallAppButton({ variant = 'dark' }) {
   const [deferredPrompt, setDeferredPrompt] = useState(() => window.__nexaInstallPrompt || null);
   const [installed, setInstalled] = useState(() => isStandalone());
   const [helpOpen, setHelpOpen] = useState(false);
   const isIos = isIosSafari();
+  const light = variant === 'light';
 
   useEffect(() => {
     if (installed) return undefined;
@@ -72,7 +73,11 @@ export default function InstallAppButton() {
     <>
       <button
         onClick={handleClick}
-        className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium bg-white/10 hover:bg-white/15 text-white transition-colors"
+        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors ${
+          light
+            ? 'bg-[#3535FF] text-white hover:bg-[#2828DD]'
+            : 'bg-white/10 hover:bg-white/15 text-white'
+        }`}
       >
         <DownloadIcon className="w-5 h-5 shrink-0" />
         <span className="flex-1 text-left">Install app</span>

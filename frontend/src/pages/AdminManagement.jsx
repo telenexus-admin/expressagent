@@ -19,6 +19,7 @@ const PERMISSION_OPTIONS = [
   { key: 'employees', label: 'Employees' },
   { key: 'workflow', label: 'Workflow' },
   { key: 'agent', label: 'Agent' },
+  { key: 'settings', label: 'Settings' },
 ];
 
 const DEFAULT_PERMISSIONS = ['statistics', 'conversations', 'tickets'];

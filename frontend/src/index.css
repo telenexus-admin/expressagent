@@ -60,3 +60,59 @@ body,
   border-top-right-radius: 22px;
   box-shadow: 9px -9px 0 8px #fff;
 }
+
+.theme-dark body {
+  background: #070b14;
+}
+
+.theme-dark .bg-\[\#f2f0f7\],
+.theme-dark .bg-\[\#f8fafc\],
+.theme-dark .bg-\[\#f8f6ff\],
+.theme-dark .bg-gray-50,
+.theme-dark .bg-slate-50 {
+  background-color: #0b1020 !important;
+}
+
+.theme-dark .bg-white {
+  background-color: #111827 !important;
+}
+
+.theme-dark .text-slate-950,
+.theme-dark .text-slate-900,
+.theme-dark .text-gray-900 {
+  color: #f8fafc !important;
+}
+
+.theme-dark .text-slate-700,
+.theme-dark .text-gray-700,
+.theme-dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+.theme-dark .text-slate-500,
+.theme-dark .text-gray-500,
+.theme-dark .text-slate-400,
+.theme-dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+.theme-dark .border-white,
+.theme-dark .border-slate-100,
+.theme-dark .border-gray-100,
+.theme-dark .border-gray-200 {
+  border-color: #1f2937 !important;
+}
+
+.theme-dark .shadow-slate-200\/70,
+.theme-dark .shadow-purple-100\/60,
+.theme-dark .shadow-purple-100\/70 {
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38) !important;
+}
+
+.theme-dark .sidebar-active-link::before {
+  box-shadow: 9px 9px 0 8px #111827;
+}
+
+.theme-dark .sidebar-active-link::after {
+  box-shadow: 9px -9px 0 8px #111827;
+}

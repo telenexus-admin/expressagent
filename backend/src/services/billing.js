@@ -81,7 +81,7 @@ function compactPhone(value) {
 
 function extractAccount(text) {
   const value = String(text || '');
-  const labelled = value.match(/\b(?:account|acc|account\s*number|client\s*id)\s*(?:is|number|no\.?|#|:|-)?\s*([A-Za-z0-9][A-Za-z0-9_-]{2,39})\b/i);
+  const labelled = value.match(/\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id)\s*(?:is|#|:|-)\s*([A-Za-z0-9][A-Za-z0-9_-]{2,39})\b/i);
   if (labelled) return labelled[1];
   const standalone = value.match(/\b(ACC[A-Za-z0-9_-]{3,30})\b/i);
   return standalone ? standalone[1] : null;

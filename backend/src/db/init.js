@@ -19,6 +19,8 @@ const schema = `
     agent_name VARCHAR(80),
     voice_id VARCHAR(20) DEFAULT 'alloy',
     opening_message TEXT,
+    welcome_menu_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    welcome_menu_config JSONB,
     photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     billing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     billing_provider VARCHAR(40),
@@ -31,6 +33,8 @@ const schema = `
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
 
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS welcome_menu_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS welcome_menu_config JSONB;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_enabled BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_provider VARCHAR(40);

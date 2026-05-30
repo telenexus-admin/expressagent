@@ -214,25 +214,57 @@ const WELCOME_MENU_ROWS = [
   },
 ];
 
-const WELCOME_MENU_TEXT = new Map(WELCOME_MENU_ROWS.map((row) => [row.id, row.text]));
+function getWelcomeMenuConfig(client) {
+  const configured = client.welcome_menu_config && typeof client.welcome_menu_config === 'object'
+    ? client.welcome_menu_config
+    : {};
+  const options = Array.isArray(configured.options) ? configured.options : WELCOME_MENU_ROWS;
+  const rows = options
+    .slice(0, 10)
+    .map((row, index) => ({
+      id: String(row.id || WELCOME_MENU_ROWS[index]?.id || `welcome_option_${index + 1}`).trim().slice(0, 200),
+      title: String(row.title || '').trim().slice(0, 24),
+      description: String(row.description || '').trim().slice(0, 72),
+      text: String(row.text || '').trim(),
+    }))
+    .filter((row) => row.id && row.title && row.text);
+
+  return {
+    enabled: client.welcome_menu_enabled !== false,
+    body: String(configured.body || '').trim(),
+    buttonText: String(configured.button_text || 'Choose option').trim() || 'Choose option',
+    footer: String(configured.footer || '').trim(),
+    sectionTitle: String(configured.section_title || 'How can I help?').trim() || 'How can I help?',
+    rows: rows.length > 0 ? rows : WELCOME_MENU_ROWS,
+  };
+}
+
+function welcomeMenuText(client, selectedId) {
+  const config = getWelcomeMenuConfig(client);
+  return new Map(config.rows.map((row) => [row.id, row.text])).get(selectedId);
+}
 
 async function sendWelcomeMenu(client, phoneNumber, conversationId) {
+  const config = getWelcomeMenuConfig(client);
+  if (!config.enabled) return false;
+
   const agentName = (client.agent_name || 'Imani').trim();
   const business = (client.business_name || client.name || 'Expressnet').trim();
-  const body =
+  const body = config.body ||
     `Hi, I'm ${agentName}, your ${business} assistant.\n\n` +
-    `What would you like help with today?`;
+      `What would you like help with today?`;
 
   await sendWhatsAppList(
     client.meta_phone_number_id,
     client.meta_access_token,
     phoneNumber,
     body,
-    'Choose option',
-    [{ title: 'How can I help?', rows: WELCOME_MENU_ROWS }],
-    'Expressnet support'
+    config.buttonText,
+    [{ title: config.sectionTitle, rows: config.rows }],
+    config.footer || `${business} support`
   );
-  await persistOutgoing(conversationId, `${body} [Installation | Billing & Payments | Technical Support | General Inquiry]`);
+  await persistOutgoing(conversationId, `${body} [${config.rows.map((row) => row.title).join(' | ')}]`);
+  return true;
 }
 
 router.get('/', async (req, res) => {
@@ -387,7 +419,7 @@ router.post('/', async (req, res) => {
     } else if (message.type === 'interactive') {
       const reply = message.interactive?.list_reply || message.interactive?.button_reply;
       const selectedId = reply?.id;
-      messageText = WELCOME_MENU_TEXT.get(selectedId) || reply?.title || '';
+      messageText = welcomeMenuText(client, selectedId) || reply?.title || '';
       if (!messageText) {
         console.log(`[client ${client.id}] Ignoring unsupported interactive reply from ${phoneNumber}.`);
         return;
@@ -461,9 +493,11 @@ router.post('/', async (req, res) => {
 
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
     if (!inboundIsImage && message.type !== 'interactive' && (isNew || MENU_KEYWORDS.has(normalized))) {
-      await sendWelcomeMenu(client, phoneNumber, conversation.id);
-      console.log(`Welcome menu sent to ${phoneNumber}.`);
-      return;
+      const sentMenu = await sendWelcomeMenu(client, phoneNumber, conversation.id);
+      if (sentMenu) {
+        console.log(`Welcome menu sent to ${phoneNumber}.`);
+        return;
+      }
     }
 
     if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {

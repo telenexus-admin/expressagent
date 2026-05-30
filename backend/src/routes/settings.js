@@ -8,6 +8,39 @@ router.use(authMiddleware, scopeMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const BILLING_PROVIDERS = ['wispman'];
+const DEFAULT_WELCOME_MENU = {
+  enabled: true,
+  body: '',
+  button_text: 'Choose option',
+  footer: '',
+  section_title: 'How can I help?',
+  options: [
+    {
+      id: 'express_installation',
+      title: 'Installation',
+      description: 'Get connected or request a new setup.',
+      text: 'I want to request a new installation.',
+    },
+    {
+      id: 'express_billing',
+      title: 'Billing & Payments',
+      description: 'Check payments, expiry, plan or account status.',
+      text: 'I need help with billing or payments.',
+    },
+    {
+      id: 'express_technical',
+      title: 'Technical Support',
+      description: 'Internet down, slow speeds, router or fibre issue.',
+      text: 'My internet has a technical issue.',
+    },
+    {
+      id: 'express_general',
+      title: 'General Inquiry',
+      description: 'Ask about packages, coverage or anything else.',
+      text: 'I have a general inquiry.',
+    },
+  ],
+};
 
 // Resolve which client's settings to operate on:
 //   regular admin -> their own client
@@ -42,6 +75,29 @@ function safeBillingConfig(row) {
   };
 }
 
+function normalizeWelcomeMenuConfig(raw = {}, enabled = true) {
+  const source = typeof raw === 'object' && raw !== null ? raw : {};
+  const options = Array.isArray(source.options) ? source.options : DEFAULT_WELCOME_MENU.options;
+  const cleanOptions = options
+    .slice(0, 10)
+    .map((option, index) => ({
+      id: String(option.id || DEFAULT_WELCOME_MENU.options[index]?.id || `welcome_option_${index + 1}`).trim().slice(0, 80),
+      title: String(option.title || '').trim().slice(0, 24),
+      description: String(option.description || '').trim().slice(0, 72),
+      text: String(option.text || '').trim().slice(0, 280),
+    }))
+    .filter((option) => option.id && option.title && option.text);
+
+  return {
+    enabled: Boolean(enabled),
+    body: String(source.body || '').trim().slice(0, 1024),
+    button_text: String(source.button_text || DEFAULT_WELCOME_MENU.button_text).trim().slice(0, 20),
+    footer: String(source.footer || '').trim().slice(0, 60),
+    section_title: String(source.section_title || DEFAULT_WELCOME_MENU.section_title).trim().slice(0, 24),
+    options: cleanOptions.length > 0 ? cleanOptions : DEFAULT_WELCOME_MENU.options,
+  };
+}
+
 // GET /api/settings — returns the agent config for the caller's client
 router.get('/', async (req, res) => {
   const targetClient = resolveTargetClient(req, res);
@@ -49,7 +105,7 @@ router.get('/', async (req, res) => {
 
   try {
     const result = await db.query(
-      `SELECT system_prompt, support_number, agent_name, voice_id
+      `SELECT system_prompt, support_number, agent_name, voice_id, welcome_menu_enabled, welcome_menu_config
        FROM clients WHERE id = $1`,
       [targetClient]
     );
@@ -62,6 +118,7 @@ router.get('/', async (req, res) => {
       support_number: row.support_number || '',
       agent_name: row.agent_name || '',
       voice_id: row.voice_id || 'alloy',
+      welcome_menu: normalizeWelcomeMenuConfig(row.welcome_menu_config, row.welcome_menu_enabled),
     });
   } catch (err) {
     console.error('GET /settings error:', err.message);
@@ -95,13 +152,14 @@ router.put('/', async (req, res) => {
   const targetClient = resolveTargetClient(req, res);
   if (!targetClient) return;
 
-  const { system_prompt, support_number, agent_name, voice_id } = req.body;
+  const { system_prompt, support_number, agent_name, voice_id, welcome_menu } = req.body;
 
   if (
     system_prompt === undefined &&
     support_number === undefined &&
     agent_name === undefined &&
-    voice_id === undefined
+    voice_id === undefined &&
+    welcome_menu === undefined
   ) {
     return res.status(400).json({ error: 'No settings provided' });
   }
@@ -171,6 +229,23 @@ router.put('/billing', async (req, res) => {
 
   if (!BILLING_PROVIDERS.includes(selectedProvider)) {
     return res.status(400).json({ error: 'Unsupported billing system' });
+  }
+
+  if (welcome_menu !== undefined) {
+    const normalized = normalizeWelcomeMenuConfig(welcome_menu, welcome_menu.enabled);
+    if (normalized.enabled && normalized.options.length === 0) {
+      return res.status(400).json({ error: 'At least one interactive option is required' });
+    }
+    params.push(normalized.enabled);
+    updates.push(`welcome_menu_enabled = $${params.length}`);
+    params.push(JSON.stringify({
+      body: normalized.body,
+      button_text: normalized.button_text,
+      footer: normalized.footer,
+      section_title: normalized.section_title,
+      options: normalized.options,
+    }));
+    updates.push(`welcome_menu_config = $${params.length}::jsonb`);
   }
 
   if (baseUrl === null) {

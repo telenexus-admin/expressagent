@@ -13,6 +13,20 @@ const VOICE_OPTIONS = [
   { id: 'shimmer', label: 'Shimmer', description: 'Soft, gentle female voice' },
 ];
 
+const DEFAULT_WELCOME_MENU = {
+  enabled: true,
+  body: '',
+  button_text: 'Choose option',
+  footer: '',
+  section_title: 'How can I help?',
+  options: [
+    { id: 'express_installation', title: 'Installation', description: 'Get connected or request a new setup.', text: 'I want to request a new installation.' },
+    { id: 'express_billing', title: 'Billing & Payments', description: 'Check payments, expiry, plan or account status.', text: 'I need help with billing or payments.' },
+    { id: 'express_technical', title: 'Technical Support', description: 'Internet down, slow speeds, router or fibre issue.', text: 'My internet has a technical issue.' },
+    { id: 'express_general', title: 'General Inquiry', description: 'Ask about packages, coverage or anything else.', text: 'I have a general inquiry.' },
+  ],
+};
+
 export default function Agent() {
   const { admin } = useAuth();
   const [searchParams] = useSearchParams();
@@ -23,6 +37,7 @@ export default function Agent() {
   const [voiceId, setVoiceId] = useState('alloy');
   const [systemPrompt, setSystemPrompt] = useState('');
   const [supportNumber, setSupportNumber] = useState('');
+  const [welcomeMenu, setWelcomeMenu] = useState(DEFAULT_WELCOME_MENU);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
@@ -51,6 +66,11 @@ export default function Agent() {
       setVoiceId(data.voice_id || 'alloy');
       setSystemPrompt(data.system_prompt || '');
       setSupportNumber(data.support_number || '');
+      setWelcomeMenu({
+        ...DEFAULT_WELCOME_MENU,
+        ...(data.welcome_menu || {}),
+        options: data.welcome_menu?.options?.length ? data.welcome_menu.options : DEFAULT_WELCOME_MENU.options,
+      });
     } catch (err) {
       console.error('Failed to fetch agent settings:', err.message);
     } finally {
@@ -99,6 +119,7 @@ export default function Agent() {
         voice_id: voiceId,
         system_prompt: systemPrompt,
         support_number: supportNumber.trim(),
+        welcome_menu: welcomeMenu,
       });
       setStatus('success');
       setTimeout(() => setStatus(null), 4000);
@@ -109,6 +130,19 @@ export default function Agent() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const updateWelcomeMenu = (field, value) => {
+    setWelcomeMenu((current) => ({ ...current, [field]: value }));
+  };
+
+  const updateWelcomeOption = (index, field, value) => {
+    setWelcomeMenu((current) => ({
+      ...current,
+      options: current.options.map((option, optionIndex) => (
+        optionIndex === index ? { ...option, [field]: value } : option
+      )),
+    }));
   };
 
   if (loading) {
@@ -210,6 +244,104 @@ export default function Agent() {
             placeholder="You are a helpful and professional customer support agent..."
             className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white resize-y font-mono"
           />
+        </div>
+
+        {/* Interactive welcome menu */}
+        <div className="bg-white rounded-2xl border border-gray-100 p-6 mb-4">
+          <div className="mb-4 flex items-start justify-between gap-4">
+            <div>
+              <h2 className="text-sm font-bold text-gray-900">Interactive Welcome Buttons</h2>
+              <p className="text-xs text-gray-500 mt-1">
+                Configure the first WhatsApp menu customers see when they start a chat or type menu.
+              </p>
+            </div>
+            <label className="flex items-center gap-2 text-xs font-bold text-gray-600">
+              <input
+                type="checkbox"
+                checked={welcomeMenu.enabled}
+                onChange={(e) => updateWelcomeMenu('enabled', e.target.checked)}
+                className="h-4 w-4 accent-[#3535FF]"
+              />
+              Enabled
+            </label>
+          </div>
+
+          <label className="block mb-3">
+            <span className="block text-xs font-bold text-gray-600 mb-1.5">Welcome message</span>
+            <textarea
+              rows={3}
+              value={welcomeMenu.body}
+              onChange={(e) => updateWelcomeMenu('body', e.target.value)}
+              placeholder="Leave blank to use the automatic greeting with agent and business name."
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white resize-y"
+            />
+          </label>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-4">
+            <label>
+              <span className="block text-xs font-bold text-gray-600 mb-1.5">Open button text</span>
+              <input
+                value={welcomeMenu.button_text}
+                maxLength={20}
+                onChange={(e) => updateWelcomeMenu('button_text', e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+              />
+            </label>
+            <label>
+              <span className="block text-xs font-bold text-gray-600 mb-1.5">Section title</span>
+              <input
+                value={welcomeMenu.section_title}
+                maxLength={24}
+                onChange={(e) => updateWelcomeMenu('section_title', e.target.value)}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+              />
+            </label>
+            <label>
+              <span className="block text-xs font-bold text-gray-600 mb-1.5">Footer</span>
+              <input
+                value={welcomeMenu.footer}
+                maxLength={60}
+                onChange={(e) => updateWelcomeMenu('footer', e.target.value)}
+                placeholder="Optional"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+              />
+            </label>
+          </div>
+
+          <div className="space-y-3">
+            {welcomeMenu.options.map((option, index) => (
+              <div key={option.id || index} className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <label>
+                    <span className="block text-xs font-bold text-gray-600 mb-1.5">Button title</span>
+                    <input
+                      value={option.title}
+                      maxLength={24}
+                      onChange={(e) => updateWelcomeOption(index, 'title', e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF]"
+                    />
+                  </label>
+                  <label>
+                    <span className="block text-xs font-bold text-gray-600 mb-1.5">Description</span>
+                    <input
+                      value={option.description}
+                      maxLength={72}
+                      onChange={(e) => updateWelcomeOption(index, 'description', e.target.value)}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF]"
+                    />
+                  </label>
+                </div>
+                <label className="block mt-3">
+                  <span className="block text-xs font-bold text-gray-600 mb-1.5">Message sent to AI after customer chooses it</span>
+                  <input
+                    value={option.text}
+                    onChange={(e) => updateWelcomeOption(index, 'text', e.target.value)}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF]"
+                  />
+                </label>
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* Support number */}

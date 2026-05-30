@@ -56,7 +56,7 @@ function Brand({ expressnet, compact = false }) {
 
 function AiSidebarHero({ compact = false }) {
   return (
-    <div className={`${compact ? 'mx-4 mb-3 h-[118px]' : 'mx-5 mb-4 h-[168px]'} relative shrink-0 overflow-hidden rounded-[26px] border border-white/10 bg-gradient-to-b from-[#301273] via-[#27105f] to-[#19083e] shadow-xl shadow-black/20`}>
+    <div className={`${compact ? 'mx-4 mb-3 h-[94px]' : 'mx-5 mb-3 h-[118px]'} relative shrink-0 overflow-hidden rounded-[22px] border border-white/10 bg-gradient-to-b from-[#301273] via-[#27105f] to-[#19083e] shadow-xl shadow-black/20`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_32%,rgba(33,167,255,0.42),transparent_32%),radial-gradient(circle_at_50%_100%,rgba(87,36,211,0.75),transparent_60%)]" />
       <div className="absolute left-3 top-4 h-1.5 w-1.5 rounded-full bg-sky-300/80 shadow-[0_0_12px_3px_rgba(125,211,252,0.85)]" />
       <div className="absolute right-7 top-8 h-1 w-1 rounded-full bg-white/75 shadow-[0_0_10px_2px_rgba(255,255,255,0.6)]" />
@@ -64,12 +64,12 @@ function AiSidebarHero({ compact = false }) {
       <img
         src={aiBotArtwork}
         alt="Nexa AI assistant"
-        className={`${compact ? 'h-[143px] -bottom-11 right-2' : 'h-[205px] -bottom-16 right-1'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_0_18px_rgba(48,167,255,0.5)]`}
+        className={`${compact ? 'h-[112px] -bottom-8 right-4' : 'h-[142px] -bottom-11 right-4'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_0_16px_rgba(48,167,255,0.5)]`}
       />
       {!compact && (
-        <div className="absolute bottom-4 left-4 z-20">
+        <div className="absolute bottom-3 left-4 z-20">
           <p className="text-[10px] font-black uppercase tracking-[0.17em] text-sky-300">Nexa AI</p>
-          <p className="mt-1 text-[10px] text-white/65">Always ready to assist</p>
+          <p className="mt-0.5 text-[10px] text-white/65">Always ready to assist</p>
         </div>
       )}
     </div>
@@ -199,8 +199,7 @@ export default function ClientDashboard() {
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
           <div className={expressnet ? 'px-6 pt-5 pb-4' : 'px-8 pt-6 pb-4'}><Brand expressnet={expressnet} /></div>
           <AiSidebarHero />
-          <nav className="no-visible-scrollbar pl-5 pr-0 flex-1 overflow-y-auto pb-5">{navList()}</nav>
-          <div className="px-6 pb-6 pt-3"><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-4 py-3 rounded-2xl text-sm font-bold bg-white/10 hover:bg-red-500 text-white/75 hover:text-white"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+          <nav className="sidebar-nav no-visible-scrollbar pl-5 pr-0 flex-1 overflow-y-auto pb-6">{navList()}</nav>
         </aside>
 
         <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
@@ -220,8 +219,7 @@ export default function ClientDashboard() {
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-3 border-b border-white/10 flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
         <AiSidebarHero compact />
-        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3">{navList(true)}</nav>
-        <div className="px-4 pt-3 pb-4 border-t border-white/10"><button onClick={signOut} className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-3 rounded-2xl text-sm font-bold bg-white/10"><LogoutIcon className="w-4 h-4" />Sign Out</button></div>
+        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 pb-6">{navList(true)}</nav>
       </aside>
     </div>
   );

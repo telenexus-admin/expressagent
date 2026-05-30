@@ -36,6 +36,7 @@ export default function Workflow() {
   const [employees, setEmployees] = useState([]);
   const [dispatches, setDispatches] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [editing, setEditing] = useState(false);
   const [saveState, setSaveState] = useState({}); // { [intentKey]: 'saving' | 'saved' | 'error' }
 
   const fetchAll = useCallback(async () => {
@@ -98,11 +99,37 @@ export default function Workflow() {
     <div className="flex-1 overflow-y-auto p-4 sm:p-8">
       <div className="max-w-6xl mx-auto">
         <div className="mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">Workflow</h1>
-          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            This is how your AI agent decides what to do with every customer message.
-            For each scenario below, pick the employee who should get an SMS alert when it happens.
-          </p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900">Workflow</h1>
+              <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                This is how your AI agent decides what to do with every customer message.
+                For each scenario below, pick the employee who should get an SMS alert when it happens.
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {editing ? (
+                <button
+                  type="button"
+                  onClick={() => { setEditing(false); fetchAll(); }}
+                  className="rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-bold text-amber-800"
+                >
+                  Lock routing
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setEditing(true)}
+                  className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-black text-white"
+                >
+                  Edit routing
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-800">
+            {editing ? 'Routing is unlocked. Employee changes save immediately.' : 'Routing is locked to prevent accidental employee assignment changes.'}
+          </div>
         </div>
 
         {employees.length === 0 && (
@@ -116,7 +143,7 @@ export default function Workflow() {
           </div>
         )}
 
-        <FlowDiagram intents={intents} employees={employees} onAssign={assign} saveState={saveState} />
+        <FlowDiagram intents={intents} employees={employees} onAssign={assign} saveState={saveState} editing={editing} />
 
         <RecentActivity dispatches={dispatches} />
       </div>
@@ -124,7 +151,7 @@ export default function Workflow() {
   );
 }
 
-function FlowDiagram({ intents, employees, onAssign, saveState }) {
+function FlowDiagram({ intents, employees, onAssign, saveState, editing }) {
   const containerRef = useRef(null);
   const aiNodeRef = useRef(null);
   const cardRefs = useRef({});
@@ -254,6 +281,7 @@ function FlowDiagram({ intents, employees, onAssign, saveState }) {
             employees={employees}
             onAssign={onAssign}
             saveState={saveState[intent.key]}
+            editing={editing}
           />
         ))}
       </div>
@@ -284,7 +312,7 @@ function TopNode({ icon, title, subtitle, accent, primary = false }) {
 }
 
 const IntentCard = React.forwardRef(function IntentCard(
-  { intent, employees, onAssign, saveState },
+  { intent, employees, onAssign, saveState, editing },
   ref
 ) {
   const style = INTENT_STYLE[intent.key] || { Icon: QuestionIcon, accent: '#6B7280', bg: 'bg-gray-50' };
@@ -347,8 +375,8 @@ const IntentCard = React.forwardRef(function IntentCard(
               <select
                 value={intent.assignedEmployeeId ?? ''}
                 onChange={(e) => onAssign(intent.key, e.target.value)}
-                disabled={employees.length === 0}
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:opacity-50"
+                disabled={!editing || employees.length === 0}
+                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <option value="">— No one (skip alert) —</option>
                 {employees.map((emp) => (

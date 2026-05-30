@@ -40,6 +40,7 @@ export default function Agent() {
   const [welcomeMenu, setWelcomeMenu] = useState(DEFAULT_WELCOME_MENU);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [editing, setEditing] = useState(false);
   const [status, setStatus] = useState(null);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -71,6 +72,7 @@ export default function Agent() {
         ...(data.welcome_menu || {}),
         options: data.welcome_menu?.options?.length ? data.welcome_menu.options : DEFAULT_WELCOME_MENU.options,
       });
+      setEditing(false);
     } catch (err) {
       console.error('Failed to fetch agent settings:', err.message);
     } finally {
@@ -122,6 +124,7 @@ export default function Agent() {
         welcome_menu: welcomeMenu,
       });
       setStatus('success');
+      setEditing(false);
       setTimeout(() => setStatus(null), 4000);
     } catch (err) {
       console.error('Failed to save agent settings:', err.message);
@@ -130,6 +133,12 @@ export default function Agent() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const cancelEdit = () => {
+    setStatus(null);
+    setErrorMessage('');
+    fetchSettings();
   };
 
   const updateWelcomeMenu = (field, value) => {
@@ -164,6 +173,35 @@ export default function Agent() {
           <p className="text-sm text-gray-500 mt-1">
             Name, voice, behavior, and escalation contact for the AI assistant
           </p>
+          <div className="mt-4 flex flex-col gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-[11px] font-black uppercase tracking-wide text-amber-700">
+                {editing ? 'Editing unlocked' : 'Configuration locked'}
+              </div>
+              <div className="mt-1 text-sm font-semibold text-amber-800">
+                {editing
+                  ? 'Changes here affect live customer-facing behavior.'
+                  : 'Viewing mode is locked. Unlock before changing prompts, buttons or support routing.'}
+              </div>
+            </div>
+            {editing ? (
+              <button
+                type="button"
+                onClick={cancelEdit}
+                className="rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-bold text-amber-800 hover:bg-amber-50"
+              >
+                Cancel edit
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setEditing(true)}
+                className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-black text-white hover:bg-slate-800"
+              >
+                Edit configuration
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Identity */}
@@ -178,9 +216,10 @@ export default function Agent() {
             type="text"
             value={agentName}
             onChange={(e) => setAgentName(e.target.value)}
+            disabled={!editing}
             maxLength={80}
             placeholder="e.g. Asha"
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
           />
         </div>
 
@@ -201,11 +240,12 @@ export default function Agent() {
                   key={opt.id}
                   type="button"
                   onClick={() => setVoiceId(opt.id)}
+                  disabled={!editing}
                   className={`text-left px-4 py-3 rounded-xl border transition-colors ${
                     selected
                       ? 'bg-[#3535FF] border-[#3535FF] text-white'
                       : 'bg-gray-50 border-gray-200 hover:bg-gray-100 text-gray-900'
-                  }`}
+                  } disabled:cursor-not-allowed disabled:opacity-60`}
                 >
                   <div className="flex items-center justify-between">
                     <span className="text-sm font-semibold">{opt.label}</span>
@@ -240,9 +280,10 @@ export default function Agent() {
           <textarea
             value={systemPrompt}
             onChange={(e) => setSystemPrompt(e.target.value)}
+            disabled={!editing}
             rows={12}
             placeholder="You are a helpful and professional customer support agent..."
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white resize-y font-mono"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white resize-y font-mono disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
           />
         </div>
 
@@ -260,6 +301,7 @@ export default function Agent() {
                 type="checkbox"
                 checked={welcomeMenu.enabled}
                 onChange={(e) => updateWelcomeMenu('enabled', e.target.checked)}
+                disabled={!editing}
                 className="h-4 w-4 accent-[#3535FF]"
               />
               Enabled
@@ -272,8 +314,9 @@ export default function Agent() {
               rows={3}
               value={welcomeMenu.body}
               onChange={(e) => updateWelcomeMenu('body', e.target.value)}
+              disabled={!editing}
               placeholder="Leave blank to use the automatic greeting with agent and business name."
-              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white resize-y"
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white resize-y disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
             />
           </label>
 
@@ -284,7 +327,8 @@ export default function Agent() {
                 value={welcomeMenu.button_text}
                 maxLength={20}
                 onChange={(e) => updateWelcomeMenu('button_text', e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+                disabled={!editing}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
               />
             </label>
             <label>
@@ -293,7 +337,8 @@ export default function Agent() {
                 value={welcomeMenu.section_title}
                 maxLength={24}
                 onChange={(e) => updateWelcomeMenu('section_title', e.target.value)}
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+                disabled={!editing}
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
               />
             </label>
             <label>
@@ -302,8 +347,9 @@ export default function Agent() {
                 value={welcomeMenu.footer}
                 maxLength={60}
                 onChange={(e) => updateWelcomeMenu('footer', e.target.value)}
+                disabled={!editing}
                 placeholder="Optional"
-                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+                className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
               />
             </label>
           </div>
@@ -318,7 +364,8 @@ export default function Agent() {
                       value={option.title}
                       maxLength={24}
                       onChange={(e) => updateWelcomeOption(index, 'title', e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF]"
+                      disabled={!editing}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                     />
                   </label>
                   <label>
@@ -327,7 +374,8 @@ export default function Agent() {
                       value={option.description}
                       maxLength={72}
                       onChange={(e) => updateWelcomeOption(index, 'description', e.target.value)}
-                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF]"
+                      disabled={!editing}
+                      className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                     />
                   </label>
                 </div>
@@ -336,7 +384,8 @@ export default function Agent() {
                   <input
                     value={option.text}
                     onChange={(e) => updateWelcomeOption(index, 'text', e.target.value)}
-                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF]"
+                    disabled={!editing}
+                    className="w-full bg-white border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
                   />
                 </label>
               </div>
@@ -358,8 +407,9 @@ export default function Agent() {
             type="tel"
             value={supportNumber}
             onChange={(e) => setSupportNumber(e.target.value)}
+            disabled={!editing}
             placeholder="+254712345678"
-            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+            className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:bg-gray-100 disabled:text-gray-400"
           />
         </div>
 
@@ -379,7 +429,7 @@ export default function Agent() {
           </div>
           <button
             onClick={save}
-            disabled={saving || !systemPrompt.trim()}
+            disabled={!editing || saving || !systemPrompt.trim()}
             className="bg-[#3535FF] hover:bg-[#2828DD] disabled:opacity-50 text-white px-6 py-2.5 rounded-full text-sm font-semibold transition-colors"
           >
             {saving ? 'Saving...' : 'Save Changes'}

@@ -44,6 +44,7 @@ export default function Settings() {
   const [billingLoading, setBillingLoading] = useState(true);
   const [billingSaving, setBillingSaving] = useState(false);
   const [billingTesting, setBillingTesting] = useState(false);
+  const [billingEditing, setBillingEditing] = useState(false);
   const [billingStatus, setBillingStatus] = useState(null);
 
   useEffect(() => {
@@ -56,34 +57,36 @@ export default function Settings() {
     return () => media?.removeEventListener?.('change', syncSystem);
   }, [theme]);
 
+  const loadBilling = async ({ silent = false } = {}) => {
+    if (!silent) setBillingLoading(true);
+    try {
+      const { data } = await api.get('/settings/billing');
+      setBilling((current) => ({
+        ...current,
+        enabled: Boolean(data.enabled),
+        provider: data.provider || 'wispman',
+        base_url: data.base_url || current.base_url,
+        api_key: '',
+        has_api_key: Boolean(data.has_api_key),
+      }));
+    } catch (err) {
+      setBillingStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to load billing settings.',
+      });
+    } finally {
+      if (!silent) setBillingLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
-    async function loadBilling() {
-      setBillingLoading(true);
-      try {
-        const { data } = await api.get('/settings/billing');
-        if (!cancelled) {
-          setBilling((current) => ({
-            ...current,
-            enabled: Boolean(data.enabled),
-            provider: data.provider || 'wispman',
-            base_url: data.base_url || current.base_url,
-            api_key: '',
-            has_api_key: Boolean(data.has_api_key),
-          }));
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setBillingStatus({
-            type: 'error',
-            message: err.response?.data?.error || 'Failed to load billing settings.',
-          });
-        }
-      } finally {
-        if (!cancelled) setBillingLoading(false);
+    async function run() {
+      if (!cancelled) {
+        await loadBilling();
       }
     }
-    loadBilling();
+    run();
     return () => {
       cancelled = true;
     };
@@ -141,6 +144,7 @@ export default function Settings() {
         api_key: '',
         has_api_key: Boolean(data.has_api_key),
       }));
+      setBillingEditing(false);
       setBillingStatus({ type: 'success', message: 'Billing integration saved.' });
     } catch (err) {
       setBillingStatus({
@@ -150,6 +154,12 @@ export default function Settings() {
     } finally {
       setBillingSaving(false);
     }
+  };
+
+  const cancelBillingEdit = async () => {
+    setBillingEditing(false);
+    setBillingStatus(null);
+    await loadBilling({ silent: true });
   };
 
   return (
@@ -210,6 +220,25 @@ export default function Settings() {
               <div className="text-sm font-semibold text-slate-400">Loading billing settings...</div>
             ) : (
               <div className="space-y-4">
+                <div className="flex flex-col gap-3 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <div className="text-[11px] font-black uppercase tracking-wide text-amber-700">
+                      {billingEditing ? 'Editing unlocked' : 'Billing config locked'}
+                    </div>
+                    <div className="mt-1 text-sm font-semibold text-amber-800">
+                      API details are protected from accidental changes.
+                    </div>
+                  </div>
+                  {billingEditing ? (
+                    <button type="button" onClick={cancelBillingEdit} className="rounded-full border border-amber-200 bg-white px-4 py-2 text-sm font-bold text-amber-800">
+                      Cancel edit
+                    </button>
+                  ) : (
+                    <button type="button" onClick={() => setBillingEditing(true)} className="rounded-full bg-slate-950 px-5 py-2.5 text-sm font-black text-white">
+                      Edit billing
+                    </button>
+                  )}
+                </div>
                 <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
                   <span>
                     <span className="block text-sm font-black text-slate-900">Enable billing lookup</span>
@@ -219,6 +248,7 @@ export default function Settings() {
                     type="checkbox"
                     checked={billing.enabled}
                     onChange={(event) => updateBilling('enabled', event.target.checked)}
+                    disabled={!billingEditing}
                     className="h-5 w-5 accent-[#3535FF]"
                   />
                 </label>
@@ -229,7 +259,8 @@ export default function Settings() {
                     <select
                       value={billing.provider}
                       onChange={(event) => updateBilling('provider', event.target.value)}
-                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                      disabled={!billingEditing}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#3535FF] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                     >
                       {BILLING_PROVIDERS.map((provider) => (
                         <option key={provider.value} value={provider.value}>{provider.label}</option>
@@ -242,7 +273,8 @@ export default function Settings() {
                       value={billing.base_url}
                       onChange={(event) => updateBilling('base_url', event.target.value)}
                       placeholder="https://example.com/index.php?_route=api"
-                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                      disabled={!billingEditing}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                     />
                   </label>
                 </div>
@@ -254,7 +286,8 @@ export default function Settings() {
                     value={billing.api_key}
                     onChange={(event) => updateBilling('api_key', event.target.value)}
                     placeholder={billing.has_api_key ? 'Saved. Leave blank to keep current key.' : 'Paste Wispman API key'}
-                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    disabled={!billingEditing}
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
                   />
                 </label>
 
@@ -266,7 +299,7 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={testBilling}
-                      disabled={billingTesting || (!billing.api_key && !billing.has_api_key)}
+                      disabled={!billingEditing || billingTesting || (!billing.api_key && !billing.has_api_key)}
                       className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"
                     >
                       {billingTesting ? 'Testing...' : 'Test connection'}
@@ -274,7 +307,7 @@ export default function Settings() {
                     <button
                       type="button"
                       onClick={saveBilling}
-                      disabled={billingSaving}
+                      disabled={!billingEditing || billingSaving}
                       className="rounded-xl bg-[#3535FF] px-4 py-2 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50"
                     >
                       {billingSaving ? 'Saving...' : 'Save integration'}

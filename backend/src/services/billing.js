@@ -55,19 +55,21 @@ async function get(path, params = {}) {
 
 function looksLikeBillingQuestion(text) {
   const value = String(text || '').toLowerCase();
-  return /\b(active|expired|expiry|expire|status|account|username|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
+  return /\b(active|expired|expiry|expire|status|account|username|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
 }
 
 function wantsPlans(text) {
-  return /\b(package|packages|plan|plans|price|prices|cost|how much|mbps|subscription)\b/i.test(String(text || ''));
+  const value = String(text || '');
+  if (/\b(my|current|am i on|i am on|i'm on|which)\b.{0,30}\b(package|plan)\b/i.test(value)) return false;
+  return /\b(package|packages|plan|plans|price|prices|cost|how much|mbps|subscription)\b/i.test(value);
 }
 
 function wantsPayment(text) {
-  return /\b(payment|paid|mpesa|m-pesa|receipt|transaction|recharge|invoice|pesapal)\b/i.test(String(text || ''));
+  return /\b(payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|invoice|pesapal)\b/i.test(String(text || ''));
 }
 
 function wantsClientStatus(text) {
-  return /\b(active|expired|expiry|expire|status|account|username|balance|renew|renewal|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
+  return /\b(active|expired|expiry|expire|status|account|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
 }
 
 function compactPhone(value) {
@@ -216,9 +218,14 @@ async function buildBillingContext({ customerPhone, messageText }) {
   return (
     `\n\nLIVE BILLING CONTEXT FROM WISPMAN (read-only):\n` +
     `${sections.join('\n\n')}\n\n` +
-    `Use these facts when answering. Keep the reply short and customer-friendly. ` +
-    `Do not expose raw API wording, API errors, credentials, internal IDs unless useful, or unsupported assumptions. ` +
-    `If the billing lookup says no account was found for this WhatsApp number, ask for their account number or registered phone.`
+    `IMPORTANT BILLING RULES:\n` +
+    `- You DO have read-only access to these billing facts through Wispman when this context appears.\n` +
+    `- Do not say you have no access to account details.\n` +
+    `- Do not send the customer to the portal as the main answer unless Wispman lookup failed and you need them to self-check.\n` +
+    `- If account data is found, answer directly using the status, plan, expiry and recharge facts above.\n` +
+    `- If no account was found for the WhatsApp number, ask for their registered phone, account number, or username.\n` +
+    `- Keep the reply short and customer-friendly.\n` +
+    `- Do not expose raw API wording, credentials, internal IDs unless useful, or unsupported assumptions.`
   );
 }
 

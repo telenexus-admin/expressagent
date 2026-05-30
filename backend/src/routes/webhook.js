@@ -12,7 +12,7 @@ const { sendSMS } = require('../services/sms');
 const { sendInstallationRequestEmail } = require('../services/email');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
-const { buildBillingContext } = require('../services/billing');
+const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -433,9 +433,20 @@ router.post('/', async (req, res) => {
     }
 
     let installationState = conversation.installation_state || null;
+    const voiceId = (client.voice_id || '').trim() || 'alloy';
     if (!inboundIsImage && !installationState && INSTALL_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`, [conversation.id]);
       installationState = 'collecting';
+    }
+
+    if (!inboundIsImage && installationState !== 'collecting') {
+      const billingReply = await answerBillingQuestion({ customerPhone: phoneNumber, messageText });
+      if (billingReply) {
+        await deliverReply(client, phoneNumber, billingReply, inboundIsVoice, voiceId);
+        await persistOutgoing(conversation.id, billingReply);
+        console.log(`Billing reply sent to ${phoneNumber}.`);
+        return;
+      }
     }
 
     const historyResult = await db.query(
@@ -446,7 +457,6 @@ router.post('/', async (req, res) => {
     );
     const basePrompt = client.system_prompt || 'You are a helpful customer support agent.';
     const agentName = (client.agent_name || '').trim();
-    const voiceId = (client.voice_id || '').trim() || 'alloy';
     let systemPrompt = basePrompt;
     if (agentName) systemPrompt = `Your name is ${agentName}. If a customer asks your name, introduce yourself as ${agentName}.\n\n${systemPrompt}`;
     if (conversation.customer_name) {

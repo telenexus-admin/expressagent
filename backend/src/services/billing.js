@@ -171,6 +171,98 @@ function summarizePlans(data) {
     .join('\n');
 }
 
+function formatPlanLines(data) {
+  const plans = Array.isArray(data?.plans) ? data.plans.filter((plan) => Number(plan.price) > 0).slice(0, 10) : [];
+  if (plans.length === 0) return null;
+  return plans
+    .map((plan) => `${plan.name}: KSh ${Number(plan.price).toLocaleString('en-KE')}/${plan.validity || 1} ${plan.validity_unit || 'Month'}`)
+    .join('\n');
+}
+
+function accountNotFoundReply(keys) {
+  const lookedUp = keys.account
+    ? `account ${keys.account}`
+    : keys.username
+    ? `username ${keys.username}`
+    : keys.phone
+    ? `phone +${keys.phone}`
+    : 'those details';
+  return `I could not find an account for ${lookedUp}. Please send your registered phone number, account number, or username.`;
+}
+
+function clientStatusReply(data) {
+  const status = data.status ? String(data.status).toLowerCase() : 'unknown';
+  const plan = data.plan || 'not shown';
+  const expiry = data.expiration ? `${data.expiration}${data.expiration_time ? ` at ${data.expiration_time}` : ''}` : 'not shown';
+  const recharge = data.last_recharged_on || 'not shown';
+  const name = data.fullname || data.username || 'your account';
+
+  return (
+    `I found ${name}.\n` +
+    `Status: ${status}.\n` +
+    `Current plan: ${plan}.\n` +
+    `Expiry: ${expiry}.\n` +
+    `Last recharge: ${recharge}.`
+  );
+}
+
+function paymentReply(data) {
+  const status = data.status || 'unknown';
+  const amount = data.amount ? `KSh ${Number(data.amount).toLocaleString('en-KE')}` : 'amount not shown';
+  const paidAt = data.paid_at || 'time not shown';
+  const method = data.payment_method || data.gateway || 'payment method not shown';
+  const recharge = data.recharge?.expiration ? ` Recharge expires on ${data.recharge.expiration}.` : '';
+
+  return `Payment status: ${status}.\nAmount: ${amount}.\nMethod: ${method}.\nPaid at: ${paidAt}.${recharge}`;
+}
+
+async function answerBillingQuestion({ customerPhone, messageText }) {
+  if (!canUseBilling() || !looksLikeBillingQuestion(messageText)) return null;
+
+  const keys = extractLookupKeys({ customerPhone, messageText });
+  const statusWanted = wantsClientStatus(messageText);
+  const paymentWanted = wantsPayment(messageText);
+  const plansWanted = wantsPlans(messageText);
+
+  if (statusWanted || paymentWanted) {
+    const params = clientLookupParams(keys);
+    if (params) {
+      const status = await get('v1/clients/status', params);
+      if (status.success && status.data && statusWanted) {
+        return clientStatusReply(status.data);
+      }
+      if (status.status === 404 && statusWanted) {
+        return accountNotFoundReply(keys);
+      }
+    }
+  }
+
+  if (paymentWanted) {
+    const params = paymentLookupParams(keys);
+    if (params) {
+      const payment = await get('v1/payments/status', params);
+      if (payment.success && payment.data) return paymentReply(payment.data);
+      if (payment.status === 404) {
+        return `I could not find that payment. Please send the M-Pesa transaction code or the registered payment phone number.`;
+      }
+    }
+  }
+
+  if (plansWanted) {
+    const plans = await get('v1/plans', { type: 'PPPOE' });
+    if (plans.success && plans.data) {
+      const lines = formatPlanLines(plans.data);
+      if (lines) return `Here are some current Expressnet packages:\n${lines}`;
+    }
+  }
+
+  if (statusWanted || paymentWanted) {
+    return `I can check that. Please send your registered phone number, account number, username, or M-Pesa transaction code.`;
+  }
+
+  return null;
+}
+
 async function buildBillingContext({ customerPhone, messageText }) {
   if (!canUseBilling() || !looksLikeBillingQuestion(messageText)) return null;
 
@@ -230,6 +322,7 @@ async function buildBillingContext({ customerPhone, messageText }) {
 }
 
 module.exports = {
+  answerBillingQuestion,
   buildBillingContext,
   canUseBilling,
   looksLikeBillingQuestion,

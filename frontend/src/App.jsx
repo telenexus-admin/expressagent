@@ -28,11 +28,13 @@ import Complaints from './pages/Complaints';
 import Tickets from './pages/Tickets';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
+import Billing from './pages/Billing';
 
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
   'tickets',
+  'billing',
   'escalations',
   'installations',
   'complaints',
@@ -47,7 +49,7 @@ const ALL_PERMISSIONS = [
 
 function hasPermission(admin, permission) {
   if (!admin) return false;
-  if (permission === 'settings') return true;
+  if (permission === 'settings' || permission === 'billing') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
@@ -59,6 +61,7 @@ function firstAllowedPath(admin) {
     statistics: 'statistics',
     conversations: 'conversations',
     tickets: 'tickets',
+    billing: 'billing',
     escalations: 'escalations',
     installations: 'installations',
     complaints: 'complaints',
@@ -140,6 +143,7 @@ export default function App() {
               <Route path=":id" element={<ChatView />} />
             </Route>
             <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
+            <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
             <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />

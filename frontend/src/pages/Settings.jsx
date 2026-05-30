@@ -1,13 +1,18 @@
 import React, { useEffect, useState } from 'react';
 import InstallAppButton from '../components/InstallAppButton';
 import PushNotificationsButton from '../components/PushNotificationsButton';
-import { CheckCircleIcon, CogIcon, DownloadIcon, PulseIcon } from '../components/Icons';
+import api from '../utils/api';
+import { CheckCircleIcon, CogIcon, CreditCardIcon, DownloadIcon, PulseIcon } from '../components/Icons';
 import { applyTheme, getStoredTheme, saveTheme } from '../utils/theme';
 
 const THEME_OPTIONS = [
   { key: 'system', label: 'Auto', helper: 'Match this phone or browser.' },
   { key: 'light', label: 'Light', helper: 'Bright dashboard for daytime use.' },
   { key: 'dark', label: 'Dark', helper: 'Low-light mode for night shifts.' },
+];
+
+const BILLING_PROVIDERS = [
+  { value: 'wispman', label: 'Wispman' },
 ];
 
 function SettingsCard({ icon: Icon, title, description, children }) {
@@ -29,6 +34,17 @@ function SettingsCard({ icon: Icon, title, description, children }) {
 
 export default function Settings() {
   const [theme, setTheme] = useState(() => getStoredTheme());
+  const [billing, setBilling] = useState({
+    enabled: false,
+    provider: 'wispman',
+    base_url: 'https://riseli.wispman.net/index.php?_route=api',
+    api_key: '',
+    has_api_key: false,
+  });
+  const [billingLoading, setBillingLoading] = useState(true);
+  const [billingSaving, setBillingSaving] = useState(false);
+  const [billingTesting, setBillingTesting] = useState(false);
+  const [billingStatus, setBillingStatus] = useState(null);
 
   useEffect(() => {
     applyTheme(theme);
@@ -40,9 +56,100 @@ export default function Settings() {
     return () => media?.removeEventListener?.('change', syncSystem);
   }, [theme]);
 
+  useEffect(() => {
+    let cancelled = false;
+    async function loadBilling() {
+      setBillingLoading(true);
+      try {
+        const { data } = await api.get('/settings/billing');
+        if (!cancelled) {
+          setBilling((current) => ({
+            ...current,
+            enabled: Boolean(data.enabled),
+            provider: data.provider || 'wispman',
+            base_url: data.base_url || current.base_url,
+            api_key: '',
+            has_api_key: Boolean(data.has_api_key),
+          }));
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setBillingStatus({
+            type: 'error',
+            message: err.response?.data?.error || 'Failed to load billing settings.',
+          });
+        }
+      } finally {
+        if (!cancelled) setBillingLoading(false);
+      }
+    }
+    loadBilling();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const chooseTheme = (mode) => {
     setTheme(mode);
     saveTheme(mode);
+  };
+
+  const updateBilling = (field, value) => {
+    setBilling((current) => ({ ...current, [field]: value }));
+    setBillingStatus(null);
+  };
+
+  const testBilling = async () => {
+    setBillingTesting(true);
+    setBillingStatus(null);
+    try {
+      const { data } = await api.post('/settings/billing/test', {
+        provider: billing.provider,
+        base_url: billing.base_url,
+        api_key: billing.api_key,
+      });
+      const scopes = Array.isArray(data.scopes) && data.scopes.length > 0 ? ` Scopes: ${data.scopes.join(', ')}.` : '';
+      setBillingStatus({
+        type: 'success',
+        message: `Connected${data.key_name ? ` as ${data.key_name}` : ''}.${scopes}`,
+      });
+    } catch (err) {
+      setBillingStatus({
+        type: 'error',
+        message: err.response?.data?.error || err.response?.data?.message || 'Connection test failed.',
+      });
+    } finally {
+      setBillingTesting(false);
+    }
+  };
+
+  const saveBilling = async () => {
+    setBillingSaving(true);
+    setBillingStatus(null);
+    try {
+      const { data } = await api.put('/settings/billing', {
+        enabled: billing.enabled,
+        provider: billing.provider,
+        base_url: billing.base_url,
+        api_key: billing.api_key,
+      });
+      setBilling((current) => ({
+        ...current,
+        enabled: Boolean(data.enabled),
+        provider: data.provider || current.provider,
+        base_url: data.base_url || current.base_url,
+        api_key: '',
+        has_api_key: Boolean(data.has_api_key),
+      }));
+      setBillingStatus({ type: 'success', message: 'Billing integration saved.' });
+    } catch (err) {
+      setBillingStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to save billing settings.',
+      });
+    } finally {
+      setBillingSaving(false);
+    }
   };
 
   return (
@@ -92,6 +199,102 @@ export default function Settings() {
                 );
               })}
             </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={CreditCardIcon}
+            title="Billing System"
+            description="Link the agent to a billing platform so it can answer account, plan and payment questions."
+          >
+            {billingLoading ? (
+              <div className="text-sm font-semibold text-slate-400">Loading billing settings...</div>
+            ) : (
+              <div className="space-y-4">
+                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                  <span>
+                    <span className="block text-sm font-black text-slate-900">Enable billing lookup</span>
+                    <span className="mt-0.5 block text-xs text-slate-500">The agent will use this before answering billing questions.</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={billing.enabled}
+                    onChange={(event) => updateBilling('enabled', event.target.checked)}
+                    className="h-5 w-5 accent-[#3535FF]"
+                  />
+                </label>
+
+                <div className="grid gap-3 sm:grid-cols-[180px_1fr]">
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Billing system
+                    <select
+                      value={billing.provider}
+                      onChange={(event) => updateBilling('provider', event.target.value)}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    >
+                      {BILLING_PROVIDERS.map((provider) => (
+                        <option key={provider.value} value={provider.value}>{provider.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    API base URL
+                    <input
+                      value={billing.base_url}
+                      onChange={(event) => updateBilling('base_url', event.target.value)}
+                      placeholder="https://example.com/index.php?_route=api"
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    />
+                  </label>
+                </div>
+
+                <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                  API key
+                  <input
+                    type="password"
+                    value={billing.api_key}
+                    onChange={(event) => updateBilling('api_key', event.target.value)}
+                    placeholder={billing.has_api_key ? 'Saved. Leave blank to keep current key.' : 'Paste Wispman API key'}
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                  />
+                </label>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="text-xs font-semibold text-slate-500">
+                    {billing.has_api_key ? 'An API key is saved for this client.' : 'No API key saved yet.'}
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={testBilling}
+                      disabled={billingTesting || (!billing.api_key && !billing.has_api_key)}
+                      className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                    >
+                      {billingTesting ? 'Testing...' : 'Test connection'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={saveBilling}
+                      disabled={billingSaving}
+                      className="rounded-xl bg-[#3535FF] px-4 py-2 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50"
+                    >
+                      {billingSaving ? 'Saving...' : 'Save integration'}
+                    </button>
+                  </div>
+                </div>
+
+                {billingStatus && (
+                  <div
+                    className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+                      billingStatus.type === 'success'
+                        ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                        : 'border-red-100 bg-red-50 text-red-700'
+                    }`}
+                  >
+                    {billingStatus.message}
+                  </div>
+                )}
+              </div>
+            )}
           </SettingsCard>
 
           <SettingsCard

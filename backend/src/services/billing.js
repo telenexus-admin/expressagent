@@ -1,6 +1,8 @@
 const axios = require('axios');
+const db = require('../db');
 
 const DEFAULT_BASE_URL = 'https://riseli.wispman.net/index.php?_route=api';
+const SUPPORTED_PROVIDERS = ['wispman'];
 
 function enabled() {
   return String(process.env.BILLING_API_ENABLED || '').toLowerCase() === 'true';
@@ -27,19 +29,69 @@ function canUseBilling() {
   return enabled() && provider() === 'wispman' && Boolean(apiKey());
 }
 
-function apiUrl(path) {
-  const cleanPath = String(path || '').replace(/^\/+/, '');
-  return `${baseUrl()}/${cleanPath}`;
+function envConfig() {
+  return {
+    enabled: enabled(),
+    provider: provider(),
+    baseUrl: baseUrl(),
+    apiKey: apiKey(),
+  };
 }
 
-async function get(path, params = {}) {
-  if (!canUseBilling()) return { success: false, skipped: true, error: 'Billing API is not configured' };
+async function loadClientBillingConfig(clientId) {
+  if (!clientId) return envConfig();
 
   try {
-    const response = await axios.get(apiUrl(path), {
+    const result = await db.query(
+      `SELECT billing_enabled, billing_provider, billing_api_base_url, billing_api_key
+       FROM clients
+       WHERE id = $1`,
+      [clientId]
+    );
+    const row = result.rows[0];
+    if (
+      row?.billing_enabled &&
+      row.billing_provider &&
+      row.billing_api_base_url &&
+      row.billing_api_key
+    ) {
+      return {
+        enabled: true,
+        provider: String(row.billing_provider).trim().toLowerCase(),
+        baseUrl: String(row.billing_api_base_url).trim().replace(/\/+$/, ''),
+        apiKey: String(row.billing_api_key).trim(),
+      };
+    }
+  } catch (err) {
+    if (err.code !== '42703') console.error('Load client billing config failed:', err.message);
+  }
+
+  return envConfig();
+}
+
+function canUseConfig(config) {
+  return Boolean(
+    config?.enabled &&
+      config.provider === 'wispman' &&
+      config.baseUrl &&
+      config.apiKey
+  );
+}
+
+function apiUrl(path, config = envConfig()) {
+  const cleanPath = String(path || '').replace(/^\/+/, '');
+  const root = String(config.baseUrl || DEFAULT_BASE_URL).trim().replace(/\/+$/, '');
+  return `${root}/${cleanPath}`;
+}
+
+async function get(path, params = {}, config = envConfig()) {
+  if (!canUseConfig(config)) return { success: false, skipped: true, error: 'Billing API is not configured' };
+
+  try {
+    const response = await axios.get(apiUrl(path, config), {
       headers: {
         Accept: 'application/json',
-        Authorization: `Bearer ${apiKey()}`,
+        Authorization: `Bearer ${config.apiKey}`,
       },
       params,
       timeout: timeoutMs(),
@@ -51,6 +103,40 @@ async function get(path, params = {}) {
     console.error(`Billing API ${path} failed: ${err.response?.status || 'no-status'} ${code} - ${message}`);
     return { success: false, error: { code, message }, status: err.response?.status || null };
   }
+}
+
+async function testBillingConnection({ provider: selectedProvider, baseUrl: selectedBaseUrl, apiKey: selectedApiKey }) {
+  const config = {
+    enabled: true,
+    provider: String(selectedProvider || 'wispman').trim().toLowerCase(),
+    baseUrl: String(selectedBaseUrl || '').trim().replace(/\/+$/, ''),
+    apiKey: String(selectedApiKey || '').trim(),
+  };
+
+  if (!SUPPORTED_PROVIDERS.includes(config.provider)) {
+    return { success: false, error: 'Unsupported billing system' };
+  }
+
+  if (!config.baseUrl || !config.apiKey) {
+    return { success: false, error: 'Base URL and API key are required' };
+  }
+
+  const result = await get('v1/ping', {}, config);
+  if (!result.success) {
+    return {
+      success: false,
+      error: result.error?.message || result.error || 'Connection failed',
+      code: result.error?.code || null,
+      status: result.status || null,
+    };
+  }
+
+  return {
+    success: true,
+    key_name: result.data?.key_name || null,
+    scopes: Array.isArray(result.data?.scopes) ? result.data.scopes : [],
+    server_time: result.data?.server_time || null,
+  };
 }
 
 function looksLikeBillingQuestion(text) {
@@ -228,8 +314,9 @@ function paymentReply(data) {
   return `Payment status: ${status}.\nAmount: ${amount}.\nMethod: ${method}.\nPaid at: ${paidAt}.${recharge}`;
 }
 
-async function answerBillingQuestion({ customerPhone, messageText }) {
-  if (!canUseBilling() || (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText))) return null;
+async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
+  const config = await loadClientBillingConfig(clientId);
+  if (!canUseConfig(config) || (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText))) return null;
 
   const keys = extractLookupKeys({ customerPhone, messageText });
   const statusWanted = wantsClientStatus(messageText) || hasStandalonePhone(messageText);
@@ -239,7 +326,7 @@ async function answerBillingQuestion({ customerPhone, messageText }) {
   if (statusWanted || paymentWanted) {
     const params = clientLookupParams(keys);
     if (params) {
-      const status = await get('v1/clients/status', params);
+      const status = await get('v1/clients/status', params, config);
       if (status.success && status.data && statusWanted) {
         return clientStatusReply(status.data);
       }
@@ -252,7 +339,7 @@ async function answerBillingQuestion({ customerPhone, messageText }) {
   if (paymentWanted) {
     const params = paymentLookupParams(keys);
     if (params) {
-      const payment = await get('v1/payments/status', params);
+      const payment = await get('v1/payments/status', params, config);
       if (payment.success && payment.data) return paymentReply(payment.data);
       if (payment.status === 404) {
         return `I could not find that payment. Please send the M-Pesa transaction code or the registered payment phone number.`;
@@ -261,7 +348,7 @@ async function answerBillingQuestion({ customerPhone, messageText }) {
   }
 
   if (plansWanted) {
-    const plans = await get('v1/plans', { type: 'PPPOE' });
+    const plans = await get('v1/plans', { type: 'PPPOE' }, config);
     if (plans.success && plans.data) {
       const lines = formatPlanLines(plans.data);
       if (lines) return `Here are some current Expressnet packages:\n${lines}`;
@@ -275,15 +362,16 @@ async function answerBillingQuestion({ customerPhone, messageText }) {
   return null;
 }
 
-async function buildBillingContext({ customerPhone, messageText }) {
-  if (!canUseBilling() || !looksLikeBillingQuestion(messageText)) return null;
+async function buildBillingContext({ clientId, customerPhone, messageText }) {
+  const config = await loadClientBillingConfig(clientId);
+  if (!canUseConfig(config) || !looksLikeBillingQuestion(messageText)) return null;
 
   const sections = [];
   const keys = extractLookupKeys({ customerPhone, messageText });
 
   if (wantsClientStatus(messageText) || wantsPayment(messageText)) {
     const params = clientLookupParams(keys);
-    const status = params ? await get('v1/clients/status', params) : { success: false, skipped: true };
+    const status = params ? await get('v1/clients/status', params, config) : { success: false, skipped: true };
     if (status.success && status.data) {
       sections.push(`CLIENT ACCOUNT STATUS\n${summarizeClientStatus(status.data)}`);
     } else if (status.status === 404) {
@@ -296,7 +384,7 @@ async function buildBillingContext({ customerPhone, messageText }) {
 
   if (wantsPayment(messageText)) {
     const params = paymentLookupParams(keys);
-    const payment = params ? await get('v1/payments/status', params) : { success: false, skipped: true };
+    const payment = params ? await get('v1/payments/status', params, config) : { success: false, skipped: true };
     if (payment.success && payment.data) {
       sections.push(`LATEST PAYMENT STATUS\n${summarizePayment(payment.data)}`);
     } else if (payment.status === 404) {
@@ -308,7 +396,7 @@ async function buildBillingContext({ customerPhone, messageText }) {
   }
 
   if (wantsPlans(messageText)) {
-    const plans = await get('v1/plans', { type: 'PPPOE' });
+    const plans = await get('v1/plans', { type: 'PPPOE' }, config);
     if (plans.success && plans.data) {
       const summary = summarizePlans(plans.data);
       if (summary) sections.push(`AVAILABLE PPPOE PLANS\n${summary}`);
@@ -337,5 +425,7 @@ module.exports = {
   answerBillingQuestion,
   buildBillingContext,
   canUseBilling,
+  loadClientBillingConfig,
   looksLikeBillingQuestion,
+  testBillingConnection,
 };

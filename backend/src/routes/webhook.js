@@ -505,7 +505,7 @@ router.post('/', async (req, res) => {
     }
 
     if (!inboundIsImage && installationState !== 'collecting') {
-      const billingReply = await answerBillingQuestion({ customerPhone: phoneNumber, messageText });
+      const billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingReply) {
         await deliverReply(client, phoneNumber, billingReply, inboundIsVoice, voiceId);
         await persistOutgoing(conversation.id, billingReply);
@@ -553,7 +553,7 @@ router.post('/', async (req, res) => {
     }
 
     if (!inboundIsImage) {
-      const billingContext = await buildBillingContext({ customerPhone: phoneNumber, messageText });
+      const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingContext) systemPrompt += billingContext;
     }
 

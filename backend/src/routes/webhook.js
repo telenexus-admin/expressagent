@@ -12,6 +12,7 @@ const { sendSMS } = require('../services/sms');
 const { sendInstallationRequestEmail } = require('../services/email');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
+const { buildBillingContext } = require('../services/billing');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -474,6 +475,11 @@ router.post('/', async (req, res) => {
         `Use valid JSON and keep the keys name, plan, location and email in English. Never explain this marker to the customer.`;
     } else if (installationState === 'submitted') {
       systemPrompt += `\n\nThis customer's installation request has already been submitted. Reassure them that the team will contact them; do not submit it again.`;
+    }
+
+    if (!inboundIsImage) {
+      const billingContext = await buildBillingContext({ customerPhone: phoneNumber, messageText });
+      if (billingContext) systemPrompt += billingContext;
     }
 
     const aiTask = inboundIsImage

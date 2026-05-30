@@ -72,6 +72,10 @@ function wantsClientStatus(text) {
   return /\b(active|expired|expiry|expire|status|account|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
 }
 
+function hasStandalonePhone(text) {
+  return /^(?:\+?254|0)\d[\d\s-]{7,15}$/i.test(String(text || '').trim());
+}
+
 function compactPhone(value) {
   const digits = String(value || '').replace(/\D/g, '');
   if (!digits) return null;
@@ -82,7 +86,10 @@ function compactPhone(value) {
 function extractAccount(text) {
   const value = String(text || '');
   const labelled = value.match(/\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id)\s*(?:is|#|:|-)\s*([A-Za-z0-9][A-Za-z0-9_-]{2,39})\b/i);
-  if (labelled) return labelled[1];
+  if (labelled) {
+    const candidate = labelled[1];
+    if (!/^(account|number|phone|registered|which|plan|package|status)$/i.test(candidate)) return candidate;
+  }
   const standalone = value.match(/\b(ACC[A-Za-z0-9_-]{3,30})\b/i);
   return standalone ? standalone[1] : null;
 }
@@ -106,12 +113,14 @@ function extractLookupKeys({ customerPhone, messageText }) {
   const account = extractAccount(messageText);
   const username = extractUsername(messageText);
   const transactionId = extractTransactionId(messageText);
-  const phone = compactPhone(messagePhone?.[0]) || compactPhone(customerPhone);
+  const explicitPhone = compactPhone(messagePhone?.[0]);
+  const phone = explicitPhone || compactPhone(customerPhone);
 
-  return { account, username, transactionId, phone };
+  return { account, username, transactionId, phone, explicitPhone };
 }
 
 function clientLookupParams(keys) {
+  if (keys.explicitPhone) return { phone: keys.explicitPhone };
   if (keys.account) return { account: keys.account };
   if (keys.username) return { username: keys.username };
   if (keys.phone) return { phone: keys.phone };
@@ -120,6 +129,7 @@ function clientLookupParams(keys) {
 
 function paymentLookupParams(keys) {
   if (keys.transactionId) return { transaction_id: keys.transactionId };
+  if (keys.explicitPhone) return { phone: keys.explicitPhone };
   if (keys.phone) return { phone: keys.phone };
   return null;
 }
@@ -180,7 +190,9 @@ function formatPlanLines(data) {
 }
 
 function accountNotFoundReply(keys) {
-  const lookedUp = keys.account
+  const lookedUp = keys.explicitPhone
+    ? `phone +${keys.explicitPhone}`
+    : keys.account
     ? `account ${keys.account}`
     : keys.username
     ? `username ${keys.username}`
@@ -217,10 +229,10 @@ function paymentReply(data) {
 }
 
 async function answerBillingQuestion({ customerPhone, messageText }) {
-  if (!canUseBilling() || !looksLikeBillingQuestion(messageText)) return null;
+  if (!canUseBilling() || (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText))) return null;
 
   const keys = extractLookupKeys({ customerPhone, messageText });
-  const statusWanted = wantsClientStatus(messageText);
+  const statusWanted = wantsClientStatus(messageText) || hasStandalonePhone(messageText);
   const paymentWanted = wantsPayment(messageText);
   const plansWanted = wantsPlans(messageText);
 

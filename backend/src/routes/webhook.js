@@ -4,6 +4,7 @@ const db = require('../db');
 const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent } = require('../services/openai');
 const {
   sendWhatsAppMessage,
+  sendWhatsAppList,
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
   sendWhatsAppVoiceNote,
@@ -141,6 +142,7 @@ async function deliverReply(client, phoneNumber, text, asVoice, voiceId) {
 
 const OPT_OUT_KEYWORDS = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
 const RESUME_KEYWORDS = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
+const MENU_KEYWORDS = new Set(['menu', 'options', 'services']);
 const HUMAN_KEYWORDS = new Set(['human', 'agent', 'person', 'representative', 'support', 'mtu', 'mwakilishi', 'msaada']);
 const HUMAN_ESCALATION_REGEX = new RegExp(`\\b(${[...HUMAN_KEYWORDS].join('|')})\\b`, 'i');
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -184,6 +186,54 @@ const INSTALL_REGEX = new RegExp(
   ].join('|'),
   'i'
 );
+
+const WELCOME_MENU_ROWS = [
+  {
+    id: 'express_installation',
+    title: 'Installation',
+    description: 'Get connected or request a new setup.',
+    text: 'I want to request a new installation.',
+  },
+  {
+    id: 'express_billing',
+    title: 'Billing & Payments',
+    description: 'Check payments, expiry, plan or account status.',
+    text: 'I need help with billing or payments.',
+  },
+  {
+    id: 'express_technical',
+    title: 'Technical Support',
+    description: 'Internet down, slow speeds, router or fibre issue.',
+    text: 'My internet has a technical issue.',
+  },
+  {
+    id: 'express_general',
+    title: 'General Inquiry',
+    description: 'Ask about packages, coverage or anything else.',
+    text: 'I have a general inquiry.',
+  },
+];
+
+const WELCOME_MENU_TEXT = new Map(WELCOME_MENU_ROWS.map((row) => [row.id, row.text]));
+
+async function sendWelcomeMenu(client, phoneNumber, conversationId) {
+  const agentName = (client.agent_name || 'Imani').trim();
+  const business = (client.business_name || client.name || 'Expressnet').trim();
+  const body =
+    `Hi, I'm ${agentName}, your ${business} assistant.\n\n` +
+    `What would you like help with today?`;
+
+  await sendWhatsAppList(
+    client.meta_phone_number_id,
+    client.meta_access_token,
+    phoneNumber,
+    body,
+    'Choose option',
+    [{ title: 'How can I help?', rows: WELCOME_MENU_ROWS }],
+    'Expressnet support'
+  );
+  await persistOutgoing(conversationId, `${body} [Installation | Billing & Payments | Technical Support | General Inquiry]`);
+}
 
 router.get('/', async (req, res) => {
   const mode = req.query['hub.mode'];
@@ -265,7 +315,7 @@ router.post('/', async (req, res) => {
     const phoneNumber = message.from;
     const profileName = value?.contacts?.[0]?.profile?.name;
     const timestamp = new Date(parseInt(message.timestamp, 10) * 1000);
-    const { conversation } = await findOrCreateConversation(client.id, phoneNumber, profileName);
+    const { conversation, isNew } = await findOrCreateConversation(client.id, phoneNumber, profileName);
 
     let messageText;
     let inboundIsVoice = false;
@@ -334,6 +384,15 @@ router.post('/', async (req, res) => {
     } else if (message.type === 'text') {
       messageText = message.text.body.trim();
       console.log(`[client ${client.id}] Incoming from ${phoneNumber}: "${messageText}"`);
+    } else if (message.type === 'interactive') {
+      const reply = message.interactive?.list_reply || message.interactive?.button_reply;
+      const selectedId = reply?.id;
+      messageText = WELCOME_MENU_TEXT.get(selectedId) || reply?.title || '';
+      if (!messageText) {
+        console.log(`[client ${client.id}] Ignoring unsupported interactive reply from ${phoneNumber}.`);
+        return;
+      }
+      console.log(`[client ${client.id}] Incoming menu choice from ${phoneNumber}: "${messageText}" (${selectedId || 'no-id'})`);
     } else {
       console.log(`[client ${client.id}] Ignoring unsupported message type (${message.type}) from ${phoneNumber} without sending a customer reply.`);
       return;
@@ -401,6 +460,12 @@ router.post('/', async (req, res) => {
     if (conversation.status === 'human_takeover') return;
 
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
+    if (!inboundIsImage && message.type !== 'interactive' && (isNew || MENU_KEYWORDS.has(normalized))) {
+      await sendWelcomeMenu(client, phoneNumber, conversation.id);
+      console.log(`Welcome menu sent to ${phoneNumber}.`);
+      return;
+    }
+
     if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
       const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';

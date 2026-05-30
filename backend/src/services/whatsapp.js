@@ -67,6 +67,41 @@ async function sendWhatsAppButtons(phoneNumberId, accessToken, phoneNumber, body
   );
 }
 
+async function sendWhatsAppList(phoneNumberId, accessToken, phoneNumber, bodyText, buttonText, sections, footerText = '') {
+  assertCreds(phoneNumberId, accessToken);
+  const safeSections = (sections || []).map((section) => ({
+    title: String(section.title || 'Options').slice(0, 24),
+    rows: (section.rows || []).slice(0, 10).map((row) => ({
+      id: String(row.id).slice(0, 200),
+      title: String(row.title).slice(0, 24),
+      description: row.description ? String(row.description).slice(0, 72) : undefined,
+    })),
+  })).filter((section) => section.rows.length > 0);
+  if (safeSections.length === 0) throw new Error('At least one WhatsApp list row is required.');
+
+  const interactive = {
+    type: 'list',
+    body: { text: String(bodyText).slice(0, 1024) },
+    action: {
+      button: String(buttonText || 'Choose option').slice(0, 20),
+      sections: safeSections,
+    },
+  };
+  if (footerText) interactive.footer = { text: String(footerText).slice(0, 60) };
+
+  await axios.post(
+    `${GRAPH_BASE}/${phoneNumberId}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneNumber,
+      type: 'interactive',
+      interactive,
+    },
+    { headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }) }
+  );
+}
+
 // Fetch a media URL by ID, then download the bytes. Returns { buffer, mimeType }.
 async function downloadWhatsAppMedia(accessToken, mediaId) {
   if (!accessToken) throw new Error('WhatsApp access token required to download media.');
@@ -122,6 +157,7 @@ async function sendWhatsAppVoiceNote(phoneNumberId, accessToken, phoneNumber, me
 module.exports = {
   sendWhatsAppMessage,
   sendWhatsAppButtons,
+  sendWhatsAppList,
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
   sendWhatsAppVoiceNote,

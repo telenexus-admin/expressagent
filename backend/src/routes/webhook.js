@@ -395,7 +395,7 @@ router.post('/', async (req, res) => {
         await persistOutgoing(conversation.id, notice);
         return;
       }
-    } else if (message.type === 'image' && client.photo_troubleshooting_enabled === true) {
+    } else if (message.type === 'image' && client.photo_troubleshooting_enabled !== false) {
       const mediaId = message.image?.id;
       inboundImageCaption = String(message.image?.caption || '').trim();
       try {
@@ -563,7 +563,7 @@ router.post('/', async (req, res) => {
       systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate. Do not repeat the greeting on every follow-up.`;
     }
     if (supportNumber) systemPrompt += `\n\nIf human escalation is appropriate, tell the customer they can reach live support at ${supportNumber}.`;
-    if (client.photo_troubleshooting_enabled === true) {
+    if (client.photo_troubleshooting_enabled !== false) {
       systemPrompt +=
         `\n\nPHOTO-ASSISTED TROUBLESHOOTING:\n` +
         `When a customer is reporting internet trouble but cannot clearly describe the router or fibre terminal lights, you may politely ask them to send a clear photo of the device front panel showing the indicator lights and connected cables. ` +

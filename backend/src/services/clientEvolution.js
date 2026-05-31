@@ -52,22 +52,32 @@ async function sendClientText(client, number, text) {
   );
 }
 
-async function downloadClientAudio(client, messageKey) {
+async function downloadClientMedia(client, messageKey, { convertToMp4 = false } = {}) {
   const { baseUrl, headers, instance } = clientSettings(client);
-  if (!messageKey?.id) throw new Error('Incoming voice note has no message id.');
+  if (!messageKey?.id) throw new Error('Incoming media message has no message id.');
   const key = { id: messageKey.id };
   if (messageKey.remoteJid) key.remoteJid = messageKey.remoteJid;
   if (typeof messageKey.fromMe === 'boolean') key.fromMe = messageKey.fromMe;
   const response = await axios.post(
     `${baseUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(instance)}`,
-    { message: { key }, convertToMp4: false },
+    { message: { key }, convertToMp4 },
     { headers, timeout: 60000 }
   );
   let base64 = response.data?.base64 || response.data?.data?.base64 || response.data?.media?.base64 || response.data?.data?.media?.base64;
-  if (!base64) throw new Error('Evolution returned no audio for the voice note.');
+  if (!base64) throw new Error('Evolution returned no media for the message.');
   if (base64.includes(',')) base64 = base64.split(',', 2)[1];
-  const mimeType = response.data?.mimetype || response.data?.mimeType || response.data?.data?.mimetype || 'audio/ogg';
+  const mimeType = response.data?.mimetype || response.data?.mimeType || response.data?.data?.mimetype || 'application/octet-stream';
   return { buffer: Buffer.from(base64, 'base64'), mimeType };
 }
 
-module.exports = { setClientWebhook, sendClientText, downloadClientAudio };
+async function downloadClientAudio(client, messageKey) {
+  const media = await downloadClientMedia(client, messageKey, { convertToMp4: false });
+  return { ...media, mimeType: media.mimeType || 'audio/ogg' };
+}
+
+async function downloadClientImage(client, messageKey) {
+  const media = await downloadClientMedia(client, messageKey, { convertToMp4: false });
+  return { ...media, mimeType: media.mimeType || 'image/jpeg' };
+}
+
+module.exports = { setClientWebhook, sendClientText, downloadClientAudio, downloadClientImage };

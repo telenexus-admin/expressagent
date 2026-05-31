@@ -1,8 +1,8 @@
 const express = require('express');
 const db = require('../db');
-const { generateAIResponse, transcribeAudio, classifyComplaint, classifyIntent } = require('../services/openai');
+const { generateAIResponse, analyzeSupportImage, transcribeAudio, classifyComplaint, classifyIntent } = require('../services/openai');
 const { parseEvolutionInbound } = require('../services/evolution');
-const { sendClientText, downloadClientAudio } = require('../services/clientEvolution');
+const { sendClientText, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 
@@ -28,6 +28,12 @@ function audioFilename(mimeType) {
   if (String(mimeType || '').includes('mp4')) return 'voice-note.m4a';
   if (String(mimeType || '').includes('wav')) return 'voice-note.wav';
   return 'voice-note.ogg';
+}
+
+function imageFilename(mimeType) {
+  const subtype = String(mimeType || 'image/jpeg').split('/')[1]?.split(';')[0] || 'jpg';
+  const safeSubtype = subtype.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
+  return `whatsapp-image.${safeSubtype === 'jpeg' ? 'jpg' : safeSubtype}`;
 }
 
 async function loadClient(id, token) {
@@ -67,11 +73,12 @@ async function findOrCreateConversation(clientId, phone, name) {
 }
 
 async function saveMessage(conversationId, role, content) {
-  await db.query(
-    `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, $2, $3, NOW())`,
+  const inserted = await db.query(
+    `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, $2, $3, NOW()) RETURNING id`,
     [conversationId, role, content]
   );
   await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+  return inserted.rows[0];
 }
 
 async function reply(client, conversationId, phone, text) {
@@ -94,6 +101,8 @@ router.post('/client/:clientId', async (req, res) => {
 
     let userText = String(incoming.text || '').trim();
     let storedText = userText;
+    let inboundImageBuffer = null;
+    let inboundImageMimeType = null;
     if (incoming.isVoice) {
       try {
         const { buffer, mimeType } = await downloadClientAudio(client, incoming.messageKey);
@@ -105,10 +114,35 @@ router.post('/client/:clientId', async (req, res) => {
         return;
       }
     }
+    if (incoming.isImage && client.photo_troubleshooting_enabled !== false) {
+      try {
+        const { buffer, mimeType } = await downloadClientImage(client, incoming.messageKey);
+        const resolvedMimeType = String(mimeType || incoming.mediaMimeType || 'image/jpeg');
+        if (!resolvedMimeType.startsWith('image/') && !String(incoming.mediaMimeType || '').startsWith('image/')) {
+          throw new Error('Received media is not an image.');
+        }
+        inboundImageBuffer = buffer;
+        inboundImageMimeType = resolvedMimeType.startsWith('image/') ? resolvedMimeType : incoming.mediaMimeType || 'image/jpeg';
+        storedText = `[Image received] ${userText || 'Customer sent a router/support photo for checking.'}`;
+        userText = userText || '[Customer sent a router/support photo for checking]';
+      } catch (err) {
+        console.error(`[evo client ${client.id}] Image download failed:`, safeError(err));
+        return;
+      }
+    }
     if (!userText) return;
 
     const conversation = await findOrCreateConversation(client.id, incoming.phone, incoming.name);
-    await saveMessage(conversation.id, 'user', storedText);
+    const savedUserMessage = await saveMessage(conversation.id, 'user', storedText);
+    if (inboundImageBuffer) {
+      if (savedUserMessage?.id) {
+        await db.query(
+          `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)
+           VALUES ($1, 'image', $2, $3, $4)`,
+          [savedUserMessage.id, inboundImageMimeType, imageFilename(inboundImageMimeType), inboundImageBuffer]
+        );
+      }
+    }
     runAfterReply('Push notification for inbound Evolution message', () => notifyClientAdmins({
       clientId: client.id,
       conversationId: conversation.id,
@@ -176,7 +210,9 @@ router.post('/client/:clientId', async (req, res) => {
     if (client.support_number) {
       prompt += `\n\nWhen a human is required, tell the customer they can reach support at ${client.support_number}.`;
     }
-    const aiReply = await generateAIResponse(prompt, recent.rows);
+    const aiReply = incoming.isImage && inboundImageBuffer
+      ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
+      : await generateAIResponse(prompt, recent.rows);
     if (!aiReply || !aiReply.trim()) return;
     await reply(client, conversation.id, incoming.phone, aiReply.trim());
     console.log(`[evo client ${client.id}] AI reply sent to ${incoming.phone}.`);

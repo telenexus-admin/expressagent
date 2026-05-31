@@ -10,7 +10,7 @@ const labels = {
   provisioning: 'Provisioning', pending_qr: 'Waiting for connection', connected: 'Connected · review needed',
   reviewed: 'Reviewed · configure workspace', active: 'Workspace ready', failed: 'Connection failed',
 };
-const defaultPrompt = 'You are a helpful and professional customer support agent. Answer customer questions clearly and briefly. Be empathetic and solution-focused. If you cannot resolve an issue, tell the customer a human agent will follow up soon. Never invent information.';
+const defaultPrompt = 'You are a helpful and professional ISP customer support agent. Answer clearly and briefly. Handle common ISP issues such as no internet, slow speeds, red LOS, router lights, billing, payments, package expiry and installation requests. Use customer photos of routers, ONTs, cables and speed tests for careful visual troubleshooting based only on what is visible. If you cannot resolve an issue, tell the customer a human agent will follow up soon. Never invent information.';
 
 function Stat({ label, value, helper, primary }) {
   return <div className={`rounded-[25px] p-5 shadow-sm ${primary ? 'bg-gradient-to-br from-[#3535FF] to-[#6D44FF] text-white' : 'border border-indigo-50 bg-white text-slate-950'}`}><p className={`text-xs font-bold ${primary ? 'text-white/70' : 'text-slate-400'}`}>{label}</p><p className="mt-2 text-3xl font-black">{value}</p><p className={`mt-2 text-[11px] ${primary ? 'text-white/70' : 'text-slate-400'}`}>{helper}</p></div>;

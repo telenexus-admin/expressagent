@@ -1,5 +1,6 @@
 require('dotenv').config();
 const { Pool } = require('pg');
+const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -15,13 +16,13 @@ const schema = `
     meta_business_account_id VARCHAR(64),
     meta_verify_token VARCHAR(128) UNIQUE,
     support_number VARCHAR(50),
-    system_prompt TEXT NOT NULL DEFAULT 'You are a helpful customer support agent.',
+    system_prompt TEXT NOT NULL DEFAULT 'You are a helpful and professional ISP customer support agent.',
     agent_name VARCHAR(80),
     voice_id VARCHAR(20) DEFAULT 'alloy',
     opening_message TEXT,
     welcome_menu_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     welcome_menu_config JSONB,
-    photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     billing_enabled BOOLEAN NOT NULL DEFAULT FALSE,
     billing_provider VARCHAR(40),
     billing_api_base_url TEXT,
@@ -35,7 +36,10 @@ const schema = `
 
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS welcome_menu_enabled BOOLEAN NOT NULL DEFAULT TRUE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS welcome_menu_config JSONB;
-  ALTER TABLE clients ADD COLUMN IF NOT EXISTS photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS photo_troubleshooting_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+  ALTER TABLE clients ALTER COLUMN photo_troubleshooting_enabled SET DEFAULT TRUE;
+  ALTER TABLE clients ALTER COLUMN system_prompt SET DEFAULT 'You are a helpful and professional ISP customer support agent.';
+  UPDATE clients SET photo_troubleshooting_enabled = TRUE WHERE photo_troubleshooting_enabled = FALSE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_enabled BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_provider VARCHAR(40);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_base_url TEXT;
@@ -320,7 +324,7 @@ async function bootstrapDefaultClient() {
         $1, $2, $3, $4,
         $5, $6, $7, $8
       ) RETURNING id`,
-      [metaPhoneNumberId, metaAccessToken, metaBusinessAccountId, metaVerifyToken, (oldSettings.support_number || '').trim() || null, oldSettings.system_prompt || 'You are a helpful customer support agent.', (oldSettings.agent_name || '').trim() || null, (oldSettings.voice_id || '').trim() || 'alloy']
+      [metaPhoneNumberId, metaAccessToken, metaBusinessAccountId, metaVerifyToken, (oldSettings.support_number || '').trim() || null, oldSettings.system_prompt || DEFAULT_SYSTEM_PROMPT, (oldSettings.agent_name || '').trim() || null, (oldSettings.voice_id || '').trim() || 'alloy']
     );
     clientId = inserted.rows[0].id;
     console.log(`Created Default Client (id=${clientId}) from environment variables.`);

@@ -1,5 +1,6 @@
 const OpenAI = require('openai');
 const { toFile } = require('openai/uploads');
+const { withIspKnowledge } = require('./ispKnowledge');
 
 let client = null;
 
@@ -11,13 +12,14 @@ function getClient() {
 }
 
 async function generateAIResponse(systemPrompt, messageHistory) {
+  const hardenedPrompt = withIspKnowledge(systemPrompt);
   const continuityInstruction =
     `\n\nVISUAL SUPPORT CONTINUITY:\n` +
     `If the earlier conversation includes a reply about a customer photo, treat the visible device names, labels, lights and cable observations already stated in that reply as available context for follow-up questions. ` +
     `For example, if an earlier photo reply identified a MikroTik RouterBOARD hEX, answer a later question about the router using that recorded identification. ` +
     `Do not claim you cannot identify a device simply because the customer asks about it after the image message. Never invent details that were not previously observed.`;
   const messages = [
-    { role: 'system', content: `${systemPrompt}${continuityInstruction}` },
+    { role: 'system', content: `${hardenedPrompt}${continuityInstruction}` },
     ...messageHistory.map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
@@ -57,7 +59,7 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
     `Use a natural, confident and helpful tone; do not say you cannot identify models through photos when a visible label allows identification.`;
 
   const messages = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: withIspKnowledge(systemPrompt) },
     ...messageHistory.map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,

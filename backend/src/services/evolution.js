@@ -198,6 +198,8 @@ function parseEvolutionInbound(payload) {
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;
   const message = data?.message || data?.data?.message || {};
   const isVoice = Boolean(message.audioMessage || message.voiceMessage);
+  const isImage = Boolean(message.imageMessage);
+  const mediaMimeType = message.imageMessage?.mimetype || message.audioMessage?.mimetype || message.voiceMessage?.mimetype || null;
   const buttonResponse = message.buttonsResponseMessage || message.templateButtonReplyMessage || message.interactiveResponseMessage;
   const selectedButtonId = (
     buttonResponse?.selectedButtonId ||
@@ -223,12 +225,14 @@ function parseEvolutionInbound(payload) {
     data?.body ||
     ''
   ).trim();
-  if (!text && !isVoice) return null;
+  if (!text && !isVoice && !isImage) return null;
   return {
     phone: cleanNumber(remoteJid),
     name: data?.pushName || data?.data?.pushName || payload?.senderName || null,
     text,
     isVoice,
+    isImage,
+    mediaMimeType,
     messageKey: key,
   };
 }

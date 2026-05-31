@@ -5,16 +5,10 @@ const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { ensureEvoOnboardingTable, refreshOnboarding } = require('../services/evoSelfOnboarding');
+const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 
 const router = express.Router();
 router.use(authMiddleware, superadminMiddleware);
-
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful and professional customer support agent. Your goals are:
-- Answer customer questions accurately and concisely
-- Be polite, empathetic, and solution-focused
-- If you cannot resolve an issue, let the customer know a human agent will follow up soon
-- Never make up information you are unsure about
-- Keep responses brief and easy to read on a mobile device`;
 
 router.get('/', async (_req, res) => {
   try {
@@ -151,7 +145,7 @@ router.post(
           String(req.body.system_prompt || '').trim() || DEFAULT_SYSTEM_PROMPT,
           req.body.agent_name.trim(),
           String(req.body.opening_message || '').trim() || null,
-          req.body.photo_troubleshooting_enabled === true,
+          req.body.photo_troubleshooting_enabled !== false,
         ]
       );
       const client = insertedClient.rows[0];

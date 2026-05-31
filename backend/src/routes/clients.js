@@ -5,17 +5,11 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
+const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 
 router.use(authMiddleware, superadminMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
-
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful and professional customer support agent. Your goals are:
-- Answer customer questions accurately and concisely
-- Be polite, empathetic, and solution-focused
-- If you cannot resolve an issue, let the customer know a human agent will follow up soon
-- Never make up information you are unsure about
-- Keep responses brief and easy to read on a mobile device`;
 
 function genVerifyToken() {
   return crypto.randomBytes(24).toString('hex');
@@ -139,7 +133,7 @@ router.post(
           (agent_name || '').trim() || null,
           (voice_id || 'alloy').trim(),
           (opening_message || '').trim() || null,
-          photo_troubleshooting_enabled === true,
+          photo_troubleshooting_enabled !== false,
         ]
       );
 

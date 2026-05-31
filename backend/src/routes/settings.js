@@ -204,6 +204,23 @@ router.put('/', async (req, res) => {
     updates.push(`voice_id = $${params.length}`);
   }
 
+  if (welcome_menu !== undefined) {
+    const normalized = normalizeWelcomeMenuConfig(welcome_menu, welcome_menu.enabled);
+    if (normalized.enabled && normalized.options.length === 0) {
+      return res.status(400).json({ error: 'At least one interactive option is required' });
+    }
+    params.push(normalized.enabled);
+    updates.push(`welcome_menu_enabled = $${params.length}`);
+    params.push(JSON.stringify({
+      body: normalized.body,
+      button_text: normalized.button_text,
+      footer: normalized.footer,
+      section_title: normalized.section_title,
+      options: normalized.options,
+    }));
+    updates.push(`welcome_menu_config = $${params.length}::jsonb`);
+  }
+
   try {
     params.push(targetClient);
     await db.query(
@@ -229,23 +246,6 @@ router.put('/billing', async (req, res) => {
 
   if (!BILLING_PROVIDERS.includes(selectedProvider)) {
     return res.status(400).json({ error: 'Unsupported billing system' });
-  }
-
-  if (welcome_menu !== undefined) {
-    const normalized = normalizeWelcomeMenuConfig(welcome_menu, welcome_menu.enabled);
-    if (normalized.enabled && normalized.options.length === 0) {
-      return res.status(400).json({ error: 'At least one interactive option is required' });
-    }
-    params.push(normalized.enabled);
-    updates.push(`welcome_menu_enabled = $${params.length}`);
-    params.push(JSON.stringify({
-      body: normalized.body,
-      button_text: normalized.button_text,
-      footer: normalized.footer,
-      section_title: normalized.section_title,
-      options: normalized.options,
-    }));
-    updates.push(`welcome_menu_config = $${params.length}::jsonb`);
   }
 
   if (baseUrl === null) {

@@ -18,6 +18,8 @@ const REPLY_MODES = ['auto', 'text', 'voice', 'silent'];
 
 async function ensureConversationReplyModeColumn() {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+  await db.query(`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_reply_mode_check`);
+  await db.query(`ALTER TABLE conversations ADD CONSTRAINT conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
 }
 
 async function ensureClientSmsColumns() {
@@ -25,6 +27,8 @@ async function ensureClientSmsColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS support_email VARCHAR(255)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_email_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
 }
 
 async function loadConversationWithClient(conversationId, scope) {

@@ -15,6 +15,23 @@ function applyClientScope(req, params, alias) {
   return 'TRUE';
 }
 
+async function ensureEscalationSchema() {
+  await db.query(`
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'human';
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS summary TEXT;
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS request_email_status VARCHAR(20) NOT NULL DEFAULT 'skipped';
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS request_email_error TEXT;
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS confirmation_email_status VARCHAR(20) NOT NULL DEFAULT 'skipped';
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS confirmation_email_error TEXT;
+    ALTER TABLE escalations DROP CONSTRAINT IF EXISTS escalations_type_check;
+    ALTER TABLE escalations ADD CONSTRAINT escalations_type_check CHECK (type IN ('human', 'installation', 'complaint'));
+    ALTER TABLE escalations DROP CONSTRAINT IF EXISTS escalations_notify_status_check;
+    ALTER TABLE escalations ADD CONSTRAINT escalations_notify_status_check CHECK (notify_status IN ('sent', 'failed', 'no_support_number', 'logged'));
+  `);
+}
+
 async function ensureCustomerIntakeTable() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS customer_intake_submissions (
@@ -196,6 +213,7 @@ router.get('/installation-intakes/:id/identity', async (req, res) => {
 // GET /api/escalations
 router.get('/', async (req, res) => {
   try {
+    await ensureEscalationSchema();
     const { status, type } = req.query;
     const conditions = [];
     const params = [];

@@ -49,6 +49,7 @@ const ALL_PERMISSIONS = [
 
 function hasPermission(admin, permission) {
   if (!admin) return false;
+  if (permission === 'billing' && Number(admin.client_id) === 1) return false;
   if (permission === 'settings' || permission === 'billing') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;

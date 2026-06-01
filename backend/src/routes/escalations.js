@@ -3,6 +3,7 @@ const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { ensureRemarksSchema } = require('../services/clientRemarks');
+const { ensureTicketSchema } = require('../services/tickets');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -124,6 +125,7 @@ router.patch('/remarks/:id/review', async (req, res) => {
 router.get('/installation-intakes', async (req, res) => {
   try {
     await ensureCustomerIntakeTable();
+    await ensureTicketSchema();
     const { status } = req.query;
 
     const params = [];

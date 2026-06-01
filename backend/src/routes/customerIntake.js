@@ -164,18 +164,22 @@ router.post('/:clientId', async (req, res) => {
       `Installation intake submitted. Plan: ${text(req.body.plan_interest, 140) || 'Not selected'}. ` +
       `Location: ${locationSummary || area}. ID scan uploaded.`;
 
-    await createOrUpdateTicket({
-      clientId: client.id,
-      customerPhone,
-      customerName,
-      title: 'Installation intake form submitted',
-      category: 'installation',
-      priority: 'normal',
-      intent: 'new_installation',
-      source: 'customer_intake_form',
-      summary,
-      messageText: summary,
-    });
+    try {
+      await createOrUpdateTicket({
+        clientId: client.id,
+        customerPhone,
+        customerName,
+        title: 'Installation intake form submitted',
+        category: 'installation',
+        priority: 'normal',
+        intent: 'new_installation',
+        source: 'customer_intake_form',
+        summary,
+        messageText: summary,
+      });
+    } catch (ticketErr) {
+      console.error('Customer intake ticket creation failed:', ticketErr.message);
+    }
 
     notifyClientAdmins({
       clientId: client.id,

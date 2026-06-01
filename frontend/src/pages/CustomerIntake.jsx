@@ -66,8 +66,8 @@ function Section({ number, title, description, children }) {
   );
 }
 
-const MAX_DIRECT_UPLOAD_BYTES = 950 * 1024;
-const MAX_PDF_BYTES = 900 * 1024;
+const MAX_DIRECT_UPLOAD_BYTES = 650 * 1024;
+const MAX_PDF_BYTES = 650 * 1024;
 
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
@@ -124,7 +124,7 @@ async function prepareIdentityFile(file) {
   const type = String(file.type || '').toLowerCase();
   if (type === 'application/pdf') {
     if (file.size > MAX_PDF_BYTES) {
-      throw new Error('PDF is too large. Please upload a smaller PDF under 900 KB, or take a clear photo instead.');
+      throw new Error('PDF is too large. Please upload a smaller PDF under 650 KB, or take a clear photo instead.');
     }
     return file;
   }

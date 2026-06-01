@@ -110,6 +110,25 @@ const schema = `
   ALTER TABLE message_attachments DROP CONSTRAINT IF EXISTS message_attachments_media_type_check;
   ALTER TABLE message_attachments ADD CONSTRAINT message_attachments_media_type_check CHECK (media_type IN ('image', 'audio'));
 
+  CREATE TABLE IF NOT EXISTS media_library (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    title VARCHAR(140) NOT NULL,
+    description TEXT,
+    media_type VARCHAR(30) NOT NULL CHECK (media_type IN ('image', 'document')),
+    mime_type VARCHAR(100) NOT NULL,
+    filename VARCHAR(255) NOT NULL,
+    trigger_keywords JSONB NOT NULL DEFAULT '[]'::jsonb,
+    attach_on_welcome BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    data BYTEA NOT NULL,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+  ALTER TABLE media_library DROP CONSTRAINT IF EXISTS media_library_media_type_check;
+  ALTER TABLE media_library ADD CONSTRAINT media_library_media_type_check CHECK (media_type IN ('image', 'document'));
+  CREATE INDEX IF NOT EXISTS idx_media_library_client ON media_library(client_id, is_active, attach_on_welcome);
+
   CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,

@@ -8,12 +8,14 @@ const {
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
   sendWhatsAppVoiceNote,
+  sendWhatsAppMediaMessage,
 } = require('../services/whatsapp');
 const { sendSMS } = require('../services/sms');
 const { sendInstallationRequestEmail } = require('../services/email');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const { matchingMedia, welcomeMedia } = require('../services/mediaLibrary');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -176,6 +178,18 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+async function deliverMediaItems(client, phoneNumber, items, conversationId, reason = 'media') {
+  for (const item of items || []) {
+    try {
+      await sendWhatsAppMediaMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, item);
+      await persistOutgoing(conversationId, `[Sent ${item.media_type}: ${item.title}]`);
+      console.log(`[client ${client.id}] Sent ${reason} media "${item.title}" to ${phoneNumber}.`);
+    } catch (err) {
+      console.error(`Failed to send media "${item.title}" to ${phoneNumber}:`, formatErr(err));
+    }
+  }
+}
+
 const INSTALL_REGEX = new RegExp(
   [
     '\\b(want|need|looking for|book|schedule|please|can\\s*(?:you|i)|how\\s*(?:do|to))\\b' +
@@ -264,6 +278,8 @@ async function sendWelcomeMenu(client, phoneNumber, conversationId) {
     config.footer || `${business} support`
   );
   await persistOutgoing(conversationId, `${body} [${config.rows.map((row) => row.title).join(' | ')}]`);
+  const attachments = await welcomeMedia(client.id);
+  await deliverMediaItems(client, phoneNumber, attachments, conversationId, 'welcome');
   return true;
 }
 
@@ -543,6 +559,8 @@ router.post('/', async (req, res) => {
       if (billingReply) {
         await deliverReply(client, phoneNumber, billingReply, inboundIsVoice, voiceId);
         await persistOutgoing(conversation.id, billingReply);
+        const mediaMatches = await matchingMedia(client.id, `${messageText}\n${billingReply}`);
+        await deliverMediaItems(client, phoneNumber, mediaMatches, conversation.id, 'matched');
         console.log(`Billing reply sent to ${phoneNumber}.`);
         return;
       }
@@ -671,6 +689,10 @@ router.post('/', async (req, res) => {
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, customerReply);
       await persistOutgoing(conversation.id, customerReply);
       console.log(inboundIsImage ? `AI image-guided reply sent to ${phoneNumber}.` : `AI reply sent to ${phoneNumber}.`);
+    }
+    if (!inboundIsImage) {
+      const mediaMatches = await matchingMedia(client.id, `${messageText}\n${customerReply}`);
+      await deliverMediaItems(client, phoneNumber, mediaMatches, conversation.id, 'matched');
     }
 
     runAfterReply('Post-reply ticket workflow', async () => {

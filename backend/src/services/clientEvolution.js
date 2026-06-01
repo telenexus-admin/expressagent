@@ -70,6 +70,25 @@ async function downloadClientMedia(client, messageKey, { convertToMp4 = false } 
   return { buffer: Buffer.from(base64, 'base64'), mimeType };
 }
 
+async function sendClientMedia(client, number, media) {
+  const { baseUrl, headers, instance } = clientSettings(client);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp number is required.');
+  const isImage = String(media.mime_type || '').startsWith('image/');
+  return axios.post(
+    `${baseUrl}/message/sendMedia/${encodeURIComponent(instance)}`,
+    {
+      number: phone,
+      mediatype: isImage ? 'image' : 'document',
+      mimetype: media.mime_type,
+      caption: media.description || media.title || '',
+      fileName: media.filename,
+      media: media.data.toString('base64'),
+    },
+    { headers, timeout: 60000 }
+  );
+}
+
 async function downloadClientAudio(client, messageKey) {
   const media = await downloadClientMedia(client, messageKey, { convertToMp4: false });
   return { ...media, mimeType: media.mimeType || 'audio/ogg' };
@@ -80,4 +99,4 @@ async function downloadClientImage(client, messageKey) {
   return { ...media, mimeType: media.mimeType || 'image/jpeg' };
 }
 
-module.exports = { setClientWebhook, sendClientText, downloadClientAudio, downloadClientImage };
+module.exports = { setClientWebhook, sendClientText, sendClientMedia, downloadClientAudio, downloadClientImage };

@@ -15,6 +15,7 @@ const activityRoutes = require('./routes/activity');
 const reportRoutes = require('./routes/reports');
 const ticketRoutes = require('./routes/tickets');
 const billingRoutes = require('./routes/billing');
+const mediaLibraryRoutes = require('./routes/mediaLibrary');
 const helpBotRoutes = require('./routes/helpBot');
 const pushRoutes = require('./routes/pushNotifications');
 const operatorAgentRoutes = require('./routes/operatorAgent');
@@ -41,7 +42,7 @@ app.use(
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);
 
-app.use(express.json());
+app.use(express.json({ limit: '12mb' }));
 app.use('/api/public/evo-onboarding', evoSelfOnboardingRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
@@ -58,6 +59,7 @@ app.use('/api/activity', activityRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/media-library', mediaLibraryRoutes);
 app.use('/api/help-bot', helpBotRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/operator-agent', operatorAgentRoutes);

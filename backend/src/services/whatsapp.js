@@ -154,6 +154,34 @@ async function sendWhatsAppVoiceNote(phoneNumberId, accessToken, phoneNumber, me
   );
 }
 
+async function sendWhatsAppMediaMessage(phoneNumberId, accessToken, phoneNumber, media) {
+  assertCreds(phoneNumberId, accessToken);
+  const mediaId = await uploadWhatsAppMedia(
+    phoneNumberId,
+    accessToken,
+    media.data,
+    media.mime_type,
+    media.filename
+  );
+  const isImage = String(media.mime_type || '').startsWith('image/');
+  const type = isImage ? 'image' : 'document';
+  const payload = isImage
+    ? { id: mediaId, caption: media.description || media.title || undefined }
+    : { id: mediaId, filename: media.filename, caption: media.description || media.title || undefined };
+
+  await axios.post(
+    `${GRAPH_BASE}/${phoneNumberId}/messages`,
+    {
+      messaging_product: 'whatsapp',
+      recipient_type: 'individual',
+      to: phoneNumber,
+      type,
+      [type]: payload,
+    },
+    { headers: authHeaders(accessToken, { 'Content-Type': 'application/json' }) }
+  );
+}
+
 module.exports = {
   sendWhatsAppMessage,
   sendWhatsAppButtons,
@@ -161,4 +189,5 @@ module.exports = {
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
   sendWhatsAppVoiceNote,
+  sendWhatsAppMediaMessage,
 };

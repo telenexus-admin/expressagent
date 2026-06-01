@@ -46,6 +46,17 @@ export default function Settings() {
   const [billingTesting, setBillingTesting] = useState(false);
   const [billingEditing, setBillingEditing] = useState(false);
   const [billingStatus, setBillingStatus] = useState(null);
+  const [mediaItems, setMediaItems] = useState([]);
+  const [mediaLoading, setMediaLoading] = useState(true);
+  const [mediaSaving, setMediaSaving] = useState(false);
+  const [mediaStatus, setMediaStatus] = useState(null);
+  const [mediaForm, setMediaForm] = useState({
+    title: '',
+    description: '',
+    trigger_keywords: '',
+    attach_on_welcome: false,
+    file: null,
+  });
 
   useEffect(() => {
     applyTheme(theme);
@@ -79,11 +90,24 @@ export default function Settings() {
     }
   };
 
+  const loadMedia = async () => {
+    setMediaLoading(true);
+    try {
+      const { data } = await api.get('/media-library');
+      setMediaItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setMediaStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load media library.' });
+    } finally {
+      setMediaLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     async function run() {
       if (!cancelled) {
         await loadBilling();
+        await loadMedia();
       }
     }
     run();
@@ -160,6 +184,73 @@ export default function Settings() {
     setBillingEditing(false);
     setBillingStatus(null);
     await loadBilling({ silent: true });
+  };
+
+  const updateMediaForm = (field, value) => {
+    setMediaForm((current) => ({ ...current, [field]: value }));
+    setMediaStatus(null);
+  };
+
+  const fileToDataUrl = (file) => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(new Error('Could not read file'));
+    reader.readAsDataURL(file);
+  });
+
+  const uploadMedia = async () => {
+    if (!mediaForm.file) {
+      setMediaStatus({ type: 'error', message: 'Choose an image or PDF first.' });
+      return;
+    }
+    setMediaSaving(true);
+    setMediaStatus(null);
+    try {
+      const dataUrl = await fileToDataUrl(mediaForm.file);
+      const { data } = await api.post('/media-library', {
+        title: mediaForm.title,
+        description: mediaForm.description,
+        trigger_keywords: mediaForm.trigger_keywords,
+        attach_on_welcome: mediaForm.attach_on_welcome,
+        filename: mediaForm.file.name,
+        mime_type: mediaForm.file.type,
+        data: dataUrl,
+      });
+      setMediaItems((current) => [data, ...current]);
+      setMediaForm({ title: '', description: '', trigger_keywords: '', attach_on_welcome: false, file: null });
+      const input = document.getElementById('agent-media-file');
+      if (input) input.value = '';
+      setMediaStatus({ type: 'success', message: 'Media uploaded. The agent can now use it.' });
+    } catch (err) {
+      setMediaStatus({ type: 'error', message: err.response?.data?.error || 'Failed to upload media.' });
+    } finally {
+      setMediaSaving(false);
+    }
+  };
+
+  const toggleMedia = async (item, field) => {
+    try {
+      const { data } = await api.patch(`/media-library/${item.id}`, {
+        title: item.title,
+        description: item.description,
+        trigger_keywords: item.trigger_keywords,
+        attach_on_welcome: field === 'attach_on_welcome' ? !item.attach_on_welcome : item.attach_on_welcome,
+        is_active: field === 'is_active' ? !item.is_active : item.is_active,
+      });
+      setMediaItems((current) => current.map((row) => (row.id === item.id ? data : row)));
+    } catch (err) {
+      setMediaStatus({ type: 'error', message: err.response?.data?.error || 'Failed to update media.' });
+    }
+  };
+
+  const deleteMedia = async (id) => {
+    if (!window.confirm('Delete this media from the agent library?')) return;
+    try {
+      await api.delete(`/media-library/${id}`);
+      setMediaItems((current) => current.filter((row) => row.id !== id));
+    } catch (err) {
+      setMediaStatus({ type: 'error', message: err.response?.data?.error || 'Failed to delete media.' });
+    }
   };
 
   return (
@@ -328,6 +419,147 @@ export default function Settings() {
                 )}
               </div>
             )}
+          </SettingsCard>
+
+          <SettingsCard
+            icon={PulseIcon}
+            title="Agent Media Library"
+            description="Upload images or PDFs the agent can share in welcome messages or when customers ask for visual explanations."
+          >
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Title
+                    <input
+                      value={mediaForm.title}
+                      onChange={(event) => updateMediaForm('title', event.target.value)}
+                      placeholder="Hotspot sample design"
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Trigger keywords
+                    <input
+                      value={mediaForm.trigger_keywords}
+                      onChange={(event) => updateMediaForm('trigger_keywords', event.target.value)}
+                      placeholder="hotspot sample, landing page, poster"
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    />
+                  </label>
+                </div>
+                <label className="mt-3 flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                  Caption / explanation
+                  <textarea
+                    rows={2}
+                    value={mediaForm.description}
+                    onChange={(event) => updateMediaForm('description', event.target.value)}
+                    placeholder="Short caption the customer will see with this media."
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                  />
+                </label>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="flex-1 text-xs font-black uppercase text-slate-400">
+                    File
+                    <input
+                      id="agent-media-file"
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,application/pdf"
+                      onChange={(event) => updateMediaForm('file', event.target.files?.[0] || null)}
+                      className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700"
+                    />
+                  </label>
+                  <label className="flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-bold text-slate-700">
+                    <input
+                      type="checkbox"
+                      checked={mediaForm.attach_on_welcome}
+                      onChange={(event) => updateMediaForm('attach_on_welcome', event.target.checked)}
+                      className="h-4 w-4 accent-[#3535FF]"
+                    />
+                    Send with welcome
+                  </label>
+                  <button
+                    type="button"
+                    onClick={uploadMedia}
+                    disabled={mediaSaving}
+                    className="rounded-xl bg-[#3535FF] px-4 py-2.5 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50"
+                  >
+                    {mediaSaving ? 'Uploading...' : 'Upload media'}
+                  </button>
+                </div>
+                <p className="mt-2 text-xs font-semibold text-slate-500">
+                  Use JPG, PNG, WEBP or PDF. Max 8 MB. Keywords decide when the agent shares it.
+                </p>
+              </div>
+
+              {mediaStatus && (
+                <div
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+                    mediaStatus.type === 'success'
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      : 'border-red-100 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {mediaStatus.message}
+                </div>
+              )}
+
+              {mediaLoading ? (
+                <div className="text-sm font-semibold text-slate-400">Loading media...</div>
+              ) : mediaItems.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-400">
+                  No media uploaded yet.
+                </div>
+              ) : (
+                <div className="space-y-3">
+                  {mediaItems.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-slate-100 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-500">{item.media_type}</span>
+                            {!item.is_active && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Paused</span>}
+                          </div>
+                          <p className="mt-1 text-xs font-semibold text-slate-500">{item.filename}</p>
+                          {item.description && <p className="mt-2 text-sm text-slate-600">{item.description}</p>}
+                          <div className="mt-2 flex flex-wrap gap-1.5">
+                            {(item.trigger_keywords || []).map((keyword) => (
+                              <span key={keyword} className="rounded-full bg-[#f3f2ff] px-2 py-1 text-[10px] font-black text-[#3535FF]">
+                                {keyword}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            onClick={() => toggleMedia(item, 'attach_on_welcome')}
+                            className={`rounded-xl px-3 py-2 text-xs font-black ${item.attach_on_welcome ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}
+                          >
+                            {item.attach_on_welcome ? 'Welcome on' : 'Welcome off'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => toggleMedia(item, 'is_active')}
+                            className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600"
+                          >
+                            {item.is_active ? 'Pause' : 'Activate'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => deleteMedia(item.id)}
+                            className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </SettingsCard>
 
           <SettingsCard

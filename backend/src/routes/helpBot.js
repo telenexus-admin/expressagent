@@ -30,8 +30,9 @@ What this system does:
 - Creates and tracks Tickets for customer issues.
 - Sends phone push notifications to installed dashboard apps when customers message.
 - Supports employee workflow routing for installation, billing, technical issues, human requests, feedback and general enquiries.
-- Has Employees, Workflow, Agent Configuration, AI Health, Billing Usage, Settings, Activity Logs and admin permissions.
-- Settings contains Install App, Theme, Phone Alerts and Billing System integration.
+- Has Employees, Workflow, Agent Configuration, AI Health, Billing Usage, Communication, Settings, Activity Logs and admin permissions.
+- Communication configures Blessed Text SMS API key and sender ID for alerts, reports and customer notifications.
+- Settings contains Install App, Theme, Phone Alerts, Billing System integration and Agent Media Library.
 - Billing System currently supports Wispman. It lets the agent read client status, plans, payments and recharge details when the client connects their own API key.
 - The Billing tab shows monthly AI message usage: 500 messages included at KSh 800, then every 2 extra AI messages costs KSh 1 unless env pricing is changed.
 - The Agent Configuration tab controls the customer-facing AI name, voice and system prompt.

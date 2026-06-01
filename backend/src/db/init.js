@@ -28,6 +28,10 @@ const schema = `
     billing_api_base_url TEXT,
     billing_api_key TEXT,
     billing_configured_at TIMESTAMP WITH TIME ZONE,
+    sms_provider VARCHAR(40),
+    sms_api_key TEXT,
+    sms_sender_id VARCHAR(80),
+    sms_configured_at TIMESTAMP WITH TIME ZONE,
     connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta' CHECK (connection_provider IN ('meta', 'evolution')),
     evolution_instance_name VARCHAR(120) UNIQUE,
     evolution_webhook_secret VARCHAR(96),
@@ -45,6 +49,10 @@ const schema = `
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_base_url TEXT;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_key TEXT;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_configured_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_instance_name VARCHAR(120);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_webhook_secret VARCHAR(96);

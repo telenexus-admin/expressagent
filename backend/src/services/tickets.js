@@ -1,5 +1,5 @@
 const db = require('../db');
-const { sendSMS } = require('./sms');
+const { sendSMS, hasSMSConfig } = require('./sms');
 const { sendHighPriorityTicketEmail } = require('./email');
 
 let schemaReady = false;
@@ -203,8 +203,26 @@ function notificationEnabled() {
   return String(process.env.TICKET_ASSIGNMENT_SMS_ENABLED || '').toLowerCase() === 'true';
 }
 
-function smsConfigured() {
-  return Boolean(process.env.BLESSED_API_KEY && process.env.BLESSED_SENDER_ID);
+async function loadClientSmsConfig(clientId) {
+  if (!clientId) return null;
+  try {
+    await ensureClientSmsColumns();
+    const result = await db.query(
+      `SELECT id, sms_provider, sms_api_key, sms_sender_id FROM clients WHERE id = $1 LIMIT 1`,
+      [clientId]
+    );
+    return result.rows[0] || null;
+  } catch (err) {
+    if (err.code !== '42703') console.error('Load client SMS config failed:', err.message);
+    return null;
+  }
+}
+
+async function ensureClientSmsColumns() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
 }
 
 async function notifyAssignedEmployee({ ticket, assignment, customerPhone, customerName, summary }) {
@@ -223,7 +241,8 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
     (link ? `\n\nOpen: ${link}` : '');
 
   try {
-    await sendSMS(assignment.employeePhone, message);
+    const smsClient = await loadClientSmsConfig(ticket.client_id);
+    await sendSMS(assignment.employeePhone, message, { client: smsClient });
     return { status: 'sent', error: null };
   } catch (err) {
     return { status: 'failed', error: err.message || 'Failed to send assignment SMS' };
@@ -231,8 +250,10 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
 }
 
 async function loadClientForAlert(clientId) {
+  await ensureClientSmsColumns();
   const result = await db.query(
-    `SELECT id, name, business_name, contact_email, support_number, agent_name
+    `SELECT id, name, business_name, contact_email, support_number, agent_name,
+            sms_provider, sms_api_key, sms_sender_id
      FROM clients WHERE id = $1 LIMIT 1`,
     [clientId]
   );
@@ -241,7 +262,7 @@ async function loadClientForAlert(clientId) {
 
 async function sendClientHighPrioritySms(client, ticket) {
   if (!client?.support_number) return { status: 'skipped', error: 'Client support number is not set' };
-  if (!smsConfigured()) return { status: 'skipped', error: 'SMS provider is not configured on the server' };
+  if (!hasSMSConfig({ client })) return { status: 'skipped', error: 'SMS provider is not configured' };
 
   const link = ticketLink(ticket.id);
   const message =
@@ -253,7 +274,7 @@ async function sendClientHighPrioritySms(client, ticket) {
     (link ? `\n\nOpen: ${link}` : '');
 
   try {
-    await sendSMS(client.support_number, message);
+    await sendSMS(client.support_number, message, { client });
     return { status: 'sent', error: null };
   } catch (err) {
     return { status: 'failed', error: err.message || 'Failed to send client SMS alert' };

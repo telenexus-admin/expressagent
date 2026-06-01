@@ -29,12 +29,14 @@ import Tickets from './pages/Tickets';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 import Billing from './pages/Billing';
+import Communication from './pages/Communication';
 
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
   'tickets',
   'billing',
+  'communication',
   'escalations',
   'installations',
   'complaints',
@@ -50,7 +52,8 @@ const ALL_PERMISSIONS = [
 function hasPermission(admin, permission) {
   if (!admin) return false;
   if (permission === 'billing' && Number(admin.client_id) === 1) return false;
-  if (permission === 'settings' || permission === 'billing') return true;
+  if (permission === 'communication' && Number(admin.client_id) === 1) return false;
+  if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
@@ -63,6 +66,7 @@ function firstAllowedPath(admin) {
     conversations: 'conversations',
     tickets: 'tickets',
     billing: 'billing',
+    communication: 'communication',
     escalations: 'escalations',
     installations: 'installations',
     complaints: 'complaints',
@@ -145,6 +149,7 @@ export default function App() {
             </Route>
             <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
+            <Route path="communication" element={<PermissionRoute permission="communication"><Communication /></PermissionRoute>} />
             <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
             <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />

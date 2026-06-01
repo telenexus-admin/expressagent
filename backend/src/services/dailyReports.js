@@ -10,6 +10,10 @@ async function ensureDailyReportTables() {
   if (tablesReady) return;
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_report_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_report_phone VARCHAR(50)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS daily_reports (
       id SERIAL PRIMARY KEY,
@@ -156,7 +160,7 @@ async function sendClientReport(client, reportDate, { force = false } = {}) {
   let error = null;
   let sentAt = new Date();
   try {
-    await sendSMS(phone, reportText);
+    await sendSMS(phone, reportText, { client });
     console.log(`Daily report SMS sent for client ${client.id} to ${phone}.`);
   } catch (err) {
     status = 'failed';
@@ -190,7 +194,8 @@ async function runDueReports() {
     if (clock.hour < 20) return;
     const reportDate = nairobiDate();
     const clients = await db.query(
-      `SELECT id, name, business_name, support_number, daily_report_phone
+      `SELECT id, name, business_name, support_number, daily_report_phone,
+              sms_provider, sms_api_key, sms_sender_id
        FROM clients
        WHERE status = 'active' AND daily_report_enabled = TRUE`
     );

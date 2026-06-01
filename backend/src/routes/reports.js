@@ -19,7 +19,8 @@ function cleanPhone(phone) {
 
 async function loadClient(id) {
   const result = await db.query(
-    `SELECT id, name, business_name, support_number, daily_report_enabled, daily_report_phone
+    `SELECT id, name, business_name, support_number, daily_report_enabled, daily_report_phone,
+            sms_provider, sms_api_key, sms_sender_id
      FROM clients WHERE id = $1`,
     [id]
   );
@@ -98,7 +99,7 @@ router.post('/test-sms', async (req, res) => {
     if (!/^\+?[0-9]{9,15}$/.test(phone)) return res.status(400).json({ error: 'Configure a valid SMS number first' });
     const reportDate = nairobiDate();
     const { reportText } = await createReport(client, reportDate);
-    await sendSMS(phone, `[TEST REPORT]\n${reportText}`);
+    await sendSMS(phone, `[TEST REPORT]\n${reportText}`, { client });
     res.json({ success: true, sent_to: phone, report_date: reportDate });
   } catch (err) {
     const message = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);

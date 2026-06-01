@@ -20,7 +20,15 @@ async function ensureConversationReplyModeColumn() {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
 }
 
+async function ensureClientSmsColumns() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
+}
+
 async function loadConversationWithClient(conversationId, scope) {
+  await ensureClientSmsColumns();
   const result = await db.query(
     `SELECT
        conv.*,
@@ -34,6 +42,9 @@ async function loadConversationWithClient(conversationId, scope) {
        cl.agent_name AS cl_agent_name,
        cl.voice_id AS cl_voice_id,
        cl.support_number AS cl_support_number,
+       cl.sms_provider AS cl_sms_provider,
+       cl.sms_api_key AS cl_sms_api_key,
+       cl.sms_sender_id AS cl_sms_sender_id,
        cl.installation_email_enabled AS cl_installation_email_enabled
      FROM conversations conv
      JOIN clients cl ON cl.id = conv.client_id
@@ -65,6 +76,9 @@ async function loadConversationWithClient(conversationId, scope) {
       agent_name: row.cl_agent_name,
       voice_id: row.cl_voice_id,
       support_number: row.cl_support_number,
+      sms_provider: row.cl_sms_provider,
+      sms_api_key: row.cl_sms_api_key,
+      sms_sender_id: row.cl_sms_sender_id,
       installation_email_enabled: row.cl_installation_email_enabled,
     },
   };
@@ -281,7 +295,7 @@ router.post('/:id/confirm-installation', async (req, res) => {
     const customMessage = (req.body?.message || '').trim();
     const message = customMessage || `${greeting} your installation has been confirmed. Our team will reach out shortly to coordinate the visit. — ${signoff}`;
 
-    await sendSMS(conversation.customer_phone, message);
+    await sendSMS(conversation.customer_phone, message, { client });
     await db.query(
       `INSERT INTO messages (conversation_id, role, content, sender_name, timestamp)
        VALUES ($1, 'admin', $2, $3, NOW())`,

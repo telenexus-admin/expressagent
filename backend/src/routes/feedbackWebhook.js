@@ -57,7 +57,7 @@ async function alertSupport(client, conversation, customerPhone) {
   }
 
   try {
-    await sendSMS(supportNumber, notice);
+    await sendSMS(supportNumber, notice, { client });
     sent = true;
   } catch (err) {
     errors.push(`SMS: ${err.message}`);

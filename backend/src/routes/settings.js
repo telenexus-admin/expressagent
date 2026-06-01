@@ -3,11 +3,13 @@ const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { testBillingConnection } = require('../services/billing');
+const { sendSMS } = require('../services/sms');
 
 router.use(authMiddleware, scopeMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const BILLING_PROVIDERS = ['wispman'];
+const SMS_PROVIDERS = ['blessed_text'];
 const DEFAULT_WELCOME_MENU = {
   enabled: true,
   body: '',
@@ -73,6 +75,22 @@ function safeBillingConfig(row) {
     has_api_key: Boolean(row.billing_api_key),
     configured_at: row.billing_configured_at || null,
   };
+}
+
+function safeCommunicationConfig(row) {
+  return {
+    provider: row.sms_provider || 'blessed_text',
+    sender_id: row.sms_sender_id || '',
+    has_api_key: Boolean(row.sms_api_key),
+    configured_at: row.sms_configured_at || null,
+  };
+}
+
+async function ensureCommunicationColumns() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
 }
 
 function normalizeWelcomeMenuConfig(raw = {}, enabled = true) {
@@ -143,6 +161,28 @@ router.get('/billing', async (req, res) => {
     res.json(safeBillingConfig(result.rows[0]));
   } catch (err) {
     console.error('GET /settings/billing error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/settings/communication â€” returns safe SMS provider config
+router.get('/communication', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureCommunicationColumns();
+    const result = await db.query(
+      `SELECT sms_provider, sms_api_key, sms_sender_id, sms_configured_at
+       FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    res.json(safeCommunicationConfig(result.rows[0]));
+  } catch (err) {
+    console.error('GET /settings/communication error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -285,6 +325,56 @@ router.put('/billing', async (req, res) => {
   }
 });
 
+// PUT /api/settings/communication â€” save Blessed Text credentials for this client
+router.put('/communication', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  const selectedProvider = String(req.body.provider || 'blessed_text').trim().toLowerCase();
+  const apiKey = String(req.body.api_key || '').trim();
+  const senderId = String(req.body.sender_id || '').trim();
+
+  if (!SMS_PROVIDERS.includes(selectedProvider)) {
+    return res.status(400).json({ error: 'Unsupported SMS provider' });
+  }
+  if (senderId && !/^[A-Za-z0-9_. -]{2,40}$/.test(senderId)) {
+    return res.status(400).json({ error: 'Sender ID should be 2-40 letters, numbers or simple symbols' });
+  }
+
+  try {
+    await ensureCommunicationColumns();
+    const existing = await db.query(
+      `SELECT sms_api_key, sms_sender_id FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const savedKey = existing.rows[0].sms_api_key || '';
+    const finalSender = senderId || existing.rows[0].sms_sender_id || '';
+    if (!finalSender || (!apiKey && !savedKey)) {
+      return res.status(400).json({ error: 'API key and sender ID are required before saving SMS provider' });
+    }
+
+    const result = await db.query(
+      `UPDATE clients
+       SET sms_provider = $1,
+           sms_api_key = COALESCE(NULLIF($2, ''), sms_api_key),
+           sms_sender_id = $3,
+           sms_configured_at = NOW()
+       WHERE id = $4
+       RETURNING sms_provider, sms_api_key, sms_sender_id, sms_configured_at`,
+      [selectedProvider, apiKey, finalSender, targetClient]
+    );
+
+    res.json({ success: true, ...safeCommunicationConfig(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /settings/communication error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 // POST /api/settings/billing/test — verify submitted or saved Wispman credentials
 router.post('/billing/test', async (req, res) => {
   const targetClient = resolveTargetClient(req, res);
@@ -322,6 +412,49 @@ router.post('/billing/test', async (req, res) => {
   } catch (err) {
     console.error('POST /settings/billing/test error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/settings/communication/test â€” send a test SMS using submitted or saved credentials
+router.post('/communication/test', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  const selectedProvider = String(req.body.provider || 'blessed_text').trim().toLowerCase();
+  const submittedKey = String(req.body.api_key || '').trim();
+  const submittedSender = String(req.body.sender_id || '').trim();
+  const phone = String(req.body.phone || '').replace(/[^0-9]/g, '');
+
+  if (!SMS_PROVIDERS.includes(selectedProvider)) {
+    return res.status(400).json({ error: 'Unsupported SMS provider' });
+  }
+  if (!/^[0-9]{9,15}$/.test(phone)) {
+    return res.status(400).json({ error: 'Enter a valid test phone number' });
+  }
+
+  try {
+    await ensureCommunicationColumns();
+    const existing = await db.query(
+      `SELECT sms_provider, sms_api_key, sms_sender_id FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (existing.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const row = existing.rows[0];
+    const apiKey = submittedKey || row.sms_api_key || '';
+    const senderId = submittedSender || row.sms_sender_id || '';
+    await sendSMS(phone, 'Nexa SMS provider test. Your Blessed Text configuration is working.', {
+      provider: selectedProvider,
+      apiKey,
+      senderId,
+    });
+    res.json({ success: true, sent_to: phone });
+  } catch (err) {
+    const message = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    console.error('POST /settings/communication/test error:', message);
+    res.status(500).json({ error: `SMS could not be sent: ${message}` });
   }
 });
 

@@ -48,7 +48,7 @@ async function notifySupport(client, supportNumber, message) {
   }
 
   try {
-    await sendSMS(supportNumber, message);
+    await sendSMS(supportNumber, message, { client });
     results.sms = 'sent';
   } catch (err) {
     results.sms = 'failed';
@@ -105,7 +105,7 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
     let notifyStatus = 'sent';
     let notifyError = null;
     try {
-      await sendSMS(route.emp_phone, notice);
+      await sendSMS(route.emp_phone, notice, { client });
       console.log(`[client ${client.id}] Dispatched intent="${intent}" to employee "${route.emp_name}" (${route.emp_phone}).`);
     } catch (err) {
       notifyStatus = 'failed';
@@ -679,7 +679,7 @@ router.post('/', async (req, res) => {
         const firstName = installName.split(/\s+/)[0];
         const customerSms = `Hi ${firstName}, thanks for your installation request. Plan: ${installPlan}. Location: ${installLocation}. Our team has been notified and will contact you shortly to schedule.` + (supportNumber ? ` For urgent help, call/WhatsApp +${supportNumber}.` : '');
         try {
-          await sendSMS(phoneNumber, customerSms);
+          await sendSMS(phoneNumber, customerSms, { client });
           console.log(`Installation confirmation SMS sent to ${phoneNumber}.`);
         } catch (err) {
           console.error(`Installation confirmation SMS to ${phoneNumber} failed:`, formatErr(err));

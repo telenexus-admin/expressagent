@@ -33,7 +33,7 @@ const NexaMark = () => (
 
 function canAccess(admin, permission) {
   if (!admin) return false;
-  if (permission === 'settings' || permission === 'billing') return true;
+  if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
@@ -161,6 +161,7 @@ export default function ClientDashboard() {
         ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
         ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
         ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
+        ['/dashboard/communication', 'Communication', ChatIcon, 'communication'],
         ['/dashboard/settings', 'Settings', CogIcon, 'settings'],
       ],
     },

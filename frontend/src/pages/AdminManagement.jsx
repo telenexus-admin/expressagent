@@ -12,6 +12,7 @@ const PERMISSION_OPTIONS = [
   { key: 'conversations', label: 'Conversations' },
   { key: 'tickets', label: 'Tickets' },
   { key: 'billing', label: 'Billing' },
+  { key: 'communication', label: 'Communication' },
   { key: 'escalations', label: 'Human Handover' },
   { key: 'installations', label: 'Installations' },
   { key: 'complaints', label: 'Complaints' },
@@ -32,7 +33,7 @@ function permissionLabel(key) {
 export default function AdminManagement() {
   const { admin: currentAdmin } = useAuth();
   const permissionOptions = Number(currentAdmin?.client_id) === 1
-    ? PERMISSION_OPTIONS.filter((option) => option.key !== 'billing')
+    ? PERMISSION_OPTIONS.filter((option) => !['billing', 'communication'].includes(option.key))
     : PERMISSION_OPTIONS;
   const [admins, setAdmins] = useState([]);
   const [showModal, setShowModal] = useState(false);

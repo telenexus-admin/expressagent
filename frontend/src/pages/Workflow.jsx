@@ -40,6 +40,13 @@ function normalizeChannels(value) {
   return Array.isArray(value) && value.length ? value : ['sms'];
 }
 
+function normalizeEmployeeIds(value, fallback = null) {
+  const source = Array.isArray(value) ? value : [];
+  const ids = source.map((item) => parseInt(item, 10)).filter((item) => Number.isInteger(item) && item > 0);
+  if (ids.length === 0 && fallback) ids.push(parseInt(fallback, 10));
+  return [...new Set(ids)].filter((item) => Number.isInteger(item) && item > 0);
+}
+
 export default function Workflow() {
   const [intents, setIntents] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -73,10 +80,12 @@ export default function Workflow() {
     if (!current) return;
     setSaveState((s) => ({ ...s, [intentKey]: 'saving' }));
     try {
-      const nextEmployeeId = patch.employee_id !== undefined ? patch.employee_id : current.assignedEmployeeId;
+      const nextEmployeeIds = patch.employee_ids !== undefined
+        ? patch.employee_ids
+        : normalizeEmployeeIds(current.assignedEmployeeIds, current.assignedEmployeeId);
       const nextChannels = patch.notification_channels || normalizeChannels(current.notificationChannels);
       await api.put(`/workflows/${intentKey}`, {
-        employee_id: nextEmployeeId === '' || nextEmployeeId === null ? null : parseInt(nextEmployeeId, 10),
+        employee_ids: nextEmployeeIds,
         is_enabled: true,
         notification_channels: nextChannels,
       });
@@ -85,7 +94,8 @@ export default function Workflow() {
           i.key === intentKey
             ? {
                 ...i,
-                assignedEmployeeId: nextEmployeeId === '' || nextEmployeeId === null ? null : parseInt(nextEmployeeId, 10),
+                assignedEmployeeId: nextEmployeeIds[0] || null,
+                assignedEmployeeIds: nextEmployeeIds,
                 notificationChannels: nextChannels,
               }
             : i
@@ -105,7 +115,7 @@ export default function Workflow() {
     }
   };
 
-  const assign = (intentKey, employeeId) => saveRoute(intentKey, { employee_id: employeeId });
+  const assign = (intentKey, employeeIds) => saveRoute(intentKey, { employee_ids: employeeIds });
   const updateChannels = (intentKey, channels) => saveRoute(intentKey, { notification_channels: channels });
 
   if (loading) {
@@ -339,9 +349,18 @@ const IntentCard = React.forwardRef(function IntentCard(
 ) {
   const style = INTENT_STYLE[intent.key] || { Icon: QuestionIcon, accent: '#6B7280', bg: 'bg-gray-50' };
   const { Icon, accent, bg } = style;
-  const assignedEmployee = employees.find((e) => e.id === intent.assignedEmployeeId);
+  const selectedEmployeeIds = normalizeEmployeeIds(intent.assignedEmployeeIds, intent.assignedEmployeeId);
+  const assignedEmployees = employees.filter((e) => selectedEmployeeIds.includes(e.id));
   const isPassthrough = intent.isPassthrough;
   const channels = normalizeChannels(intent.notificationChannels);
+  const toggleEmployee = (employeeId) => {
+    const id = parseInt(employeeId, 10);
+    const next = selectedEmployeeIds.includes(id)
+      ? selectedEmployeeIds.filter((item) => item !== id)
+      : [...selectedEmployeeIds, id];
+    onAssign(intent.key, next);
+  };
+  const clearEmployees = () => onAssign(intent.key, []);
   const toggleChannel = (channel) => {
     const next = channels.includes(channel)
       ? channels.filter((item) => item !== channel)
@@ -401,19 +420,13 @@ const IntentCard = React.forwardRef(function IntentCard(
               <div className="text-[10px] uppercase tracking-wider text-gray-400 font-semibold mb-1.5">
                 Then notify
               </div>
-              <select
-                value={intent.assignedEmployeeId ?? ''}
-                onChange={(e) => onAssign(intent.key, e.target.value)}
-                disabled={!editing || employees.length === 0}
-                className="w-full bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 text-xs font-medium focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <option value="">— No one (skip alert) —</option>
-                {employees.map((emp) => (
-                  <option key={emp.id} value={emp.id}>
-                    {emp.name} · {emp.phone}
-                  </option>
-                ))}
-              </select>
+              <EmployeePicker
+                employees={employees}
+                selectedEmployeeIds={selectedEmployeeIds}
+                editing={editing}
+                onToggle={toggleEmployee}
+                onClear={clearEmployees}
+              />
 
               <div className="mt-2 grid grid-cols-3 gap-1.5">
                 {CHANNELS.map(([value, label]) => {
@@ -448,9 +461,9 @@ const IntentCard = React.forwardRef(function IntentCard(
                     <WarningIcon className="w-3 h-3" /> Failed to save
                   </span>
                 )}
-                {!saveState && assignedEmployee && (
+                {!saveState && assignedEmployees.length > 0 && (
                   <span className="text-gray-400">
-                    {channels.map((channel) => CHANNELS.find(([value]) => value === channel)?.[1] || channel).join(', ')} alert to {assignedEmployee.name}
+                    {channels.map((channel) => CHANNELS.find(([value]) => value === channel)?.[1] || channel).join(', ')} alert to {assignedEmployees.length === 1 ? assignedEmployees[0].name : `${assignedEmployees.length} employees`}
                   </span>
                 )}
               </div>
@@ -461,6 +474,48 @@ const IntentCard = React.forwardRef(function IntentCard(
     </div>
   );
 });
+
+function EmployeePicker({ employees, selectedEmployeeIds, editing, onToggle, onClear }) {
+  return (
+    <div className="space-y-1.5 rounded-xl border border-gray-100 bg-gray-50 p-2">
+      {employees.length === 0 && (
+        <div className="px-2 py-2 text-xs text-gray-400">No active employees available.</div>
+      )}
+      {employees.map((emp) => {
+        const checked = selectedEmployeeIds.includes(emp.id);
+        return (
+          <label
+            key={emp.id}
+            className={`flex cursor-pointer items-center gap-2 rounded-lg border px-2.5 py-2 text-xs transition ${
+              checked ? 'border-[#3535FF] bg-white text-[#3535FF]' : 'border-transparent bg-white/60 text-gray-600 hover:bg-white'
+            } ${!editing ? 'cursor-not-allowed opacity-60' : ''}`}
+          >
+            <input
+              type="checkbox"
+              checked={checked}
+              disabled={!editing}
+              onChange={() => onToggle(emp.id)}
+              className="h-3.5 w-3.5 accent-[#3535FF]"
+            />
+            <span className="min-w-0 flex-1">
+              <span className="block truncate font-bold">{emp.name}</span>
+              <span className="block truncate font-mono text-[10px] text-gray-400">{emp.phone}</span>
+            </span>
+          </label>
+        );
+      })}
+      {editing && selectedEmployeeIds.length > 0 && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="w-full rounded-lg border border-gray-200 bg-white px-2 py-1.5 text-[10px] font-black text-gray-500 hover:bg-gray-100"
+        >
+          Clear all
+        </button>
+      )}
+    </div>
+  );
+}
 
 function RecentActivity({ dispatches }) {
   if (!dispatches || dispatches.length === 0) {
@@ -485,6 +540,10 @@ function RecentActivity({ dispatches }) {
           const style = INTENT_STYLE[d.intent_key];
           const Icon = style?.Icon || QuestionIcon;
           const accent = style?.accent || '#6B7280';
+          const dispatchedEmployeeIds = normalizeEmployeeIds(d.employee_ids, d.employee_id);
+          const employeeLabel = dispatchedEmployeeIds.length > 1
+            ? `${dispatchedEmployeeIds.length} employees`
+            : (d.employee_name || <em className="text-gray-400">employee removed</em>);
           return (
             <div key={d.id} className="px-5 py-3 flex items-start gap-3">
               <div
@@ -499,9 +558,7 @@ function RecentActivity({ dispatches }) {
                     {INTENT_LABELS[d.intent_key] || d.intent_key}
                   </span>
                   <span className="text-xs text-gray-400">→</span>
-                  <span className="text-xs text-gray-700">
-                    {d.employee_name || <em className="text-gray-400">employee removed</em>}
-                  </span>
+                  <span className="text-xs text-gray-700">{employeeLabel}</span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#f3f2ff] text-[#3535FF] font-semibold">
                     {normalizeChannels(d.notification_channels).map((channel) => CHANNELS.find(([value]) => value === channel)?.[1] || channel).join(' + ')}
                   </span>

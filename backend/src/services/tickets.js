@@ -104,6 +104,8 @@ async function ensureTicketSchema() {
     CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id, created_at ASC);
 
     ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb;
+    ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+    UPDATE workflow_routes SET employee_ids = jsonb_build_array(employee_id) WHERE employee_id IS NOT NULL AND employee_ids = '[]'::jsonb;
   `);
   schemaReady = true;
 }
@@ -170,24 +172,43 @@ function categoryFromComplaint(complaint) {
 async function findWorkflowAssignment(clientId, category, intent) {
   const intentKey = intent || intentFromCategory(category);
   if (!intentKey) return null;
-  const result = await db.query(
-    `SELECT e.id, e.name, e.phone, e.email, wr.notification_channels
-     FROM workflow_routes wr
-     JOIN employees e ON e.id = wr.employee_id
-     WHERE wr.client_id = $1
-       AND wr.intent_key = $2
-       AND wr.is_enabled = TRUE
-       AND e.is_active = TRUE
+  await ensureTicketSchema();
+  const routeResult = await db.query(
+    `SELECT employee_id, employee_ids, notification_channels
+     FROM workflow_routes
+     WHERE client_id = $1
+       AND intent_key = $2
+       AND is_enabled = TRUE
      LIMIT 1`,
     [clientId, intentKey]
   );
-  const employee = result.rows[0];
+  const route = routeResult.rows[0];
+  const employeeIds = normalizeWorkflowEmployeeIds(route?.employee_ids, route?.employee_id);
+  if (employeeIds.length === 0) return null;
+
+  const result = await db.query(
+    `SELECT id, name, phone, email
+     FROM employees
+     WHERE client_id = $1
+       AND is_active = TRUE
+       AND id = ANY($2::int[])
+     ORDER BY array_position($2::int[], id)`,
+    [clientId, employeeIds]
+  );
+  const employees = result.rows;
+  const employee = employees[0];
   return employee ? {
     employeeId: employee.id,
     employeeName: employee.name,
     employeePhone: employee.phone,
     employeeEmail: employee.email,
-    notificationChannels: normalizeWorkflowChannels(employee.notification_channels),
+    employees: employees.map((item) => ({
+      employeeId: item.id,
+      employeeName: item.name,
+      employeePhone: item.phone,
+      employeeEmail: item.email,
+    })),
+    notificationChannels: normalizeWorkflowChannels(route.notification_channels),
     intentKey,
   } : null;
 }
@@ -197,6 +218,13 @@ function normalizeWorkflowChannels(value) {
   const allowed = new Set(['sms', 'email', 'whatsapp']);
   const clean = raw.map((item) => String(item || '').toLowerCase()).filter((item) => allowed.has(item));
   return [...new Set(clean)].length ? [...new Set(clean)] : ['sms'];
+}
+
+function normalizeWorkflowEmployeeIds(value, fallback = null) {
+  const raw = Array.isArray(value) ? value : [];
+  const ids = raw.map((item) => parseInt(item, 10)).filter((item) => Number.isInteger(item) && item > 0);
+  if (ids.length === 0 && fallback) ids.push(parseInt(fallback, 10));
+  return [...new Set(ids)].filter((item) => Number.isInteger(item) && item > 0);
 }
 
 function titleForCategory(category) {
@@ -255,19 +283,24 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
   const client = await loadClientForWorkflowNotify(ticket.client_id);
   if (!client) return { status: 'failed', error: 'Client not found for workflow notification' };
   const channels = normalizeWorkflowChannels(assignment.notificationChannels);
-  const results = await sendWorkflowAssignmentChannels({
-    client,
-    assignment,
-    channels,
-    subject: `New ticket assigned: #${ticket.id}`,
-    message,
-  });
-  const sent = Object.values(results).some((result) => result.status === 'sent');
-  const errors = Object.entries(results)
-    .filter(([, result]) => result.status !== 'sent')
-    .map(([channel, result]) => `${channel}: ${result.error || result.status}`)
-    .join(' | ');
-  return { status: sent ? 'sent' : 'failed', error: errors || null, channelResults: results };
+  const recipients = Array.isArray(assignment.employees) && assignment.employees.length ? assignment.employees : [assignment];
+  const recipientResults = await Promise.all(recipients.map(async (employee) => ({
+    employee,
+    results: await sendWorkflowAssignmentChannels({
+      client,
+      assignment: employee,
+      channels,
+      subject: `New ticket assigned: #${ticket.id}`,
+      message,
+    }),
+  })));
+  const sent = recipientResults.some(({ results }) => Object.values(results).some((result) => result.status === 'sent'));
+  const errors = recipientResults.flatMap(({ employee, results }) =>
+    Object.entries(results)
+      .filter(([, result]) => result.status !== 'sent')
+      .map(([channel, result]) => `${employee.employeeName || 'Employee'} ${channel}: ${result.error || result.status}`)
+  ).join(' | ');
+  return { status: sent ? 'sent' : 'failed', error: errors || null, channelResults: recipientResults };
 }
 
 async function loadClientForWorkflowNotify(clientId) {
@@ -406,8 +439,8 @@ async function recordAssignmentNotification(ticket, assignment, details) {
     event_type: 'assigned',
     body:
       notification.status === 'sent'
-        ? `Assignment SMS sent to ${assignment.employeeName}`
-        : `Assignment SMS ${notification.status}: ${notification.error}`,
+        ? `Assignment alert sent to ${assignment.employees?.length > 1 ? `${assignment.employees.length} employees` : assignment.employeeName}`
+        : `Assignment alert ${notification.status}: ${notification.error}`,
     metadata: {
       employee_id: assignment.employeeId,
       notify_status: notification.status,

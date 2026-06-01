@@ -15,7 +15,7 @@ const { sendInstallationRequestEmail } = require('../services/email');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
-const { matchingMedia, welcomeMedia } = require('../services/mediaLibrary');
+const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -273,18 +273,21 @@ async function sendWelcomeMenu(client, phoneNumber, conversationId) {
   const body = config.body ||
     `Hi, I'm ${agentName}, your ${business} assistant.\n\n` +
       `What would you like help with today?`;
+  const visibleBody = stripMediaTags(body) || `Hi, I'm ${agentName}, your ${business} assistant.`;
+  const visibleFooter = stripMediaTags(config.footer || `${business} support`) || `${business} support`;
 
   await sendWhatsAppList(
     client.meta_phone_number_id,
     client.meta_access_token,
     phoneNumber,
-    body,
+    visibleBody,
     config.buttonText,
     [{ title: config.sectionTitle, rows: config.rows }],
-    config.footer || `${business} support`
+    visibleFooter
   );
-  await persistOutgoing(conversationId, `${body} [${config.rows.map((row) => row.title).join(' | ')}]`);
-  const attachments = await welcomeMedia(client.id);
+  await persistOutgoing(conversationId, `${visibleBody} [${config.rows.map((row) => row.title).join(' | ')}]`);
+  const taggedAttachments = await mediaByTags(client.id, `${body}\n${config.footer || ''}\n${client.system_prompt || ''}`);
+  const attachments = uniqueMediaItems(taggedAttachments, await welcomeMedia(client.id));
   await deliverMediaItems(client, phoneNumber, attachments, conversationId, 'welcome');
   return true;
 }
@@ -565,12 +568,14 @@ router.post('/', async (req, res) => {
     }
 
     if (!inboundIsImage && installationState !== 'collecting') {
-      const billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: phoneNumber, messageText });
+      let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingReply) {
+        const taggedMedia = await mediaByTags(client.id, `${messageText}\n${billingReply}`);
+        billingReply = stripMediaTags(billingReply) || 'Here is the media I found for you.';
         await deliverReply(client, phoneNumber, billingReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, billingReply);
         const mediaMatches = await matchingMedia(client.id, `${messageText}\n${billingReply}`);
-        await deliverMediaItems(client, phoneNumber, mediaMatches, conversation.id, 'matched');
+        await deliverMediaItems(client, phoneNumber, uniqueMediaItems(taggedMedia, mediaMatches), conversation.id, 'matched');
         console.log(`Billing reply sent to ${phoneNumber}.`);
         return;
       }
@@ -690,6 +695,8 @@ router.post('/', async (req, res) => {
       }
     }
     customerReply = stripInstallMarker(customerReply);
+    const taggedReplyMedia = await mediaByTags(client.id, `${messageText}\n${customerReply}`);
+    customerReply = stripMediaTags(customerReply) || 'Here is the media I found for you.';
 
     if (replyAsVoice) {
       await deliverReply(client, phoneNumber, customerReply, true, voiceId);
@@ -702,7 +709,9 @@ router.post('/', async (req, res) => {
     }
     if (!inboundIsImage) {
       const mediaMatches = await matchingMedia(client.id, `${messageText}\n${customerReply}`);
-      await deliverMediaItems(client, phoneNumber, mediaMatches, conversation.id, 'matched');
+      await deliverMediaItems(client, phoneNumber, uniqueMediaItems(taggedReplyMedia, mediaMatches), conversation.id, 'matched');
+    } else if (taggedReplyMedia.length > 0) {
+      await deliverMediaItems(client, phoneNumber, taggedReplyMedia, conversation.id, 'tagged');
     }
 
     runAfterReply('Post-reply ticket workflow', async () => {

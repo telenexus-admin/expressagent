@@ -52,6 +52,7 @@ export default function Settings() {
   const [mediaStatus, setMediaStatus] = useState(null);
   const [mediaForm, setMediaForm] = useState({
     title: '',
+    tag: '',
     description: '',
     trigger_keywords: '',
     attach_on_welcome: false,
@@ -191,6 +192,16 @@ export default function Settings() {
     setMediaStatus(null);
   };
 
+  const copyMediaTag = async (tag) => {
+    const shortcode = `{${tag}}`;
+    try {
+      await navigator.clipboard?.writeText(shortcode);
+      setMediaStatus({ type: 'success', message: `${shortcode} copied. Paste it into Agent Configuration.` });
+    } catch (err) {
+      setMediaStatus({ type: 'success', message: `Use ${shortcode} in Agent Configuration.` });
+    }
+  };
+
   const fileToDataUrl = (file) => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(reader.result);
@@ -209,6 +220,7 @@ export default function Settings() {
       const dataUrl = await fileToDataUrl(mediaForm.file);
       const { data } = await api.post('/media-library', {
         title: mediaForm.title,
+        tag: mediaForm.tag,
         description: mediaForm.description,
         trigger_keywords: mediaForm.trigger_keywords,
         attach_on_welcome: mediaForm.attach_on_welcome,
@@ -217,7 +229,7 @@ export default function Settings() {
         data: dataUrl,
       });
       setMediaItems((current) => [data, ...current]);
-      setMediaForm({ title: '', description: '', trigger_keywords: '', attach_on_welcome: false, file: null });
+      setMediaForm({ title: '', tag: '', description: '', trigger_keywords: '', attach_on_welcome: false, file: null });
       const input = document.getElementById('agent-media-file');
       if (input) input.value = '';
       setMediaStatus({ type: 'success', message: 'Media uploaded. The agent can now use it.' });
@@ -232,6 +244,7 @@ export default function Settings() {
     try {
       const { data } = await api.patch(`/media-library/${item.id}`, {
         title: item.title,
+        tag: item.tag,
         description: item.description,
         trigger_keywords: item.trigger_keywords,
         attach_on_welcome: field === 'attach_on_welcome' ? !item.attach_on_welcome : item.attach_on_welcome,
@@ -439,6 +452,17 @@ export default function Settings() {
                     />
                   </label>
                   <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Media tag
+                    <input
+                      value={mediaForm.tag}
+                      onChange={(event) => updateMediaForm('tag', event.target.value)}
+                      placeholder="image1"
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    />
+                  </label>
+                </div>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
                     Trigger keywords
                     <input
                       value={mediaForm.trigger_keywords}
@@ -488,7 +512,7 @@ export default function Settings() {
                   </button>
                 </div>
                 <p className="mt-2 text-xs font-semibold text-slate-500">
-                  Use JPG, PNG, WEBP or PDF. Max 8 MB. Keywords decide when the agent shares it.
+                  Use tags like <span className="font-black text-[#3535FF]">{'{image1}'}</span> in Agent Configuration, for example: during welcome message send {'{image1}'}. Keywords still trigger media automatically.
                 </p>
               </div>
 
@@ -519,6 +543,16 @@ export default function Settings() {
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
                             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-black uppercase text-slate-500">{item.media_type}</span>
+                            {item.tag && (
+                              <button
+                                type="button"
+                                onClick={() => copyMediaTag(item.tag)}
+                                className="rounded-full bg-[#f3f2ff] px-2 py-0.5 text-[10px] font-black text-[#3535FF] transition hover:bg-[#e8e4ff]"
+                                title="Copy media tag"
+                              >
+                                {`{${item.tag}}`}
+                              </button>
+                            )}
                             {!item.is_active && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-black text-amber-700">Paused</span>}
                           </div>
                           <p className="mt-1 text-xs font-semibold text-slate-500">{item.filename}</p>

@@ -6,7 +6,7 @@ const { sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudi
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
-const { matchingMedia } = require('../services/mediaLibrary');
+const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems } = require('../services/mediaLibrary');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -106,8 +106,9 @@ async function reply(client, conversationId, phone, text, asVoice = false) {
 }
 
 async function sendMatchedMedia(client, conversationId, phone, text) {
+  const tagged = await mediaByTags(client.id, text);
   const matches = await matchingMedia(client.id, text);
-  for (const item of matches) {
+  for (const item of uniqueMediaItems(tagged, matches)) {
     try {
       await sendClientMedia(client, phone, item);
       await saveMessage(conversationId, 'assistant', `[Sent ${item.media_type}: ${item.title}]`);
@@ -202,10 +203,12 @@ router.post('/client/:clientId', async (req, res) => {
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
 
     if (!incoming.isImage) {
-      const billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
+      let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
       if (billingReply) {
+        const mediaText = `${userText}\n${billingReply}`;
+        billingReply = stripMediaTags(billingReply) || 'Here is the media I found for you.';
         await reply(client, conversation.id, incoming.phone, billingReply, replyAsVoice);
-        await sendMatchedMedia(client, conversation.id, incoming.phone, `${userText}\n${billingReply}`);
+        await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
         console.log(`[evo client ${client.id}] Billing reply sent to ${incoming.phone}.`);
         return;
       }
@@ -263,8 +266,11 @@ router.post('/client/:clientId', async (req, res) => {
       ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
       : await generateAIResponse(prompt, recent.rows);
     if (!aiReply || !aiReply.trim()) return;
-    await reply(client, conversation.id, incoming.phone, aiReply.trim(), replyAsVoice);
-    if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, `${userText}\n${aiReply}`);
+    const mediaText = `${userText}\n${aiReply}`;
+    const cleanReply = stripMediaTags(aiReply).trim() || 'Here is the media I found for you.';
+    await reply(client, conversation.id, incoming.phone, cleanReply, replyAsVoice);
+    if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
+    else await sendMatchedMedia(client, conversation.id, incoming.phone, aiReply);
     console.log(`[evo client ${client.id}] AI reply sent to ${incoming.phone}.`);
     runAfterReply('Evolution post-reply ticket workflow', async () => {
       const [complaint, intentResult] = await Promise.all([

@@ -126,6 +126,7 @@ const schema = `
     id SERIAL PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     title VARCHAR(140) NOT NULL,
+    tag VARCHAR(80),
     description TEXT,
     media_type VARCHAR(30) NOT NULL CHECK (media_type IN ('image', 'document')),
     mime_type VARCHAR(100) NOT NULL,
@@ -137,9 +138,14 @@ const schema = `
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
+  ALTER TABLE media_library ADD COLUMN IF NOT EXISTS tag VARCHAR(80);
+  UPDATE media_library
+  SET tag = CASE WHEN media_type = 'image' THEN 'image' || id ELSE 'doc' || id END
+  WHERE tag IS NULL OR tag = '';
   ALTER TABLE media_library DROP CONSTRAINT IF EXISTS media_library_media_type_check;
   ALTER TABLE media_library ADD CONSTRAINT media_library_media_type_check CHECK (media_type IN ('image', 'document'));
   CREATE INDEX IF NOT EXISTS idx_media_library_client ON media_library(client_id, is_active, attach_on_welcome);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_media_library_client_tag_unique ON media_library(client_id, LOWER(tag)) WHERE tag IS NOT NULL AND tag <> '';
 
   CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,

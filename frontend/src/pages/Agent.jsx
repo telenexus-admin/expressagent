@@ -378,6 +378,9 @@ export default function Agent() {
                 placeholder="You are a helpful and professional customer support agent..."
                 className="w-full resize-y rounded-2xl border border-[#e4e7f1] bg-white px-5 py-4 font-mono text-sm leading-relaxed text-[#15162f] outline-none transition focus:border-[#5b35f5] focus:ring-4 focus:ring-[#ede8ff]"
               />
+              <p className="mt-3 rounded-2xl border border-[#ded6ff] bg-[#fbfaff] px-4 py-3 text-sm font-bold text-[#686e86]">
+                Use media tags from Settings, for example <span className="font-black text-[#4f35f5]">{'{image1}'}</span>. The customer will not see the tag; the agent sends the linked media.
+              </p>
             </SettingsCard>
 
             <SettingsCard
@@ -414,6 +417,9 @@ export default function Agent() {
                   placeholder="Leave blank to use the automatic greeting with agent and business name."
                   className="w-full resize-y rounded-2xl border border-[#e4e7f1] bg-white px-4 py-3 text-sm font-semibold text-[#15162f] outline-none transition focus:border-[#5b35f5] focus:ring-4 focus:ring-[#ede8ff]"
                 />
+                <span className="mt-2 block text-xs font-bold text-[#858aa2]">
+                  Add a media tag like {'{image1}'} here to send that media with the welcome menu.
+                </span>
               </label>
 
               <div className="mt-4 grid gap-3 md:grid-cols-3">

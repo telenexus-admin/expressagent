@@ -20,6 +20,13 @@ const BUBBLE = {
   },
 };
 
+const REPLY_MODES = [
+  { value: 'auto', label: 'Auto', description: 'Voice follows voice, text follows text' },
+  { value: 'text', label: 'Text only', description: 'AI always sends normal messages' },
+  { value: 'voice', label: 'Voice note', description: 'AI always sends voice notes' },
+  { value: 'silent', label: 'Silent', description: 'AI records but does not reply' },
+];
+
 function formatTimestamp(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -31,7 +38,7 @@ function messageText(msg) {
   if (msg.attachment_media_type === 'audio') {
     return String(msg.content || '').replace(/^\[Voice note\]\s*/, '').trim();
   }
-  return msg.content;
+  return String(msg.content || '').replace(/^\[Voice reply\]\s*/, '').trim();
 }
 
 function MessageAttachment({ msg }) {
@@ -98,8 +105,10 @@ export default function ChatView() {
   const [messages, setMessages] = useState([]);
   const [conversation, setConversation] = useState(null);
   const [reply, setReply] = useState('');
+  const [manualMode, setManualMode] = useState('text');
   const [sending, setSending] = useState(false);
   const [statusLoading, setStatusLoading] = useState(false);
+  const [replyModeLoading, setReplyModeLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
@@ -160,6 +169,11 @@ export default function ChatView() {
   }, [id, fetchMessages]);
 
   useEffect(() => {
+    if (conversation?.reply_mode === 'voice') setManualMode('voice');
+    if (conversation?.reply_mode === 'text') setManualMode('text');
+  }, [conversation?.id, conversation?.reply_mode]);
+
+  useEffect(() => {
     if (!messages.length) return;
     const messageCountChanged = messages.length !== lastMessageCountRef.current;
     lastMessageCountRef.current = messages.length;
@@ -173,13 +187,29 @@ export default function ChatView() {
     setSending(true);
     setError('');
     try {
-      await api.post(`/conversations/${id}/reply`, { message: text });
+      await api.post(`/conversations/${id}/reply`, { message: text, mode: manualMode });
       setReply('');
       await fetchMessages();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to send message');
     } finally {
       setSending(false);
+    }
+  };
+
+  const updateReplyMode = async (replyMode) => {
+    if (!conversation || replyModeLoading) return;
+    setReplyModeLoading(true);
+    setError('');
+    try {
+      const { data } = await api.patch(`/conversations/${id}/reply-mode`, { reply_mode: replyMode });
+      setConversation((current) => ({ ...(current || {}), ...data }));
+      if (replyMode === 'voice') setManualMode('voice');
+      if (replyMode === 'text') setManualMode('text');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to update reply style');
+    } finally {
+      setReplyModeLoading(false);
     }
   };
 
@@ -248,6 +278,14 @@ export default function ChatView() {
   const isResolved = conversation?.status === 'resolved';
   const isHuman = conversation?.status === 'human_takeover';
   const aiOn = conversation?.status === 'active';
+  const replyMode = conversation?.reply_mode || 'auto';
+  const aiLabel = isHuman
+    ? 'AI Off - Human Takeover'
+    : isResolved
+    ? 'Resolved'
+    : replyMode === 'silent'
+    ? 'AI Silent'
+    : 'AI Active';
 
   const toggleAi = () => {
     if (!conversation || isResolved || statusLoading) return;
@@ -282,10 +320,12 @@ export default function ChatView() {
                     ? 'bg-gray-100 text-gray-500'
                     : isHuman
                     ? 'bg-orange-100 text-orange-700'
+                    : replyMode === 'silent'
+                    ? 'bg-slate-100 text-slate-600'
                     : 'bg-emerald-100 text-emerald-700'
                 }`}
               >
-                {isHuman ? 'AI Off — Human Takeover' : isResolved ? 'Resolved' : 'AI Active'}
+                {aiLabel}
               </span>
             )}
           </div>
@@ -317,6 +357,19 @@ export default function ChatView() {
                   {aiOn ? 'On' : 'Off'}
                 </span>
               </div>
+            )}
+            {!isResolved && (
+              <select
+                value={replyMode}
+                onChange={(e) => updateReplyMode(e.target.value)}
+                disabled={replyModeLoading}
+                title="Choose how the AI replies in this conversation"
+                className="hidden lg:block h-9 rounded-full border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 outline-none focus:border-[#3535FF] disabled:opacity-50"
+              >
+                {REPLY_MODES.map((mode) => (
+                  <option key={mode.value} value={mode.value}>{mode.label}</option>
+                ))}
+              </select>
             )}
             {!isResolved && (
               <button
@@ -422,13 +475,59 @@ export default function ChatView() {
               <span>AI agent is off — your replies are sent directly to the customer</span>
             </div>
           )}
+          <div className="mb-3 rounded-2xl border border-gray-100 bg-gray-50 p-2.5">
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-bold text-gray-900">Reply style</p>
+                <p className="text-[11px] text-gray-500">{REPLY_MODES.find((mode) => mode.value === replyMode)?.description}</p>
+              </div>
+              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase text-[#3535FF]">
+                {replyMode}
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+              {REPLY_MODES.map((mode) => (
+                <button
+                  key={mode.value}
+                  type="button"
+                  onClick={() => updateReplyMode(mode.value)}
+                  disabled={replyModeLoading}
+                  className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
+                    replyMode === mode.value
+                      ? 'bg-[#3535FF] text-white'
+                      : 'bg-white text-gray-600 hover:bg-gray-100'
+                  }`}
+                >
+                  {mode.label}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div className="mb-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setManualMode('text')}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${manualMode === 'text' ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+              Send text
+            </button>
+            <button
+              type="button"
+              onClick={() => setManualMode('voice')}
+              className={`rounded-full px-3 py-1.5 text-xs font-bold ${manualMode === 'voice' ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600'}`}
+            >
+              Send voice note
+            </button>
+          </div>
           <div className="flex gap-2 items-end">
             <textarea
               value={reply}
               onChange={(e) => setReply(e.target.value)}
               onKeyDown={handleKeyDown}
               placeholder={
-                isHuman
+                manualMode === 'voice'
+                  ? 'Type what the voice note should say...'
+                  : isHuman
                   ? 'Type your reply... (Enter to send)'
                   : 'Type a message to override AI and send manually...'
               }
@@ -440,7 +539,7 @@ export default function ChatView() {
               disabled={sending || !reply.trim()}
               className="bg-[#3535FF] hover:bg-[#2828DD] disabled:opacity-50 text-white px-4 sm:px-6 py-3 rounded-full text-sm font-semibold transition-colors shrink-0"
             >
-              {sending ? '...' : 'Send'}
+              {sending ? '...' : manualMode === 'voice' ? 'Voice' : 'Send'}
             </button>
           </div>
         </div>

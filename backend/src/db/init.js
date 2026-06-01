@@ -72,6 +72,7 @@ const schema = `
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     status VARCHAR(50) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'resolved', 'human_takeover')),
+    reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto' CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent')),
     assigned_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
     opted_out_at TIMESTAMP WITH TIME ZONE,
@@ -81,6 +82,9 @@ const schema = `
   );
 
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS opted_out_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto';
+  ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_reply_mode_check;
+  ALTER TABLE conversations ADD CONSTRAINT conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'));
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS disclosure_sent_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS installation_state VARCHAR(20);

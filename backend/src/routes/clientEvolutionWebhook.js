@@ -1,8 +1,8 @@
 const express = require('express');
 const db = require('../db');
-const { generateAIResponse, analyzeSupportImage, transcribeAudio, classifyComplaint, classifyIntent } = require('../services/openai');
+const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent } = require('../services/openai');
 const { parseEvolutionInbound } = require('../services/evolution');
-const { sendClientText, sendClientMedia, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
+const { sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
@@ -32,6 +32,12 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+function shouldReplyAsVoice(replyMode, inboundIsVoice) {
+  if (replyMode === 'voice') return true;
+  if (replyMode === 'text' || replyMode === 'silent') return false;
+  return Boolean(inboundIsVoice);
+}
+
 function imageFilename(mimeType) {
   const subtype = String(mimeType || 'image/jpeg').split('/')[1]?.split(';')[0] || 'jpg';
   const safeSubtype = subtype.replace(/[^a-z0-9]/gi, '').toLowerCase() || 'jpg';
@@ -50,6 +56,7 @@ async function loadClient(id, token) {
 }
 
 async function findOrCreateConversation(clientId, phone, name) {
+  await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
   const existing = await db.query(
     `SELECT * FROM conversations
      WHERE client_id = $1 AND customer_phone = $2 AND status != 'resolved'
@@ -83,7 +90,17 @@ async function saveMessage(conversationId, role, content) {
   return inserted.rows[0];
 }
 
-async function reply(client, conversationId, phone, text) {
+async function reply(client, conversationId, phone, text, asVoice = false) {
+  if (asVoice) {
+    try {
+      const audio = await synthesizeVoice(text, client.voice_id || 'alloy');
+      await sendClientVoiceNote(client, phone, audio);
+      await saveMessage(conversationId, 'assistant', text);
+      return;
+    } catch (err) {
+      console.error(`[evo client ${client.id}] Voice reply failed, falling back to text:`, safeError(err));
+    }
+  }
   await sendClientText(client, phone, text);
   await saveMessage(conversationId, 'assistant', text);
 }
@@ -180,11 +197,14 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
     if (conversation.status === 'human_takeover') return;
+    const replyMode = conversation.reply_mode || 'auto';
+    if (replyMode === 'silent') return;
+    const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
 
     if (!incoming.isImage) {
       const billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
       if (billingReply) {
-        await reply(client, conversation.id, incoming.phone, billingReply);
+        await reply(client, conversation.id, incoming.phone, billingReply, replyAsVoice);
         await sendMatchedMedia(client, conversation.id, incoming.phone, `${userText}\n${billingReply}`);
         console.log(`[evo client ${client.id}] Billing reply sent to ${incoming.phone}.`);
         return;
@@ -214,7 +234,7 @@ router.post('/client/:clientId', async (req, res) => {
       const answer = client.support_number
         ? `Thanks — I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
         : "Thanks — I've flagged your request for the support team. Someone will follow up shortly.";
-      await reply(client, conversation.id, incoming.phone, answer);
+      await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
       return;
     }
 
@@ -243,7 +263,7 @@ router.post('/client/:clientId', async (req, res) => {
       ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
       : await generateAIResponse(prompt, recent.rows);
     if (!aiReply || !aiReply.trim()) return;
-    await reply(client, conversation.id, incoming.phone, aiReply.trim());
+    await reply(client, conversation.id, incoming.phone, aiReply.trim(), replyAsVoice);
     if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, `${userText}\n${aiReply}`);
     console.log(`[evo client ${client.id}] AI reply sent to ${incoming.phone}.`);
     runAfterReply('Evolution post-reply ticket workflow', async () => {

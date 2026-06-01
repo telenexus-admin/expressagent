@@ -190,6 +190,12 @@ async function deliverMediaItems(client, phoneNumber, items, conversationId, rea
   }
 }
 
+function shouldReplyAsVoice(replyMode, inboundIsVoice) {
+  if (replyMode === 'voice') return true;
+  if (replyMode === 'text' || replyMode === 'silent') return false;
+  return Boolean(inboundIsVoice);
+}
+
 const INSTALL_REGEX = new RegExp(
   [
     '\\b(want|need|looking for|book|schedule|please|can\\s*(?:you|i)|how\\s*(?:do|to))\\b' +
@@ -312,6 +318,7 @@ async function findClientByPhoneNumberId(phoneNumberId) {
 }
 
 async function findOrCreateConversation(clientId, phoneNumber, profileName) {
+  await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
   const cleanName = (profileName || '').trim() || null;
   const existing = await db.query(
     `SELECT * FROM conversations
@@ -489,11 +496,13 @@ router.post('/', async (req, res) => {
       customerPhone: phoneNumber,
       messageText: persistedMessageText,
     }));
+    const replyMode = conversation.reply_mode || 'auto';
+    const replyAsVoice = shouldReplyAsVoice(replyMode, inboundIsVoice);
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NULL WHERE id = $1`, [conversation.id]);
       const reply = "You're resubscribed. How can I help you today?";
-      await deliverReply(client, phoneNumber, reply, inboundIsVoice);
+      await deliverReply(client, phoneNumber, reply, replyAsVoice);
       await persistOutgoing(conversation.id, reply);
       return;
     }
@@ -501,11 +510,12 @@ router.post('/', async (req, res) => {
     if (OPT_OUT_KEYWORDS.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
       const reply = "You've been unsubscribed. You will not receive further messages from this assistant. Reply START at any time to resume.";
-      await deliverReply(client, phoneNumber, reply, inboundIsVoice);
+      await deliverReply(client, phoneNumber, reply, replyAsVoice);
       await persistOutgoing(conversation.id, reply);
       return;
     }
     if (conversation.status === 'human_takeover') return;
+    if (replyMode === 'silent') return;
 
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
     if (!inboundIsImage && message.type !== 'interactive' && (isNew || MENU_KEYWORDS.has(normalized))) {
@@ -557,7 +567,7 @@ router.post('/', async (req, res) => {
     if (!inboundIsImage && installationState !== 'collecting') {
       const billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingReply) {
-        await deliverReply(client, phoneNumber, billingReply, inboundIsVoice, voiceId);
+        await deliverReply(client, phoneNumber, billingReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, billingReply);
         const mediaMatches = await matchingMedia(client.id, `${messageText}\n${billingReply}`);
         await deliverMediaItems(client, phoneNumber, mediaMatches, conversation.id, 'matched');
@@ -681,14 +691,14 @@ router.post('/', async (req, res) => {
     }
     customerReply = stripInstallMarker(customerReply);
 
-    if (inboundIsVoice) {
+    if (replyAsVoice) {
       await deliverReply(client, phoneNumber, customerReply, true, voiceId);
       await persistOutgoing(conversation.id, customerReply);
-      console.log(`AI voice reply sent to ${phoneNumber}.`);
+      console.log(`AI voice reply sent to ${phoneNumber} using mode=${replyMode}.`);
     } else {
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, customerReply);
       await persistOutgoing(conversation.id, customerReply);
-      console.log(inboundIsImage ? `AI image-guided reply sent to ${phoneNumber}.` : `AI reply sent to ${phoneNumber}.`);
+      console.log(inboundIsImage ? `AI image-guided reply sent to ${phoneNumber}.` : `AI reply sent to ${phoneNumber} using mode=${replyMode}.`);
     }
     if (!inboundIsImage) {
       const mediaMatches = await matchingMedia(client.id, `${messageText}\n${customerReply}`);

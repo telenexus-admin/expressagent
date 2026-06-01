@@ -89,6 +89,21 @@ async function sendClientMedia(client, number, media) {
   );
 }
 
+async function sendClientVoiceNote(client, number, audioBuffer) {
+  const { baseUrl, headers, instance } = clientSettings(client);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp number is required.');
+  return axios.post(
+    `${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`,
+    {
+      number: phone,
+      audio: audioBuffer.toString('base64'),
+      delay: 400,
+    },
+    { headers, timeout: 60000 }
+  );
+}
+
 async function downloadClientAudio(client, messageKey) {
   const media = await downloadClientMedia(client, messageKey, { convertToMp4: false });
   return { ...media, mimeType: media.mimeType || 'audio/ogg' };
@@ -99,4 +114,4 @@ async function downloadClientImage(client, messageKey) {
   return { ...media, mimeType: media.mimeType || 'image/jpeg' };
 }
 
-module.exports = { setClientWebhook, sendClientText, sendClientMedia, downloadClientAudio, downloadClientImage };
+module.exports = { setClientWebhook, sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };

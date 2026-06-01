@@ -2,12 +2,23 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { sendWhatsAppMessage } = require('../services/whatsapp');
-const { sendClientText } = require('../services/clientEvolution');
+const { synthesizeVoice } = require('../services/openai');
+const {
+  sendWhatsAppMessage,
+  uploadWhatsAppMedia,
+  sendWhatsAppVoiceNote,
+} = require('../services/whatsapp');
+const { sendClientText, sendClientVoiceNote } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
 const { sendInstallationConfirmedEmail } = require('../services/email');
 
 router.use(authMiddleware, scopeMiddleware);
+
+const REPLY_MODES = ['auto', 'text', 'voice', 'silent'];
+
+async function ensureConversationReplyModeColumn() {
+  await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+}
 
 async function loadConversationWithClient(conversationId, scope) {
   const result = await db.query(
@@ -21,6 +32,7 @@ async function loadConversationWithClient(conversationId, scope) {
        cl.meta_phone_number_id AS cl_meta_phone_number_id,
        cl.meta_access_token AS cl_meta_access_token,
        cl.agent_name AS cl_agent_name,
+       cl.voice_id AS cl_voice_id,
        cl.support_number AS cl_support_number,
        cl.installation_email_enabled AS cl_installation_email_enabled
      FROM conversations conv
@@ -37,6 +49,7 @@ async function loadConversationWithClient(conversationId, scope) {
       customer_phone: row.customer_phone,
       customer_name: row.customer_name,
       status: row.status,
+      reply_mode: row.reply_mode || 'auto',
       client_id: row.client_id,
       installation_state: row.installation_state,
       opted_out_at: row.opted_out_at,
@@ -50,6 +63,7 @@ async function loadConversationWithClient(conversationId, scope) {
       meta_phone_number_id: row.cl_meta_phone_number_id,
       meta_access_token: row.cl_meta_access_token,
       agent_name: row.cl_agent_name,
+      voice_id: row.cl_voice_id,
       support_number: row.cl_support_number,
       installation_email_enabled: row.cl_installation_email_enabled,
     },
@@ -58,6 +72,7 @@ async function loadConversationWithClient(conversationId, scope) {
 
 router.get('/', async (req, res) => {
   try {
+    await ensureConversationReplyModeColumn();
     const { status, search } = req.query;
     const params = [];
     let where = 'WHERE 1=1';
@@ -105,6 +120,7 @@ router.get('/', async (req, res) => {
 
 router.get('/:id/messages', async (req, res) => {
   try {
+    await ensureConversationReplyModeColumn();
     const ownership = await db.query(`SELECT client_id FROM conversations WHERE id = $1`, [req.params.id]);
     if (ownership.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
     if (!req.scope.isSuperadmin && ownership.rows[0].client_id !== req.scope.clientId) {
@@ -170,30 +186,48 @@ router.get('/messages/:messageId/attachment', async (req, res) => {
 });
 
 router.post('/:id/reply', async (req, res) => {
-  const { message } = req.body;
+  const { message, mode } = req.body;
   if (!message || !message.trim()) return res.status(400).json({ error: 'Message content is required' });
 
   try {
+    await ensureConversationReplyModeColumn();
     const loaded = await loadConversationWithClient(req.params.id, req.scope);
     if (!loaded) return res.status(404).json({ error: 'Conversation not found' });
 
     const { conversation, client } = loaded;
+    const selectedMode = REPLY_MODES.includes(mode) ? mode : conversation.reply_mode || 'auto';
+    const shouldSendVoice = selectedMode === 'voice';
+    const cleanMessage = message.trim();
 
-    if (client.connection_provider === 'evolution') {
-      await sendClientText(client, conversation.customer_phone, message.trim());
+    if (shouldSendVoice) {
+      const audio = await synthesizeVoice(cleanMessage, client.voice_id || 'alloy');
+      if (client.connection_provider === 'evolution') {
+        await sendClientVoiceNote(client, conversation.customer_phone, audio);
+      } else {
+        const mediaId = await uploadWhatsAppMedia(
+          client.meta_phone_number_id,
+          client.meta_access_token,
+          audio,
+          'audio/ogg',
+          'reply.ogg'
+        );
+        await sendWhatsAppVoiceNote(client.meta_phone_number_id, client.meta_access_token, conversation.customer_phone, mediaId);
+      }
+    } else if (client.connection_provider === 'evolution') {
+      await sendClientText(client, conversation.customer_phone, cleanMessage);
     } else {
       await sendWhatsAppMessage(
         client.meta_phone_number_id,
         client.meta_access_token,
         conversation.customer_phone,
-        message.trim()
+        cleanMessage
       );
     }
 
     await db.query(
       `INSERT INTO messages (conversation_id, role, content, sender_name, timestamp)
        VALUES ($1, 'admin', $2, $3, NOW())`,
-      [req.params.id, message.trim(), req.user.name]
+      [req.params.id, shouldSendVoice ? `[Voice reply] ${cleanMessage}` : cleanMessage, req.user.name]
     );
     await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [req.params.id]);
 
@@ -201,6 +235,28 @@ router.post('/:id/reply', async (req, res) => {
   } catch (err) {
     console.error('POST reply error:', err.message);
     res.status(500).json({ error: err.message || 'Server error' });
+  }
+});
+
+router.patch('/:id/reply-mode', async (req, res) => {
+  const { reply_mode } = req.body;
+  if (!REPLY_MODES.includes(reply_mode)) {
+    return res.status(400).json({ error: `Reply mode must be one of: ${REPLY_MODES.join(', ')}` });
+  }
+
+  try {
+    await ensureConversationReplyModeColumn();
+    const loaded = await loadConversationWithClient(req.params.id, req.scope);
+    if (!loaded) return res.status(404).json({ error: 'Conversation not found' });
+
+    const result = await db.query(
+      `UPDATE conversations SET reply_mode = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
+      [reply_mode, req.params.id]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PATCH reply mode error:', err.message);
+    res.status(500).json({ error: 'Server error' });
   }
 });
 

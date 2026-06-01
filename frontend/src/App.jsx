@@ -4,6 +4,7 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import ExpressnetLogin from './pages/ExpressnetLogin';
 import SelfOnboarding from './pages/SelfOnboarding';
+import CustomerIntake from './pages/CustomerIntake';
 import OnboardingLogin from './pages/OnboardingLogin';
 import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
@@ -132,6 +133,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/self-onboarding" element={<SelfOnboarding />} />
+          <Route path="/customer-intake/:clientId" element={<CustomerIntake />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />

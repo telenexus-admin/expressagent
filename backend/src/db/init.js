@@ -154,6 +154,36 @@ const schema = `
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
 
+  CREATE TABLE IF NOT EXISTS customer_intake_submissions (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    customer_name VARCHAR(255) NOT NULL,
+    customer_phone VARCHAR(80) NOT NULL,
+    alternate_phone VARCHAR(80),
+    email VARCHAR(255),
+    id_number VARCHAR(80),
+    plan_interest VARCHAR(140),
+    service_type VARCHAR(80),
+    county VARCHAR(120),
+    area VARCHAR(180) NOT NULL,
+    landmark TEXT,
+    building_type VARCHAR(80),
+    house_description TEXT,
+    latitude NUMERIC,
+    longitude NUMERIC,
+    preferred_date VARCHAR(40),
+    preferred_time VARCHAR(40),
+    notes TEXT,
+    consent_accepted BOOLEAN NOT NULL DEFAULT FALSE,
+    identity_mime_type VARCHAR(100),
+    identity_filename VARCHAR(255),
+    identity_document BYTEA,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_customer_intake_client ON customer_intake_submissions(client_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_customer_intake_phone ON customer_intake_submissions(customer_phone);
+
   CREATE TABLE IF NOT EXISTS escalations (
     id SERIAL PRIMARY KEY,
     conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,

@@ -7,11 +7,13 @@ const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require(
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems } = require('../services/mediaLibrary');
+const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
 const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
 const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
+const INSTALL_RE = /\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/i;
 
 function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
@@ -202,6 +204,18 @@ router.post('/client/:clientId', async (req, res) => {
     if (replyMode === 'silent') return;
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
 
+    if (!incoming.isImage && INSTALL_RE.test(userText)) {
+      const intakeUrl = buildCustomerIntakeUrl(client, { phone: incoming.phone, name: conversation.customer_name });
+      if (intakeUrl) {
+        const answer =
+          `Please complete this installation form:\n${intakeUrl}\n\n` +
+          `It collects your ID scan, location and contact details for the setup team.`;
+        await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        console.log(`[evo client ${client.id}] Installation intake form link sent to ${incoming.phone}.`);
+        return;
+      }
+    }
+
     if (!incoming.isImage) {
       let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
       if (billingReply) {
@@ -257,6 +271,10 @@ router.post('/client/:clientId', async (req, res) => {
     }
     if (client.support_number) {
       prompt += `\n\nWhen a human is required, tell the customer they can reach support at ${client.support_number}.`;
+    }
+    const intakeUrl = buildCustomerIntakeUrl(client, { phone: incoming.phone, name: conversation.customer_name });
+    if (intakeUrl) {
+      prompt += `\n\nFor new installation requests, send this intake form link: ${intakeUrl}. It collects ID scan, location and contact details.`;
     }
     if (!incoming.isImage) {
       const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });

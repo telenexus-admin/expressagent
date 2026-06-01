@@ -16,6 +16,7 @@ const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require(
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
+const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -565,6 +566,16 @@ router.post('/', async (req, res) => {
     if (!inboundIsImage && !installationState && INSTALL_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`, [conversation.id]);
       installationState = 'collecting';
+      const intakeUrl = buildCustomerIntakeUrl(client, { phone: phoneNumber, name: conversation.customer_name });
+      if (intakeUrl) {
+        const reply =
+          `Please complete this installation form:\n${intakeUrl}\n\n` +
+          `It collects your ID scan, location and contact details for the setup team.`;
+        await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, reply);
+        console.log(`Installation intake form link sent to ${phoneNumber}.`);
+        return;
+      }
     }
 
     if (!inboundIsImage && installationState !== 'collecting') {
@@ -605,8 +616,13 @@ router.post('/', async (req, res) => {
         `Never claim that a photo proves the complete fault or that a technician has been dispatched unless the workflow confirms it. If the photo is unclear, ask for a clearer close-up or escalate appropriately.`;
     }
     if (installationState === 'collecting') {
+      const intakeUrl = buildCustomerIntakeUrl(client, { phone: phoneNumber, name: conversation.customer_name });
       systemPrompt +=
         `\n\nINSTALLATION ONBOARDING — IN PROGRESS\n` +
+        (intakeUrl
+          ? `Prefer sending this installation intake form link so the customer can submit ID scan, exact location and contact details: ${intakeUrl}\n` +
+            `If they cannot open the link, collect the details in chat as a fallback.\n`
+          : '') +
         `Collect these four items one at a time before submitting the request:\n` +
         `1) Full name\n2) Preferred internet plan\n3) Physical location / landmark\n4) Email address for confirmation\n\n` +
         `Available plans:\n${PLAN_LIST_TEXT}\n\n` +

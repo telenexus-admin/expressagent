@@ -14,6 +14,40 @@ function applyClientScope(req, params, alias) {
   return 'TRUE';
 }
 
+async function ensureCustomerIntakeTable() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS customer_intake_submissions (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      customer_name VARCHAR(255) NOT NULL,
+      customer_phone VARCHAR(80) NOT NULL,
+      alternate_phone VARCHAR(80),
+      email VARCHAR(255),
+      id_number VARCHAR(80),
+      plan_interest VARCHAR(140),
+      service_type VARCHAR(80),
+      county VARCHAR(120),
+      area VARCHAR(180) NOT NULL,
+      landmark TEXT,
+      building_type VARCHAR(80),
+      house_description TEXT,
+      latitude NUMERIC,
+      longitude NUMERIC,
+      preferred_date VARCHAR(40),
+      preferred_time VARCHAR(40),
+      notes TEXT,
+      consent_accepted BOOLEAN NOT NULL DEFAULT FALSE,
+      identity_mime_type VARCHAR(100),
+      identity_filename VARCHAR(255),
+      identity_document BYTEA,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_client ON customer_intake_submissions(client_id, created_at DESC)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_phone ON customer_intake_submissions(customer_phone)`);
+}
+
 // GET /api/escalations/remarks-summary — customer experience totals.
 router.get('/remarks-summary', async (req, res) => {
   try {
@@ -83,6 +117,77 @@ router.patch('/remarks/:id/review', async (req, res) => {
   } catch (err) {
     console.error('PATCH /escalations/remarks/:id/review error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/escalations/installation-intakes — CRM details submitted through the public intake form.
+router.get('/installation-intakes', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const { status } = req.query;
+
+    const params = [];
+    const conditions = [applyClientScope(req, params, 'i')];
+    if (status === 'open') conditions.push(`COALESCE(t.status, 'open') NOT IN ('resolved', 'closed')`);
+    else if (status === 'resolved') conditions.push(`t.status IN ('resolved', 'closed')`);
+    const condition = conditions.join(' AND ');
+    const result = await db.query(
+      `SELECT
+         i.id, i.client_id, i.customer_name, i.customer_phone, i.alternate_phone,
+         i.email, i.id_number, i.plan_interest, i.service_type, i.county, i.area,
+         i.landmark, i.building_type, i.house_description, i.latitude, i.longitude,
+         i.preferred_date, i.preferred_time, i.notes, i.consent_accepted,
+         i.identity_mime_type, i.identity_filename,
+         (i.identity_document IS NOT NULL) AS has_identity_document,
+         i.metadata, i.created_at,
+         t.id AS ticket_id, t.status AS ticket_status, t.priority AS ticket_priority
+       FROM customer_intake_submissions i
+       LEFT JOIN LATERAL (
+         SELECT id, status, priority
+         FROM tickets
+         WHERE client_id = i.client_id
+           AND customer_phone = i.customer_phone
+           AND category = 'installation'
+         ORDER BY updated_at DESC
+         LIMIT 1
+       ) t ON TRUE
+       WHERE ${condition}
+       ORDER BY i.created_at DESC
+       LIMIT 250`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /escalations/installation-intakes error:', err.message);
+    res.status(500).json({ error: 'Failed to load installation intake details' });
+  }
+});
+
+// GET /api/escalations/installation-intakes/:id/identity — secure ID document download.
+router.get('/installation-intakes/:id/identity', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const params = [req.params.id];
+    let where = 'id = $1';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `SELECT identity_document, identity_mime_type, identity_filename
+       FROM customer_intake_submissions
+       WHERE ${where}
+       LIMIT 1`,
+      params
+    );
+    const row = result.rows[0];
+    if (!row || !row.identity_document) return res.status(404).json({ error: 'Identity document not found' });
+    res.setHeader('Content-Type', row.identity_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${String(row.identity_filename || 'identity-document').replace(/"/g, '')}"`);
+    res.send(row.identity_document);
+  } catch (err) {
+    console.error('GET /escalations/installation-intakes/:id/identity error:', err.message);
+    res.status(500).json({ error: 'Failed to load identity document' });
   }
 });
 

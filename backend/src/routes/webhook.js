@@ -11,7 +11,8 @@ const {
   sendWhatsAppMediaMessage,
 } = require('../services/whatsapp');
 const { sendSMS } = require('../services/sms');
-const { sendInstallationRequestEmail } = require('../services/email');
+const { sendInstallationRequestEmail, sendWorkflowEmployeeEmail } = require('../services/email');
+const { sendClientText } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
@@ -70,9 +71,10 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
   if (!intent || intent === 'general_inquiry') return;
 
   try {
+    await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb`);
     const routeRes = await db.query(
-      `SELECT wr.employee_id, wr.is_enabled,
-              e.id AS emp_id, e.name AS emp_name, e.phone AS emp_phone, e.is_active AS emp_active
+      `SELECT wr.employee_id, wr.is_enabled, wr.notification_channels,
+              e.id AS emp_id, e.name AS emp_name, e.phone AS emp_phone, e.email AS emp_email, e.is_active AS emp_active
        FROM workflow_routes wr
        LEFT JOIN employees e ON e.id = wr.employee_id
        WHERE wr.client_id = $1 AND wr.intent_key = $2`,
@@ -103,16 +105,14 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
       `Their message: "${messageText}"\n\n` +
       `Please follow up directly.`;
 
-    let notifyStatus = 'sent';
-    let notifyError = null;
-    try {
-      await sendSMS(route.emp_phone, notice, { client });
-      console.log(`[client ${client.id}] Dispatched intent="${intent}" to employee "${route.emp_name}" (${route.emp_phone}).`);
-    } catch (err) {
-      notifyStatus = 'failed';
-      notifyError = formatErr(err);
-      console.error(`Dispatch SMS to employee ${route.emp_name} (${route.emp_phone}) failed:`, notifyError);
-    }
+    const channels = normalizeWorkflowChannels(route.notification_channels);
+    const channelResults = await sendWorkflowNotice({ client, employee: route, channels, subject: heading, notice });
+    const notifyStatus = Object.values(channelResults).some((result) => result.status === 'sent') ? 'sent' : 'failed';
+    const notifyError = Object.entries(channelResults)
+      .filter(([, result]) => result.status !== 'sent')
+      .map(([channel, result]) => `${channel}: ${result.error || result.status}`)
+      .join(' | ') || null;
+    console.log(`[client ${client.id}] Dispatched intent="${intent}" to employee "${route.emp_name}" via ${channels.join(', ')}.`);
 
     await db.query(
       `INSERT INTO workflow_dispatches
@@ -177,6 +177,37 @@ function audioFilename(mimeType) {
   if (value.includes('wav')) return 'voice-note.wav';
   if (value.includes('webm')) return 'voice-note.webm';
   return 'voice-note.ogg';
+}
+
+function normalizeWorkflowChannels(value) {
+  const raw = Array.isArray(value) ? value : ['sms'];
+  const allowed = new Set(['sms', 'email', 'whatsapp']);
+  const clean = raw.map((item) => String(item || '').toLowerCase()).filter((item) => allowed.has(item));
+  return [...new Set(clean)].length ? [...new Set(clean)] : ['sms'];
+}
+
+async function sendWorkflowNotice({ client, employee, channels, subject, notice }) {
+  const results = {};
+  await Promise.all(channels.map(async (channel) => {
+    try {
+      if (channel === 'sms') {
+        if (!employee.emp_phone) throw new Error('Assigned employee has no phone number');
+        await sendSMS(employee.emp_phone, notice, { client });
+      } else if (channel === 'email') {
+        const result = await sendWorkflowEmployeeEmail(client, { email: employee.emp_email }, { subject, message: notice });
+        if (result.status !== 'sent') throw new Error(result.error || result.status);
+      } else if (channel === 'whatsapp') {
+        if (!employee.emp_phone) throw new Error('Assigned employee has no phone number');
+        if (client.connection_provider === 'evolution') await sendClientText(client, employee.emp_phone, notice);
+        else await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, employee.emp_phone, notice);
+      }
+      results[channel] = { status: 'sent', error: null };
+    } catch (err) {
+      results[channel] = { status: 'failed', error: formatErr(err) };
+      console.error(`Workflow ${channel} to employee ${employee.emp_name} failed:`, results[channel].error);
+    }
+  }));
+  return results;
 }
 
 async function deliverMediaItems(client, phoneNumber, items, conversationId, reason = 'media') {

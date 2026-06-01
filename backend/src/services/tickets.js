@@ -1,6 +1,8 @@
 const db = require('../db');
 const { sendSMS, hasSMSConfig } = require('./sms');
-const { sendHighPriorityTicketEmail } = require('./email');
+const { sendHighPriorityTicketEmail, sendWorkflowEmployeeEmail } = require('./email');
+const { sendWhatsAppMessage } = require('./whatsapp');
+const { sendClientText } = require('./clientEvolution');
 
 let schemaReady = false;
 
@@ -100,6 +102,8 @@ async function ensureTicketSchema() {
     CREATE INDEX IF NOT EXISTS idx_tickets_client_category ON tickets(client_id, category, updated_at DESC);
     CREATE INDEX IF NOT EXISTS idx_tickets_conversation ON tickets(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id, created_at ASC);
+
+    ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb;
   `);
   schemaReady = true;
 }
@@ -167,7 +171,7 @@ async function findWorkflowAssignment(clientId, category, intent) {
   const intentKey = intent || intentFromCategory(category);
   if (!intentKey) return null;
   const result = await db.query(
-    `SELECT e.id, e.name, e.phone
+    `SELECT e.id, e.name, e.phone, e.email, wr.notification_channels
      FROM workflow_routes wr
      JOIN employees e ON e.id = wr.employee_id
      WHERE wr.client_id = $1
@@ -178,7 +182,21 @@ async function findWorkflowAssignment(clientId, category, intent) {
     [clientId, intentKey]
   );
   const employee = result.rows[0];
-  return employee ? { employeeId: employee.id, employeeName: employee.name, employeePhone: employee.phone, intentKey } : null;
+  return employee ? {
+    employeeId: employee.id,
+    employeeName: employee.name,
+    employeePhone: employee.phone,
+    employeeEmail: employee.email,
+    notificationChannels: normalizeWorkflowChannels(employee.notification_channels),
+    intentKey,
+  } : null;
+}
+
+function normalizeWorkflowChannels(value) {
+  const raw = Array.isArray(value) ? value : ['sms'];
+  const allowed = new Set(['sms', 'email', 'whatsapp']);
+  const clean = raw.map((item) => String(item || '').toLowerCase()).filter((item) => allowed.has(item));
+  return [...new Set(clean)].length ? [...new Set(clean)] : ['sms'];
 }
 
 function titleForCategory(category) {
@@ -197,10 +215,6 @@ function titleForCategory(category) {
 function ticketLink(ticketId) {
   const base = String(process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
   return base ? `${base}/dashboard/tickets?ticket=${ticketId}` : null;
-}
-
-function notificationEnabled() {
-  return String(process.env.TICKET_ASSIGNMENT_SMS_ENABLED || '').toLowerCase() === 'true';
 }
 
 async function loadClientSmsConfig(clientId) {
@@ -227,8 +241,6 @@ async function ensureClientSmsColumns() {
 
 async function notifyAssignedEmployee({ ticket, assignment, customerPhone, customerName, summary }) {
   if (!assignment?.employeeId) return { status: null, error: null };
-  if (!notificationEnabled()) return { status: 'skipped', error: 'Ticket assignment SMS is disabled' };
-  if (!assignment.employeePhone) return { status: 'skipped', error: 'Assigned employee has no phone number' };
 
   const customer = customerName ? `${customerName} (+${customerPhone})` : `+${customerPhone}`;
   const link = ticketLink(ticket.id);
@@ -240,24 +252,61 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
     `Issue: ${summary || ticket.summary || ticket.last_message || 'No summary yet'}` +
     (link ? `\n\nOpen: ${link}` : '');
 
-  try {
-    const smsClient = await loadClientSmsConfig(ticket.client_id);
-    await sendSMS(assignment.employeePhone, message, { client: smsClient });
-    return { status: 'sent', error: null };
-  } catch (err) {
-    return { status: 'failed', error: err.message || 'Failed to send assignment SMS' };
-  }
+  const client = await loadClientForWorkflowNotify(ticket.client_id);
+  if (!client) return { status: 'failed', error: 'Client not found for workflow notification' };
+  const channels = normalizeWorkflowChannels(assignment.notificationChannels);
+  const results = await sendWorkflowAssignmentChannels({
+    client,
+    assignment,
+    channels,
+    subject: `New ticket assigned: #${ticket.id}`,
+    message,
+  });
+  const sent = Object.values(results).some((result) => result.status === 'sent');
+  const errors = Object.entries(results)
+    .filter(([, result]) => result.status !== 'sent')
+    .map(([channel, result]) => `${channel}: ${result.error || result.status}`)
+    .join(' | ');
+  return { status: sent ? 'sent' : 'failed', error: errors || null, channelResults: results };
 }
 
-async function loadClientForAlert(clientId) {
+async function loadClientForWorkflowNotify(clientId) {
   await ensureClientSmsColumns();
   const result = await db.query(
     `SELECT id, name, business_name, contact_email, support_number, agent_name,
+            connection_provider, meta_phone_number_id, meta_access_token, evolution_instance_name,
             sms_provider, sms_api_key, sms_sender_id
      FROM clients WHERE id = $1 LIMIT 1`,
     [clientId]
   );
   return result.rows[0] || null;
+}
+
+async function sendWorkflowAssignmentChannels({ client, assignment, channels, subject, message }) {
+  const results = {};
+  await Promise.all(channels.map(async (channel) => {
+    try {
+      if (channel === 'sms') {
+        if (!assignment.employeePhone) throw new Error('Assigned employee has no phone number');
+        await sendSMS(assignment.employeePhone, message, { client });
+      } else if (channel === 'email') {
+        const result = await sendWorkflowEmployeeEmail(client, { email: assignment.employeeEmail }, { subject, message });
+        if (result.status !== 'sent') throw new Error(result.error || result.status);
+      } else if (channel === 'whatsapp') {
+        if (!assignment.employeePhone) throw new Error('Assigned employee has no phone number');
+        if (client?.connection_provider === 'evolution') await sendClientText(client, assignment.employeePhone, message);
+        else await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, assignment.employeePhone, message);
+      }
+      results[channel] = { status: 'sent', error: null };
+    } catch (err) {
+      results[channel] = { status: 'failed', error: err.message || 'Failed to send workflow notification' };
+    }
+  }));
+  return results;
+}
+
+async function loadClientForAlert(clientId) {
+  return loadClientForWorkflowNotify(clientId);
 }
 
 async function sendClientHighPrioritySms(client, ticket) {

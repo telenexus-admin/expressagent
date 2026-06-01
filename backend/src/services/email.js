@@ -129,9 +129,32 @@ async function sendHighPriorityTicketEmail(client, ticket) {
   });
 }
 
+async function sendWorkflowEmployeeEmail(client, employee, details) {
+  if (!employee?.email) return { status: 'skipped', error: 'Assigned employee has no email address' };
+  if (!isEmailConfigured()) return { status: 'skipped', error: 'Email provider is not configured on the server' };
+
+  const { company, address, from } = emailBrand(client);
+  const subject = details.subject || `New workflow alert - ${company}`;
+  const body = details.message || 'A customer needs attention.';
+
+  return sendViaResend({
+    from,
+    to: [employee.email],
+    reply_to: address,
+    subject,
+    text: body,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6">` +
+      `<h2 style="color:#203fcd">${escapeHtml(subject)}</h2>` +
+      `<pre style="white-space:pre-wrap;font-family:Arial,sans-serif;background:#f8fafc;border:1px solid #e2e8f0;border-radius:14px;padding:16px">${escapeHtml(body)}</pre>` +
+      `</div>`,
+  });
+}
+
 module.exports = {
   sendInstallationRequestEmail,
   sendInstallationConfirmedEmail,
   sendHighPriorityTicketEmail,
+  sendWorkflowEmployeeEmail,
   isEmailConfigured,
 };

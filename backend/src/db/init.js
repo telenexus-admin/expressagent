@@ -231,10 +231,12 @@ const schema = `
     intent_key VARCHAR(50) NOT NULL,
     employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     UNIQUE (client_id, intent_key)
   );
 
+  ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb;
   CREATE INDEX IF NOT EXISTS idx_workflow_routes_client ON workflow_routes(client_id);
 
   CREATE TABLE IF NOT EXISTS workflow_dispatches (

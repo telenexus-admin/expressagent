@@ -30,6 +30,15 @@ const INTENT_LABELS = {
   compliment_feedback: 'Compliment / Feedback',
   general_inquiry: 'General Inquiry',
 };
+const CHANNELS = [
+  ['sms', 'SMS'],
+  ['email', 'Email'],
+  ['whatsapp', 'WhatsApp'],
+];
+
+function normalizeChannels(value) {
+  return Array.isArray(value) && value.length ? value : ['sms'];
+}
 
 export default function Workflow() {
   const [intents, setIntents] = useState([]);
@@ -59,17 +68,26 @@ export default function Workflow() {
     fetchAll();
   }, [fetchAll]);
 
-  const assign = async (intentKey, employeeId) => {
+  const saveRoute = async (intentKey, patch) => {
+    const current = intents.find((intent) => intent.key === intentKey);
+    if (!current) return;
     setSaveState((s) => ({ ...s, [intentKey]: 'saving' }));
     try {
+      const nextEmployeeId = patch.employee_id !== undefined ? patch.employee_id : current.assignedEmployeeId;
+      const nextChannels = patch.notification_channels || normalizeChannels(current.notificationChannels);
       await api.put(`/workflows/${intentKey}`, {
-        employee_id: employeeId === '' ? null : parseInt(employeeId, 10),
+        employee_id: nextEmployeeId === '' || nextEmployeeId === null ? null : parseInt(nextEmployeeId, 10),
         is_enabled: true,
+        notification_channels: nextChannels,
       });
       setIntents((prev) =>
         prev.map((i) =>
           i.key === intentKey
-            ? { ...i, assignedEmployeeId: employeeId === '' ? null : parseInt(employeeId, 10) }
+            ? {
+                ...i,
+                assignedEmployeeId: nextEmployeeId === '' || nextEmployeeId === null ? null : parseInt(nextEmployeeId, 10),
+                notificationChannels: nextChannels,
+              }
             : i
         )
       );
@@ -86,6 +104,9 @@ export default function Workflow() {
       setSaveState((s) => ({ ...s, [intentKey]: 'error' }));
     }
   };
+
+  const assign = (intentKey, employeeId) => saveRoute(intentKey, { employee_id: employeeId });
+  const updateChannels = (intentKey, channels) => saveRoute(intentKey, { notification_channels: channels });
 
   if (loading) {
     return (
@@ -104,7 +125,7 @@ export default function Workflow() {
               <h1 className="text-2xl font-bold text-gray-900">Workflow</h1>
               <p className="text-sm text-gray-500 mt-1 max-w-2xl">
                 This is how your AI agent decides what to do with every customer message.
-                For each scenario below, pick the employee who should get an SMS alert when it happens.
+                For each scenario below, pick the employee and notification channels for alerts.
               </p>
             </div>
             <div className="flex gap-2">
@@ -143,7 +164,7 @@ export default function Workflow() {
           </div>
         )}
 
-        <FlowDiagram intents={intents} employees={employees} onAssign={assign} saveState={saveState} editing={editing} />
+        <FlowDiagram intents={intents} employees={employees} onAssign={assign} onChannelsChange={updateChannels} saveState={saveState} editing={editing} />
 
         <RecentActivity dispatches={dispatches} />
       </div>
@@ -151,7 +172,7 @@ export default function Workflow() {
   );
 }
 
-function FlowDiagram({ intents, employees, onAssign, saveState, editing }) {
+function FlowDiagram({ intents, employees, onAssign, onChannelsChange, saveState, editing }) {
   const containerRef = useRef(null);
   const aiNodeRef = useRef(null);
   const cardRefs = useRef({});
@@ -280,6 +301,7 @@ function FlowDiagram({ intents, employees, onAssign, saveState, editing }) {
             intent={intent}
             employees={employees}
             onAssign={onAssign}
+            onChannelsChange={onChannelsChange}
             saveState={saveState[intent.key]}
             editing={editing}
           />
@@ -312,13 +334,20 @@ function TopNode({ icon, title, subtitle, accent, primary = false }) {
 }
 
 const IntentCard = React.forwardRef(function IntentCard(
-  { intent, employees, onAssign, saveState, editing },
+  { intent, employees, onAssign, onChannelsChange, saveState, editing },
   ref
 ) {
   const style = INTENT_STYLE[intent.key] || { Icon: QuestionIcon, accent: '#6B7280', bg: 'bg-gray-50' };
   const { Icon, accent, bg } = style;
   const assignedEmployee = employees.find((e) => e.id === intent.assignedEmployeeId);
   const isPassthrough = intent.isPassthrough;
+  const channels = normalizeChannels(intent.notificationChannels);
+  const toggleChannel = (channel) => {
+    const next = channels.includes(channel)
+      ? channels.filter((item) => item !== channel)
+      : [...channels, channel];
+    onChannelsChange(intent.key, next.length ? next : ['sms']);
+  };
 
   return (
     <div
@@ -386,6 +415,27 @@ const IntentCard = React.forwardRef(function IntentCard(
                 ))}
               </select>
 
+              <div className="mt-2 grid grid-cols-3 gap-1.5">
+                {CHANNELS.map(([value, label]) => {
+                  const active = channels.includes(value);
+                  return (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => toggleChannel(value)}
+                      disabled={!editing}
+                      className={`rounded-lg border px-2 py-1.5 text-[10px] font-black transition disabled:cursor-not-allowed disabled:opacity-50 ${
+                        active
+                          ? 'border-[#3535FF] bg-[#f3f2ff] text-[#3535FF]'
+                          : 'border-gray-100 bg-gray-50 text-gray-400'
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+
               <div className="mt-1.5 h-4 text-[10px]">
                 {saveState === 'saving' && <span className="text-gray-400">Saving…</span>}
                 {saveState === 'saved' && (
@@ -400,7 +450,7 @@ const IntentCard = React.forwardRef(function IntentCard(
                 )}
                 {!saveState && assignedEmployee && (
                   <span className="text-gray-400">
-                    SMS will go to <span className="font-mono">{assignedEmployee.phone}</span>
+                    {channels.map((channel) => CHANNELS.find(([value]) => value === channel)?.[1] || channel).join(', ')} alert to {assignedEmployee.name}
                   </span>
                 )}
               </div>
@@ -428,7 +478,7 @@ function RecentActivity({ dispatches }) {
     <div className="bg-white rounded-3xl border border-gray-100 overflow-hidden">
       <div className="px-5 py-4 border-b border-gray-100">
         <div className="text-sm font-bold text-gray-900">Recent workflow alerts</div>
-        <div className="text-xs text-gray-500">SMS alerts sent to employees based on detected intent</div>
+        <div className="text-xs text-gray-500">Alerts sent to employees based on detected intent</div>
       </div>
       <div className="divide-y divide-gray-50">
         {dispatches.map((d) => {
@@ -451,6 +501,9 @@ function RecentActivity({ dispatches }) {
                   <span className="text-xs text-gray-400">→</span>
                   <span className="text-xs text-gray-700">
                     {d.employee_name || <em className="text-gray-400">employee removed</em>}
+                  </span>
+                  <span className="text-[10px] px-2 py-0.5 rounded-full bg-[#f3f2ff] text-[#3535FF] font-semibold">
+                    {normalizeChannels(d.notification_channels).map((channel) => CHANNELS.find(([value]) => value === channel)?.[1] || channel).join(' + ')}
                   </span>
                   <span
                     className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${

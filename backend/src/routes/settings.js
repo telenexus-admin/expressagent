@@ -43,6 +43,23 @@ const DEFAULT_WELCOME_MENU = {
     },
   ],
 };
+const DEFAULT_INSTALLATION_FORM = {
+  title: 'Installation form',
+  intro: 'Share your contact and location details so the installation team can prepare before calling you.',
+  accent_color: '#3535FF',
+  show_id: true,
+  require_id: true,
+  show_alternate_phone: true,
+  show_email: true,
+  show_plan: true,
+  show_service_type: true,
+  show_county: true,
+  show_landmark: true,
+  show_house_description: true,
+  show_gps: true,
+  show_schedule: true,
+  show_notes: true,
+};
 
 // Resolve which client's settings to operate on:
 //   regular admin -> their own client
@@ -93,6 +110,10 @@ async function ensureCommunicationColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
 }
 
+async function ensureInstallationFormColumn() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_form_config JSONB NOT NULL DEFAULT '{}'::jsonb`);
+}
+
 function normalizeWelcomeMenuConfig(raw = {}, enabled = true) {
   const source = typeof raw === 'object' && raw !== null ? raw : {};
   const options = Array.isArray(source.options) ? source.options : DEFAULT_WELCOME_MENU.options;
@@ -113,6 +134,29 @@ function normalizeWelcomeMenuConfig(raw = {}, enabled = true) {
     footer: String(source.footer || '').trim().slice(0, 60),
     section_title: String(source.section_title || DEFAULT_WELCOME_MENU.section_title).trim().slice(0, 24),
     options: cleanOptions.length > 0 ? cleanOptions : DEFAULT_WELCOME_MENU.options,
+  };
+}
+
+function normalizeInstallationFormConfig(raw = {}) {
+  const source = typeof raw === 'object' && raw !== null ? raw : {};
+  const pickBool = (key) => source[key] === undefined ? DEFAULT_INSTALLATION_FORM[key] : Boolean(source[key]);
+  const accent = String(source.accent_color || DEFAULT_INSTALLATION_FORM.accent_color).trim();
+  return {
+    title: String(source.title || DEFAULT_INSTALLATION_FORM.title).trim().slice(0, 80),
+    intro: String(source.intro || DEFAULT_INSTALLATION_FORM.intro).trim().slice(0, 300),
+    accent_color: /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_INSTALLATION_FORM.accent_color,
+    show_id: pickBool('show_id'),
+    require_id: pickBool('show_id') ? pickBool('require_id') : false,
+    show_alternate_phone: pickBool('show_alternate_phone'),
+    show_email: pickBool('show_email'),
+    show_plan: pickBool('show_plan'),
+    show_service_type: pickBool('show_service_type'),
+    show_county: pickBool('show_county'),
+    show_landmark: pickBool('show_landmark'),
+    show_house_description: pickBool('show_house_description'),
+    show_gps: pickBool('show_gps'),
+    show_schedule: pickBool('show_schedule'),
+    show_notes: pickBool('show_notes'),
   };
 }
 
@@ -183,6 +227,27 @@ router.get('/communication', async (req, res) => {
     res.json(safeCommunicationConfig(result.rows[0]));
   } catch (err) {
     console.error('GET /settings/communication error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// GET /api/settings/installation-form — returns public installation intake form controls
+router.get('/installation-form', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureInstallationFormColumn();
+    const result = await db.query(
+      `SELECT installation_form_config FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    res.json(normalizeInstallationFormConfig(result.rows[0].installation_form_config));
+  } catch (err) {
+    console.error('GET /settings/installation-form error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -371,6 +436,31 @@ router.put('/communication', async (req, res) => {
     res.json({ success: true, ...safeCommunicationConfig(result.rows[0]) });
   } catch (err) {
     console.error('PUT /settings/communication error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// PUT /api/settings/installation-form — save public installation intake form controls
+router.put('/installation-form', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureInstallationFormColumn();
+    const normalized = normalizeInstallationFormConfig(req.body || {});
+    const result = await db.query(
+      `UPDATE clients
+       SET installation_form_config = $1::jsonb
+       WHERE id = $2
+       RETURNING installation_form_config`,
+      [JSON.stringify(normalized), targetClient]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+    res.json({ success: true, ...normalizeInstallationFormConfig(result.rows[0].installation_form_config) });
+  } catch (err) {
+    console.error('PUT /settings/installation-form error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

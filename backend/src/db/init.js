@@ -99,6 +99,7 @@ const schema = `
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analysis TEXT;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analyzed_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_form_config JSONB NOT NULL DEFAULT '{}'::jsonb;
 
   CREATE TABLE IF NOT EXISTS messages (
     id SERIAL PRIMARY KEY,

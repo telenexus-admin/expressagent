@@ -38,6 +38,23 @@ const buildingTypes = [
   ['estate', 'Estate / gated community'],
   ['other', 'Other'],
 ];
+const DEFAULT_INSTALLATION_FORM = {
+  title: 'Installation form',
+  intro: 'Share your contact and location details so the installation team can prepare before calling you.',
+  accent_color: '#3535FF',
+  show_id: true,
+  require_id: true,
+  show_alternate_phone: true,
+  show_email: true,
+  show_plan: true,
+  show_service_type: true,
+  show_county: true,
+  show_landmark: true,
+  show_house_description: true,
+  show_gps: true,
+  show_schedule: true,
+  show_notes: true,
+};
 
 function Field({ label, children, helper }) {
   return (
@@ -163,6 +180,7 @@ export default function CustomerIntake() {
     customer_phone: searchParams.get('phone') || '',
   }));
   const [clientLoading, setClientLoading] = useState(true);
+  const [formConfig, setFormConfig] = useState(DEFAULT_INSTALLATION_FORM);
   const [loadNotice, setLoadNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
@@ -176,7 +194,10 @@ export default function CustomerIntake() {
     async function load() {
       try {
         const { data } = await api.get(`/public/customer-intake/${clientId}`, { signal: controller.signal });
-        if (!cancelled) setClient(data);
+        if (!cancelled) {
+          setClient(data);
+          setFormConfig({ ...DEFAULT_INSTALLATION_FORM, ...(data.installation_form || {}) });
+        }
       } catch (err) {
         if (!cancelled && err.name !== 'CanceledError' && err.code !== 'ERR_CANCELED') {
           setLoadNotice(err.response?.data?.error || 'Provider details are still loading. You can continue filling the form.');
@@ -229,21 +250,21 @@ export default function CustomerIntake() {
 
   const submit = async (event) => {
     event.preventDefault();
-    if (!form.identity_file) {
+    if (formConfig.show_id && formConfig.require_id && !form.identity_file) {
       setError('Please upload a clear ID scan, photo or PDF.');
       return;
     }
     setSubmitting(true);
     setError('');
     try {
-      const preparedFile = await prepareIdentityFile(form.identity_file);
-      const identityData = await readFileAsDataUrl(preparedFile);
+      const preparedFile = formConfig.show_id && form.identity_file ? await prepareIdentityFile(form.identity_file) : null;
+      const identityData = preparedFile ? await readFileAsDataUrl(preparedFile) : '';
       const { data } = await api.post(`/public/customer-intake/${clientId}`, {
         ...form,
         identity_file: undefined,
         identity_data: identityData,
-        identity_mime_type: preparedFile.type,
-        identity_filename: preparedFile.name,
+        identity_mime_type: preparedFile?.type || '',
+        identity_filename: preparedFile?.name || '',
       });
       setSuccess(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -277,18 +298,18 @@ export default function CustomerIntake() {
         <header className="mb-5 overflow-hidden rounded-[32px] bg-[#0A0A0F] text-white shadow-xl">
           <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_320px] lg:items-end">
             <div>
-              <div className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/75">
+              <div className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/75" style={{ color: formConfig.accent_color }}>
                 {clientLoading ? 'Opening secure form...' : 'Secure customer intake'}
               </div>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{businessName} installation form</h1>
+              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{businessName} {formConfig.title || 'installation form'}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
-                Share your identity, contact and location details so the installation team can prepare before calling you.
+                {formConfig.intro || DEFAULT_INSTALLATION_FORM.intro}
               </p>
             </div>
             <div className="rounded-[24px] border border-white/10 bg-white/10 p-4">
               <div className="text-xs font-black uppercase tracking-wide text-white/50">What you need</div>
               <div className="mt-3 space-y-2 text-sm font-bold text-white/85">
-                <div>National ID photo or PDF</div>
+                {formConfig.show_id && <div>{formConfig.require_id ? 'National ID photo or PDF' : 'ID photo or PDF if available'}</div>}
                 <div>Exact estate, building and landmark</div>
                 <div>Phone number for scheduling</div>
               </div>
@@ -318,23 +339,27 @@ export default function CustomerIntake() {
                 <Field label="Main phone">
                   <input required type="tel" value={form.customer_phone} onChange={(event) => update('customer_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
                 </Field>
-                <Field label="Alternative phone">
-                  <input type="tel" value={form.alternate_phone} onChange={(event) => update('alternate_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
-                </Field>
-                <Field label="Email">
-                  <input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
-                </Field>
+                {formConfig.show_alternate_phone && (
+                  <Field label="Alternative phone">
+                    <input type="tel" value={form.alternate_phone} onChange={(event) => update('alternate_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  </Field>
+                )}
+                {formConfig.show_email && (
+                  <Field label="Email">
+                    <input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  </Field>
+                )}
               </div>
             </Section>
 
-            <Section number="2" title="ID Verification" description="Upload a clear scan, photo or PDF of the ID used for registration.">
+            {formConfig.show_id && <Section number="2" title="ID Verification" description={formConfig.require_id ? 'Upload a clear scan, photo or PDF of the ID used for registration.' : 'Upload an ID if the provider requested it.'}>
               <div className="grid gap-4 sm:grid-cols-[1fr_1.2fr]">
                 <Field label="ID number">
                   <input value={form.id_number} onChange={(event) => update('id_number', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
                 </Field>
                 <Field label="ID scan / photo" helper={fileLabel}>
                   <input
-                    required
+                    required={formConfig.require_id}
                     type="file"
                     accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
                     capture="environment"
@@ -343,24 +368,30 @@ export default function CustomerIntake() {
                   />
                 </Field>
               </div>
-            </Section>
+            </Section>}
 
-            <Section number="3" title="Service And Location" description="Give the team enough detail to find the premises without calling repeatedly.">
+            <Section number={formConfig.show_id ? '3' : '2'} title="Service And Location" description="Give the team enough detail to find the premises without calling repeatedly.">
               <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Service type">
-                  <select value={form.service_type} onChange={(event) => update('service_type', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
-                    {serviceTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                </Field>
-                <Field label="Preferred package">
-                  <select value={form.plan_interest} onChange={(event) => update('plan_interest', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
-                    <option value="">Choose package</option>
-                    {plans.map((plan) => <option key={plan} value={plan}>{plan}</option>)}
-                  </select>
-                </Field>
-                <Field label="County / town">
-                  <input value={form.county} onChange={(event) => update('county', event.target.value)} placeholder="e.g. Nairobi" className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
-                </Field>
+                {formConfig.show_service_type && (
+                  <Field label="Service type">
+                    <select value={form.service_type} onChange={(event) => update('service_type', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
+                      {serviceTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </Field>
+                )}
+                {formConfig.show_plan && (
+                  <Field label="Preferred package">
+                    <select value={form.plan_interest} onChange={(event) => update('plan_interest', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
+                      <option value="">Choose package</option>
+                      {plans.map((plan) => <option key={plan} value={plan}>{plan}</option>)}
+                    </select>
+                  </Field>
+                )}
+                {formConfig.show_county && (
+                  <Field label="County / town">
+                    <input value={form.county} onChange={(event) => update('county', event.target.value)} placeholder="e.g. Nairobi" className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  </Field>
+                )}
                 <Field label="Estate / area">
                   <input required value={form.area} onChange={(event) => update('area', event.target.value)} placeholder="e.g. Githurai 45" className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
                 </Field>
@@ -369,14 +400,18 @@ export default function CustomerIntake() {
                     {buildingTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </Field>
-                <Field label="Nearest landmark">
-                  <input value={form.landmark} onChange={(event) => update('landmark', event.target.value)} placeholder="School, stage, shop, church..." className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
-                </Field>
+                {formConfig.show_landmark && (
+                  <Field label="Nearest landmark">
+                    <input value={form.landmark} onChange={(event) => update('landmark', event.target.value)} placeholder="School, stage, shop, church..." className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  </Field>
+                )}
               </div>
-              <Field label="House / building description" helper="Example: Blue gate, 3rd floor, door B12, near the water tank.">
-                <textarea rows={3} value={form.house_description} onChange={(event) => update('house_description', event.target.value)} className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
-              </Field>
-              <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              {formConfig.show_house_description && (
+                <Field label="House / building description" helper="Example: Blue gate, 3rd floor, door B12, near the water tank.">
+                  <textarea rows={3} value={form.house_description} onChange={(event) => update('house_description', event.target.value)} className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                </Field>
+              )}
+              {formConfig.show_gps && <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <div className="text-sm font-black text-blue-950">GPS pin</div>
@@ -388,11 +423,11 @@ export default function CustomerIntake() {
                     {locating ? 'Capturing...' : 'Use my location'}
                   </button>
                 </div>
-              </div>
+              </div>}
             </Section>
 
-            <Section number="4" title="Scheduling Notes" description="Tell the team when you prefer to be contacted or visited.">
-              <div className="grid gap-4 sm:grid-cols-2">
+            {(formConfig.show_schedule || formConfig.show_notes) && <Section number={formConfig.show_id ? '4' : '3'} title="Scheduling Notes" description="Tell the team when you prefer to be contacted or visited.">
+              {formConfig.show_schedule && <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Preferred date">
                   <input type="date" value={form.preferred_date} onChange={(event) => update('preferred_date', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]" />
                 </Field>
@@ -404,27 +439,29 @@ export default function CustomerIntake() {
                     <option value="evening">Evening</option>
                   </select>
                 </Field>
-              </div>
-              <Field label="Extra notes">
-                <textarea rows={4} value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Gate contact, access notes, router location, special requests..." className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
-              </Field>
-            </Section>
+              </div>}
+              {formConfig.show_notes && (
+                <Field label="Extra notes">
+                  <textarea rows={4} value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Gate contact, access notes, router location, special requests..." className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                </Field>
+              )}
+            </Section>}
           </main>
 
           <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
             <div className="rounded-[28px] border border-slate-100 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-black text-slate-950">Before submitting</h2>
               <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-slate-600">
-                <p>The ID scan is stored securely for installation verification.</p>
+                {formConfig.show_id && <p>The ID scan is stored securely for installation verification.</p>}
                 <p>The location details are used only by the installation team.</p>
                 <p>The team may call you before visiting.</p>
               </div>
             </div>
             <label className="flex gap-3 rounded-[24px] border border-slate-100 bg-white p-4 text-sm font-semibold leading-6 text-slate-600 shadow-sm">
               <input type="checkbox" checked={form.consent_accepted} onChange={(event) => update('consent_accepted', event.target.checked)} className="mt-1 h-4 w-4 accent-[#3535FF]" />
-              <span>I confirm the details are correct and consent to {businessName} using them for installation verification and scheduling.</span>
+              <span>I confirm the details are correct and consent to {businessName} using them for installation scheduling.</span>
             </label>
-            <button type="submit" disabled={submitting || !form.consent_accepted} className="w-full rounded-[22px] bg-[#3535FF] px-6 py-4 text-sm font-black text-white shadow-lg shadow-blue-200 transition hover:bg-[#2828DD] disabled:opacity-50">
+            <button type="submit" disabled={submitting || !form.consent_accepted} style={{ backgroundColor: formConfig.accent_color }} className="w-full rounded-[22px] px-6 py-4 text-sm font-black text-white shadow-lg shadow-blue-200 transition disabled:opacity-50">
               {submitting ? 'Submitting details...' : 'Submit installation details'}
             </button>
           </aside>

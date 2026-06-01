@@ -7,8 +7,26 @@ const router = express.Router();
 
 const MAX_ID_BYTES = 8 * 1024 * 1024;
 const ALLOWED_ID_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf']);
+const DEFAULT_INSTALLATION_FORM = {
+  title: 'Installation form',
+  intro: 'Share your contact and location details so the installation team can prepare before calling you.',
+  accent_color: '#3535FF',
+  show_id: true,
+  require_id: true,
+  show_alternate_phone: true,
+  show_email: true,
+  show_plan: true,
+  show_service_type: true,
+  show_county: true,
+  show_landmark: true,
+  show_house_description: true,
+  show_gps: true,
+  show_schedule: true,
+  show_notes: true,
+};
 
 async function ensureCustomerIntakeTable() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_form_config JSONB NOT NULL DEFAULT '{}'::jsonb`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS customer_intake_submissions (
       id SERIAL PRIMARY KEY,
@@ -42,6 +60,29 @@ async function ensureCustomerIntakeTable() {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_phone ON customer_intake_submissions(customer_phone)`);
 }
 
+function normalizeInstallationFormConfig(raw = {}) {
+  const source = typeof raw === 'object' && raw !== null ? raw : {};
+  const pickBool = (key) => source[key] === undefined ? DEFAULT_INSTALLATION_FORM[key] : Boolean(source[key]);
+  const accent = String(source.accent_color || DEFAULT_INSTALLATION_FORM.accent_color).trim();
+  return {
+    title: String(source.title || DEFAULT_INSTALLATION_FORM.title).trim().slice(0, 80),
+    intro: String(source.intro || DEFAULT_INSTALLATION_FORM.intro).trim().slice(0, 300),
+    accent_color: /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_INSTALLATION_FORM.accent_color,
+    show_id: pickBool('show_id'),
+    require_id: pickBool('show_id') ? pickBool('require_id') : false,
+    show_alternate_phone: pickBool('show_alternate_phone'),
+    show_email: pickBool('show_email'),
+    show_plan: pickBool('show_plan'),
+    show_service_type: pickBool('show_service_type'),
+    show_county: pickBool('show_county'),
+    show_landmark: pickBool('show_landmark'),
+    show_house_description: pickBool('show_house_description'),
+    show_gps: pickBool('show_gps'),
+    show_schedule: pickBool('show_schedule'),
+    show_notes: pickBool('show_notes'),
+  };
+}
+
 function text(value, max = 500) {
   return String(value || '').trim().slice(0, max);
 }
@@ -66,8 +107,9 @@ function optionalNumber(value) {
 
 router.get('/:clientId', async (req, res) => {
   try {
+    await ensureCustomerIntakeTable();
     const result = await db.query(
-      `SELECT id, name, business_name, agent_name
+      `SELECT id, name, business_name, agent_name, installation_form_config
        FROM clients
        WHERE id = $1 AND status = 'active'
        LIMIT 1`,
@@ -79,6 +121,7 @@ router.get('/:clientId', async (req, res) => {
       client_id: client.id,
       business_name: client.business_name || client.name || 'your ISP',
       agent_name: client.agent_name || 'AI assistant',
+      installation_form: normalizeInstallationFormConfig(client.installation_form_config),
     });
   } catch (err) {
     console.error('GET /public/customer-intake error:', err.message);
@@ -90,11 +133,12 @@ router.post('/:clientId', async (req, res) => {
   try {
     await ensureCustomerIntakeTable();
     const clientResult = await db.query(
-      `SELECT id, name, business_name FROM clients WHERE id = $1 AND status = 'active' LIMIT 1`,
+      `SELECT id, name, business_name, installation_form_config FROM clients WHERE id = $1 AND status = 'active' LIMIT 1`,
       [req.params.clientId]
     );
     const client = clientResult.rows[0];
     if (!client) return res.status(404).json({ error: 'Intake form is not available' });
+    const formConfig = normalizeInstallationFormConfig(client.installation_form_config);
 
     const customerName = text(req.body.customer_name, 255);
     const customerPhone = cleanPhone(req.body.customer_phone);
@@ -108,9 +152,11 @@ router.post('/:clientId', async (req, res) => {
     if (!customerPhone || customerPhone.length < 9) return res.status(400).json({ error: 'Valid phone number is required' });
     if (!area) return res.status(400).json({ error: 'Location or estate is required' });
     if (!consentAccepted) return res.status(400).json({ error: 'Consent is required before submitting' });
-    if (!idBuffer || idBuffer.length === 0) return res.status(400).json({ error: 'Upload an ID scan or clear ID photo' });
-    if (idBuffer.length > MAX_ID_BYTES) return res.status(400).json({ error: 'ID file must be 8 MB or smaller' });
-    if (!ALLOWED_ID_MIME.has(mimeType)) return res.status(400).json({ error: 'ID file must be JPG, PNG, WEBP, HEIC or PDF' });
+    if (formConfig.show_id && formConfig.require_id && (!idBuffer || idBuffer.length === 0)) {
+      return res.status(400).json({ error: 'Upload an ID scan or clear ID photo' });
+    }
+    if (idBuffer && idBuffer.length > MAX_ID_BYTES) return res.status(400).json({ error: 'ID file must be 8 MB or smaller' });
+    if (idBuffer && !ALLOWED_ID_MIME.has(mimeType)) return res.status(400).json({ error: 'ID file must be JPG, PNG, WEBP, HEIC or PDF' });
 
     const details = {
       source: 'public_customer_intake',
@@ -148,9 +194,9 @@ router.post('/:clientId', async (req, res) => {
         text(req.body.preferred_date, 40) || null,
         text(req.body.preferred_time, 40) || null,
         text(req.body.notes, 1200) || null,
-        mimeType,
-        text(req.body.identity_filename, 255) || 'identity-document',
-        idBuffer,
+        formConfig.show_id && idBuffer ? mimeType : null,
+        formConfig.show_id && idBuffer ? (text(req.body.identity_filename, 255) || 'identity-document') : null,
+        formConfig.show_id ? idBuffer : null,
         JSON.stringify(details),
       ]
     );
@@ -162,7 +208,7 @@ router.post('/:clientId', async (req, res) => {
     ].filter(Boolean).join(' | ');
     const summary =
       `Installation intake submitted. Plan: ${text(req.body.plan_interest, 140) || 'Not selected'}. ` +
-      `Location: ${locationSummary || area}. ID scan uploaded.`;
+      `Location: ${locationSummary || area}. ${formConfig.show_id && idBuffer ? 'ID scan uploaded.' : 'No ID scan requested.'}`;
 
     try {
       await createOrUpdateTicket({

@@ -14,6 +14,37 @@ const THEME_OPTIONS = [
 const BILLING_PROVIDERS = [
   { value: 'wispman', label: 'Wispman' },
 ];
+const DEFAULT_INSTALLATION_FORM = {
+  title: 'Installation form',
+  intro: 'Share your contact and location details so the installation team can prepare before calling you.',
+  accent_color: '#3535FF',
+  show_id: true,
+  require_id: true,
+  show_alternate_phone: true,
+  show_email: true,
+  show_plan: true,
+  show_service_type: true,
+  show_county: true,
+  show_landmark: true,
+  show_house_description: true,
+  show_gps: true,
+  show_schedule: true,
+  show_notes: true,
+};
+const FORM_SWITCHES = [
+  ['show_id', 'ID verification section'],
+  ['require_id', 'Require ID upload'],
+  ['show_alternate_phone', 'Alternative phone'],
+  ['show_email', 'Email address'],
+  ['show_plan', 'Preferred package'],
+  ['show_service_type', 'Service type'],
+  ['show_county', 'County / town'],
+  ['show_landmark', 'Nearest landmark'],
+  ['show_house_description', 'House description'],
+  ['show_gps', 'GPS location button'],
+  ['show_schedule', 'Preferred date/time'],
+  ['show_notes', 'Extra notes'],
+];
 
 function SettingsCard({ icon: Icon, title, description, children }) {
   return (
@@ -58,6 +89,10 @@ export default function Settings() {
     attach_on_welcome: false,
     file: null,
   });
+  const [installationForm, setInstallationForm] = useState(DEFAULT_INSTALLATION_FORM);
+  const [installationLoading, setInstallationLoading] = useState(true);
+  const [installationSaving, setInstallationSaving] = useState(false);
+  const [installationStatus, setInstallationStatus] = useState(null);
 
   useEffect(() => {
     applyTheme(theme);
@@ -103,12 +138,25 @@ export default function Settings() {
     }
   };
 
+  const loadInstallationForm = async () => {
+    setInstallationLoading(true);
+    try {
+      const { data } = await api.get('/settings/installation-form');
+      setInstallationForm({ ...DEFAULT_INSTALLATION_FORM, ...data });
+    } catch (err) {
+      setInstallationStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load installation form settings.' });
+    } finally {
+      setInstallationLoading(false);
+    }
+  };
+
   useEffect(() => {
     let cancelled = false;
     async function run() {
       if (!cancelled) {
         await loadBilling();
         await loadMedia();
+        await loadInstallationForm();
       }
     }
     run();
@@ -263,6 +311,30 @@ export default function Settings() {
       setMediaItems((current) => current.filter((row) => row.id !== id));
     } catch (err) {
       setMediaStatus({ type: 'error', message: err.response?.data?.error || 'Failed to delete media.' });
+    }
+  };
+
+  const updateInstallationForm = (field, value) => {
+    setInstallationForm((current) => {
+      const next = { ...current, [field]: value };
+      if (field === 'show_id' && !value) next.require_id = false;
+      if (field === 'require_id' && value) next.show_id = true;
+      return next;
+    });
+    setInstallationStatus(null);
+  };
+
+  const saveInstallationForm = async () => {
+    setInstallationSaving(true);
+    setInstallationStatus(null);
+    try {
+      const { data } = await api.put('/settings/installation-form', installationForm);
+      setInstallationForm({ ...DEFAULT_INSTALLATION_FORM, ...data });
+      setInstallationStatus({ type: 'success', message: 'Installation form settings saved.' });
+    } catch (err) {
+      setInstallationStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save installation form settings.' });
+    } finally {
+      setInstallationSaving(false);
     }
   };
 
@@ -594,6 +666,106 @@ export default function Settings() {
                 </div>
               )}
             </div>
+          </SettingsCard>
+
+          <SettingsCard
+            icon={CogIcon}
+            title="Installation Form"
+            description="Control what customers see in the installation intake form and which details are required."
+          >
+            {installationLoading ? (
+              <div className="text-sm font-semibold text-slate-400">Loading installation form settings...</div>
+            ) : (
+              <div className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Form title
+                    <input
+                      value={installationForm.title}
+                      onChange={(event) => updateInstallationForm('title', event.target.value)}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Accent
+                    <input
+                      type="color"
+                      value={installationForm.accent_color}
+                      onChange={(event) => updateInstallationForm('accent_color', event.target.value)}
+                      className="h-11 rounded-xl border border-slate-200 bg-white px-2 py-1"
+                    />
+                  </label>
+                </div>
+                <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                  Intro text
+                  <textarea
+                    rows={3}
+                    value={installationForm.intro}
+                    onChange={(event) => updateInstallationForm('intro', event.target.value)}
+                    className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case leading-6 text-slate-700 outline-none focus:border-[#3535FF]"
+                  />
+                </label>
+
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {FORM_SWITCHES.map(([key, label]) => (
+                    <label key={key} className="flex items-center justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
+                      <span className="text-sm font-black text-slate-800">{label}</span>
+                      <input
+                        type="checkbox"
+                        checked={Boolean(installationForm[key])}
+                        onChange={(event) => updateInstallationForm(key, event.target.checked)}
+                        disabled={key === 'require_id' && !installationForm.show_id}
+                        className="h-5 w-5 accent-[#3535FF] disabled:opacity-40"
+                      />
+                    </label>
+                  ))}
+                </div>
+
+                <div className="rounded-2xl border border-slate-100 bg-white p-4">
+                  <div className="text-xs font-black uppercase tracking-wide text-slate-400">Preview</div>
+                  <div className="mt-3 overflow-hidden rounded-[26px] bg-[#0A0A0F] text-white">
+                    <div className="p-5">
+                      <div className="mb-4 inline-flex rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-black text-white/75">
+                        Secure customer intake
+                      </div>
+                      <h3 className="text-2xl font-black" style={{ color: installationForm.accent_color }}>
+                        {installationForm.title || 'Installation form'}
+                      </h3>
+                      <p className="mt-2 max-w-xl text-sm leading-6 text-white/70">{installationForm.intro}</p>
+                      <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-black">
+                        {FORM_SWITCHES.filter(([key]) => installationForm[key]).slice(0, 8).map(([key, label]) => (
+                          <span key={key} className="rounded-full bg-white/10 px-3 py-1">{label}</span>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-semibold leading-5 text-slate-500">
+                    Turning off ID verification removes the ID upload from the public form and from required validation.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={saveInstallationForm}
+                    disabled={installationSaving}
+                    className="rounded-xl bg-[#3535FF] px-4 py-2.5 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50"
+                  >
+                    {installationSaving ? 'Saving...' : 'Save form'}
+                  </button>
+                </div>
+
+                {installationStatus && (
+                  <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+                    installationStatus.type === 'success'
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      : 'border-red-100 bg-red-50 text-red-700'
+                  }`}>
+                    {installationStatus.message}
+                  </div>
+                )}
+              </div>
+            )}
           </SettingsCard>
 
           <SettingsCard

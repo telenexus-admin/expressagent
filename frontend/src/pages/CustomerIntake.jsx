@@ -162,7 +162,8 @@ export default function CustomerIntake() {
     customer_name: searchParams.get('name') || '',
     customer_phone: searchParams.get('phone') || '',
   }));
-  const [loading, setLoading] = useState(true);
+  const [clientLoading, setClientLoading] = useState(true);
+  const [loadNotice, setLoadNotice] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [locating, setLocating] = useState(false);
   const [error, setError] = useState('');
@@ -170,19 +171,28 @@ export default function CustomerIntake() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     async function load() {
       try {
-        const { data } = await api.get(`/public/customer-intake/${clientId}`);
+        const { data } = await api.get(`/public/customer-intake/${clientId}`, { signal: controller.signal });
         if (!cancelled) setClient(data);
       } catch (err) {
-        if (!cancelled) setError(err.response?.data?.error || 'This form is not available.');
+        if (!cancelled && err.name !== 'CanceledError' && err.code !== 'ERR_CANCELED') {
+          setLoadNotice(err.response?.data?.error || 'Provider details are still loading. You can continue filling the form.');
+        } else if (!cancelled) {
+          setLoadNotice('Provider details are still loading. You can continue filling the form.');
+        }
       } finally {
-        if (!cancelled) setLoading(false);
+        clearTimeout(timeout);
+        if (!cancelled) setClientLoading(false);
       }
     }
     load();
     return () => {
       cancelled = true;
+      clearTimeout(timeout);
+      controller.abort();
     };
   }, [clientId]);
 
@@ -244,14 +254,6 @@ export default function CustomerIntake() {
     }
   };
 
-  if (loading) {
-    return (
-      <div className="flex min-h-screen items-center justify-center bg-[#f8fafc] p-6 text-sm font-bold text-slate-400">
-        Loading secure form...
-      </div>
-    );
-  }
-
   if (success) {
     return (
       <div className="min-h-screen bg-[#f8fafc] px-4 py-8 sm:px-6">
@@ -276,7 +278,7 @@ export default function CustomerIntake() {
           <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_320px] lg:items-end">
             <div>
               <div className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/75">
-                Secure customer intake
+                {clientLoading ? 'Opening secure form...' : 'Secure customer intake'}
               </div>
               <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{businessName} installation form</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
@@ -293,6 +295,12 @@ export default function CustomerIntake() {
             </div>
           </div>
         </header>
+
+        {loadNotice && (
+          <div className="mb-5 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+            {loadNotice}
+          </div>
+        )}
 
         {error && (
           <div className="mb-5 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">

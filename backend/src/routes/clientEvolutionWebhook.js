@@ -5,6 +5,7 @@ const { parseEvolutionInbound } = require('../services/evolution');
 const { sendClientText, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
+const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -166,6 +167,15 @@ router.post('/client/:clientId', async (req, res) => {
     }
     if (conversation.status === 'human_takeover') return;
 
+    if (!incoming.isImage) {
+      const billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
+      if (billingReply) {
+        await reply(client, conversation.id, incoming.phone, billingReply);
+        console.log(`[evo client ${client.id}] Billing reply sent to ${incoming.phone}.`);
+        return;
+      }
+    }
+
     if (HUMAN_RE.test(userText)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover', updated_at = NOW() WHERE id = $1`, [conversation.id]);
       await db.query(
@@ -209,6 +219,10 @@ router.post('/client/:clientId', async (req, res) => {
     }
     if (client.support_number) {
       prompt += `\n\nWhen a human is required, tell the customer they can reach support at ${client.support_number}.`;
+    }
+    if (!incoming.isImage) {
+      const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
+      if (billingContext) prompt += billingContext;
     }
     const aiReply = incoming.isImage && inboundImageBuffer
       ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')

@@ -105,6 +105,27 @@ async function get(path, params = {}, config = envConfig()) {
   }
 }
 
+async function post(path, body = {}, config = envConfig()) {
+  if (!canUseConfig(config)) return { success: false, skipped: true, error: 'Billing API is not configured' };
+
+  try {
+    const response = await axios.post(apiUrl(path, config), body, {
+      headers: {
+        Accept: 'application/json',
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${config.apiKey}`,
+      },
+      timeout: timeoutMs(),
+    });
+    return response.data;
+  } catch (err) {
+    const code = err.response?.data?.error?.code || err.code || 'billing_action_failed';
+    const message = err.response?.data?.error?.message || err.message || 'Billing action failed';
+    console.error(`Billing API ${path} failed: ${err.response?.status || 'no-status'} ${code} - ${message}`);
+    return { success: false, error: { code, message }, status: err.response?.status || null };
+  }
+}
+
 async function testBillingConnection({ provider: selectedProvider, baseUrl: selectedBaseUrl, apiKey: selectedApiKey }) {
   const config = {
     enabled: true,
@@ -152,6 +173,13 @@ function wantsPlans(text) {
 
 function wantsPayment(text) {
   return /\b(payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|invoice|pesapal)\b/i.test(String(text || ''));
+}
+
+function wantsReconnect(text) {
+  const value = String(text || '');
+  const paidSignal = /\b(paid|payment|mpesa|m-pesa|receipt|transaction|code|sent money|nimelipa|nimetuma)\b/i.test(value);
+  const reconnectSignal = /\b(reconnect|connect me|not connected|internet off|still off|activate|renew|renewal|restore|paid but|haijaingia|haijaconnect|recharge)\b/i.test(value);
+  return paidSignal && reconnectSignal;
 }
 
 function wantsClientStatus(text) {
@@ -314,6 +342,60 @@ function paymentReply(data) {
   return `Payment status: ${status}.\nAmount: ${amount}.\nMethod: ${method}.\nPaid at: ${paidAt}.${recharge}`;
 }
 
+function rechargeReply(data, meta = {}) {
+  const status = data?.status || 'active';
+  const plan = data?.plan_name || 'your package';
+  const expiry = data?.expiration ? ` It expires on ${data.expiration}${data.time ? ` at ${data.time}` : ''}.` : '';
+  const mode = meta?.idempotency === 'already_active'
+    ? 'Your account already has an active recharge.'
+    : 'I have reconnected your package.';
+  return `${mode}\nPlan: ${plan}.\nStatus: ${status}.${expiry}`;
+}
+
+function rechargePlanFromPayment(paymentData) {
+  return (
+    paymentData?.recharge?.plan ||
+    paymentData?.client?.plan ||
+    paymentData?.plan ||
+    null
+  );
+}
+
+async function reconnectFromPaidPayment({ config, keys, paymentData, messageText }) {
+  if (!paymentData || String(paymentData.status || '').toLowerCase() !== 'paid') {
+    return null;
+  }
+
+  const planName = rechargePlanFromPayment(paymentData);
+  if (!planName) {
+    return 'I found the payment, but I could not identify the package to reconnect. I have enough to escalate this to support.';
+  }
+
+  const client = paymentData.client?.username || paymentData.client?.account || paymentData.client?.phone || paymentData.phone || keys.explicitPhone || keys.phone;
+  if (!client) {
+    return 'I found the payment, but I could not identify the client account to reconnect. Please send the registered phone number or account number.';
+  }
+
+  const result = await post('v1/recharges', {
+    client,
+    plan_name: planName,
+    reference: paymentData.transaction_id || paymentData.reference || keys.transactionId || undefined,
+    reason: `AI reconnect after customer reported paid but not connected. Message: ${String(messageText || '').slice(0, 220)}`,
+  }, config);
+
+  if (result.success && result.data) return rechargeReply(result.data, result.meta);
+  if (result.status === 403 && result.error?.code === 'insufficient_scope') {
+    return 'Payment is confirmed, but this billing key cannot reconnect clients yet. Please enable recharge.write on the Wispman API key.';
+  }
+  if (result.status === 404 && result.error?.code === 'plan_not_found') {
+    return `Payment is confirmed, but Wispman could not find the package "${planName}" for recharge. Please ask support to reconnect it.`;
+  }
+  if (result.status === 404 && result.error?.code === 'client_not_found') {
+    return 'Payment is confirmed, but Wispman could not match the client account for reconnect. Please send the registered phone number or account number.';
+  }
+  return `Payment is confirmed, but automatic reconnect failed: ${result.error?.message || 'billing system unavailable'}. I have enough details for support to follow up.`;
+}
+
 async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   const config = await loadClientBillingConfig(clientId);
   if (!canUseConfig(config) || (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText))) return null;
@@ -321,16 +403,17 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   const keys = extractLookupKeys({ customerPhone, messageText });
   const statusWanted = wantsClientStatus(messageText) || hasStandalonePhone(messageText);
   const paymentWanted = wantsPayment(messageText);
+  const reconnectWanted = wantsReconnect(messageText);
   const plansWanted = wantsPlans(messageText);
 
   if (statusWanted || paymentWanted) {
     const params = clientLookupParams(keys);
     if (params) {
       const status = await get('v1/clients/status', params, config);
-      if (status.success && status.data && statusWanted) {
+      if (status.success && status.data && statusWanted && !reconnectWanted) {
         return clientStatusReply(status.data);
       }
-      if (status.status === 404 && statusWanted) {
+      if (status.status === 404 && statusWanted && !paymentWanted) {
         return accountNotFoundReply(keys);
       }
     }
@@ -340,7 +423,13 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
     const params = paymentLookupParams(keys);
     if (params) {
       const payment = await get('v1/payments/status', params, config);
-      if (payment.success && payment.data) return paymentReply(payment.data);
+      if (payment.success && payment.data) {
+        if (reconnectWanted) {
+          const reconnectReply = await reconnectFromPaidPayment({ config, keys, paymentData: payment.data, messageText });
+          if (reconnectReply) return reconnectReply;
+        }
+        return paymentReply(payment.data);
+      }
       if (payment.status === 404) {
         return `I could not find that payment. Please send the M-Pesa transaction code or the registered payment phone number.`;
       }

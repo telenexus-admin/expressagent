@@ -66,6 +66,9 @@ function Section({ number, title, description, children }) {
   );
 }
 
+const MAX_DIRECT_UPLOAD_BYTES = 950 * 1024;
+const MAX_PDF_BYTES = 900 * 1024;
+
 function readFileAsDataUrl(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -73,6 +76,81 @@ function readFileAsDataUrl(file) {
     reader.onerror = () => reject(new Error('Could not read file'));
     reader.readAsDataURL(file);
   });
+}
+
+function loadImage(url) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = () => reject(new Error('Could not open image'));
+    image.src = url;
+  });
+}
+
+function canvasToBlob(canvas, quality) {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), 'image/jpeg', quality);
+  });
+}
+
+async function compressImageFile(file) {
+  const url = URL.createObjectURL(file);
+  try {
+    const image = await loadImage(url);
+    const maxSide = 1400;
+    const scale = Math.min(1, maxSide / Math.max(image.width, image.height));
+    const width = Math.max(1, Math.round(image.width * scale));
+    const height = Math.max(1, Math.round(image.height * scale));
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    const context = canvas.getContext('2d');
+    context.drawImage(image, 0, 0, width, height);
+
+    for (const quality of [0.78, 0.68, 0.58, 0.48]) {
+      const blob = await canvasToBlob(canvas, quality);
+      if (blob && blob.size <= MAX_DIRECT_UPLOAD_BYTES) {
+        return new File([blob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' });
+      }
+    }
+    const fallbackBlob = await canvasToBlob(canvas, 0.42);
+    return fallbackBlob ? new File([fallbackBlob], file.name.replace(/\.[^.]+$/, '') + '.jpg', { type: 'image/jpeg' }) : file;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function prepareIdentityFile(file) {
+  const type = String(file.type || '').toLowerCase();
+  if (type === 'application/pdf') {
+    if (file.size > MAX_PDF_BYTES) {
+      throw new Error('PDF is too large. Please upload a smaller PDF under 900 KB, or take a clear photo instead.');
+    }
+    return file;
+  }
+  if (type === 'image/heic' || type === 'image/heif') {
+    if (file.size > MAX_DIRECT_UPLOAD_BYTES) {
+      throw new Error('This phone saved the ID as a large HEIC image. Please retake it as JPG, screenshot it, or upload a smaller image.');
+    }
+    return file;
+  }
+  if (type.startsWith('image/')) {
+    return file.size > MAX_DIRECT_UPLOAD_BYTES ? compressImageFile(file) : file;
+  }
+  throw new Error('ID file must be JPG, PNG, WEBP, HEIC or PDF.');
+}
+
+function responseErrorMessage(err) {
+  const data = err.response?.data;
+  if (data?.error) return data.error;
+  if (typeof data === 'string') {
+    if (/payload too large|request entity too large/i.test(data)) {
+      return 'The ID file is too large for the server. Please upload a smaller image.';
+    }
+    return data.slice(0, 160);
+  }
+  if (err.message) return err.message;
+  return 'Failed to submit details. Please try again.';
 }
 
 export default function CustomerIntake() {
@@ -148,18 +226,19 @@ export default function CustomerIntake() {
     setSubmitting(true);
     setError('');
     try {
-      const identityData = await readFileAsDataUrl(form.identity_file);
+      const preparedFile = await prepareIdentityFile(form.identity_file);
+      const identityData = await readFileAsDataUrl(preparedFile);
       const { data } = await api.post(`/public/customer-intake/${clientId}`, {
         ...form,
         identity_file: undefined,
         identity_data: identityData,
-        identity_mime_type: form.identity_file.type,
-        identity_filename: form.identity_file.name,
+        identity_mime_type: preparedFile.type,
+        identity_filename: preparedFile.name,
       });
       setSuccess(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
     } catch (err) {
-      setError(err.response?.data?.error || 'Failed to submit details. Please try again.');
+      setError(responseErrorMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -249,7 +328,7 @@ export default function CustomerIntake() {
                   <input
                     required
                     type="file"
-                    accept="image/jpeg,image/png,image/webp,application/pdf"
+                    accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
                     capture="environment"
                     onChange={(event) => update('identity_file', event.target.files?.[0] || null)}
                     className="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-[#3535FF] file:px-3 file:py-2 file:text-xs file:font-black file:text-white"

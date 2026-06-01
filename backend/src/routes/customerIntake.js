@@ -6,7 +6,7 @@ const { notifyClientAdmins } = require('../services/pushNotifications');
 const router = express.Router();
 
 const MAX_ID_BYTES = 8 * 1024 * 1024;
-const ALLOWED_ID_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+const ALLOWED_ID_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf']);
 
 async function ensureCustomerIntakeTable() {
   await db.query(`
@@ -110,7 +110,7 @@ router.post('/:clientId', async (req, res) => {
     if (!consentAccepted) return res.status(400).json({ error: 'Consent is required before submitting' });
     if (!idBuffer || idBuffer.length === 0) return res.status(400).json({ error: 'Upload an ID scan or clear ID photo' });
     if (idBuffer.length > MAX_ID_BYTES) return res.status(400).json({ error: 'ID file must be 8 MB or smaller' });
-    if (!ALLOWED_ID_MIME.has(mimeType)) return res.status(400).json({ error: 'ID file must be JPG, PNG, WEBP or PDF' });
+    if (!ALLOWED_ID_MIME.has(mimeType)) return res.status(400).json({ error: 'ID file must be JPG, PNG, WEBP, HEIC or PDF' });
 
     const details = {
       source: 'public_customer_intake',

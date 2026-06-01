@@ -38,6 +38,7 @@ const EMPTY_FORM = {
 export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [accessingClientId, setAccessingClientId] = useState(null);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
   const [formError, setFormError] = useState('');
@@ -132,6 +133,27 @@ export default function Clients() {
     }
   };
 
+  const openClientDashboard = async (client) => {
+    const tab = window.open('about:blank', '_blank');
+    setAccessingClientId(client.id);
+    try {
+      const { data } = await api.post(`/clients/${client.id}/operator-access`);
+      const encodedAdmin = window.btoa(unescape(encodeURIComponent(JSON.stringify(data.admin))));
+      const url = `/client-access?token=${encodeURIComponent(data.token)}&admin=${encodeURIComponent(encodedAdmin)}&next=${encodeURIComponent('/dashboard/agent')}`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      if (tab) tab.close();
+      alert(err.response?.data?.error || 'Failed to open client dashboard');
+    } finally {
+      setAccessingClientId(null);
+    }
+  };
+
   return (
     <div className="p-6 sm:p-8">
       <div className="max-w-5xl mx-auto">
@@ -210,6 +232,13 @@ export default function Clients() {
                         {new Date(c.created_at).toLocaleDateString()}
                       </td>
                       <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <button
+                          onClick={() => openClientDashboard(c)}
+                          disabled={accessingClientId === c.id}
+                          className="text-xs text-emerald-600 hover:text-emerald-700 disabled:opacity-50 font-semibold mr-3"
+                        >
+                          {accessingClientId === c.id ? 'Opening...' : 'Configure Bot'}
+                        </button>
                         <Link
                           to={`/onboarding/clients/${c.id}`}
                           className="text-xs text-[#3535FF] hover:text-[#2828DD] font-semibold mr-3"

@@ -9,6 +9,8 @@ const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
   'tickets',
+  'billing',
+  'communication',
   'escalations',
   'installations',
   'complaints',
@@ -17,6 +19,7 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'settings',
   'logs',
 ];
 

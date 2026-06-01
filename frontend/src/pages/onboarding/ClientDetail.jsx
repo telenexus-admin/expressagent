@@ -21,6 +21,7 @@ export default function ClientDetail() {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [saveError, setSaveError] = useState('');
+  const [openingDashboard, setOpeningDashboard] = useState(false);
 
   const [admins, setAdmins] = useState([]);
   const [adminsLoading, setAdminsLoading] = useState(true);
@@ -132,6 +133,27 @@ export default function ClientDetail() {
     }
   };
 
+  const openClientDashboard = async () => {
+    const tab = window.open('about:blank', '_blank');
+    setOpeningDashboard(true);
+    try {
+      const { data } = await api.post(`/clients/${id}/operator-access`);
+      const encodedAdmin = window.btoa(unescape(encodeURIComponent(JSON.stringify(data.admin))));
+      const url = `/client-access?token=${encodeURIComponent(data.token)}&admin=${encodeURIComponent(encodedAdmin)}&next=${encodeURIComponent('/dashboard/agent')}`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      if (tab) tab.close();
+      alert(err.response?.data?.error || 'Failed to open client dashboard');
+    } finally {
+      setOpeningDashboard(false);
+    }
+  };
+
   const openAdminModal = () => {
     setAdminForm({ name: '', email: '', password: '' });
     setAdminFormError('');
@@ -217,12 +239,21 @@ export default function ClientDetail() {
                 </span>
               </div>
             </div>
-            <button
-              onClick={deleteClient}
-              className="text-xs font-semibold text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-full"
-            >
-              Delete Client
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={openClientDashboard}
+                disabled={openingDashboard}
+                className="text-xs font-semibold text-white bg-[#4B16B5] hover:bg-[#351083] disabled:opacity-50 px-4 py-2 rounded-full"
+              >
+                {openingDashboard ? 'Opening...' : 'Configure Bot'}
+              </button>
+              <button
+                onClick={deleteClient}
+                className="text-xs font-semibold text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-full"
+              >
+                Delete Client
+              </button>
+            </div>
           </div>
         </div>
 

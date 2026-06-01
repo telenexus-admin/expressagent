@@ -2,14 +2,33 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
+const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
+const { logActivity } = require('../services/audit');
 
 router.use(authMiddleware, superadminMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const OPERATOR_ACCESS_PERMISSIONS = [
+  'statistics',
+  'conversations',
+  'tickets',
+  'billing',
+  'communication',
+  'escalations',
+  'installations',
+  'complaints',
+  'ai_health',
+  'admins',
+  'employees',
+  'workflow',
+  'agent',
+  'settings',
+  'logs',
+];
 
 function genVerifyToken() {
   return crypto.randomBytes(24).toString('hex');
@@ -52,6 +71,63 @@ router.get('/:id', async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     console.error('GET /clients/:id error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+// POST /api/clients/:id/operator-access - short-lived dashboard session for support/configuration
+router.post('/:id/operator-access', async (req, res) => {
+  try {
+    const result = await db.query(
+      `SELECT id, name, business_name, contact_email, status
+       FROM clients
+       WHERE id = $1`,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Client not found' });
+    }
+
+    const client = result.rows[0];
+    if (client.status === 'suspended') {
+      return res.status(403).json({ error: 'Client is suspended. Activate the client before opening their dashboard.' });
+    }
+
+    const operatorName = req.user.name || 'Nexa operator';
+    const admin = {
+      id: req.user.id,
+      name: `${operatorName} (Operator Access)`,
+      email: req.user.email,
+      role: 'admin',
+      client_id: client.id,
+      client_name: client.name,
+      client_business_name: client.business_name || null,
+      permissions: OPERATOR_ACCESS_PERMISSIONS,
+      operator_access: true,
+      operator_id: req.user.id,
+      operator_email: req.user.email,
+      operator_name: req.user.name || null,
+    };
+
+    const token = jwt.sign(admin, process.env.JWT_SECRET, { expiresIn: '1h' });
+
+    await logActivity({
+      req,
+      action: 'operator_client_access',
+      entityType: 'client',
+      entityId: client.id,
+      description: `${operatorName} opened ${client.name}'s dashboard through operator access.`,
+      metadata: { client_id: client.id, client_name: client.name },
+    });
+
+    res.json({
+      token,
+      admin,
+      expires_in_seconds: 3600,
+    });
+  } catch (err) {
+    console.error('POST /clients/:id/operator-access error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -137,12 +137,32 @@ async function sendEvolutionVoiceNote(settings, number, audioBuffer) {
   const phone = cleanNumber(number);
   if (!phone) throw new Error('A valid WhatsApp phone number is required.');
   if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) throw new Error('Audio buffer is empty.');
-  const url = `${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`;
-  return axios.post(url, {
+  const base64Audio = audioBuffer.toString('base64');
+  const audioPayload = {
     number: phone,
-    audio: audioBuffer.toString('base64'),
+    audio: base64Audio,
+    mimetype: 'audio/ogg; codecs=opus',
+    ptt: true,
     delay: 400,
-  }, { headers, timeout: 60000 });
+  };
+  try {
+    return await axios.post(`${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`, audioPayload, { headers, timeout: 60000 });
+  } catch (err) {
+    const firstError = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    try {
+      return await axios.post(`${baseUrl}/message/sendMedia/${encodeURIComponent(instance)}`, {
+        number: phone,
+        mediatype: 'audio',
+        mimetype: 'audio/ogg; codecs=opus',
+        fileName: 'voice-note.ogg',
+        media: base64Audio,
+        ptt: true,
+      }, { headers, timeout: 60000 });
+    } catch (fallbackErr) {
+      const secondError = typeof fallbackErr.response?.data === 'object' ? JSON.stringify(fallbackErr.response.data) : (fallbackErr.response?.data || fallbackErr.message);
+      throw new Error(`Evolution voice send failed. sendWhatsAppAudio: ${firstError}; sendMedia: ${secondError}`);
+    }
+  }
 }
 
 function getMediaBase64(responseData) {
@@ -152,8 +172,18 @@ function getMediaBase64(responseData) {
     responseData?.data?.base64 ||
     responseData?.media?.base64 ||
     responseData?.data?.media?.base64 ||
+    responseData?.data?.message?.base64 ||
+    responseData?.message?.base64 ||
+    responseData?.file ||
     null
   );
+}
+
+function getMediaMimeType(responseData) {
+  if (!responseData || typeof responseData !== 'object') return null;
+  const direct = responseData.mimetype || responseData.mimeType || responseData.mimetypeMessage || responseData.mediaType;
+  if (typeof direct === 'string' && direct.includes('/')) return direct;
+  return getMediaMimeType(responseData.data) || getMediaMimeType(responseData.message) || getMediaMimeType(responseData.media);
 }
 
 async function downloadEvolutionAudio(settings, messageKey) {
@@ -169,7 +199,7 @@ async function downloadEvolutionAudio(settings, messageKey) {
   }, { headers, timeout: 60000 });
   let base64 = getMediaBase64(response.data);
   if (!base64) throw new Error('Evolution returned no audio data for the voice note.');
-  const mimeType = response.data?.mimetype || response.data?.mimeType || response.data?.data?.mimetype || 'audio/ogg';
+  const mimeType = getMediaMimeType(response.data) || 'audio/ogg';
   if (base64.includes(',')) base64 = base64.split(',', 2)[1];
   return { buffer: Buffer.from(base64, 'base64'), mimeType };
 }

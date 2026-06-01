@@ -63,11 +63,36 @@ async function downloadClientMedia(client, messageKey, { convertToMp4 = false } 
     { message: { key }, convertToMp4 },
     { headers, timeout: 60000 }
   );
-  let base64 = response.data?.base64 || response.data?.data?.base64 || response.data?.media?.base64 || response.data?.data?.media?.base64;
+  let base64 = getBase64(response.data);
   if (!base64) throw new Error('Evolution returned no media for the message.');
   if (base64.includes(',')) base64 = base64.split(',', 2)[1];
-  const mimeType = response.data?.mimetype || response.data?.mimeType || response.data?.data?.mimetype || 'application/octet-stream';
+  const mimeType = getMimeType(response.data) || 'application/octet-stream';
   return { buffer: Buffer.from(base64, 'base64'), mimeType };
+}
+
+function getBase64(value) {
+  if (!value) return null;
+  if (typeof value === 'string') return value;
+  if (typeof value !== 'object') return null;
+  for (const key of ['base64', 'media', 'file', 'buffer']) {
+    if (typeof value[key] === 'string') return value[key];
+  }
+  for (const key of ['data', 'message', 'mediaMessage']) {
+    const nested = getBase64(value[key]);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+function getMimeType(value) {
+  if (!value || typeof value !== 'object') return null;
+  const direct = value.mimetype || value.mimeType || value.mimetypeMessage || value.mediaType;
+  if (typeof direct === 'string' && direct.includes('/')) return direct;
+  for (const key of ['data', 'message', 'mediaMessage']) {
+    const nested = getMimeType(value[key]);
+    if (nested) return nested;
+  }
+  return null;
 }
 
 async function sendClientMedia(client, number, media) {
@@ -93,15 +118,41 @@ async function sendClientVoiceNote(client, number, audioBuffer) {
   const { baseUrl, headers, instance } = clientSettings(client);
   const phone = cleanNumber(number);
   if (!phone) throw new Error('A valid WhatsApp number is required.');
-  return axios.post(
-    `${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`,
-    {
-      number: phone,
-      audio: audioBuffer.toString('base64'),
-      delay: 400,
-    },
-    { headers, timeout: 60000 }
-  );
+  if (!Buffer.isBuffer(audioBuffer) || audioBuffer.length === 0) throw new Error('Audio buffer is empty.');
+  const base64Audio = audioBuffer.toString('base64');
+  const audioPayload = {
+    number: phone,
+    audio: base64Audio,
+    mimetype: 'audio/ogg; codecs=opus',
+    ptt: true,
+    delay: 400,
+  };
+  try {
+    return await axios.post(
+      `${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`,
+      audioPayload,
+      { headers, timeout: 60000 }
+    );
+  } catch (err) {
+    const firstError = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    try {
+      return await axios.post(
+        `${baseUrl}/message/sendMedia/${encodeURIComponent(instance)}`,
+        {
+          number: phone,
+          mediatype: 'audio',
+          mimetype: 'audio/ogg; codecs=opus',
+          fileName: 'voice-note.ogg',
+          media: base64Audio,
+          ptt: true,
+        },
+        { headers, timeout: 60000 }
+      );
+    } catch (fallbackErr) {
+      const secondError = typeof fallbackErr.response?.data === 'object' ? JSON.stringify(fallbackErr.response.data) : (fallbackErr.response?.data || fallbackErr.message);
+      throw new Error(`Evolution voice send failed. sendWhatsAppAudio: ${firstError}; sendMedia: ${secondError}`);
+    }
+  }
 }
 
 async function downloadClientAudio(client, messageKey) {

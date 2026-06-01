@@ -34,6 +34,21 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+async function transcribeClientVoice(client, messageKey) {
+  const first = await downloadClientAudio(client, messageKey);
+  try {
+    const text = (await transcribeAudio(first.buffer, audioFilename(first.mimeType), first.mimeType)).trim();
+    if (text) return { text, buffer: first.buffer, mimeType: first.mimeType };
+    throw new Error('Voice note transcription was empty.');
+  } catch (err) {
+    console.warn(`[evo client ${client.id}] Original voice transcription failed, retrying as MP4:`, safeError(err));
+    const fallback = await downloadClientAudio(client, messageKey, { convertToMp4: true });
+    const text = (await transcribeAudio(fallback.buffer, audioFilename(fallback.mimeType || 'audio/mp4'), fallback.mimeType || 'audio/mp4')).trim();
+    if (!text) throw new Error('Voice note transcription was empty after MP4 retry.');
+    return { text, buffer: fallback.buffer, mimeType: fallback.mimeType || 'audio/mp4' };
+  }
+}
+
 function shouldReplyAsVoice(replyMode, inboundIsVoice) {
   if (replyMode === 'voice') return true;
   if (replyMode === 'text' || replyMode === 'silent') return false;
@@ -140,12 +155,12 @@ router.post('/client/:clientId', async (req, res) => {
     let inboundImageMimeType = null;
     if (incoming.isVoice) {
       try {
-        const { buffer, mimeType } = await downloadClientAudio(client, incoming.messageKey);
-        userText = (await transcribeAudio(buffer, audioFilename(mimeType))).trim();
-        if (!userText) return;
+        const voice = await transcribeClientVoice(client, incoming.messageKey);
+        userText = voice.text;
         storedText = `[Voice note] ${userText}`;
       } catch (err) {
         console.error(`[evo client ${client.id}] Voice transcription failed:`, safeError(err));
+        await sendClientText(client, incoming.phone, "Sorry, I had trouble processing that voice note. Please send it again or type your message.");
         return;
       }
     }

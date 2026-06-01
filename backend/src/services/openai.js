@@ -83,9 +83,37 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
   return response.choices[0].message.content;
 }
 
+function audioMimeFromFilename(filename) {
+  const value = String(filename || '').toLowerCase();
+  if (value.endsWith('.mp3')) return 'audio/mpeg';
+  if (value.endsWith('.mp4')) return 'audio/mp4';
+  if (value.endsWith('.m4a')) return 'audio/mp4';
+  if (value.endsWith('.wav')) return 'audio/wav';
+  if (value.endsWith('.webm')) return 'audio/webm';
+  if (value.endsWith('.ogg') || value.endsWith('.oga') || value.endsWith('.opus')) return 'audio/ogg';
+  return 'application/octet-stream';
+}
+
+function normalizeAudioFilename(filename, mimeType) {
+  const clean = String(filename || '').replace(/[^\w.-]/g, '');
+  if (clean && clean.includes('.')) return clean;
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.includes('mp4') || mime.includes('m4a')) return 'audio.mp4';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'audio.mp3';
+  if (mime.includes('wav')) return 'audio.wav';
+  if (mime.includes('webm')) return 'audio.webm';
+  if (mime.includes('ogg') || mime.includes('opus')) return 'audio.ogg';
+  return 'audio.ogg';
+}
+
 // Transcribe an audio buffer to text via Whisper.
-async function transcribeAudio(buffer, filename = 'audio.ogg') {
-  const file = await toFile(buffer, filename);
+async function transcribeAudio(buffer, filename = 'audio.ogg', mimeType = '') {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new Error('Audio buffer is empty.');
+  }
+  const safeFilename = normalizeAudioFilename(filename, mimeType);
+  const contentType = mimeType || audioMimeFromFilename(safeFilename);
+  const file = await toFile(buffer, safeFilename, { type: contentType });
   const result = await getClient().audio.transcriptions.create({
     file,
     model: 'whisper-1',

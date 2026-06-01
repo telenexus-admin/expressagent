@@ -186,7 +186,7 @@ function getMediaMimeType(responseData) {
   return getMediaMimeType(responseData.data) || getMediaMimeType(responseData.message) || getMediaMimeType(responseData.media);
 }
 
-async function downloadEvolutionAudio(settings, messageKey) {
+async function downloadEvolutionAudio(settings, messageKey, options = {}) {
   const { baseUrl, instance, headers } = evolutionAuth(settings);
   if (!messageKey?.id) throw new Error('Incoming voice note has no Evolution message id.');
   const key = { id: messageKey.id };
@@ -195,11 +195,13 @@ async function downloadEvolutionAudio(settings, messageKey) {
   const url = `${baseUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(instance)}`;
   const response = await axios.post(url, {
     message: { key },
-    convertToMp4: false,
+    convertToMp4: options.convertToMp4 === true,
   }, { headers, timeout: 60000 });
   let base64 = getMediaBase64(response.data);
   if (!base64) throw new Error('Evolution returned no audio data for the voice note.');
-  const mimeType = getMediaMimeType(response.data) || 'audio/ogg';
+  const fallbackMimeType = options.convertToMp4 === true ? 'audio/mp4' : 'audio/ogg';
+  const responseMimeType = getMediaMimeType(response.data);
+  const mimeType = responseMimeType && responseMimeType !== 'application/octet-stream' ? responseMimeType : fallbackMimeType;
   if (base64.includes(',')) base64 = base64.split(',', 2)[1];
   return { buffer: Buffer.from(base64, 'base64'), mimeType };
 }

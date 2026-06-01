@@ -155,9 +155,11 @@ async function sendClientVoiceNote(client, number, audioBuffer) {
   }
 }
 
-async function downloadClientAudio(client, messageKey) {
-  const media = await downloadClientMedia(client, messageKey, { convertToMp4: false });
-  return { ...media, mimeType: media.mimeType || 'audio/ogg' };
+async function downloadClientAudio(client, messageKey, options = {}) {
+  const media = await downloadClientMedia(client, messageKey, { convertToMp4: options.convertToMp4 === true });
+  const fallbackMimeType = options.convertToMp4 === true ? 'audio/mp4' : 'audio/ogg';
+  const mimeType = media.mimeType && media.mimeType !== 'application/octet-stream' ? media.mimeType : fallbackMimeType;
+  return { ...media, mimeType };
 }
 
 async function downloadClientImage(client, messageKey) {

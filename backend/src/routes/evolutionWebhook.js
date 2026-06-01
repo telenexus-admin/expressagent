@@ -26,6 +26,21 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+async function transcribeEvolutionVoice(settings, messageKey, phone) {
+  const first = await downloadEvolutionAudio(settings, messageKey);
+  try {
+    const text = (await transcribeAudio(first.buffer, audioFilename(first.mimeType), first.mimeType)).trim();
+    if (text) return text;
+    throw new Error('Voice note transcription was empty.');
+  } catch (err) {
+    console.warn(`Nexa original voice transcription failed for ${phone}, retrying as MP4:`, safeError(err));
+    const fallback = await downloadEvolutionAudio(settings, messageKey, { convertToMp4: true });
+    const text = (await transcribeAudio(fallback.buffer, audioFilename(fallback.mimeType || 'audio/mp4'), fallback.mimeType || 'audio/mp4')).trim();
+    if (!text) throw new Error('Voice note transcription was empty after MP4 retry.');
+    return text;
+  }
+}
+
 function runAfterReply(label, task) {
   setImmediate(async () => {
     try {
@@ -158,9 +173,7 @@ router.post('/nexa', async (req, res) => {
     let userText = incoming.text;
     if (incoming.isVoice) {
       try {
-        const { buffer, mimeType } = await downloadEvolutionAudio(settings, incoming.messageKey);
-        userText = (await transcribeAudio(buffer, audioFilename(mimeType))).trim();
-        if (!userText) return;
+        userText = await transcribeEvolutionVoice(settings, incoming.messageKey, incoming.phone);
         console.log(`Nexa transcribed voice note from ${incoming.phone}: "${userText}"`);
       } catch (err) {
         console.error(`Nexa voice note transcription failed for ${incoming.phone}:`, safeError(err));

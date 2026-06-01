@@ -195,6 +195,10 @@ function audioFilename(mimeType) {
   return 'voice-note.ogg';
 }
 
+async function transcribeDownloadedVoice(buffer, mimeType) {
+  return (await transcribeAudio(buffer, audioFilename(mimeType), mimeType || 'audio/ogg')).trim();
+}
+
 function normalizeWorkflowChannels(value) {
   const raw = Array.isArray(value) ? value : ['sms'];
   const allowed = new Set(['sms', 'email', 'whatsapp']);
@@ -445,8 +449,7 @@ router.post('/', async (req, res) => {
         const { buffer, mimeType } = await downloadWhatsAppMedia(client.meta_access_token, mediaId);
         inboundVoiceBuffer = buffer;
         inboundVoiceMimeType = mimeType || 'audio/ogg';
-        const ext = (mimeType && mimeType.split('/')[1]?.split(';')[0]) || 'ogg';
-        const transcript = (await transcribeAudio(buffer, `inbound.${ext}`)).trim();
+        const transcript = await transcribeDownloadedVoice(buffer, mimeType);
         if (!transcript) throw new Error('Voice note transcription was empty.');
         messageText = transcript;
         console.log(`[client ${client.id}] Transcribed voice from ${phoneNumber}: "${messageText}"`);

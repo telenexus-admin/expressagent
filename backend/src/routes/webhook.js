@@ -194,6 +194,10 @@ function isPackageInquiry(text) {
   return /\b(package|packages|plans|price|prices|pricing|cost|costs|mbps|offer|offers|charge|charges)\b/i.test(String(text || ''));
 }
 
+function isTechnicalIssue(text) {
+  return /\b(no internet|not working|internet.*down|down|slow|offline|router|los|red light|connection|disconnect|disconnecting|wifi|wi-fi|signal)\b/i.test(String(text || ''));
+}
+
 const INSTALL_MARKER_RE = /<<INSTALL_DETAILS:\s*(\{[\s\S]*?\})\s*>>/;
 function stripInstallMarker(text) {
   return text.replace(INSTALL_MARKER_RE, '').trim();
@@ -628,6 +632,19 @@ router.post('/', async (req, res) => {
       return;
     }
 
+    if (!inboundIsImage && isTechnicalIssue(messageText)) {
+      const reply =
+        `Sorry about that. Please try this:\n` +
+        `1. Restart the router and wait 3 minutes.\n` +
+        `2. Check if the LOS light is red.\n` +
+        `3. Send a clear photo of the router lights.\n\n` +
+        `I will guide you from there.`;
+      await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
+      await persistOutgoing(conversation.id, reply);
+      console.log(`Technical issue reply sent to ${phoneNumber}.`);
+      return;
+    }
+
     if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
       const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';
@@ -660,9 +677,12 @@ router.post('/', async (req, res) => {
     }
 
     let installationState = conversation.installation_state || null;
+    if (installationState === 'collecting') {
+      await db.query(`UPDATE conversations SET installation_state = NULL WHERE id = $1`, [conversation.id]);
+      installationState = null;
+      console.log(`[client ${client.id}] Cleared stale installation collection state for ${phoneNumber}.`);
+    }
     if (!inboundIsImage && !installationState && INSTALL_REGEX.test(normalized)) {
-      await db.query(`UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`, [conversation.id]);
-      installationState = 'collecting';
       const intakeUrl = buildCustomerIntakeUrl(client, { phone: phoneNumber, name: conversation.customer_name });
       if (intakeUrl) {
         const reply =

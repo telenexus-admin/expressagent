@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent, openAIModelSummary } = require('../services/openai');
+const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, openAIModelSummary } = require('../services/openai');
 const {
   sendWhatsAppMessage,
   sendWhatsAppList,
@@ -196,6 +196,43 @@ function isPackageInquiry(text) {
 
 function isTechnicalIssue(text) {
   return /\b(no internet|not working|internet.*down|down|slow|offline|router|los|red light|connection|disconnect|disconnecting|wifi|wi-fi|signal)\b/i.test(String(text || ''));
+}
+
+function classifyIntentLocal(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
+    return { intent: 'human_request', confidence: 0.85 };
+  }
+  if (/\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/.test(value)) {
+    return { intent: 'new_installation', confidence: 0.85 };
+  }
+  if (/\b(pay|payment|paid|mpesa|m-pesa|bill|billing|expire|expiry|recharge|refund|overcharge|invoice)\b/.test(value)) {
+    return { intent: 'payment_billing', confidence: 0.85 };
+  }
+  if (isTechnicalIssue(value)) {
+    return { intent: 'technical_issue', confidence: 0.85 };
+  }
+  if (/\b(thank|thanks|great|good service|love|loving|awesome|feedback|suggestion)\b/.test(value)) {
+    return { intent: 'compliment_feedback', confidence: 0.75 };
+  }
+  return { intent: 'general_inquiry', confidence: 0.5 };
+}
+
+function classifyComplaintLocal(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\b(slow|speed|buffer|lag|hanging)\b/.test(value)) {
+    return { isComplaint: true, summary: 'Customer reports slow internet speeds.', category: 'speed' };
+  }
+  if (/\b(no internet|not working|down|offline|disconnect|disconnecting|los|red light|connection)\b/.test(value)) {
+    return { isComplaint: true, summary: 'Customer reports an internet connectivity issue.', category: 'connectivity' };
+  }
+  if (/\b(pay|payment|paid|bill|billing|refund|overcharge|recharge|expire|expiry)\b/.test(value)) {
+    return { isComplaint: true, summary: 'Customer reports a billing or payment issue.', category: 'billing' };
+  }
+  if (/\b(router|device|cable|adapter|power|broken|damage)\b/.test(value)) {
+    return { isComplaint: true, summary: 'Customer reports a hardware or router issue.', category: 'hardware' };
+  }
+  return { isComplaint: false, summary: '', category: 'other' };
 }
 
 const INSTALL_MARKER_RE = /<<INSTALL_DETAILS:\s*(\{[\s\S]*?\})\s*>>/;
@@ -867,10 +904,8 @@ router.post('/', async (req, res) => {
     }
 
     runAfterReply('Post-reply ticket workflow', async () => {
-      const [complaint, intentResult] = await Promise.all([
-        classifyComplaint(classificationText),
-        classifyIntent(classificationText),
-      ]);
+      const complaint = classifyComplaintLocal(classificationText);
+      const intentResult = classifyIntentLocal(classificationText);
       if (intentResult && intentResult.intent) {
         await dispatchToEmployee({ client, conversation, intent: intentResult.intent, messageText: classificationText, phoneNumber });
         await ticketFromIntent({

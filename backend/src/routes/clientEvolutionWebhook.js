@@ -225,6 +225,10 @@ router.post('/client/:clientId', async (req, res) => {
       messageText: storedText,
     }));
     console.log(`[evo client ${client.id}] Incoming from ${incoming.phone}: "${userText}"`);
+    console.log(
+      `[evo client ${client.id}] Conversation state for ${incoming.phone}: ` +
+      `id=${conversation.id}, status=${conversation.status}, reply_mode=${conversation.reply_mode || 'auto'}, opted_out=${Boolean(conversation.opted_out_at)}`
+    );
 
     const normalized = userText.toLowerCase();
     if (conversation.opted_out_at && RESUME.has(normalized)) {
@@ -265,6 +269,7 @@ router.post('/client/:clientId', async (req, res) => {
     }
 
     if (!incoming.isImage) {
+      console.log(`[evo client ${client.id}] Billing direct check for ${incoming.phone}.`);
       let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
       if (billingReply) {
         const mediaText = `${userText}\n${billingReply}`;
@@ -274,6 +279,7 @@ router.post('/client/:clientId', async (req, res) => {
         console.log(`[evo client ${client.id}] Billing reply sent to ${incoming.phone}.`);
         return;
       }
+      console.log(`[evo client ${client.id}] No direct billing reply for ${incoming.phone}.`);
     }
 
     if (HUMAN_RE.test(userText)) {
@@ -325,9 +331,11 @@ router.post('/client/:clientId', async (req, res) => {
       prompt += `\n\nFor new installation requests, send this intake form link: ${intakeUrl}. It collects ID scan, location and contact details.`;
     }
     if (!incoming.isImage) {
+      console.log(`[evo client ${client.id}] Building billing context for ${incoming.phone}.`);
       const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
       if (billingContext) prompt += billingContext;
     }
+    console.log(`[evo client ${client.id}] Generating AI reply for ${incoming.phone}.`);
     const aiReply = incoming.isImage && inboundImageBuffer
       ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
       : await generateAIResponse(prompt, recent.rows);
@@ -337,6 +345,7 @@ router.post('/client/:clientId', async (req, res) => {
     }
     const mediaText = `${userText}\n${aiReply}`;
     const cleanReply = stripMediaTags(aiReply).trim() || 'Here is the media I found for you.';
+    console.log(`[evo client ${client.id}] Sending AI reply to ${incoming.phone}.`);
     await reply(client, conversation.id, incoming.phone, cleanReply, replyAsVoice);
     if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
     else await sendMatchedMedia(client, conversation.id, incoming.phone, aiReply);

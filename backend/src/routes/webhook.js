@@ -25,9 +25,16 @@ function formatErr(err) {
     : (err.response?.data || err.message || 'unknown error');
 }
 
-function fallbackAiReply(client) {
+function fallbackAiReply(client, messageText = '') {
   const name = String(client.agent_name || 'the assistant').trim();
-  return `Hi, this is ${name}. I have received your message. Please tell me what you need help with.`;
+  const lower = String(messageText || '').toLowerCase();
+  if (/\b(no internet|not working|down|slow|offline|router|los|red light|connection)\b/.test(lower)) {
+    return `I have received your internet issue. Please restart the router once, then send a clear photo of the router lights if it is still not working.`;
+  }
+  if (/\b(pay|payment|paid|bill|billing|expire|expiry|plan|package|recharge)\b/.test(lower)) {
+    return `I have received your billing question. Please send your registered phone number or account number so I can check it.`;
+  }
+  return `I have received your message. Please share one more detail so ${name} can help you properly.`;
 }
 
 function runAfterReply(label, task) {
@@ -675,14 +682,19 @@ router.post('/', async (req, res) => {
        ) recent ORDER BY timestamp ASC`,
       [conversation.id]
     );
+    const previousAssistantReplies = historyResult.rows.filter((msg) => msg.role === 'assistant').length;
     const basePrompt = client.system_prompt || 'You are a helpful customer support agent.';
     const agentName = (client.agent_name || '').trim();
     let systemPrompt = basePrompt;
     if (agentName) systemPrompt = `Your name is ${agentName}. If a customer asks your name, introduce yourself as ${agentName}.\n\n${systemPrompt}`;
     if (conversation.customer_name) {
       const firstName = conversation.customer_name.split(/\s+/)[0];
-      systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate. Do not repeat the greeting on every follow-up.`;
+      systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). ${previousAssistantReplies === 0 ? `For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate.` : 'This is already an ongoing conversation, so do not introduce yourself again and do not ask a generic "how can I help".'} Do not repeat greetings on follow-ups.`;
     }
+    systemPrompt +=
+      `\n\nREPLY DISCIPLINE:\n` +
+      `Always answer the customer's latest message directly. If they state a problem, start solving that problem immediately. ` +
+      `Do not send a generic introduction after the welcome message. Keep replies short, practical and professional.`;
     if (supportNumber) systemPrompt += `\n\nIf human escalation is appropriate, tell the customer they can reach live support at ${supportNumber}.`;
     if (client.photo_troubleshooting_enabled !== false) {
       systemPrompt +=
@@ -730,7 +742,7 @@ router.post('/', async (req, res) => {
       aiResponse = await aiTask;
     } catch (err) {
       console.error(`[client ${client.id}] AI generation failed for ${phoneNumber}:`, formatErr(err));
-      aiResponse = fallbackAiReply(client);
+      aiResponse = fallbackAiReply(client, messageText);
     }
 
     let customerReply = aiResponse;

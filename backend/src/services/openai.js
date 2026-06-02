@@ -24,6 +24,35 @@ function visionModel() {
   return process.env.OPENAI_VISION_MODEL || chatModel();
 }
 
+function transcriptionModel() {
+  return process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableOpenAIError(err) {
+  const status = Number(err?.status || err?.response?.status || 0);
+  const message = String(err?.message || '').toLowerCase();
+  return status === 408 || status === 409 || status === 429 || status >= 500 || message.includes('connection');
+}
+
+async function withOpenAIRetry(label, task, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await task();
+    } catch (err) {
+      lastError = err;
+      if (attempt >= attempts || !isRetryableOpenAIError(err)) throw err;
+      console.warn(`${label} failed on attempt ${attempt}/${attempts}: ${err.message}. Retrying...`);
+      await sleep(600 * attempt);
+    }
+  }
+  throw lastError;
+}
+
 async function generateAIResponse(systemPrompt, messageHistory) {
   const hardenedPrompt = withIspKnowledge(systemPrompt);
   const continuityInstruction =
@@ -127,10 +156,12 @@ async function transcribeAudio(buffer, filename = 'audio.ogg', mimeType = '') {
   const safeFilename = normalizeAudioFilename(filename, mimeType);
   const contentType = mimeType || audioMimeFromFilename(safeFilename);
   const file = await toFile(buffer, safeFilename, { type: contentType });
-  const result = await getClient().audio.transcriptions.create({
-    file,
-    model: 'whisper-1',
-  });
+  const result = await withOpenAIRetry('Audio transcription', () =>
+    getClient().audio.transcriptions.create({
+      file,
+      model: transcriptionModel(),
+    }, { timeout: openaiTimeoutMs() * 2 })
+  );
   return result.text;
 }
 

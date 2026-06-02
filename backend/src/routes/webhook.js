@@ -559,6 +559,10 @@ router.post('/', async (req, res) => {
     }));
     const replyMode = conversation.reply_mode || 'auto';
     const replyAsVoice = shouldReplyAsVoice(replyMode, inboundIsVoice);
+    console.log(
+      `[client ${client.id}] Conversation state for ${phoneNumber}: ` +
+      `id=${conversation.id}, status=${conversation.status}, reply_mode=${replyMode}, opted_out=${Boolean(conversation.opted_out_at)}, installation_state=${conversation.installation_state || 'none'}`
+    );
 
     if (conversation.opted_out_at && RESUME_KEYWORDS.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NULL WHERE id = $1`, [conversation.id]);
@@ -567,7 +571,10 @@ router.post('/', async (req, res) => {
       await persistOutgoing(conversation.id, reply);
       return;
     }
-    if (conversation.opted_out_at) return;
+    if (conversation.opted_out_at) {
+      console.log(`[client ${client.id}] Reply skipped for ${phoneNumber}: conversation is opted out.`);
+      return;
+    }
     if (OPT_OUT_KEYWORDS.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
       const reply = "You've been unsubscribed. You will not receive further messages from this assistant. Reply START at any time to resume.";
@@ -575,8 +582,14 @@ router.post('/', async (req, res) => {
       await persistOutgoing(conversation.id, reply);
       return;
     }
-    if (conversation.status === 'human_takeover') return;
-    if (replyMode === 'silent') return;
+    if (conversation.status === 'human_takeover') {
+      console.log(`[client ${client.id}] Reply skipped for ${phoneNumber}: conversation is in human takeover.`);
+      return;
+    }
+    if (replyMode === 'silent') {
+      console.log(`[client ${client.id}] Reply skipped for ${phoneNumber}: reply mode is silent.`);
+      return;
+    }
 
     const supportNumber = (client.support_number || '').replace(/[^0-9]/g, '');
     if (!inboundIsImage && message.type !== 'interactive' && (isNew || MENU_KEYWORDS.has(normalized))) {
@@ -636,6 +649,7 @@ router.post('/', async (req, res) => {
     }
 
     if (!inboundIsImage && installationState !== 'collecting') {
+      console.log(`[client ${client.id}] Billing direct check for ${phoneNumber}.`);
       let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingReply) {
         const taggedMedia = await mediaByTags(client.id, `${messageText}\n${billingReply}`);
@@ -647,6 +661,7 @@ router.post('/', async (req, res) => {
         console.log(`Billing reply sent to ${phoneNumber}.`);
         return;
       }
+      console.log(`[client ${client.id}] No direct billing reply for ${phoneNumber}.`);
     }
 
     const historyResult = await db.query(
@@ -693,10 +708,12 @@ router.post('/', async (req, res) => {
     }
 
     if (!inboundIsImage) {
+      console.log(`[client ${client.id}] Building billing context for ${phoneNumber}.`);
       const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingContext) systemPrompt += billingContext;
     }
 
+    console.log(`[client ${client.id}] Generating AI reply for ${phoneNumber}.`);
     const aiTask = inboundIsImage
       ? analyzeSupportImage(systemPrompt, historyResult.rows, inboundImageBuffer, inboundImageMimeType, inboundImageCaption)
       : generateAIResponse(systemPrompt, historyResult.rows);
@@ -772,10 +789,12 @@ router.post('/', async (req, res) => {
     customerReply = stripMediaTags(customerReply) || 'Here is the media I found for you.';
 
     if (replyAsVoice) {
+      console.log(`[client ${client.id}] Sending AI voice reply to ${phoneNumber}.`);
       await deliverReply(client, phoneNumber, customerReply, true, voiceId);
       await persistOutgoing(conversation.id, customerReply);
       console.log(`AI voice reply sent to ${phoneNumber} using mode=${replyMode}.`);
     } else {
+      console.log(`[client ${client.id}] Sending AI text reply to ${phoneNumber}.`);
       await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, customerReply);
       await persistOutgoing(conversation.id, customerReply);
       console.log(inboundIsImage ? `AI image-guided reply sent to ${phoneNumber}.` : `AI reply sent to ${phoneNumber} using mode=${replyMode}.`);

@@ -251,16 +251,68 @@ function parseNativeFlowText(nativeFlowResponseMessage) {
   }
 }
 
+function findNestedObject(value, predicate, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 8) return null;
+  if (predicate(value)) return value;
+  for (const child of Object.values(value)) {
+    const found = findNestedObject(child, predicate, depth + 1);
+    if (found) return found;
+  }
+  return null;
+}
+
+function findNestedString(value, keyNames, predicate = () => true, depth = 0) {
+  if (!value || typeof value !== 'object' || depth > 8) return '';
+  const names = new Set(keyNames);
+  for (const [key, child] of Object.entries(value)) {
+    if (names.has(key) && typeof child === 'string' && child.trim() && predicate(child)) return child;
+  }
+  for (const child of Object.values(value)) {
+    const found = findNestedString(child, keyNames, predicate, depth + 1);
+    if (found) return found;
+  }
+  return '';
+}
+
+function looksLikeMessageObject(value) {
+  return Boolean(
+    value?.conversation ||
+    value?.extendedTextMessage ||
+    value?.imageMessage ||
+    value?.videoMessage ||
+    value?.audioMessage ||
+    value?.voiceMessage ||
+    value?.buttonsResponseMessage ||
+    value?.templateButtonReplyMessage ||
+    value?.interactiveResponseMessage ||
+    value?.listResponseMessage ||
+    value?.documentMessage
+  );
+}
+
+function looksLikeKeyObject(value) {
+  return Boolean(value?.remoteJid || (value?.id && Object.prototype.hasOwnProperty.call(value, 'fromMe')));
+}
+
 function parseEvolutionInbound(payload) {
   const event = String(payload?.event || payload?.type || '').toLowerCase();
   if (event && !event.includes('messages.upsert') && !event.includes('messages_upsert')) return null;
   const root = payload?.data || payload;
   const data = Array.isArray(root?.messages) ? root.messages[0] : Array.isArray(root) ? root[0] : (root?.data || root);
-  const key = data?.key || data?.message?.key || {};
+  const key = data?.key || data?.message?.key || findNestedObject(payload, looksLikeKeyObject) || {};
   if (key.fromMe === true || data?.fromMe === true) return null;
-  const remoteJid = firstPresent(key.remoteJid, data?.remoteJid, data?.jid, data?.from, data?.sender, data?.chatId, '');
+  const remoteJid = firstPresent(
+    key.remoteJid,
+    data?.remoteJid,
+    data?.jid,
+    data?.from,
+    data?.sender,
+    data?.chatId,
+    findNestedString(payload, ['remoteJid', 'jid', 'from', 'sender', 'chatId'], (value) => /(@s\.whatsapp\.net|^\+?\d{7,})/i.test(value)),
+    ''
+  );
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;
-  const message = unwrapEvolutionMessage(firstPresent(data?.message, data?.messages?.[0]?.message, data?.data?.message, {}));
+  const message = unwrapEvolutionMessage(firstPresent(data?.message, data?.messages?.[0]?.message, data?.data?.message, findNestedObject(payload, looksLikeMessageObject), {}));
   const isVoice = Boolean(message.audioMessage || message.voiceMessage || data?.messageType === 'audioMessage');
   const isImage = Boolean(message.imageMessage || data?.messageType === 'imageMessage');
   const mediaMimeType = message.imageMessage?.mimetype || message.audioMessage?.mimetype || message.voiceMessage?.mimetype || data?.mimetype || null;
@@ -300,6 +352,7 @@ function parseEvolutionInbound(payload) {
     data?.text ||
     data?.body ||
     payload?.body ||
+    findNestedString(payload, ['conversation', 'text', 'body', 'caption'], (value) => !/^messages[._-]?upsert$/i.test(value)) ||
     ''
   ).trim();
   if (!text && !isVoice && !isImage) return null;

@@ -31,13 +31,19 @@ function fallbackAiReply(client, messageText = '') {
   if (isPackageInquiry(lower)) {
     return `Here are our current packages:\n${PLAN_LIST_TEXT}`;
   }
-  if (/\b(no internet|not working|down|slow|offline|router|los|red light|connection)\b/.test(lower)) {
+  if (isTechnicalIssue(lower)) {
     return `I have received your internet issue. Please restart the router once, then send a clear photo of the router lights if it is still not working.`;
   }
   if (/\b(pay|payment|paid|bill|billing|expire|expiry|plan|package|recharge)\b/.test(lower)) {
     return `I have received your billing question. Please send your registered phone number or account number so I can check it.`;
   }
-  return `I have received your message. Please share one more detail so ${name} can help you properly.`;
+  if (isCoverageInquiry(lower)) {
+    return `Please send your estate, area or nearest landmark. ${name} will confirm whether we cover that location.`;
+  }
+  if (isGreeting(lower)) {
+    return `Hi, this is ${name}. You can ask about packages, billing, installation, coverage or technical support.`;
+  }
+  return `I am checking that. Please send the exact issue, account number, or location so ${name} can assist correctly.`;
 }
 
 function runAfterReply(label, task) {
@@ -195,7 +201,34 @@ function isPackageInquiry(text) {
 }
 
 function isTechnicalIssue(text) {
-  return /\b(no internet|not working|internet.*down|down|slow|offline|router|los|red light|connection|disconnect|disconnecting|wifi|wi-fi|signal)\b/i.test(String(text || ''));
+  return /\b(no internet|no connection|without internet|don't have internet|dont have internet|not working|internet.*down|down|slow|offline|router|los|red light|connection problem|disconnect|disconnecting|wifi|wi-fi|signal)\b/i.test(String(text || ''));
+}
+
+function isCoverageInquiry(text) {
+  return /\b(area|areas|covered|coverage|cover|location|available in|do you reach|uko wapi|mnafika)\b/i.test(String(text || ''));
+}
+
+function isGreeting(text) {
+  return /^(hi|hello|hey|hallo|niaje|sasa|mambo|habari|good\s*(morning|afternoon|evening))[\s!.?]*$/i.test(String(text || '').trim());
+}
+
+function isBillingFollowup(text) {
+  return /\b(billing|bill|payment|paid|pay|account|registered|number|details|active|expired|expiry|expire|plan|recharge)\b/i.test(String(text || ''));
+}
+
+function localDirectReply(client, messageText) {
+  const text = String(messageText || '');
+  if (isGreeting(text)) {
+    const name = String(client.agent_name || 'Imani').trim();
+    return `Hi, this is ${name}. How can I help you today?`;
+  }
+  if (isCoverageInquiry(text)) {
+    return `Please send your estate, area or nearest landmark. I will confirm if Expressnet covers that location.`;
+  }
+  if (isBillingFollowup(text) && /(?:\+?254|0)\d[\d\s-]{7,15}/.test(text)) {
+    return `Thanks. I will use that number to check the account. If it is not found, please confirm the registered phone number or account username.`;
+  }
+  return null;
 }
 
 function classifyIntentLocal(text) {
@@ -746,6 +779,16 @@ router.post('/', async (req, res) => {
         return;
       }
       console.log(`[client ${client.id}] No direct billing reply for ${phoneNumber}.`);
+    }
+
+    if (!inboundIsImage) {
+      const directReply = localDirectReply(client, messageText);
+      if (directReply) {
+        await deliverReply(client, phoneNumber, directReply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, directReply);
+        console.log(`Local direct reply sent to ${phoneNumber}.`);
+        return;
+      }
     }
 
     const historyResult = await db.query(

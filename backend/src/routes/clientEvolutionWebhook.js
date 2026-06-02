@@ -19,6 +19,19 @@ function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
 }
 
+function payloadShape(payload) {
+  const data = payload?.data || payload;
+  const firstMessage = Array.isArray(data?.messages) ? data.messages[0] : null;
+  const message = data?.message || data?.data?.message || firstMessage?.message || {};
+  return JSON.stringify({
+    event: payload?.event || payload?.type || null,
+    topKeys: Object.keys(payload || {}).slice(0, 10),
+    dataKeys: data && typeof data === 'object' ? Object.keys(data).slice(0, 12) : [],
+    messageKeys: message && typeof message === 'object' ? Object.keys(message).slice(0, 12) : [],
+    hasMessagesArray: Array.isArray(data?.messages),
+  });
+}
+
 function runAfterReply(label, task) {
   setImmediate(() => {
     task().catch((err) => {
@@ -153,7 +166,7 @@ router.post('/client/:clientId', async (req, res) => {
 
     const incoming = parseEvolutionInbound(req.body);
     if (!incoming || !incoming.phone) {
-      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed.`);
+      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed. Shape: ${payloadShape(req.body)}`);
       return;
     }
 

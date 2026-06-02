@@ -220,29 +220,70 @@ async function setEvolutionWebhook(settings, webhookUrl) {
   }, { headers, timeout: 30000 });
 }
 
+function firstPresent(...values) {
+  return values.find((value) => value !== undefined && value !== null && value !== '');
+}
+
+function unwrapEvolutionMessage(message) {
+  let current = message || {};
+  for (let depth = 0; depth < 5; depth += 1) {
+    const next = (
+      current.ephemeralMessage?.message ||
+      current.viewOnceMessage?.message ||
+      current.viewOnceMessageV2?.message ||
+      current.viewOnceMessageV2Extension?.message ||
+      current.documentWithCaptionMessage?.message
+    );
+    if (!next) break;
+    current = next;
+  }
+  return current || {};
+}
+
+function parseNativeFlowText(nativeFlowResponseMessage) {
+  const raw = nativeFlowResponseMessage?.paramsJson;
+  if (!raw) return '';
+  try {
+    const parsed = JSON.parse(raw);
+    return firstPresent(parsed.display_text, parsed.title, parsed.id, parsed.name, parsed.selectedId, '');
+  } catch (_err) {
+    return '';
+  }
+}
+
 function parseEvolutionInbound(payload) {
-  const event = String(payload?.event || '').toLowerCase();
+  const event = String(payload?.event || payload?.type || '').toLowerCase();
   if (event && !event.includes('messages.upsert') && !event.includes('messages_upsert')) return null;
-  const data = payload?.data || payload;
-  const key = data?.key || data?.data?.key || {};
-  if (key.fromMe === true) return null;
-  const remoteJid = key.remoteJid || data?.remoteJid || '';
+  const root = payload?.data || payload;
+  const data = Array.isArray(root?.messages) ? root.messages[0] : Array.isArray(root) ? root[0] : (root?.data || root);
+  const key = data?.key || data?.message?.key || {};
+  if (key.fromMe === true || data?.fromMe === true) return null;
+  const remoteJid = firstPresent(key.remoteJid, data?.remoteJid, data?.jid, data?.from, data?.sender, data?.chatId, '');
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;
-  const message = data?.message || data?.data?.message || {};
-  const isVoice = Boolean(message.audioMessage || message.voiceMessage);
-  const isImage = Boolean(message.imageMessage);
-  const mediaMimeType = message.imageMessage?.mimetype || message.audioMessage?.mimetype || message.voiceMessage?.mimetype || null;
-  const buttonResponse = message.buttonsResponseMessage || message.templateButtonReplyMessage || message.interactiveResponseMessage;
+  const message = unwrapEvolutionMessage(firstPresent(data?.message, data?.messages?.[0]?.message, data?.data?.message, {}));
+  const isVoice = Boolean(message.audioMessage || message.voiceMessage || data?.messageType === 'audioMessage');
+  const isImage = Boolean(message.imageMessage || data?.messageType === 'imageMessage');
+  const mediaMimeType = message.imageMessage?.mimetype || message.audioMessage?.mimetype || message.voiceMessage?.mimetype || data?.mimetype || null;
+  const buttonResponse = (
+    message.buttonsResponseMessage ||
+    message.templateButtonReplyMessage ||
+    message.interactiveResponseMessage ||
+    message.listResponseMessage ||
+    message.hydratedTemplateButtonReplyMessage
+  );
   const selectedButtonId = (
     buttonResponse?.selectedButtonId ||
     buttonResponse?.selectedId ||
+    buttonResponse?.singleSelectReply?.selectedRowId ||
     buttonResponse?.id ||
     buttonResponse?.nativeFlowResponseMessage?.name ||
+    parseNativeFlowText(buttonResponse?.nativeFlowResponseMessage) ||
     ''
   );
   const selectedButtonText = (
     buttonResponse?.selectedDisplayText ||
     buttonResponse?.selectedButtonText?.displayText ||
+    buttonResponse?.singleSelectReply?.title ||
     buttonResponse?.displayText ||
     buttonResponse?.title ||
     ''
@@ -254,13 +295,17 @@ function parseEvolutionInbound(payload) {
     message.extendedTextMessage?.text ||
     message.imageMessage?.caption ||
     message.videoMessage?.caption ||
+    message.documentMessage?.caption ||
+    data?.message?.conversation ||
+    data?.text ||
     data?.body ||
+    payload?.body ||
     ''
   ).trim();
   if (!text && !isVoice && !isImage) return null;
   return {
     phone: cleanNumber(remoteJid),
-    name: data?.pushName || data?.data?.pushName || payload?.senderName || null,
+    name: data?.pushName || data?.data?.pushName || root?.pushName || payload?.senderName || payload?.pushName || null,
     text,
     isVoice,
     isImage,

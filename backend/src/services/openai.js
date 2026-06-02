@@ -16,6 +16,14 @@ function openaiTimeoutMs() {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 20000;
 }
 
+function chatModel() {
+  return process.env.OPENAI_MODEL || 'gpt-4o-mini';
+}
+
+function visionModel() {
+  return process.env.OPENAI_VISION_MODEL || chatModel();
+}
+
 async function generateAIResponse(systemPrompt, messageHistory) {
   const hardenedPrompt = withIspKnowledge(systemPrompt);
   const continuityInstruction =
@@ -32,7 +40,7 @@ async function generateAIResponse(systemPrompt, messageHistory) {
   ];
 
   const response = await getClient().chat.completions.create({
-    model: 'gpt-4o',
+    model: chatModel(),
     messages,
     max_tokens: 1024,
     temperature: 0.45,
@@ -79,7 +87,7 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
   ];
 
   const response = await getClient().chat.completions.create({
-    model: 'gpt-4o',
+    model: visionModel(),
     messages,
     max_tokens: 1200,
     temperature: 0.2,

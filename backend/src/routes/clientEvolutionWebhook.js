@@ -118,7 +118,12 @@ async function reply(client, conversationId, phone, text, asVoice = false) {
       console.error(`[evo client ${client.id}] Voice reply failed, falling back to text:`, safeError(err));
     }
   }
-  await sendClientText(client, phone, text);
+  try {
+    await sendClientText(client, phone, text);
+  } catch (err) {
+    console.error(`[evo client ${client.id}] Text reply failed to ${phone}:`, safeError(err));
+    throw err;
+  }
   await saveMessage(conversationId, 'assistant', text);
 }
 
@@ -147,7 +152,10 @@ router.post('/client/:clientId', async (req, res) => {
     }
 
     const incoming = parseEvolutionInbound(req.body);
-    if (!incoming || !incoming.phone) return;
+    if (!incoming || !incoming.phone) {
+      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed.`);
+      return;
+    }
 
     let userText = String(incoming.text || '').trim();
     let storedText = userText;
@@ -180,7 +188,10 @@ router.post('/client/:clientId', async (req, res) => {
         return;
       }
     }
-    if (!userText) return;
+    if (!userText) {
+      console.log(`[evo client ${client.id}] Ignored empty message from ${incoming.phone}.`);
+      return;
+    }
 
     const conversation = await findOrCreateConversation(client.id, incoming.phone, incoming.name);
     const savedUserMessage = await saveMessage(conversation.id, 'user', storedText);
@@ -208,15 +219,24 @@ router.post('/client/:clientId', async (req, res) => {
       await reply(client, conversation.id, incoming.phone, "You're resubscribed. How can I help you today?");
       return;
     }
-    if (conversation.opted_out_at) return;
+    if (conversation.opted_out_at) {
+      console.log(`[evo client ${client.id}] Reply skipped for ${incoming.phone}: conversation is opted out.`);
+      return;
+    }
     if (OPT_OUT.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
       await reply(client, conversation.id, incoming.phone, "You've been unsubscribed. Reply START at any time to resume.");
       return;
     }
-    if (conversation.status === 'human_takeover') return;
+    if (conversation.status === 'human_takeover') {
+      console.log(`[evo client ${client.id}] Reply skipped for ${incoming.phone}: conversation is in human takeover.`);
+      return;
+    }
     const replyMode = conversation.reply_mode || 'auto';
-    if (replyMode === 'silent') return;
+    if (replyMode === 'silent') {
+      console.log(`[evo client ${client.id}] Reply skipped for ${incoming.phone}: reply mode is silent.`);
+      return;
+    }
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
 
     if (!incoming.isImage && INSTALL_RE.test(userText)) {
@@ -298,7 +318,10 @@ router.post('/client/:clientId', async (req, res) => {
     const aiReply = incoming.isImage && inboundImageBuffer
       ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
       : await generateAIResponse(prompt, recent.rows);
-    if (!aiReply || !aiReply.trim()) return;
+    if (!aiReply || !aiReply.trim()) {
+      console.warn(`[evo client ${client.id}] AI returned empty reply for ${incoming.phone}.`);
+      return;
+    }
     const mediaText = `${userText}\n${aiReply}`;
     const cleanReply = stripMediaTags(aiReply).trim() || 'Here is the media I found for you.';
     await reply(client, conversation.id, incoming.phone, cleanReply, replyAsVoice);

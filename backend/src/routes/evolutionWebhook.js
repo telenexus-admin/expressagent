@@ -168,7 +168,10 @@ router.post('/nexa', async (req, res) => {
     }
 
     const incoming = parseEvolutionInbound(req.body);
-    if (!incoming || !incoming.phone) return;
+    if (!incoming || !incoming.phone) {
+      console.log('Nexa Evolution webhook received but no customer message was parsed.');
+      return;
+    }
 
     let userText = incoming.text;
     if (incoming.isVoice) {
@@ -181,7 +184,10 @@ router.post('/nexa', async (req, res) => {
         return;
       }
     }
-    if (!userText || !userText.trim()) return;
+    if (!userText || !userText.trim()) {
+      console.log(`Nexa Evolution ignored empty message from ${incoming.phone}.`);
+      return;
+    }
 
     const conversation = await findOrCreateOperatorConversation(incoming.phone, incoming.name);
     const previousMessages = await getRecentOperatorMessages(conversation.id, 7);
@@ -262,7 +268,10 @@ Core behavior:
     }
 
     const reply = await generateAIResponse(prompt, recent.rows);
-    if (!reply || !reply.trim()) return;
+    if (!reply || !reply.trim()) {
+      console.warn(`Nexa Evolution AI returned empty reply for ${incoming.phone}.`);
+      return;
+    }
     const cleanReply = reply.trim();
 
     if (voiceReply) {
@@ -275,7 +284,12 @@ Core behavior:
         await sendEvolutionText(settings, incoming.phone, cleanReply);
       }
     } else {
-      await sendEvolutionText(settings, incoming.phone, cleanReply);
+      try {
+        await sendEvolutionText(settings, incoming.phone, cleanReply);
+      } catch (err) {
+        console.error(`Nexa Evolution text reply failed for ${incoming.phone}:`, safeError(err));
+        throw err;
+      }
       console.log(`Nexa Evolution text reply sent to ${incoming.phone} using mode=${conversation.reply_mode}.`);
     }
 

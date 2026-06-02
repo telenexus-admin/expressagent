@@ -75,6 +75,7 @@ export default function NexaWhatsApp() {
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [liveSaving, setLiveSaving] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
   const [testPhone, setTestPhone] = useState('');
@@ -170,6 +171,17 @@ export default function NexaWhatsApp() {
     } finally { setSaving(false); }
   };
 
+  const toggleLive = async (enabled) => {
+    setLiveSaving(true); setNotice(''); setError('');
+    try {
+      const { data } = await api.put('/operator-agent/config', { enabled: Boolean(enabled) });
+      setForm((current) => ({ ...current, ...data, evolution_api_key: '' }));
+      setNotice(enabled ? 'Nexus AI is online. Incoming WhatsApp messages will get replies.' : 'Nexus AI is offline. Incoming messages will be recorded only.');
+    } catch (err) {
+      setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not update Nexus AI status.');
+    } finally { setLiveSaving(false); }
+  };
+
   const connectWebhook = async () => {
     setConnecting(true); setNotice(''); setError('');
     try {
@@ -227,7 +239,7 @@ export default function NexaWhatsApp() {
             <p className="mt-1 text-sm text-slate-500">Control AI replies and personally take over any official Nexa conversation.</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className={`rounded-full px-5 py-3 text-xs font-black ${form.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{form.enabled ? '● Nexa is live' : '○ Nexa is offline'}</div>
+            <div className={`rounded-full px-5 py-3 text-xs font-black ${form.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{form.enabled ? 'Nexus AI online' : 'Nexus AI offline'}</div>
             <div className="rounded-2xl bg-white p-1 shadow-sm">
               <button onClick={() => setTab('inbox')} className={`rounded-xl px-5 py-2.5 text-xs font-black ${tab === 'inbox' ? 'bg-[#3535FF] text-white' : 'text-slate-500'}`}>Inbox</button>
               <button onClick={() => setTab('setup')} className={`rounded-xl px-5 py-2.5 text-xs font-black ${tab === 'setup' ? 'bg-[#3535FF] text-white' : 'text-slate-500'}`}>Setup</button>
@@ -237,6 +249,30 @@ export default function NexaWhatsApp() {
 
         {notice && <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-700">{notice}</div>}
         {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">{error}</div>}
+
+        <div className={`mb-5 rounded-[28px] border p-5 shadow-lg sm:p-6 ${form.enabled ? 'border-emerald-100 bg-emerald-50 shadow-emerald-100/50' : 'border-amber-100 bg-amber-50 shadow-amber-100/50'}`}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className={`mb-2 inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${form.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {form.enabled ? 'Webhook replies active' : 'Webhook replies paused'}
+              </div>
+              <h2 className="text-xl font-black text-slate-950">Nexus AI status</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                {form.enabled
+                  ? 'The official Nexa number is allowed to answer incoming WhatsApp messages.'
+                  : 'Evolution webhooks are arriving, but Nexus is ignoring them until this switch is turned on.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleLive(!form.enabled)}
+              disabled={liveSaving}
+              className={`rounded-2xl px-6 py-3 text-sm font-black text-white shadow-lg disabled:opacity-60 ${form.enabled ? 'bg-slate-950 shadow-slate-200' : 'bg-[#3535FF] shadow-indigo-200'}`}
+            >
+              {liveSaving ? 'Updating...' : form.enabled ? 'Turn Nexus AI Off' : 'Turn Nexus AI On'}
+            </button>
+          </div>
+        </div>
 
         {tab === 'inbox' ? (
           <div className="space-y-4">
@@ -307,7 +343,7 @@ export default function NexaWhatsApp() {
         ) : (
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
             <div className="rounded-[30px] border border-white bg-white p-6 shadow-lg shadow-indigo-100/50 sm:p-7">
-              <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Evolution API connection</h2><p className="mt-1 text-xs text-slate-400">Credentials for the normal WhatsApp number hosting Nexa.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>Live</span><Toggle checked={Boolean(form.enabled)} onChange={(value) => set('enabled', value)} /></label></div>
+              <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Evolution API connection</h2><p className="mt-1 text-xs text-slate-400">Credentials for the normal WhatsApp number hosting Nexa.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>{form.enabled ? 'Online' : 'Offline'}</span><Toggle checked={Boolean(form.enabled)} disabled={liveSaving} onChange={toggleLive} /></label></div>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Input label="Evolution API URL" value={form.evolution_base_url || ''} onChange={(value) => set('evolution_base_url', value)} placeholder="https://evoapi.yourdomain.com" /><Input label="Instance name" value={form.evolution_instance || ''} onChange={(value) => set('evolution_instance', value)} placeholder="nexa-official" /><Input label="API key" type="password" value={form.evolution_api_key || ''} onChange={(value) => set('evolution_api_key', value)} placeholder={form.evolution_api_key_configured ? 'Saved — enter only to change it' : 'Paste Evolution API key'} helper={form.evolution_api_key_configured ? 'An API key is already securely saved.' : ''} /><Input label="Owner phone for alerts" value={form.owner_phone || ''} onChange={(value) => set('owner_phone', value)} placeholder="2547XXXXXXXX" /><Input label="Agent name" value={form.agent_name || ''} onChange={(value) => set('agent_name', value)} placeholder="Nexa" /></div>
               <label className="mt-5 block"><span className="mb-2 block text-xs font-bold text-slate-600">Nexa system prompt</span><textarea value={form.system_prompt || ''} onChange={(event) => set('system_prompt', event.target.value)} rows={8} className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-[#3535FF]" /></label>
               <div className="mt-6 flex flex-wrap gap-3"><button onClick={save} disabled={saving} className="rounded-2xl bg-[#3535FF] px-6 py-3 text-sm font-black text-white disabled:opacity-60">{saving ? 'Saving...' : 'Save configuration'}</button><button onClick={connectWebhook} disabled={connecting} className="rounded-2xl bg-[#ececff] px-6 py-3 text-sm font-black text-[#3535FF] disabled:opacity-60">{connecting ? 'Connecting...' : 'Connect webhook'}</button></div>

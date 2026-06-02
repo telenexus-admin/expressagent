@@ -1,5 +1,7 @@
 const OpenAI = require('openai');
 const { toFile } = require('openai/uploads');
+const axios = require('axios');
+const FormData = require('form-data');
 const { withIspKnowledge } = require('./ispKnowledge');
 
 let client = null;
@@ -51,6 +53,27 @@ async function withOpenAIRetry(label, task, attempts = 3) {
     }
   }
   throw lastError;
+}
+
+async function transcribeAudioViaHttp(buffer, filename, contentType) {
+  const form = new FormData();
+  form.append('file', buffer, {
+    filename,
+    contentType,
+    knownLength: buffer.length,
+  });
+  form.append('model', transcriptionModel());
+
+  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+    headers: {
+      ...form.getHeaders(),
+      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: openaiTimeoutMs() * 2,
+  });
+  return response.data;
 }
 
 async function generateAIResponse(systemPrompt, messageHistory) {
@@ -156,12 +179,21 @@ async function transcribeAudio(buffer, filename = 'audio.ogg', mimeType = '') {
   const safeFilename = normalizeAudioFilename(filename, mimeType);
   const contentType = mimeType || audioMimeFromFilename(safeFilename);
   const file = await toFile(buffer, safeFilename, { type: contentType });
-  const result = await withOpenAIRetry('Audio transcription', () =>
-    getClient().audio.transcriptions.create({
-      file,
-      model: transcriptionModel(),
-    }, { timeout: openaiTimeoutMs() * 2 })
-  );
+  let result;
+  try {
+    result = await withOpenAIRetry('Audio transcription', () =>
+      getClient().audio.transcriptions.create({
+        file,
+        model: transcriptionModel(),
+      }, { timeout: openaiTimeoutMs() * 2 })
+    );
+  } catch (err) {
+    if (!isRetryableOpenAIError(err)) throw err;
+    console.warn(`Audio transcription SDK failed after retries: ${err.message}. Trying direct HTTP upload...`);
+    result = await withOpenAIRetry('Audio transcription HTTP fallback', () =>
+      transcribeAudioViaHttp(buffer, safeFilename, contentType)
+    );
+  }
   return result.text;
 }
 

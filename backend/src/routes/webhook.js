@@ -28,6 +28,9 @@ function formatErr(err) {
 function fallbackAiReply(client, messageText = '') {
   const name = String(client.agent_name || 'the assistant').trim();
   const lower = String(messageText || '').toLowerCase();
+  if (isPackageInquiry(lower)) {
+    return `Here are our current packages:\n${PLAN_LIST_TEXT}`;
+  }
   if (/\b(no internet|not working|down|slow|offline|router|los|red light|connection)\b/.test(lower)) {
     return `I have received your internet issue. Please restart the router once, then send a clear photo of the router lights if it is still not working.`;
   }
@@ -186,6 +189,10 @@ const PLAN_LIST_TEXT =
   `• 40 Mbps – KSh 4,000/month\n` +
   `Installation fee: KSh 1,000 (one-off).\n` +
   `All packages are unlimited with dedicated download & upload speeds.`;
+
+function isPackageInquiry(text) {
+  return /\b(package|packages|plans|price|prices|pricing|cost|costs|mbps|offer|offers|charge|charges)\b/i.test(String(text || ''));
+}
 
 const INSTALL_MARKER_RE = /<<INSTALL_DETAILS:\s*(\{[\s\S]*?\})\s*>>/;
 function stripInstallMarker(text) {
@@ -612,6 +619,15 @@ router.post('/', async (req, res) => {
       }
     }
 
+    const voiceId = (client.voice_id || '').trim() || 'alloy';
+    if (!inboundIsImage && isPackageInquiry(messageText)) {
+      const reply = `Here are our current packages:\n${PLAN_LIST_TEXT}`;
+      await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
+      await persistOutgoing(conversation.id, reply);
+      console.log(`Package list reply sent to ${phoneNumber}.`);
+      return;
+    }
+
     if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
       const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';
@@ -644,7 +660,6 @@ router.post('/', async (req, res) => {
     }
 
     let installationState = conversation.installation_state || null;
-    const voiceId = (client.voice_id || '').trim() || 'alloy';
     if (!inboundIsImage && !installationState && INSTALL_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET installation_state = 'collecting' WHERE id = $1`, [conversation.id]);
       installationState = 'collecting';

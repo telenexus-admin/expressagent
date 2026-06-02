@@ -25,6 +25,11 @@ function formatErr(err) {
     : (err.response?.data || err.message || 'unknown error');
 }
 
+function fallbackAiReply(client) {
+  const name = String(client.agent_name || 'the assistant').trim();
+  return `Hi, this is ${name}. I have received your message. Please tell me what you need help with.`;
+}
+
 function runAfterReply(label, task) {
   setImmediate(() => {
     task().catch((err) => {
@@ -720,7 +725,13 @@ router.post('/', async (req, res) => {
     const classificationText = inboundIsImage
       ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
       : messageText;
-    const aiResponse = await aiTask;
+    let aiResponse;
+    try {
+      aiResponse = await aiTask;
+    } catch (err) {
+      console.error(`[client ${client.id}] AI generation failed for ${phoneNumber}:`, formatErr(err));
+      aiResponse = fallbackAiReply(client);
+    }
 
     let customerReply = aiResponse;
     const markerMatch = aiResponse.match(INSTALL_MARKER_RE);

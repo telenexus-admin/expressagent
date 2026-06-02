@@ -11,6 +11,11 @@ function getClient() {
   return client;
 }
 
+function openaiTimeoutMs() {
+  const parsed = Number.parseInt(process.env.OPENAI_TIMEOUT_MS || '20000', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 20000;
+}
+
 async function generateAIResponse(systemPrompt, messageHistory) {
   const hardenedPrompt = withIspKnowledge(systemPrompt);
   const continuityInstruction =
@@ -31,7 +36,7 @@ async function generateAIResponse(systemPrompt, messageHistory) {
     messages,
     max_tokens: 1024,
     temperature: 0.45,
-  });
+  }, { timeout: openaiTimeoutMs() });
 
   return response.choices[0].message.content;
 }
@@ -78,7 +83,7 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
     messages,
     max_tokens: 1200,
     temperature: 0.2,
-  });
+  }, { timeout: openaiTimeoutMs() });
 
   return response.choices[0].message.content;
 }

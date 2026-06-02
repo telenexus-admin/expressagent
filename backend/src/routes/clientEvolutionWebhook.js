@@ -19,6 +19,11 @@ function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
 }
 
+function fallbackAiReply(client) {
+  const name = String(client.agent_name || 'the assistant').trim();
+  return `Hi, this is ${name}. I have received your message. Please tell me what you need help with.`;
+}
+
 function payloadShape(payload) {
   const data = payload?.data || payload;
   const firstMessage = Array.isArray(data?.messages) ? data.messages[0] : null;
@@ -336,9 +341,15 @@ router.post('/client/:clientId', async (req, res) => {
       if (billingContext) prompt += billingContext;
     }
     console.log(`[evo client ${client.id}] Generating AI reply for ${incoming.phone}.`);
-    const aiReply = incoming.isImage && inboundImageBuffer
-      ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
-      : await generateAIResponse(prompt, recent.rows);
+    let aiReply;
+    try {
+      aiReply = incoming.isImage && inboundImageBuffer
+        ? await analyzeSupportImage(prompt, recent.rows, inboundImageBuffer, inboundImageMimeType, incoming.text || '')
+        : await generateAIResponse(prompt, recent.rows);
+    } catch (err) {
+      console.error(`[evo client ${client.id}] AI generation failed for ${incoming.phone}:`, safeError(err));
+      aiReply = fallbackAiReply(client);
+    }
     if (!aiReply || !aiReply.trim()) {
       console.warn(`[evo client ${client.id}] AI returned empty reply for ${incoming.phone}.`);
       return;

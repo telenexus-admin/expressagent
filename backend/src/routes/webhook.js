@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../db');
-const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent } = require('../services/openai');
+const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent, openAIModelSummary } = require('../services/openai');
 const {
   sendWhatsAppMessage,
   sendWhatsAppList,
@@ -717,14 +717,14 @@ router.post('/', async (req, res) => {
        ) recent ORDER BY timestamp ASC`,
       [conversation.id]
     );
-    const previousAssistantReplies = historyResult.rows.filter((msg) => msg.role === 'assistant').length;
     const basePrompt = client.system_prompt || 'You are a helpful customer support agent.';
     const agentName = (client.agent_name || '').trim();
     let systemPrompt = basePrompt;
-    if (agentName) systemPrompt = `Your name is ${agentName}. If a customer asks your name, introduce yourself as ${agentName}.\n\n${systemPrompt}`;
+    if (agentName) {
+      systemPrompt = `Your name is ${agentName}. You are the official AI assistant for ${client.business_name || client.name || 'this ISP'}.\n\n${systemPrompt}`;
+    }
     if (conversation.customer_name) {
-      const firstName = conversation.customer_name.split(/\s+/)[0];
-      systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}" (first name: "${firstName}"). ${previousAssistantReplies === 0 ? `For the first reply, begin naturally with "Hi ${firstName}!" or the Swahili equivalent when appropriate.` : 'This is already an ongoing conversation, so do not introduce yourself again and do not ask a generic "how can I help".'} Do not repeat greetings on follow-ups.`;
+      systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}". Use their name naturally when useful, without repeating a greeting in every reply.`;
     }
     systemPrompt +=
       `\n\nREPLY DISCIPLINE:\n` +
@@ -765,7 +765,7 @@ router.post('/', async (req, res) => {
       if (billingContext) systemPrompt += billingContext;
     }
 
-    console.log(`[client ${client.id}] Generating AI reply for ${phoneNumber}.`);
+    console.log(`[client ${client.id}] Generating AI reply for ${phoneNumber}. OpenAI config: ${JSON.stringify(openAIModelSummary())}`);
     const aiTask = inboundIsImage
       ? analyzeSupportImage(systemPrompt, historyResult.rows, inboundImageBuffer, inboundImageMimeType, inboundImageCaption)
       : generateAIResponse(systemPrompt, historyResult.rows);

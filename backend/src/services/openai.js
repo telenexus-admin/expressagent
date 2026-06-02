@@ -26,6 +26,15 @@ function visionModel() {
   return process.env.OPENAI_VISION_MODEL || chatModel();
 }
 
+function openAIModelSummary() {
+  return {
+    chatModel: chatModel(),
+    visionModel: visionModel(),
+    transcriptionModel: transcriptionModel(),
+    transcriptionTransport: transcriptionTransport(),
+  };
+}
+
 function transcriptionModel() {
   return process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
 }
@@ -301,4 +310,4 @@ async function classifyIntent(userMessage) {
   }
 }
 
-module.exports = { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent };
+module.exports = { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent, openAIModelSummary };

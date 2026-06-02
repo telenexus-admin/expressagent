@@ -24,7 +24,18 @@ const INITIAL_FORM = {
   consent_accepted: false,
 };
 
-const plans = ['10 Mbps', '15 Mbps', '20 Mbps', '30 Mbps', '40 Mbps', '50 Mbps', 'Not sure yet'];
+const CONTACT_PHONE = '0727841778';
+const CONTACT_EMAIL = 'info@neemainternetsolution.co.ke';
+
+const plans = [
+  { name: '10 Mbps', tag: 'Starter', detail: 'Good for browsing, social apps and light streaming.' },
+  { name: '15 Mbps', tag: 'Popular', detail: 'A balanced home package for streaming and daily use.' },
+  { name: '20 Mbps', tag: 'Family', detail: 'Built for multiple phones, smart TV and video calls.' },
+  { name: '30 Mbps', tag: 'Power', detail: 'Fast home internet for heavy streaming and work.' },
+  { name: '40 Mbps', tag: 'Business', detail: 'Reliable speed for offices and shared spaces.' },
+  { name: '50 Mbps', tag: 'Premium', detail: 'High-speed internet for demanding homes and teams.' },
+  { name: 'Not sure yet', tag: 'Guide me', detail: 'Let the team recommend the right package.' },
+];
 const serviceTypes = [
   ['home', 'Home internet'],
   ['business', 'Business internet'],
@@ -41,7 +52,7 @@ const buildingTypes = [
 const DEFAULT_INSTALLATION_FORM = {
   title: 'Installation form',
   intro: 'Share your contact and location details so the installation team can prepare before calling you.',
-  accent_color: '#3535FF',
+  accent_color: '#0578c8',
   show_id: true,
   require_id: true,
   show_alternate_phone: true,
@@ -68,9 +79,9 @@ function Field({ label, children, helper }) {
 
 function Section({ number, title, description, children }) {
   return (
-    <section className="rounded-[28px] border border-slate-100 bg-white p-5 shadow-sm sm:p-6">
+    <section className="animate-rise rounded-[28px] border border-sky-100/70 bg-white/95 p-5 shadow-xl shadow-sky-950/5 backdrop-blur sm:p-6">
       <div className="mb-5 flex items-start gap-3">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#edeaff] text-sm font-black text-[#3535FF]">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-2xl bg-[#e7f7ff] text-sm font-black text-[#0586d9]">
           {number}
         </div>
         <div>
@@ -80,6 +91,42 @@ function Section({ number, title, description, children }) {
       </div>
       {children}
     </section>
+  );
+}
+
+function PackageCards({ value, onChange }) {
+  return (
+    <div className="grid gap-3 sm:grid-cols-2">
+      {plans.map((plan) => {
+        const active = value === plan.name;
+        return (
+          <button
+            key={plan.name}
+            type="button"
+            onClick={() => onChange(plan.name)}
+            className={`group relative overflow-hidden rounded-3xl border p-4 text-left transition duration-300 hover:-translate-y-1 hover:shadow-xl ${
+              active
+                ? 'border-[#02a8ff] bg-[#071a33] text-white shadow-lg shadow-sky-200'
+                : 'border-sky-100 bg-white text-slate-900 hover:border-[#02a8ff]/50'
+            }`}
+          >
+            <div className="absolute -right-10 -top-10 h-24 w-24 rounded-full bg-[#02a8ff]/15 transition group-hover:scale-125" />
+            <div className="relative flex items-start justify-between gap-3">
+              <div>
+                <span className={`rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${active ? 'bg-white/15 text-sky-100' : 'bg-sky-50 text-[#0578c8]'}`}>
+                  {plan.tag}
+                </span>
+                <div className="mt-3 text-xl font-black">{plan.name}</div>
+              </div>
+              <div className={`mt-1 flex h-6 w-6 items-center justify-center rounded-full border text-xs font-black ${active ? 'border-white bg-white text-[#0578c8]' : 'border-sky-200 text-sky-400'}`}>
+                {active ? '✓' : ''}
+              </div>
+            </div>
+            <p className={`relative mt-2 text-xs font-semibold leading-5 ${active ? 'text-sky-100' : 'text-slate-500'}`}>{plan.detail}</p>
+          </button>
+        );
+      })}
+    </div>
   );
 }
 
@@ -277,13 +324,17 @@ export default function CustomerIntake() {
 
   if (success) {
     return (
-      <div className="min-h-screen bg-[#f8fafc] px-4 py-8 sm:px-6">
-        <div className="mx-auto max-w-xl rounded-[32px] border border-emerald-100 bg-white p-7 text-center shadow-xl shadow-emerald-100/60">
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-emerald-50 text-2xl font-black text-emerald-600">OK</div>
+      <div className="min-h-screen bg-[#061225] px-4 py-8 sm:px-6">
+        <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_20%_10%,rgba(2,168,255,0.28),transparent_32%),radial-gradient(circle_at_80%_20%,rgba(11,92,255,0.18),transparent_28%)]" />
+        <div className="animate-rise relative mx-auto max-w-xl rounded-[32px] border border-sky-100/60 bg-white p-7 text-center shadow-2xl shadow-sky-950/30">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-3xl bg-[#e7f7ff] text-2xl font-black text-[#0578c8]">OK</div>
           <h1 className="mt-5 text-2xl font-black text-slate-950">Details received</h1>
           <p className="mt-3 text-sm leading-6 text-slate-500">
             {success.message || 'Our team will review your installation details and contact you shortly.'}
           </p>
+          <div className="mt-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-xs font-black text-[#0578c8]">
+            Need help? Call {CONTACT_PHONE} or email {CONTACT_EMAIL}
+          </div>
           <div className="mt-5 rounded-2xl bg-slate-50 px-4 py-3 text-xs font-bold text-slate-500">
             Reference #{success.id}
           </div>
@@ -293,20 +344,27 @@ export default function CustomerIntake() {
   }
 
   return (
-    <div className="min-h-screen bg-[#f8fafc] px-4 py-5 sm:px-6 sm:py-8">
-      <form onSubmit={submit} className="mx-auto max-w-5xl">
-        <header className="mb-5 overflow-hidden rounded-[32px] bg-[#0A0A0F] text-white shadow-xl">
-          <div className="grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_320px] lg:items-end">
+    <div className="relative min-h-screen overflow-hidden bg-[#061225] px-4 py-5 text-slate-900 sm:px-6 sm:py-8">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_14%_8%,rgba(2,168,255,0.32),transparent_30%),radial-gradient(circle_at_82%_16%,rgba(40,120,255,0.2),transparent_28%),linear-gradient(135deg,#061225_0%,#071a33_48%,#03101f_100%)]" />
+      <div className="network-line pointer-events-none fixed left-0 top-28 h-px w-full bg-gradient-to-r from-transparent via-sky-300/40 to-transparent" />
+      <form onSubmit={submit} className="relative mx-auto max-w-5xl">
+        <header className="animate-rise mb-5 overflow-hidden rounded-[34px] border border-white/10 bg-[#071a33] text-white shadow-2xl shadow-sky-950/40">
+          <div className="absolute inset-0 bg-[linear-gradient(120deg,rgba(2,168,255,0.18),transparent_38%,rgba(255,255,255,0.08))]" />
+          <div className="relative grid gap-6 p-6 sm:p-8 lg:grid-cols-[1fr_340px] lg:items-end">
             <div>
-              <div className="mb-5 inline-flex rounded-full bg-white/10 px-4 py-2 text-xs font-black text-white/75" style={{ color: formConfig.accent_color }}>
+              <div className="mb-5 inline-flex rounded-full border border-sky-300/20 bg-white/10 px-4 py-2 text-xs font-black text-sky-100">
                 {clientLoading ? 'Opening secure form...' : 'Secure customer intake'}
               </div>
-              <h1 className="text-3xl font-black tracking-tight sm:text-4xl">{businessName} {formConfig.title || 'installation form'}</h1>
+              <h1 className="text-3xl font-black tracking-tight sm:text-5xl">{businessName} {formConfig.title || 'installation form'}</h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-white/70">
                 {formConfig.intro || DEFAULT_INSTALLATION_FORM.intro}
               </p>
+              <div className="mt-5 flex flex-wrap gap-3 text-xs font-black">
+                <a href={`tel:${CONTACT_PHONE}`} className="rounded-full bg-[#02a8ff] px-4 py-2 text-white shadow-lg shadow-sky-950/20">{CONTACT_PHONE}</a>
+                <a href={`mailto:${CONTACT_EMAIL}`} className="rounded-full border border-white/15 bg-white/10 px-4 py-2 text-sky-100">{CONTACT_EMAIL}</a>
+              </div>
             </div>
-            <div className="rounded-[24px] border border-white/10 bg-white/10 p-4">
+            <div className="animate-float rounded-[26px] border border-sky-300/20 bg-white/10 p-4 backdrop-blur">
               <div className="text-xs font-black uppercase tracking-wide text-white/50">What you need</div>
               <div className="mt-3 space-y-2 text-sm font-bold text-white/85">
                 {formConfig.show_id && <div>{formConfig.require_id ? 'National ID photo or PDF' : 'ID photo or PDF if available'}</div>}
@@ -318,7 +376,7 @@ export default function CustomerIntake() {
         </header>
 
         {loadNotice && (
-          <div className="mb-5 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800">
+          <div className="mb-5 rounded-2xl border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-bold text-[#0578c8]">
             {loadNotice}
           </div>
         )}
@@ -334,19 +392,19 @@ export default function CustomerIntake() {
             <Section number="1" title="Personal Details" description="Use the same details the team should use when scheduling installation.">
               <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Full name">
-                  <input required value={form.customer_name} onChange={(event) => update('customer_name', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  <input required value={form.customer_name} onChange={(event) => update('customer_name', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                 </Field>
                 <Field label="Main phone">
-                  <input required type="tel" value={form.customer_phone} onChange={(event) => update('customer_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  <input required type="tel" value={form.customer_phone} onChange={(event) => update('customer_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                 </Field>
                 {formConfig.show_alternate_phone && (
                   <Field label="Alternative phone">
-                    <input type="tel" value={form.alternate_phone} onChange={(event) => update('alternate_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                    <input type="tel" value={form.alternate_phone} onChange={(event) => update('alternate_phone', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                   </Field>
                 )}
                 {formConfig.show_email && (
                   <Field label="Email">
-                    <input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                    <input type="email" value={form.email} onChange={(event) => update('email', event.target.value)} placeholder={CONTACT_EMAIL} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                   </Field>
                 )}
               </div>
@@ -355,7 +413,7 @@ export default function CustomerIntake() {
             {formConfig.show_id && <Section number="2" title="ID Verification" description={formConfig.require_id ? 'Upload a clear scan, photo or PDF of the ID used for registration.' : 'Upload an ID if the provider requested it.'}>
               <div className="grid gap-4 sm:grid-cols-[1fr_1.2fr]">
                 <Field label="ID number">
-                  <input value={form.id_number} onChange={(event) => update('id_number', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  <input value={form.id_number} onChange={(event) => update('id_number', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                 </Field>
                 <Field label="ID scan / photo" helper={fileLabel}>
                   <input
@@ -364,7 +422,7 @@ export default function CustomerIntake() {
                     accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
                     capture="environment"
                     onChange={(event) => update('identity_file', event.target.files?.[0] || null)}
-                    className="block w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-[#3535FF] file:px-3 file:py-2 file:text-xs file:font-black file:text-white"
+                    className="block w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700 file:mr-3 file:rounded-xl file:border-0 file:bg-[#0578c8] file:px-3 file:py-2 file:text-xs file:font-black file:text-white"
                   />
                 </Field>
               </div>
@@ -374,52 +432,49 @@ export default function CustomerIntake() {
               <div className="grid gap-4 sm:grid-cols-2">
                 {formConfig.show_service_type && (
                   <Field label="Service type">
-                    <select value={form.service_type} onChange={(event) => update('service_type', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
+                    <select value={form.service_type} onChange={(event) => update('service_type', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:ring-4 focus:ring-sky-100">
                       {serviceTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                     </select>
                   </Field>
                 )}
                 {formConfig.show_plan && (
                   <Field label="Preferred package">
-                    <select value={form.plan_interest} onChange={(event) => update('plan_interest', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
-                      <option value="">Choose package</option>
-                      {plans.map((plan) => <option key={plan} value={plan}>{plan}</option>)}
-                    </select>
+                    <PackageCards value={form.plan_interest} onChange={(value) => update('plan_interest', value)} />
                   </Field>
                 )}
                 {formConfig.show_county && (
                   <Field label="County / town">
-                    <input value={form.county} onChange={(event) => update('county', event.target.value)} placeholder="e.g. Nairobi" className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                    <input value={form.county} onChange={(event) => update('county', event.target.value)} placeholder="e.g. Nairobi" className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                   </Field>
                 )}
                 <Field label="Estate / area">
-                  <input required value={form.area} onChange={(event) => update('area', event.target.value)} placeholder="e.g. Githurai 45" className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  <input required value={form.area} onChange={(event) => update('area', event.target.value)} placeholder="e.g. Githurai 45" className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                 </Field>
                 <Field label="Building type">
-                  <select value={form.building_type} onChange={(event) => update('building_type', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
+                  <select value={form.building_type} onChange={(event) => update('building_type', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:ring-4 focus:ring-sky-100">
                     {buildingTypes.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </Field>
                 {formConfig.show_landmark && (
                   <Field label="Nearest landmark">
-                    <input value={form.landmark} onChange={(event) => update('landmark', event.target.value)} placeholder="School, stage, shop, church..." className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                    <input value={form.landmark} onChange={(event) => update('landmark', event.target.value)} placeholder="School, stage, shop, church..." className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                   </Field>
                 )}
               </div>
               {formConfig.show_house_description && (
                 <Field label="House / building description" helper="Example: Blue gate, 3rd floor, door B12, near the water tank.">
-                  <textarea rows={3} value={form.house_description} onChange={(event) => update('house_description', event.target.value)} className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  <textarea rows={3} value={form.house_description} onChange={(event) => update('house_description', event.target.value)} className="w-full resize-y rounded-2xl border border-sky-100 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                 </Field>
               )}
-              {formConfig.show_gps && <div className="mt-4 rounded-2xl border border-blue-100 bg-blue-50 p-4">
+              {formConfig.show_gps && <div className="mt-4 rounded-2xl border border-sky-100 bg-sky-50 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
-                    <div className="text-sm font-black text-blue-950">GPS pin</div>
-                    <div className="mt-1 text-xs font-semibold text-blue-700">
+                    <div className="text-sm font-black text-sky-950">GPS pin</div>
+                    <div className="mt-1 text-xs font-semibold text-[#0578c8]">
                       {form.latitude && form.longitude ? `${form.latitude}, ${form.longitude}` : 'Optional, but helps the team locate you faster.'}
                     </div>
                   </div>
-                  <button type="button" onClick={captureLocation} disabled={locating} className="rounded-2xl bg-blue-600 px-4 py-3 text-sm font-black text-white disabled:opacity-50">
+                  <button type="button" onClick={captureLocation} disabled={locating} className="rounded-2xl bg-[#0578c8] px-4 py-3 text-sm font-black text-white shadow-lg shadow-sky-200 disabled:opacity-50">
                     {locating ? 'Capturing...' : 'Use my location'}
                   </button>
                 </div>
@@ -429,10 +484,10 @@ export default function CustomerIntake() {
             {(formConfig.show_schedule || formConfig.show_notes) && <Section number={formConfig.show_id ? '4' : '3'} title="Scheduling Notes" description="Tell the team when you prefer to be contacted or visited.">
               {formConfig.show_schedule && <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Preferred date">
-                  <input type="date" value={form.preferred_date} onChange={(event) => update('preferred_date', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]" />
+                  <input type="date" value={form.preferred_date} onChange={(event) => update('preferred_date', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:ring-4 focus:ring-sky-100" />
                 </Field>
                 <Field label="Preferred time">
-                  <select value={form.preferred_time} onChange={(event) => update('preferred_time', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]">
+                  <select value={form.preferred_time} onChange={(event) => update('preferred_time', event.target.value)} className="h-12 w-full rounded-2xl border border-sky-100 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none transition focus:border-[#02a8ff] focus:ring-4 focus:ring-sky-100">
                     <option value="">Any time</option>
                     <option value="morning">Morning</option>
                     <option value="afternoon">Afternoon</option>
@@ -442,14 +497,14 @@ export default function CustomerIntake() {
               </div>}
               {formConfig.show_notes && (
                 <Field label="Extra notes">
-                  <textarea rows={4} value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Gate contact, access notes, router location, special requests..." className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none focus:border-[#3535FF] focus:bg-white" />
+                  <textarea rows={4} value={form.notes} onChange={(event) => update('notes', event.target.value)} placeholder="Gate contact, access notes, router location, special requests..." className="w-full resize-y rounded-2xl border border-sky-100 bg-slate-50 px-4 py-3 text-sm font-bold leading-6 text-slate-800 outline-none transition focus:border-[#02a8ff] focus:bg-white focus:ring-4 focus:ring-sky-100" />
                 </Field>
               )}
             </Section>}
           </main>
 
           <aside className="space-y-5 lg:sticky lg:top-5 lg:self-start">
-            <div className="rounded-[28px] border border-slate-100 bg-white p-5 shadow-sm">
+            <div className="animate-rise rounded-[28px] border border-sky-100 bg-white/95 p-5 shadow-xl shadow-sky-950/5">
               <h2 className="text-lg font-black text-slate-950">Before submitting</h2>
               <div className="mt-4 space-y-3 text-sm font-semibold leading-6 text-slate-600">
                 {formConfig.show_id && <p>The ID scan is stored securely for installation verification.</p>}
@@ -457,11 +512,11 @@ export default function CustomerIntake() {
                 <p>The team may call you before visiting.</p>
               </div>
             </div>
-            <label className="flex gap-3 rounded-[24px] border border-slate-100 bg-white p-4 text-sm font-semibold leading-6 text-slate-600 shadow-sm">
-              <input type="checkbox" checked={form.consent_accepted} onChange={(event) => update('consent_accepted', event.target.checked)} className="mt-1 h-4 w-4 accent-[#3535FF]" />
+            <label className="flex gap-3 rounded-[24px] border border-sky-100 bg-white/95 p-4 text-sm font-semibold leading-6 text-slate-600 shadow-xl shadow-sky-950/5">
+              <input type="checkbox" checked={form.consent_accepted} onChange={(event) => update('consent_accepted', event.target.checked)} className="mt-1 h-4 w-4 accent-[#0578c8]" />
               <span>I confirm the details are correct and consent to {businessName} using them for installation scheduling.</span>
             </label>
-            <button type="submit" disabled={submitting || !form.consent_accepted} style={{ backgroundColor: formConfig.accent_color }} className="w-full rounded-[22px] px-6 py-4 text-sm font-black text-white shadow-lg shadow-blue-200 transition disabled:opacity-50">
+            <button type="submit" disabled={submitting || !form.consent_accepted} className="w-full rounded-[22px] bg-gradient-to-r from-[#0578c8] to-[#02a8ff] px-6 py-4 text-sm font-black text-white shadow-xl shadow-sky-950/30 transition hover:-translate-y-0.5 hover:shadow-sky-800/30 disabled:opacity-50">
               {submitting ? 'Submitting details...' : 'Submit installation details'}
             </button>
           </aside>

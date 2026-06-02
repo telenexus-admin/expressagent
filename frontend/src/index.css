@@ -120,3 +120,59 @@ body,
 .theme-dark .sidebar-active-link::after {
   box-shadow: 10px -10px 0 8px #111827;
 }
+
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes float-soft {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-8px);
+  }
+}
+
+@keyframes network-scan {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0;
+  }
+  20%,
+  80% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+.animate-rise {
+  animation: rise-in 680ms ease both;
+}
+
+.animate-float {
+  animation: float-soft 5s ease-in-out infinite;
+}
+
+.network-line {
+  animation: network-scan 7s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-rise,
+  .animate-float,
+  .network-line {
+    animation: none;
+  }
+}

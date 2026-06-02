@@ -30,6 +30,10 @@ function transcriptionModel() {
   return process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
 }
 
+function transcriptionTransport() {
+  return String(process.env.OPENAI_TRANSCRIPTION_TRANSPORT || 'http').toLowerCase();
+}
+
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
@@ -178,8 +182,15 @@ async function transcribeAudio(buffer, filename = 'audio.ogg', mimeType = '') {
   }
   const safeFilename = normalizeAudioFilename(filename, mimeType);
   const contentType = mimeType || audioMimeFromFilename(safeFilename);
-  const file = await toFile(buffer, safeFilename, { type: contentType });
   let result;
+  if (transcriptionTransport() === 'http') {
+    result = await withOpenAIRetry('Audio transcription HTTP', () =>
+      transcribeAudioViaHttp(buffer, safeFilename, contentType)
+    );
+    return result.text;
+  }
+
+  const file = await toFile(buffer, safeFilename, { type: contentType });
   try {
     result = await withOpenAIRetry('Audio transcription', () =>
       getClient().audio.transcriptions.create({

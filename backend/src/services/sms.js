@@ -37,6 +37,23 @@ function hasSMSConfig(options = {}) {
   return config.provider === 'blessed_text' && Boolean(config.apiKey && config.senderId);
 }
 
+function blessedTextAccepted(data) {
+  if (!data || typeof data !== 'object') return true;
+  if (data.success === false) return false;
+  if (data.status === false) return false;
+  if (typeof data.status === 'string' && /fail|error|invalid/i.test(data.status)) return false;
+  if (data.status_code != null) {
+    const code = String(data.status_code);
+    return ['1000', '1001', '200', '201'].includes(code);
+  }
+  return true;
+}
+
+function blessedTextError(data) {
+  if (!data || typeof data !== 'object') return 'SMS provider rejected the message';
+  return data.status_desc || data.message || data.error || JSON.stringify(data);
+}
+
 // Send an SMS via Blessed Texts. `phone` may be a single MSISDN or an array.
 // Returns the provider response on success; throws on failure.
 async function sendSMS(phone, message, options = {}) {
@@ -70,6 +87,10 @@ async function sendSMS(phone, message, options = {}) {
       timeout: 15000,
     }
   );
+
+  if (!blessedTextAccepted(res.data)) {
+    throw new Error(blessedTextError(res.data));
+  }
 
   return res.data;
 }

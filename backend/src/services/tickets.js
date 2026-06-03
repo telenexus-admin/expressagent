@@ -455,7 +455,9 @@ async function createOrUpdateTicket(signal) {
   await ensureTicketSchema();
 
   const clientId = Number(signal.clientId || signal.client_id);
-  const conversationId = signal.conversationId || signal.conversation_id || null;
+  const rawConversationId = signal.conversationId || signal.conversation_id || null;
+  const parsedConversationId = rawConversationId ? Number(rawConversationId) : null;
+  const conversationId = Number.isFinite(parsedConversationId) ? parsedConversationId : null;
   const customerPhone = clean(signal.customerPhone || signal.customer_phone);
   if (!clientId || !customerPhone) return null;
 
@@ -468,14 +470,14 @@ async function createOrUpdateTicket(signal) {
   const assignment = await findWorkflowAssignment(clientId, category, signal.intent);
 
   const params = [clientId, category];
-  let lookup = `client_id = $1 AND category = $2 AND status = ANY($${params.length + 1}::text[])`;
+  let lookup = `client_id = $1::int AND category = $2::text AND status = ANY($${params.length + 1}::text[])`;
   params.push(OPEN_STATUSES);
   if (conversationId) {
     params.push(conversationId);
-    lookup += ` AND conversation_id = $${params.length}`;
+    lookup += ` AND conversation_id = $${params.length}::int`;
   } else {
     params.push(customerPhone);
-    lookup += ` AND customer_phone = $${params.length}`;
+    lookup += ` AND customer_phone = $${params.length}::text`;
   }
 
   const existing = await db.query(
@@ -496,7 +498,14 @@ async function createOrUpdateTicket(signal) {
            updated_at = NOW()
        WHERE id = $1
        RETURNING *`,
-      [ticket.id, signal.customerName || signal.customer_name || null, nextPriority, summary || null, body || null, assignment?.employeeId || null]
+      [
+        Number(ticket.id),
+        signal.customerName || signal.customer_name || null,
+        nextPriority,
+        summary || null,
+        body || null,
+        assignment?.employeeId ? Number(assignment.employeeId) : null,
+      ]
     );
     let latestTicket = updated.rows[0];
     if (assignment?.employeeId && !ticket.assigned_employee_id) {
@@ -540,7 +549,7 @@ async function createOrUpdateTicket(signal) {
       source,
       summary || null,
       body || null,
-      assignment?.employeeId || null,
+      assignment?.employeeId ? Number(assignment.employeeId) : null,
     ]
   );
   const ticket = inserted.rows[0];

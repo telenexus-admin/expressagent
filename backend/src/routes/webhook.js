@@ -149,7 +149,10 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
         .filter(([, result]) => result.status !== 'sent')
         .map(([channel, result]) => `${employee.emp_name} ${channel}: ${result.error || result.status}`)
     ).join(' | ') || null;
-    console.log(`[client ${client.id}] Dispatched intent="${intent}" to ${employees.length} employee(s) via ${channels.join(', ')}.`);
+    console.log(
+      `[client ${client.id}] Dispatched intent="${intent}" to ${employees.length} employee(s) via ${channels.join(', ')} ` +
+      `status=${notifyStatus}${notifyError ? ` error=${notifyError}` : ''}.`
+    );
 
     await db.query(
       `INSERT INTO workflow_dispatches

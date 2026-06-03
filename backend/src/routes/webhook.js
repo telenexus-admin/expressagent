@@ -29,21 +29,21 @@ function fallbackAiReply(client, messageText = '') {
   const name = String(client.agent_name || 'the assistant').trim();
   const lower = String(messageText || '').toLowerCase();
   if (isPackageInquiry(lower)) {
-    return `Here are our current packages:\n${PLAN_LIST_TEXT}`;
+    return `OpenAI is temporarily unavailable, but here are our current packages:\n${PLAN_LIST_TEXT}`;
   }
   if (isTechnicalIssue(lower)) {
-    return `I have received your internet issue. Please restart the router once, then send a clear photo of the router lights if it is still not working.`;
+    return `OpenAI is temporarily unavailable. For now, please restart the router, wait 3 minutes, and send a clear photo of the router lights if it is still not working.`;
   }
   if (/\b(pay|payment|paid|bill|billing|expire|expiry|plan|package|recharge)\b/.test(lower)) {
-    return `I have received your billing question. Please send your registered phone number or account number so I can check it.`;
+    return `OpenAI is temporarily unavailable. Please send your registered phone number or account number and I will check the billing details where possible.`;
   }
   if (isCoverageInquiry(lower)) {
-    return `Please send your estate, area or nearest landmark. ${name} will confirm whether we cover that location.`;
+    return `OpenAI is temporarily unavailable. Please send your estate, area or nearest landmark so ${name} can confirm coverage.`;
   }
   if (isGreeting(lower)) {
-    return `Hi, this is ${name}. You can ask about packages, billing, installation, coverage or technical support.`;
+    return `Hi, this is ${name}. OpenAI is temporarily unavailable, but you can still ask about packages, billing, installation, coverage or technical support.`;
   }
-  return `I am checking that. Please send the exact issue, account number, or location so ${name} can assist correctly.`;
+  return `OpenAI is temporarily unavailable. Please try again shortly, or send the exact issue, account number, or location so ${name} can assist.`;
 }
 
 function runAfterReply(label, task) {
@@ -694,26 +694,6 @@ router.post('/', async (req, res) => {
     }
 
     const voiceId = (client.voice_id || '').trim() || 'alloy';
-    if (!inboundIsImage && isPackageInquiry(messageText)) {
-      const reply = `Here are our current packages:\n${PLAN_LIST_TEXT}`;
-      await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
-      await persistOutgoing(conversation.id, reply);
-      console.log(`Package list reply sent to ${phoneNumber}.`);
-      return;
-    }
-
-    if (!inboundIsImage && isTechnicalIssue(messageText)) {
-      const reply =
-        `Sorry about that. Please try this:\n` +
-        `1. Restart the router and wait 3 minutes.\n` +
-        `2. Check if the LOS light is red.\n` +
-        `3. Send a clear photo of the router lights.\n\n` +
-        `I will guide you from there.`;
-      await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
-      await persistOutgoing(conversation.id, reply);
-      console.log(`Technical issue reply sent to ${phoneNumber}.`);
-      return;
-    }
 
     if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {
       await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
@@ -779,16 +759,6 @@ router.post('/', async (req, res) => {
         return;
       }
       console.log(`[client ${client.id}] No direct billing reply for ${phoneNumber}.`);
-    }
-
-    if (!inboundIsImage) {
-      const directReply = localDirectReply(client, messageText);
-      if (directReply) {
-        await deliverReply(client, phoneNumber, directReply, replyAsVoice, voiceId);
-        await persistOutgoing(conversation.id, directReply);
-        console.log(`Local direct reply sent to ${phoneNumber}.`);
-        return;
-      }
     }
 
     const historyResult = await db.query(

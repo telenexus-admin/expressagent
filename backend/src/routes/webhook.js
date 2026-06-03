@@ -903,6 +903,7 @@ router.post('/', async (req, res) => {
       console.log(`AI voice reply sent to ${phoneNumber} using mode=${replyMode}.`);
     } else {
       console.log(`[client ${client.id}] Sending AI text reply to ${phoneNumber}.`);
+      console.log(`[client ${client.id}] WhatsApp send config: phone_number_id=${client.meta_phone_number_id || 'missing'}, token_length=${String(client.meta_access_token || '').length}`);
       const sendResult = await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phoneNumber, customerReply);
       const messageId = sendResult?.messages?.[0]?.id || sendResult?.message_id || 'unknown';
       console.log(`[client ${client.id}] WhatsApp text accepted for ${phoneNumber}: message_id=${messageId}`);
@@ -949,7 +950,7 @@ router.post('/', async (req, res) => {
       }
     });
   } catch (err) {
-    console.error('Error processing webhook:', err.message);
+    console.error('Error processing webhook:', formatErr(err));
   }
 });
 

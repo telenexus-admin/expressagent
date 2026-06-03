@@ -8,6 +8,7 @@ const {
   pushConfigured,
   saveSubscription,
 } = require('../services/pushNotifications');
+const { markHumanTakeover, markAiActive } = require('../services/humanTakeoverRecovery');
 
 router.get('/action-status', (_req, res) => {
   res.json({ ok: true });
@@ -72,11 +73,11 @@ router.post('/actions', async (req, res) => {
     );
     if (access.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
 
+    if (payload.targetStatus === 'human_takeover') await markHumanTakeover(payload.conversationId);
+    else await markAiActive(payload.conversationId);
     const result = await db.query(
-      `UPDATE conversations SET status = $1, updated_at = NOW()
-       WHERE id = $2 AND client_id = $3
-       RETURNING id, status`,
-      [payload.targetStatus, payload.conversationId, payload.clientId]
+      `SELECT id, status FROM conversations WHERE id = $1 AND client_id = $2`,
+      [payload.conversationId, payload.clientId]
     );
 
     res.json({ success: true, conversation_id: result.rows[0].id, status: result.rows[0].status });

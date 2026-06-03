@@ -11,6 +11,7 @@ const {
 const { sendClientText, sendClientVoiceNote } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
 const { sendInstallationConfirmedEmail } = require('../services/email');
+const { markHumanTakeover, markAiActive } = require('../services/humanTakeoverRecovery');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -342,10 +343,15 @@ router.patch('/:id/status', async (req, res) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
-    const result = await db.query(
-      `UPDATE conversations SET status = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-      [status, req.params.id]
-    );
+    if (status === 'human_takeover') await markHumanTakeover(req.params.id);
+    else if (status === 'active') await markAiActive(req.params.id);
+    else {
+      await db.query(
+        `UPDATE conversations SET status = $1, human_takeover_at = NULL, updated_at = NOW() WHERE id = $2`,
+        [status, req.params.id]
+      );
+    }
+    const result = await db.query(`SELECT * FROM conversations WHERE id = $1`, [req.params.id]);
     if (status === 'resolved') {
       await db.query(
         `UPDATE escalations SET resolved_at = NOW() WHERE conversation_id = $1 AND resolved_at IS NULL`,

@@ -8,6 +8,7 @@ const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
+const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -288,7 +289,7 @@ router.post('/client/:clientId', async (req, res) => {
     }
 
     if (HUMAN_RE.test(userText)) {
-      await db.query(`UPDATE conversations SET status = 'human_takeover', updated_at = NOW() WHERE id = $1`, [conversation.id]);
+      await markHumanTakeover(conversation.id);
       await db.query(
         `INSERT INTO escalations (conversation_id, client_id, customer_phone, customer_name, trigger_message, support_number, notify_status, notify_error, type)
          VALUES ($1, $2, $3, $4, $5, $6, 'logged', NULL, 'human')`,

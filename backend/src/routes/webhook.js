@@ -18,6 +18,7 @@ const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
+const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -699,7 +700,7 @@ router.post('/', async (req, res) => {
     const voiceId = (client.voice_id || '').trim() || 'alloy';
 
     if (!inboundIsImage && HUMAN_ESCALATION_REGEX.test(normalized)) {
-      await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
+      await markHumanTakeover(conversation.id);
       const nameLine = conversation.customer_name ? `Customer name: ${conversation.customer_name}\n` : '';
       const notice = `Customer support request\n\n${nameLine}Customer number: +${phoneNumber}\nTheir message: "${messageText}"\n\nPlease reach out to them directly.`;
       const { notifyStatus, notifyError } = await notifySupport(client, supportNumber, notice);

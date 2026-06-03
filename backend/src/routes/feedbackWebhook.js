@@ -11,6 +11,7 @@ const {
   createSurveyRequest,
   saveButtonResponse,
 } = require('../services/clientRemarks');
+const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 
 async function findContext(phoneNumberId, phoneNumber) {
   const clients = await db.query(
@@ -89,7 +90,7 @@ router.use(async (req, res, next) => {
       if (!result) return res.status(200).send('EVENT_RECEIVED');
       await saveChatLine(conversation.id, 'user', `[Experience feedback: ${result.choice.label}]`);
       if (result.choice.requiresFollowup) {
-        await db.query(`UPDATE conversations SET status = 'human_takeover' WHERE id = $1`, [conversation.id]);
+        await markHumanTakeover(conversation.id);
         const alert = await alertSupport(client, conversation, message.from);
         await db.query(
           `INSERT INTO escalations

@@ -114,6 +114,8 @@ export default function Agent() {
 
   const fetchSettings = async () => {
     setLoading(true);
+    setStatus(null);
+    setErrorMessage('');
     try {
       const { data } = await api.get(`/settings${settingsQuery}`);
       setAgentName(data.agent_name || '');
@@ -129,6 +131,8 @@ export default function Agent() {
       });
     } catch (err) {
       console.error('Failed to fetch agent settings:', err.message);
+      setStatus('error');
+      setErrorMessage(err.response?.data?.error || 'Failed to load agent configuration.');
     } finally {
       setLoading(false);
     }

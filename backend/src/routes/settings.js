@@ -110,6 +110,23 @@ async function ensureCommunicationColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
 }
 
+async function ensureAgentSettingsColumns() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS system_prompt TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS support_number VARCHAR(50)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS agent_name VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS voice_id VARCHAR(20) DEFAULT 'alloy'`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS welcome_menu_enabled BOOLEAN NOT NULL DEFAULT TRUE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS welcome_menu_config JSONB`);
+}
+
+async function ensureBillingColumns() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_base_url TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_key TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_configured_at TIMESTAMP WITH TIME ZONE`);
+}
+
 async function ensureInstallationFormColumn() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_form_config JSONB NOT NULL DEFAULT '{}'::jsonb`);
 }
@@ -166,6 +183,7 @@ router.get('/', async (req, res) => {
   if (!targetClient) return;
 
   try {
+    await ensureAgentSettingsColumns();
     const result = await db.query(
       `SELECT system_prompt, support_number, agent_name, voice_id, welcome_menu_enabled, welcome_menu_config
        FROM clients WHERE id = $1`,
@@ -194,6 +212,7 @@ router.get('/billing', async (req, res) => {
   if (!targetClient) return;
 
   try {
+    await ensureBillingColumns();
     const result = await db.query(
       `SELECT billing_enabled, billing_provider, billing_api_base_url, billing_api_key, billing_configured_at
        FROM clients WHERE id = $1`,
@@ -327,6 +346,7 @@ router.put('/', async (req, res) => {
   }
 
   try {
+    await ensureAgentSettingsColumns();
     params.push(targetClient);
     await db.query(
       `UPDATE clients SET ${updates.join(', ')} WHERE id = $${params.length}`,
@@ -358,6 +378,7 @@ router.put('/billing', async (req, res) => {
   }
 
   try {
+    await ensureBillingColumns();
     const existing = await db.query(
       `SELECT billing_api_key FROM clients WHERE id = $1`,
       [targetClient]
@@ -483,6 +504,7 @@ router.post('/billing/test', async (req, res) => {
   }
 
   try {
+    await ensureBillingColumns();
     const existing = await db.query(
       `SELECT billing_api_key FROM clients WHERE id = $1`,
       [targetClient]

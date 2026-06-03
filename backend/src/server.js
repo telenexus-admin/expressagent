@@ -31,6 +31,7 @@ const clientEvolutionWebhookRoutes = require('./routes/clientEvolutionWebhook');
 const { startDailyReportScheduler } = require('./services/dailyReports');
 const { startOperatorFollowUpScheduler } = require('./services/evolution');
 const { startHumanTakeoverRecoveryScheduler } = require('./services/humanTakeoverRecovery');
+const { openAIModelSummary } = require('./services/openai');
 
 const app = express();
 
@@ -78,6 +79,7 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`WhatsApp Support backend running on port ${PORT}`);
+  console.log(`OpenAI runtime config: ${JSON.stringify(openAIModelSummary())}`);
   startDailyReportScheduler();
   startOperatorFollowUpScheduler();
   startHumanTakeoverRecoveryScheduler();

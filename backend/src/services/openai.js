@@ -5,10 +5,35 @@ const FormData = require('form-data');
 const { withIspKnowledge } = require('./ispKnowledge');
 
 let client = null;
+let clientKeyFingerprint = null;
+
+function openAIKey() {
+  return process.env.EXPRESS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+}
+
+function keyFingerprint(value = openAIKey()) {
+  const key = String(value || '').trim();
+  if (!key) return { configured: false, length: 0 };
+  return {
+    configured: true,
+    start: key.slice(0, 10),
+    end: key.slice(-6),
+    length: key.length,
+    source: process.env.EXPRESS_OPENAI_API_KEY ? 'EXPRESS_OPENAI_API_KEY' : 'OPENAI_API_KEY',
+  };
+}
+
+function fingerprintString(value = openAIKey()) {
+  const fp = keyFingerprint(value);
+  return fp.configured ? `${fp.start}...${fp.end}:${fp.length}:${fp.source}` : 'missing';
+}
 
 function getClient() {
-  if (!client) {
-    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const apiKey = openAIKey();
+  const fingerprint = fingerprintString(apiKey);
+  if (!client || clientKeyFingerprint !== fingerprint) {
+    client = new OpenAI({ apiKey });
+    clientKeyFingerprint = fingerprint;
   }
   return client;
 }
@@ -28,6 +53,7 @@ function visionModel() {
 
 function openAIModelSummary() {
   return {
+    key: keyFingerprint(),
     chatModel: chatModel(),
     visionModel: visionModel(),
     transcriptionModel: transcriptionModel(),
@@ -50,6 +76,10 @@ function sleep(ms) {
 function isRetryableOpenAIError(err) {
   const status = Number(err?.status || err?.response?.status || 0);
   const message = String(err?.message || '').toLowerCase();
+  const code = String(err?.code || err?.error?.code || err?.response?.data?.error?.code || '').toLowerCase();
+  if (code === 'insufficient_quota' || message.includes('insufficient_quota') || message.includes('exceeded your current quota')) {
+    return false;
+  }
   return status === 408 || status === 409 || status === 429 || status >= 500 || message.includes('connection');
 }
 
@@ -80,7 +110,7 @@ async function transcribeAudioViaHttp(buffer, filename, contentType) {
   const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
     headers: {
       ...form.getHeaders(),
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${openAIKey()}`,
     },
     maxBodyLength: Infinity,
     maxContentLength: Infinity,

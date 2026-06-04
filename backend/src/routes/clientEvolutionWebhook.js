@@ -6,7 +6,7 @@ const { sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudi
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
-const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems } = require('../services/mediaLibrary');
+const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 
@@ -93,6 +93,11 @@ async function loadClient(id, token) {
 
 async function findOrCreateConversation(clientId, phone, name) {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+  const previous = await db.query(
+    `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 LIMIT 1`,
+    [clientId, phone]
+  );
+  const isNewNumber = previous.rows.length === 0;
   const existing = await db.query(
     `SELECT * FROM conversations
      WHERE client_id = $1 AND customer_phone = $2 AND status != 'resolved'
@@ -105,16 +110,16 @@ async function findOrCreateConversation(clientId, phone, name) {
         `UPDATE conversations SET customer_name = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
         [name, existing.rows[0].id]
       );
-      return updated.rows[0];
+      return { conversation: updated.rows[0], isNewNumber: false };
     }
-    return existing.rows[0];
+    return { conversation: existing.rows[0], isNewNumber: false };
   }
   const inserted = await db.query(
     `INSERT INTO conversations (customer_phone, customer_name, status, client_id)
      VALUES ($1, $2, 'active', $3) RETURNING *`,
     [phone, name || null, clientId]
   );
-  return inserted.rows[0];
+  return { conversation: inserted.rows[0], isNewNumber };
 }
 
 async function saveMessage(conversationId, role, content) {
@@ -160,6 +165,19 @@ async function sendMatchedMedia(client, conversationId, phone, text) {
   }
 }
 
+async function sendWelcomeMedia(client, conversationId, phone) {
+  if (!await claimWelcomeMediaRecipient(client.id, phone)) return;
+  for (const item of await welcomeMedia(client.id)) {
+    try {
+      await sendClientMedia(client, phone, item);
+      await saveMessage(conversationId, 'assistant', `[Sent ${item.media_type}: ${item.title}]`);
+      console.log(`[evo client ${client.id}] Sent welcome media "${item.title}" to new number ${phone}.`);
+    } catch (err) {
+      console.error(`[evo client ${client.id}] Welcome media send failed:`, safeError(err));
+    }
+  }
+}
+
 router.post('/client/:clientId', async (req, res) => {
   res.status(200).json({ received: true });
   try {
@@ -174,6 +192,11 @@ router.post('/client/:clientId', async (req, res) => {
     if (!incoming || !incoming.phone) {
       console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed. Shape: ${payloadShape(req.body)}`);
       return;
+    }
+
+    const { conversation, isNewNumber } = await findOrCreateConversation(client.id, incoming.phone, incoming.name);
+    if (isNewNumber) {
+      await sendWelcomeMedia(client, conversation.id, incoming.phone);
     }
 
     let userText = String(incoming.text || '').trim();
@@ -212,7 +235,6 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
 
-    const conversation = await findOrCreateConversation(client.id, incoming.phone, incoming.name);
     const savedUserMessage = await saveMessage(conversation.id, 'user', storedText);
     if (inboundImageBuffer) {
       if (savedUserMessage?.id) {

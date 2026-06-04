@@ -16,7 +16,7 @@ const { sendClientText } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
-const { matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
+const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 
@@ -442,10 +442,12 @@ async function sendWelcomeMenu(client, phoneNumber, conversationId) {
     visibleFooter
   );
   await persistOutgoing(conversationId, `${visibleBody} [${config.rows.map((row) => row.title).join(' | ')}]`);
-  const taggedAttachments = await mediaByTags(client.id, `${body}\n${config.footer || ''}\n${client.system_prompt || ''}`);
-  const attachments = uniqueMediaItems(taggedAttachments, await welcomeMedia(client.id));
-  await deliverMediaItems(client, phoneNumber, attachments, conversationId, 'welcome');
   return true;
+}
+
+async function sendSelectedWelcomeMedia(client, phoneNumber, conversationId) {
+  if (!await claimWelcomeMediaRecipient(client.id, phoneNumber)) return;
+  await deliverMediaItems(client, phoneNumber, await welcomeMedia(client.id), conversationId, 'welcome');
 }
 
 router.get('/', async (req, res) => {
@@ -479,6 +481,11 @@ async function findClientByPhoneNumberId(phoneNumberId) {
 async function findOrCreateConversation(clientId, phoneNumber, profileName) {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
   const cleanName = (profileName || '').trim() || null;
+  const previous = await db.query(
+    `SELECT id FROM conversations WHERE customer_phone = $1 AND client_id = $2 LIMIT 1`,
+    [phoneNumber, clientId]
+  );
+  const isNewNumber = previous.rows.length === 0;
   const existing = await db.query(
     `SELECT * FROM conversations
      WHERE customer_phone = $1 AND client_id = $2 AND status != 'resolved'
@@ -489,16 +496,16 @@ async function findOrCreateConversation(clientId, phoneNumber, profileName) {
     const conv = existing.rows[0];
     if (cleanName && cleanName !== conv.customer_name) {
       const updated = await db.query(`UPDATE conversations SET customer_name = $1 WHERE id = $2 RETURNING *`, [cleanName, conv.id]);
-      return { conversation: updated.rows[0], isNew: false };
+      return { conversation: updated.rows[0], isNew: false, isNewNumber: false };
     }
-    return { conversation: conv, isNew: false };
+    return { conversation: conv, isNew: false, isNewNumber: false };
   }
   const inserted = await db.query(
     `INSERT INTO conversations (customer_phone, customer_name, status, client_id)
      VALUES ($1, $2, 'active', $3) RETURNING *`,
     [phoneNumber, cleanName, clientId]
   );
-  return { conversation: inserted.rows[0], isNew: true };
+  return { conversation: inserted.rows[0], isNew: true, isNewNumber };
 }
 
 async function persistOutgoing(conversationId, content) {
@@ -529,7 +536,10 @@ router.post('/', async (req, res) => {
     const phoneNumber = message.from;
     const profileName = value?.contacts?.[0]?.profile?.name;
     const timestamp = new Date(parseInt(message.timestamp, 10) * 1000);
-    const { conversation, isNew } = await findOrCreateConversation(client.id, phoneNumber, profileName);
+    const { conversation, isNew, isNewNumber } = await findOrCreateConversation(client.id, phoneNumber, profileName);
+    if (isNewNumber) {
+      await sendSelectedWelcomeMedia(client, phoneNumber, conversation.id);
+    }
 
     let messageText;
     let inboundIsVoice = false;

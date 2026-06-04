@@ -136,6 +136,26 @@ async function welcomeMedia(clientId) {
   return result.rows;
 }
 
+async function claimWelcomeMediaRecipient(clientId, customerPhone) {
+  await ensureMediaLibraryTable();
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS welcome_media_deliveries (
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      customer_phone VARCHAR(50) NOT NULL,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      PRIMARY KEY (client_id, customer_phone)
+    )
+  `);
+  const result = await db.query(
+    `INSERT INTO welcome_media_deliveries (client_id, customer_phone)
+     VALUES ($1, $2)
+     ON CONFLICT (client_id, customer_phone) DO NOTHING
+     RETURNING customer_phone`,
+    [clientId, customerPhone]
+  );
+  return result.rows.length > 0;
+}
+
 async function matchingMedia(clientId, text, { limit = 2 } = {}) {
   await ensureMediaLibraryTable();
   const haystack = String(text || '').toLowerCase();
@@ -197,6 +217,7 @@ function uniqueMediaItems(...groups) {
 
 module.exports = {
   defaultTagFor,
+  claimWelcomeMediaRecipient,
   extractMediaTags,
   getMedia,
   ensureMediaLibraryTable,

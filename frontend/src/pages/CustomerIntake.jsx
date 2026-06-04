@@ -21,6 +21,13 @@ const INITIAL_FORM = {
   preferred_time: '',
   notes: '',
   identity_file: null,
+  special_package_type: '',
+  institution_name: '',
+  student_number: '',
+  expected_graduation_year: '',
+  disability_support_category: '',
+  special_document_file: null,
+  special_verification_consent: false,
   consent_accepted: false,
 };
 
@@ -222,6 +229,10 @@ export default function CustomerIntake() {
     if (!form.identity_file) return 'No ID file selected';
     return `${form.identity_file.name} (${Math.ceil(form.identity_file.size / 1024)} KB)`;
   }, [form.identity_file]);
+  const specialFileLabel = useMemo(() => {
+    if (!form.special_document_file) return 'No verification document selected';
+    return `${form.special_document_file.name} (${Math.ceil(form.special_document_file.size / 1024)} KB)`;
+  }, [form.special_document_file]);
 
   const update = (field, value) => {
     setForm((current) => ({ ...current, [field]: value }));
@@ -254,17 +265,31 @@ export default function CustomerIntake() {
       setError('Please upload a clear ID scan, photo or PDF.');
       return;
     }
+    if (form.special_package_type && !form.special_document_file) {
+      setError('Please upload the verification document for the special package application.');
+      return;
+    }
+    if (form.special_package_type && !form.special_verification_consent) {
+      setError('Please accept the special-package verification consent.');
+      return;
+    }
     setSubmitting(true);
     setError('');
     try {
       const preparedFile = formConfig.show_id && form.identity_file ? await prepareIdentityFile(form.identity_file) : null;
       const identityData = preparedFile ? await readFileAsDataUrl(preparedFile) : '';
+      const specialFile = form.special_document_file ? await prepareIdentityFile(form.special_document_file) : null;
+      const specialDocumentData = specialFile ? await readFileAsDataUrl(specialFile) : '';
       const { data } = await api.post(`/public/customer-intake/${clientId}`, {
         ...form,
         identity_file: undefined,
+        special_document_file: undefined,
         identity_data: identityData,
         identity_mime_type: preparedFile?.type || '',
         identity_filename: preparedFile?.name || '',
+        special_document_data: specialDocumentData,
+        special_document_mime_type: specialFile?.type || '',
+        special_document_filename: specialFile?.name || '',
       });
       setSuccess(data);
       window.scrollTo({ top: 0, behavior: 'smooth' });
@@ -370,7 +395,58 @@ export default function CustomerIntake() {
               </div>
             </Section>}
 
-            <Section number={formConfig.show_id ? '3' : '2'} title="Service And Location" description="Give the team enough detail to find the premises without calling repeatedly.">
+            <Section number={formConfig.show_id ? '3' : '2'} title="Special Package Application" description="Students and persons with disabilities can request a supported package. Applications are reviewed privately before approval.">
+              <div className="grid gap-3 sm:grid-cols-3">
+                {[
+                  ['', 'Standard package', 'Continue without special-package verification.'],
+                  ['student', 'Student package', 'For currently enrolled students.'],
+                  ['disability', 'Disability support', 'For applicants requesting an accessibility-supported package.'],
+                ].map(([value, label, helper]) => (
+                  <button key={label} type="button" onClick={() => update('special_package_type', value)} className={`rounded-2xl border p-4 text-left transition ${form.special_package_type === value ? 'border-[#3535FF] bg-[#f3f2ff]' : 'border-slate-200 bg-slate-50'}`}>
+                    <div className="text-sm font-black text-slate-900">{label}</div>
+                    <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">{helper}</div>
+                  </button>
+                ))}
+              </div>
+              {form.special_package_type && (
+                <div className="mt-5 space-y-4 rounded-2xl border border-blue-100 bg-blue-50/60 p-4">
+                  <div className="grid gap-2 sm:grid-cols-3">
+                    {['Submit current evidence', 'Private human review', 'Approval before activation'].map((step, index) => (
+                      <div key={step} className="rounded-xl bg-white p-3 text-xs font-bold text-blue-800">
+                        <span className="mr-2 text-[#3535FF]">{index + 1}.</span>{step}
+                      </div>
+                    ))}
+                  </div>
+                  {form.special_package_type === 'student' ? (
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <Field label="Institution name"><input required value={form.institution_name} onChange={(e) => update('institution_name', e.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#3535FF]" /></Field>
+                      <Field label="Student / admission number"><input required value={form.student_number} onChange={(e) => update('student_number', e.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#3535FF]" /></Field>
+                      <Field label="Expected graduation year"><input inputMode="numeric" value={form.expected_graduation_year} onChange={(e) => update('expected_graduation_year', e.target.value)} placeholder="e.g. 2028" className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#3535FF]" /></Field>
+                    </div>
+                  ) : (
+                    <Field label="Accessibility support category" helper="Choose the broad category only. Do not disclose a diagnosis.">
+                      <select required value={form.disability_support_category} onChange={(e) => update('disability_support_category', e.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-white px-4 text-sm font-bold outline-none focus:border-[#3535FF]">
+                        <option value="">Choose category</option>
+                        <option value="mobility">Mobility support</option>
+                        <option value="visual">Visual accessibility support</option>
+                        <option value="hearing">Hearing accessibility support</option>
+                        <option value="cognitive_or_learning">Cognitive or learning support</option>
+                        <option value="other">Other accessibility support</option>
+                      </select>
+                    </Field>
+                  )}
+                  <Field label={form.special_package_type === 'student' ? 'Current student ID or enrollment letter' : 'Accepted verification document'} helper={specialFileLabel}>
+                    <input required type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" capture="environment" onChange={(e) => update('special_document_file', e.target.files?.[0] || null)} className="block w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-bold file:mr-3 file:rounded-xl file:border-0 file:bg-[#3535FF] file:px-3 file:py-2 file:text-xs file:font-black file:text-white" />
+                  </Field>
+                  <label className="flex gap-3 rounded-2xl bg-white p-4 text-xs font-semibold leading-5 text-slate-600">
+                    <input type="checkbox" checked={form.special_verification_consent} onChange={(e) => update('special_verification_consent', e.target.checked)} className="mt-1 h-4 w-4 accent-[#3535FF]" />
+                    <span>I consent to the provider reviewing this evidence only to determine special-package eligibility. I understand approval is not automatic.</span>
+                  </label>
+                </div>
+              )}
+            </Section>
+
+            <Section number={formConfig.show_id ? '4' : '3'} title="Service And Location" description="Give the team enough detail to find the premises without calling repeatedly.">
               <div className="grid gap-4 sm:grid-cols-2">
                 {formConfig.show_service_type && (
                   <Field label="Service type">
@@ -426,7 +502,7 @@ export default function CustomerIntake() {
               </div>}
             </Section>
 
-            {(formConfig.show_schedule || formConfig.show_notes) && <Section number={formConfig.show_id ? '4' : '3'} title="Scheduling Notes" description="Tell the team when you prefer to be contacted or visited.">
+            {(formConfig.show_schedule || formConfig.show_notes) && <Section number={formConfig.show_id ? '5' : '4'} title="Scheduling Notes" description="Tell the team when you prefer to be contacted or visited.">
               {formConfig.show_schedule && <div className="grid gap-4 sm:grid-cols-2">
                 <Field label="Preferred date">
                   <input type="date" value={form.preferred_date} onChange={(event) => update('preferred_date', event.target.value)} className="h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm font-bold text-slate-800 outline-none focus:border-[#3535FF]" />

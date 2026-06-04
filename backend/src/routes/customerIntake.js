@@ -52,10 +52,20 @@ async function ensureCustomerIntakeTable() {
       identity_mime_type VARCHAR(100),
       identity_filename VARCHAR(255),
       identity_document BYTEA,
+      special_package_type VARCHAR(30),
+      special_package_status VARCHAR(30) NOT NULL DEFAULT 'not_requested',
+      special_document_mime_type VARCHAR(100),
+      special_document_filename VARCHAR(255),
+      special_document BYTEA,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_package_type VARCHAR(30)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_package_status VARCHAR(30) NOT NULL DEFAULT 'not_requested'`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document_mime_type VARCHAR(100)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document_filename VARCHAR(255)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document BYTEA`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_client ON customer_intake_submissions(client_id, created_at DESC)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_phone ON customer_intake_submissions(customer_phone)`);
 }
@@ -147,6 +157,12 @@ router.post('/:clientId', async (req, res) => {
     const idUpload = parseDataUrl(req.body.identity_data);
     const mimeType = text(req.body.identity_mime_type || idUpload.mimeType, 100).toLowerCase();
     const idBuffer = idUpload.buffer;
+    const specialType = ['student', 'disability'].includes(text(req.body.special_package_type, 30))
+      ? text(req.body.special_package_type, 30)
+      : '';
+    const specialUpload = parseDataUrl(req.body.special_document_data);
+    const specialMimeType = text(req.body.special_document_mime_type || specialUpload.mimeType, 100).toLowerCase();
+    const specialBuffer = specialUpload.buffer;
 
     if (!customerName) return res.status(400).json({ error: 'Full name is required' });
     if (!customerPhone || customerPhone.length < 9) return res.status(400).json({ error: 'Valid phone number is required' });
@@ -157,23 +173,59 @@ router.post('/:clientId', async (req, res) => {
     }
     if (idBuffer && idBuffer.length > MAX_ID_BYTES) return res.status(400).json({ error: 'ID file must be 8 MB or smaller' });
     if (idBuffer && !ALLOWED_ID_MIME.has(mimeType)) return res.status(400).json({ error: 'ID file must be JPG, PNG, WEBP, HEIC or PDF' });
+    if (specialType && (!specialBuffer || specialBuffer.length === 0)) {
+      return res.status(400).json({ error: 'Upload a current verification document for the special package application' });
+    }
+    if (specialBuffer && specialBuffer.length > MAX_ID_BYTES) return res.status(400).json({ error: 'Verification document must be 8 MB or smaller' });
+    if (specialBuffer && !ALLOWED_ID_MIME.has(specialMimeType)) return res.status(400).json({ error: 'Verification document must be JPG, PNG, WEBP, HEIC or PDF' });
+    if (specialType === 'student' && (!text(req.body.institution_name, 180) || !text(req.body.student_number, 100))) {
+      return res.status(400).json({ error: 'Institution name and student number are required for student verification' });
+    }
+    if (specialType === 'disability' && !text(req.body.disability_support_category, 120)) {
+      return res.status(400).json({ error: 'Choose the support category required for the disability-support application' });
+    }
 
+    const duplicate = specialType ? await db.query(
+      `SELECT id FROM customer_intake_submissions
+       WHERE client_id = $1 AND customer_phone = $2 AND special_package_type = $3
+       LIMIT 1`,
+      [client.id, customerPhone, specialType]
+    ) : { rows: [] };
     const details = {
       source: 'public_customer_intake',
       user_agent: text(req.headers['user-agent'], 300),
       ip: text(req.ip, 80),
+      special_package: specialType ? {
+        type: specialType,
+        institution_name: text(req.body.institution_name, 180) || null,
+        student_number: text(req.body.student_number, 100) || null,
+        expected_graduation_year: text(req.body.expected_graduation_year, 10) || null,
+        disability_support_category: text(req.body.disability_support_category, 120) || null,
+        verification_consent: req.body.special_verification_consent === true,
+        duplicate_application: duplicate.rows.length > 0,
+        checks: {
+          evidence_uploaded: Boolean(specialBuffer),
+          identity_available: Boolean(idBuffer || text(req.body.id_number, 80)),
+          contact_complete: Boolean(customerPhone && (text(req.body.email, 255) || cleanPhone(req.body.alternate_phone))),
+          location_complete: Boolean(area && (text(req.body.landmark, 300) || optionalNumber(req.body.latitude))),
+        },
+      } : null,
     };
+    if (specialType && req.body.special_verification_consent !== true) {
+      return res.status(400).json({ error: 'Verification consent is required for a special package application' });
+    }
 
     const inserted = await db.query(
       `INSERT INTO customer_intake_submissions
          (client_id, customer_name, customer_phone, alternate_phone, email, id_number, plan_interest,
           service_type, county, area, landmark, building_type, house_description, latitude, longitude,
           preferred_date, preferred_time, notes, consent_accepted, identity_mime_type, identity_filename,
-          identity_document, metadata)
+          identity_document, special_package_type, special_package_status, special_document_mime_type,
+          special_document_filename, special_document, metadata)
        VALUES
          ($1, $2, $3, $4, $5, $6, $7,
           $8, $9, $10, $11, $12, $13, $14, $15,
-          $16, $17, $18, TRUE, $19, $20, $21, $22::jsonb)
+          $16, $17, $18, TRUE, $19, $20, $21, $22, $23, $24, $25, $26, $27::jsonb)
        RETURNING id, created_at`,
       [
         client.id,
@@ -197,6 +249,11 @@ router.post('/:clientId', async (req, res) => {
         formConfig.show_id && idBuffer ? mimeType : null,
         formConfig.show_id && idBuffer ? (text(req.body.identity_filename, 255) || 'identity-document') : null,
         formConfig.show_id ? idBuffer : null,
+        specialType || null,
+        specialType ? 'pending_review' : 'not_requested',
+        specialType && specialBuffer ? specialMimeType : null,
+        specialType && specialBuffer ? (text(req.body.special_document_filename, 255) || 'verification-document') : null,
+        specialType ? specialBuffer : null,
         JSON.stringify(details),
       ]
     );
@@ -208,7 +265,8 @@ router.post('/:clientId', async (req, res) => {
     ].filter(Boolean).join(' | ');
     const summary =
       `Installation intake submitted. Plan: ${text(req.body.plan_interest, 140) || 'Not selected'}. ` +
-      `Location: ${locationSummary || area}. ${formConfig.show_id && idBuffer ? 'ID scan uploaded.' : 'No ID scan requested.'}`;
+      `Location: ${locationSummary || area}. ${formConfig.show_id && idBuffer ? 'ID scan uploaded.' : 'No ID scan requested.'}` +
+      (specialType ? ` Special ${specialType} package application pending verification.` : '');
 
     try {
       await createOrUpdateTicket({
@@ -217,7 +275,7 @@ router.post('/:clientId', async (req, res) => {
         customerName,
         title: 'Installation intake form submitted',
         category: 'installation',
-        priority: 'normal',
+        priority: specialType ? 'high' : 'normal',
         intent: 'new_installation',
         source: 'customer_intake_form',
         summary,
@@ -237,7 +295,9 @@ router.post('/:clientId', async (req, res) => {
     res.status(201).json({
       success: true,
       id: inserted.rows[0].id,
-      message: 'Details received. Our team will review and contact you shortly.',
+      message: specialType
+        ? 'Application received. The verification team will review your evidence and contact you before activating a special package.'
+        : 'Details received. Our team will review and contact you shortly.',
     });
   } catch (err) {
     console.error('POST /public/customer-intake error:', err.message);

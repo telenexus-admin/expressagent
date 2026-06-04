@@ -84,7 +84,7 @@ function Detail({ label, value }) {
   );
 }
 
-function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId }) {
+function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId, onDownloadSpecial, downloadingSpecial, onSpecialStatus }) {
   if (!item) return null;
   const isIntake = item.source_type === 'intake';
   return (
@@ -155,6 +155,39 @@ function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId }
                   </div>
                 </section>
               )}
+              {isIntake && item.special_package_type && (
+                <section className="rounded-[26px] border border-blue-100 bg-blue-50/50 p-4 shadow-sm">
+                  <h3 className="mb-4 text-sm font-black uppercase tracking-wide text-blue-700">Special Package Verification</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Detail label="Application type" value={item.special_package_type === 'student' ? 'Student package' : 'Disability support package'} />
+                    <Detail label="Review status" value={String(item.special_package_status || 'pending_review').replaceAll('_', ' ')} />
+                    {item.special_package_type === 'student' && <Detail label="Institution" value={item.metadata?.special_package?.institution_name} />}
+                    {item.special_package_type === 'student' && <Detail label="Student number" value={item.metadata?.special_package?.student_number} />}
+                    {item.special_package_type === 'student' && <Detail label="Expected graduation" value={item.metadata?.special_package?.expected_graduation_year} />}
+                    {item.special_package_type === 'disability' && <Detail label="Support category" value={item.metadata?.special_package?.disability_support_category} />}
+                    <Detail label="Duplicate application" value={item.metadata?.special_package?.duplicate_application ? 'Review required' : 'No duplicate found'} />
+                    <Detail label="Verification consent" value={item.metadata?.special_package?.verification_consent ? 'Accepted' : 'Missing'} />
+                  </div>
+                  <div className="mt-4 rounded-2xl bg-white p-4">
+                    <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Automated completeness checks</div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {Object.entries(item.metadata?.special_package?.checks || {}).map(([key, passed]) => (
+                        <div key={key} className={`rounded-xl px-3 py-2 text-xs font-black ${passed ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+                          {passed ? 'Ready: ' : 'Review: '}{key.replaceAll('_', ' ')}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    <button type="button" onClick={() => onDownloadSpecial(item)} disabled={!item.has_special_document || downloadingSpecial === item.id} className="rounded-xl bg-slate-950 px-4 py-2.5 text-xs font-black text-white disabled:opacity-50">
+                      {downloadingSpecial === item.id ? 'Opening...' : 'View verification evidence'}
+                    </button>
+                    {[['approved', 'Approve'], ['more_information', 'Request more info'], ['declined', 'Decline']].map(([status, label]) => (
+                      <button key={status} type="button" onClick={() => onSpecialStatus(item, status)} className="rounded-xl border border-blue-200 bg-white px-3 py-2.5 text-xs font-black text-blue-700">{label}</button>
+                    ))}
+                  </div>
+                </section>
+              )}
             </main>
 
             <aside className="space-y-4">
@@ -203,6 +236,7 @@ export default function Installations() {
   const [actionError, setActionError] = useState('');
   const [selected, setSelected] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
+  const [downloadingSpecial, setDownloadingSpecial] = useState(null);
 
   const fetchItems = async (currentFilter) => {
     try {
@@ -261,6 +295,27 @@ export default function Installations() {
       setActionError(err.response?.data?.error || 'Failed to open ID document');
     } finally {
       setDownloadingId(null);
+    }
+  };
+  const downloadSpecial = async (item) => {
+    setDownloadingSpecial(item.id);
+    try {
+      const response = await api.get(`/escalations/installation-intakes/${item.id}/special-document`, { responseType: 'blob' });
+      const url = URL.createObjectURL(response.data);
+      window.open(url, '_blank', 'noopener,noreferrer');
+      setTimeout(() => URL.revokeObjectURL(url), 30000);
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to open verification document');
+    } finally {
+      setDownloadingSpecial(null);
+    }
+  };
+  const updateSpecialStatus = async (item, status) => {
+    try {
+      await api.patch(`/escalations/installation-intakes/${item.id}/special-status`, { status });
+      await fetchItems(filter);
+    } catch (err) {
+      setActionError(err.response?.data?.error || 'Failed to update verification status');
     }
   };
 
@@ -355,6 +410,11 @@ export default function Installations() {
                       ID document uploaded
                     </div>
                   )}
+                  {item.special_package_type && (
+                    <div className="mb-3 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">
+                      {item.special_package_type === 'student' ? 'Student' : 'Disability support'} package: {String(item.special_package_status || 'pending_review').replaceAll('_', ' ')}
+                    </div>
+                  )}
 
                   {(item.notify_error || item.request_email_error || item.confirmation_email_error) && (
                     <div className="mb-3 rounded-xl border border-red-100 bg-red-50 p-2.5">
@@ -386,6 +446,9 @@ export default function Installations() {
         onClose={() => setSelected(null)}
         onDownloadId={downloadIdentity}
         downloadingId={downloadingId}
+        onDownloadSpecial={downloadSpecial}
+        downloadingSpecial={downloadingSpecial}
+        onSpecialStatus={updateSpecialStatus}
       />
     </div>
   );

@@ -58,10 +58,20 @@ async function ensureCustomerIntakeTable() {
       identity_mime_type VARCHAR(100),
       identity_filename VARCHAR(255),
       identity_document BYTEA,
+      special_package_type VARCHAR(30),
+      special_package_status VARCHAR(30) NOT NULL DEFAULT 'not_requested',
+      special_document_mime_type VARCHAR(100),
+      special_document_filename VARCHAR(255),
+      special_document BYTEA,
       metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_package_type VARCHAR(30)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_package_status VARCHAR(30) NOT NULL DEFAULT 'not_requested'`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document_mime_type VARCHAR(100)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document_filename VARCHAR(255)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document BYTEA`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_client ON customer_intake_submissions(client_id, created_at DESC)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_phone ON customer_intake_submissions(customer_phone)`);
 }
@@ -158,6 +168,8 @@ router.get('/installation-intakes', async (req, res) => {
          i.preferred_date, i.preferred_time, i.notes, i.consent_accepted,
          i.identity_mime_type, i.identity_filename,
          (i.identity_document IS NOT NULL) AS has_identity_document,
+         i.special_package_type, i.special_package_status, i.special_document_mime_type,
+         i.special_document_filename, (i.special_document IS NOT NULL) AS has_special_document,
          i.metadata, i.created_at,
          t.id AS ticket_id, t.status AS ticket_status, t.priority AS ticket_priority
        FROM customer_intake_submissions i
@@ -179,6 +191,57 @@ router.get('/installation-intakes', async (req, res) => {
   } catch (err) {
     console.error('GET /escalations/installation-intakes error:', err.message);
     res.status(500).json({ error: 'Failed to load installation intake details' });
+  }
+});
+
+router.get('/installation-intakes/:id/special-document', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const params = [req.params.id];
+    let where = 'id = $1';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `SELECT special_document, special_document_mime_type, special_document_filename
+       FROM customer_intake_submissions WHERE ${where} LIMIT 1`,
+      params
+    );
+    const row = result.rows[0];
+    if (!row?.special_document) return res.status(404).json({ error: 'Verification document not found' });
+    res.setHeader('Content-Type', row.special_document_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${String(row.special_document_filename || 'verification-document').replace(/"/g, '')}"`);
+    res.send(row.special_document);
+  } catch (err) {
+    console.error('GET special verification document error:', err.message);
+    res.status(500).json({ error: 'Failed to load verification document' });
+  }
+});
+
+router.patch('/installation-intakes/:id/special-status', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const status = String(req.body.status || '');
+    if (!['pending_review', 'approved', 'more_information', 'declined'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid verification status' });
+    }
+    const params = [status, req.params.id];
+    let where = 'id = $2 AND special_package_type IS NOT NULL';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `UPDATE customer_intake_submissions SET special_package_status = $1 WHERE ${where}
+       RETURNING id, special_package_type, special_package_status`,
+      params
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Special package application not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PATCH special package status error:', err.message);
+    res.status(500).json({ error: 'Failed to update verification status' });
   }
 });
 

@@ -1,9 +1,11 @@
 const express = require('express');
+const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
+const { ensurePayHeroSchema, testPayHeroConnection } = require('../services/payhero');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -100,6 +102,15 @@ function safeCommunicationConfig(row) {
     sender_id: row.sms_sender_id || '',
     has_api_key: Boolean(row.sms_api_key),
     configured_at: row.sms_configured_at || null,
+  };
+}
+
+function safePayHeroConfig(row) {
+  return {
+    enabled: row.payhero_enabled === true,
+    channel_id: row.payhero_channel_id || '',
+    provider: row.payhero_provider || 'm-pesa',
+    has_basic_auth: Boolean(row.payhero_basic_auth),
   };
 }
 
@@ -246,6 +257,23 @@ router.get('/communication', async (req, res) => {
     res.json(safeCommunicationConfig(result.rows[0]));
   } catch (err) {
     console.error('GET /settings/communication error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/payhero', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+  try {
+    await ensurePayHeroSchema();
+    const result = await db.query(
+      `SELECT payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
+    res.json(safePayHeroConfig(result.rows[0]));
+  } catch (err) {
+    console.error('GET /settings/payhero error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -458,6 +486,51 @@ router.put('/communication', async (req, res) => {
   } catch (err) {
     console.error('PUT /settings/communication error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.put('/payhero', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+  const enabled = req.body.enabled === true;
+  const channelId = Number.parseInt(req.body.channel_id, 10);
+  const provider = String(req.body.provider || 'm-pesa').trim();
+  const basicAuth = String(req.body.basic_auth || '').trim();
+  if (enabled && (!Number.isInteger(channelId) || channelId <= 0)) return res.status(400).json({ error: 'A valid PayHero channel ID is required' });
+  try {
+    await ensurePayHeroSchema();
+    const existing = await db.query(`SELECT payhero_basic_auth, payhero_callback_secret FROM clients WHERE id = $1`, [targetClient]);
+    if (!existing.rows[0]) return res.status(404).json({ error: 'Client not found' });
+    if (enabled && !basicAuth && !existing.rows[0].payhero_basic_auth) return res.status(400).json({ error: 'PayHero Basic Auth token is required' });
+    const callbackSecret = existing.rows[0].payhero_callback_secret || crypto.randomBytes(32).toString('hex');
+    const result = await db.query(
+      `UPDATE clients SET payhero_enabled = $1, payhero_channel_id = $2, payhero_provider = $3,
+         payhero_basic_auth = COALESCE(NULLIF($4, ''), payhero_basic_auth), payhero_callback_secret = $5
+       WHERE id = $6
+       RETURNING payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth`,
+      [enabled, Number.isInteger(channelId) ? channelId : null, provider, basicAuth, callbackSecret, targetClient]
+    );
+    res.json({ success: true, ...safePayHeroConfig(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /settings/payhero error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.post('/payhero/test', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+  try {
+    await ensurePayHeroSchema();
+    const existing = await db.query(`SELECT payhero_basic_auth FROM clients WHERE id = $1`, [targetClient]);
+    const basicAuth = String(req.body.basic_auth || '').trim() || existing.rows[0]?.payhero_basic_auth || '';
+    if (!basicAuth) return res.status(400).json({ error: 'PayHero Basic Auth token is required' });
+    const result = await testPayHeroConnection(basicAuth, req.body.channel_id);
+    res.json({ success: true, wallets: Array.isArray(result) ? result.length : undefined });
+  } catch (err) {
+    const message = err.response?.data?.message || err.response?.data?.error || err.message;
+    console.error('POST /settings/payhero/test error:', message);
+    res.status(400).json({ error: String(message || 'PayHero connection failed') });
   }
 });
 

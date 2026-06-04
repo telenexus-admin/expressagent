@@ -1,0 +1,178 @@
+const crypto = require('crypto');
+const axios = require('axios');
+const db = require('../db');
+
+const PAYHERO_URL = 'https://backend.payhero.co.ke/api/v2';
+const EXPLICIT_PAYMENT_RE = /(?:^\s*(?:pay|prompt|lipa|renew|recharge)\b|\b(?:send|give|initiate|start|request|need|want|make|please)\b.{0,45}\b(?:stk|mpesa|m-pesa|prompt|pay|payment|lipa|renew|recharge)\b|\b(?:stk|mpesa|m-pesa)\s+prompt\b)/i;
+let schemaPromise;
+
+async function ensurePayHeroSchema() {
+  if (!schemaPromise) {
+    schemaPromise = (async () => {
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_basic_auth TEXT`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_channel_id INTEGER`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_provider VARCHAR(30) NOT NULL DEFAULT 'm-pesa'`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_callback_secret VARCHAR(96)`);
+      await db.query(`
+        CREATE TABLE IF NOT EXISTS payhero_payment_requests (
+          id SERIAL PRIMARY KEY,
+          client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+          conversation_id INTEGER REFERENCES conversations(id) ON DELETE SET NULL,
+          customer_phone VARCHAR(80) NOT NULL,
+          customer_name VARCHAR(255),
+          amount INTEGER NOT NULL,
+          external_reference VARCHAR(120) NOT NULL UNIQUE,
+          payhero_reference VARCHAR(120),
+          checkout_request_id VARCHAR(180),
+          status VARCHAR(40) NOT NULL DEFAULT 'initiated',
+          result_description TEXT,
+          mpesa_receipt_number VARCHAR(100),
+          raw_response JSONB NOT NULL DEFAULT '{}'::jsonb,
+          created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+          updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+        )
+      `);
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_payhero_requests_client ON payhero_payment_requests(client_id, created_at DESC)`);
+    })().catch((err) => {
+      schemaPromise = null;
+      throw err;
+    });
+  }
+  return schemaPromise;
+}
+
+function cleanPhone(value) {
+  let phone = String(value || '').replace(/\D/g, '');
+  if (phone.startsWith('0')) phone = `254${phone.slice(1)}`;
+  if (phone.startsWith('7') || phone.startsWith('1')) phone = `254${phone}`;
+  return phone;
+}
+
+function authHeader(value) {
+  const token = String(value || '').trim();
+  return /^basic\s+/i.test(token) ? token : `Basic ${token}`;
+}
+
+function parsePaymentPromptRequest(text, fallbackPhone) {
+  const value = String(text || '');
+  if (!EXPLICIT_PAYMENT_RE.test(value)) return null;
+  const phoneMatch = value.match(/(?:\+?254|0)[17]\d{8}/);
+  const withoutPhone = phoneMatch ? value.replace(phoneMatch[0], ' ') : value;
+  const amountMatch = withoutPhone.match(/\b(?:kes|ksh|kshs)\s*([1-9]\d{1,6})(?:\.00)?\b|\b([1-9]\d{1,6})(?:\.00)?\b(?!\s*(?:mbps|gb|mb|days?|months?|hours?))/i);
+  return {
+    amount: amountMatch ? Number.parseInt(amountMatch[1] || amountMatch[2], 10) : null,
+    phone: cleanPhone(phoneMatch?.[0] || fallbackPhone),
+  };
+}
+
+async function loadPayHeroConfig(clientId) {
+  await ensurePayHeroSchema();
+  const result = await db.query(
+    `SELECT payhero_enabled, payhero_basic_auth, payhero_channel_id, payhero_provider, payhero_callback_secret
+     FROM clients WHERE id = $1`,
+    [clientId]
+  );
+  const row = result.rows[0] || {};
+  return {
+    enabled: row.payhero_enabled === true,
+    basicAuth: String(row.payhero_basic_auth || '').trim(),
+    channelId: Number(row.payhero_channel_id) || null,
+    provider: String(row.payhero_provider || 'm-pesa').trim(),
+    callbackSecret: String(row.payhero_callback_secret || '').trim(),
+  };
+}
+
+function publicBackendUrl() {
+  return String(process.env.PUBLIC_BACKEND_URL || process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
+}
+
+async function initiatePayHeroPayment({ client, conversationId, customerPhone, customerName, amount }) {
+  const config = await loadPayHeroConfig(client.id);
+  if (!config.enabled || !config.basicAuth || !config.channelId) {
+    return { success: false, error: 'M-Pesa prompts are not configured for this provider.' };
+  }
+  const phone = cleanPhone(customerPhone);
+  if (!/^254[17]\d{8}$/.test(phone)) return { success: false, error: 'Please send a valid Safaricom M-Pesa phone number.' };
+  if (!Number.isInteger(amount) || amount < 10 || amount > 500000) {
+    return { success: false, error: 'Please provide an amount between KES 10 and KES 500,000.' };
+  }
+  const externalReference = `NEXA-${client.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+  const base = publicBackendUrl();
+  if (!base || !config.callbackSecret) return { success: false, error: 'Payment callback URL is not configured. Set PUBLIC_BACKEND_URL and save PayHero again.' };
+  const callback = `${base}/api/public/payhero/callback/${client.id}?token=${encodeURIComponent(config.callbackSecret)}`;
+  const payload = {
+    amount,
+    phone_number: phone,
+    channel_id: config.channelId,
+    provider: config.provider,
+    external_reference: externalReference,
+    customer_name: customerName || undefined,
+    callback_url: callback,
+  };
+  await db.query(
+    `INSERT INTO payhero_payment_requests
+       (client_id, conversation_id, customer_phone, customer_name, amount, external_reference)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [client.id, conversationId || null, phone, customerName || null, amount, externalReference]
+  );
+  try {
+    const response = await axios.post(`${PAYHERO_URL}/payments`, payload, {
+      headers: { Authorization: authHeader(config.basicAuth), 'Content-Type': 'application/json', Accept: 'application/json' },
+      timeout: 30000,
+    });
+    const data = response.data || {};
+    await db.query(
+      `UPDATE payhero_payment_requests
+       SET payhero_reference = $1, checkout_request_id = $2, status = $3, raw_response = $4::jsonb, updated_at = NOW()
+       WHERE external_reference = $5`,
+      [data.reference || null, data.CheckoutRequestID || null, String(data.status || 'queued').toLowerCase(), JSON.stringify(data), externalReference]
+    );
+    return { success: true, externalReference, status: data.status || 'QUEUED', manualInstructions: data.manual_instructions || null };
+  } catch (err) {
+    const message = err.response?.data?.message || err.response?.data?.error || err.message || 'PayHero request failed';
+    await db.query(
+      `UPDATE payhero_payment_requests SET status = 'failed', result_description = $1, raw_response = $2::jsonb, updated_at = NOW()
+       WHERE external_reference = $3`,
+      [String(message), JSON.stringify(err.response?.data || {}), externalReference]
+    );
+    return { success: false, error: String(message) };
+  }
+}
+
+async function answerPayHeroPrompt({ client, conversationId, customerPhone, customerName, messageText }) {
+  const config = await loadPayHeroConfig(client.id);
+  if (!config.enabled || !config.basicAuth || !config.channelId) return null;
+  const request = parsePaymentPromptRequest(messageText, customerPhone);
+  if (!request) return null;
+  if (!request.amount) return 'I can send an M-Pesa prompt. Please state the exact amount you want to pay.';
+  const result = await initiatePayHeroPayment({
+    client,
+    conversationId,
+    customerPhone: request.phone,
+    customerName,
+    amount: request.amount,
+  });
+  if (!result.success) return `I could not send the M-Pesa prompt: ${result.error}`;
+  return `M-Pesa prompt sent to +${request.phone} for KES ${request.amount}. Complete it using your M-Pesa PIN.`;
+}
+
+async function testPayHeroConnection(basicAuth, channelId) {
+  const endpoint = Number(channelId) > 0 ? `${PAYHERO_URL}/payment_channels/${Number(channelId)}` : `${PAYHERO_URL}/wallets`;
+  const response = await axios.get(endpoint, {
+    headers: { Authorization: authHeader(basicAuth), Accept: 'application/json' },
+    params: Number(channelId) > 0 ? undefined : { wallet_type: 'service_wallet' },
+    timeout: 20000,
+  });
+  return response.data;
+}
+
+module.exports = {
+  cleanPhone,
+  answerPayHeroPrompt,
+  ensurePayHeroSchema,
+  initiatePayHeroPayment,
+  loadPayHeroConfig,
+  parsePaymentPromptRequest,
+  testPayHeroConnection,
+};

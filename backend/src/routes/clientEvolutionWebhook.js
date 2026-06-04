@@ -9,6 +9,7 @@ const { answerBillingQuestion, buildBillingContext } = require('../services/bill
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
+const { answerPayHeroPrompt } = require('../services/payhero');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -283,6 +284,20 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
+
+    if (!incoming.isImage) {
+      const paymentPromptReply = await answerPayHeroPrompt({
+        client,
+        conversationId: conversation.id,
+        customerPhone: incoming.phone,
+        customerName: conversation.customer_name,
+        messageText: userText,
+      });
+      if (paymentPromptReply) {
+        await reply(client, conversation.id, incoming.phone, paymentPromptReply, false);
+        return;
+      }
+    }
 
     if (!incoming.isImage && INSTALL_RE.test(userText)) {
       const intakeUrl = buildCustomerIntakeUrl(client, { phone: incoming.phone, name: conversation.customer_name });

@@ -19,6 +19,7 @@ const mediaLibraryRoutes = require('./routes/mediaLibrary');
 const helpBotRoutes = require('./routes/helpBot');
 const pushRoutes = require('./routes/pushNotifications');
 const customerIntakeRoutes = require('./routes/customerIntake');
+const payheroRoutes = require('./routes/payhero');
 const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
 const evoSelfOnboardingRoutes = require('./routes/evoSelfOnboarding');
@@ -48,6 +49,7 @@ app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvol
 app.use(express.json({ limit: '12mb' }));
 app.use('/api/public/evo-onboarding', evoSelfOnboardingRoutes);
 app.use('/api/public/customer-intake', customerIntakeRoutes);
+app.use('/api/public/payhero', payheroRoutes);
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
 app.use('/api/admins', adminRoutes);

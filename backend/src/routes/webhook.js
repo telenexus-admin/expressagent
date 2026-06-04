@@ -19,6 +19,7 @@ const { answerBillingQuestion, buildBillingContext } = require('../services/bill
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
+const { answerPayHeroPrompt } = require('../services/payhero');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -703,6 +704,21 @@ router.post('/', async (req, res) => {
       const sentMenu = await sendWelcomeMenu(client, phoneNumber, conversation.id);
       if (sentMenu) {
         console.log(`Welcome menu sent to ${phoneNumber}.`);
+        return;
+      }
+    }
+
+    if (!inboundIsImage) {
+      const paymentPromptReply = await answerPayHeroPrompt({
+        client,
+        conversationId: conversation.id,
+        customerPhone: phoneNumber,
+        customerName: conversation.customer_name,
+        messageText,
+      });
+      if (paymentPromptReply) {
+        await deliverReply(client, phoneNumber, paymentPromptReply, false);
+        await persistOutgoing(conversation.id, paymentPromptReply);
         return;
       }
     }

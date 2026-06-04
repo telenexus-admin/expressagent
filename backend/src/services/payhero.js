@@ -54,6 +54,21 @@ function authHeader(value) {
   return /^basic\s+/i.test(token) ? token : `Basic ${token}`;
 }
 
+function apiErrorMessage(err) {
+  const data = err.response?.data;
+  if (typeof data === 'string' && data.trim()) return data.trim();
+  if (data && typeof data === 'object') {
+    if (typeof data.message === 'string') return data.message;
+    if (typeof data.error === 'string') return data.error;
+    try {
+      return JSON.stringify(data);
+    } catch {
+      return err.message || 'PayHero request failed';
+    }
+  }
+  return err.message || 'PayHero request failed';
+}
+
 function parsePaymentPromptRequest(text, fallbackPhone) {
   const value = String(text || '');
   if (!EXPLICIT_PAYMENT_RE.test(value)) return null;
@@ -104,15 +119,32 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
   const base = publicBackendUrl();
   if (!base || !config.callbackSecret) return { success: false, error: 'Payment callback URL is not configured. Set PUBLIC_BACKEND_URL and save PayHero again.' };
   const callback = `${base}/api/public/payhero/callback/${client.id}?token=${encodeURIComponent(config.callbackSecret)}`;
+  let provider = config.provider;
+  let networkCode;
+  try {
+    const channelResponse = await axios.get(`${PAYHERO_URL}/payment_channels/${config.channelId}`, {
+      headers: { Authorization: authHeader(config.basicAuth), Accept: 'application/json' },
+      timeout: 20000,
+    });
+    const channel = channelResponse.data?.data || channelResponse.data || {};
+    if (String(channel.channel_type || '').toLowerCase() === 'wallet') {
+      provider = 'sasapay';
+      networkCode = '63902';
+    }
+  } catch (err) {
+    console.warn(`[client ${client.id}] Could not inspect PayHero channel ${config.channelId}; using saved provider ${provider}: ${apiErrorMessage(err)}`);
+  }
   const payload = {
     amount,
     phone_number: phone,
     channel_id: config.channelId,
-    provider: config.provider,
+    provider,
+    ...(networkCode ? { network_code: networkCode } : {}),
     external_reference: externalReference,
     customer_name: customerName || undefined,
     callback_url: callback,
   };
+  console.log(`[client ${client.id}] Sending PayHero prompt: channel_id=${config.channelId}, provider=${provider}, network_code=${networkCode || 'none'}, phone=+${phone}, amount=${amount}.`);
   await db.query(
     `INSERT INTO payhero_payment_requests
        (client_id, conversation_id, customer_phone, customer_name, amount, external_reference)
@@ -134,13 +166,13 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
     console.log(`[client ${client.id}] PayHero prompt accepted for +${phone}: amount=${amount}, reference=${externalReference}.`);
     return { success: true, externalReference, status: data.status || 'QUEUED', manualInstructions: data.manual_instructions || null };
   } catch (err) {
-    const message = err.response?.data?.message || err.response?.data?.error || err.message || 'PayHero request failed';
+    const message = apiErrorMessage(err);
     await db.query(
       `UPDATE payhero_payment_requests SET status = 'failed', result_description = $1, raw_response = $2::jsonb, updated_at = NOW()
        WHERE external_reference = $3`,
       [String(message), JSON.stringify(err.response?.data || {}), externalReference]
     );
-    console.error(`[client ${client.id}] PayHero prompt failed for +${phone}:`, err.response?.data || err.message);
+    console.error(`[client ${client.id}] PayHero prompt failed for +${phone}: ${message}`);
     return { success: false, error: String(message) };
   }
 }

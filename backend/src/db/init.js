@@ -96,6 +96,7 @@ const schema = `
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS disclosure_sent_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS customer_name VARCHAR(255);
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS installation_state VARCHAR(20);
+  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS payhero_state JSONB;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analysis TEXT;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analyzed_at TIMESTAMP WITH TIME ZONE;

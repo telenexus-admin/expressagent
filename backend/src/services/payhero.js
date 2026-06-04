@@ -1,6 +1,7 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../db');
+const { lookupPaymentAccount } = require('./billing');
 
 const PAYHERO_URL = 'https://backend.payhero.co.ke/api/v2';
 const EXPLICIT_PAYMENT_RE = /(?:^\s*(?:pay|prompt|lipa|renew|recharge)\b|\b(?:send|give|initiate|start|request|need|want|make|please)\b.{0,45}\b(?:stk|mpesa|m-pesa|prompt|pay|payment|lipa|renew|recharge)\b|\b(?:stk|mpesa|m-pesa)\s+prompt\b)/i;
@@ -14,6 +15,7 @@ async function ensurePayHeroSchema() {
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_channel_id INTEGER`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_provider VARCHAR(30) NOT NULL DEFAULT 'm-pesa'`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_callback_secret VARCHAR(96)`);
+      await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS payhero_state JSONB`);
       await db.query(`
         CREATE TABLE IF NOT EXISTS payhero_payment_requests (
           id SERIAL PRIMARY KEY,
@@ -79,6 +81,70 @@ function parsePaymentPromptRequest(text, fallbackPhone) {
     amount: amountMatch ? Number.parseInt(amountMatch[1] || amountMatch[2], 10) : null,
     phone: cleanPhone(phoneMatch?.[0] || fallbackPhone),
   };
+}
+
+function isPaymentStart(text) {
+  return /\b(?:i\s+(?:want|need|would like)\s+to\s+pay|can\s+i\s+pay|how\s+(?:can|do)\s+i\s+pay|pay\s+my\s+(?:bill|account|internet|package)|renew\s+my\s+(?:internet|package|plan)|make\s+(?:a\s+)?payment)\b/i.test(String(text || ''));
+}
+
+function selectedCurrentNumber(text) {
+  return /\b(?:this|current|same|my|whatsapp)\s*(?:number|phone)?\b|\b(?:yes|yeah|yep|okay|ok)\b/i.test(String(text || '').trim());
+}
+
+function selectedAnotherNumber(text) {
+  return /\b(?:another|other|different)\s*(?:number|phone)?\b/i.test(String(text || '').trim());
+}
+
+function confirmedPayment(text) {
+  return /^(?:yes|confirm|proceed|continue|send|okay|ok|do it|pay)$/i.test(String(text || '').trim());
+}
+
+function cancelledPayment(text) {
+  return /^(?:no|cancel|stop|never mind|nevermind)$/i.test(String(text || '').trim());
+}
+
+async function setPaymentState(conversationId, state) {
+  await ensurePayHeroSchema();
+  await db.query(`UPDATE conversations SET payhero_state = $1::jsonb, updated_at = NOW() WHERE id = $2`, [
+    state ? JSON.stringify(state) : null,
+    conversationId,
+  ]);
+}
+
+async function getPaymentState(conversationId) {
+  await ensurePayHeroSchema();
+  const result = await db.query(`SELECT payhero_state FROM conversations WHERE id = $1`, [conversationId]);
+  const state = result.rows[0]?.payhero_state || null;
+  if (state?.startedAt && Date.now() - new Date(state.startedAt).getTime() > 15 * 60 * 1000) {
+    await setPaymentState(conversationId, null);
+    return null;
+  }
+  return state;
+}
+
+function formatMoney(amount) {
+  return Number(amount).toLocaleString('en-KE');
+}
+
+async function prepareAccountPayment({ client, conversationId, phone }) {
+  const lookup = await lookupPaymentAccount({ clientId: client.id, phone });
+  if (!lookup.success) {
+    if (lookup.reason === 'not_found') return 'I could not find an internet account linked to that number. Please send the registered account phone number.';
+    if (lookup.reason === 'price_missing') return `I found the account${lookup.account?.plan ? ` on ${lookup.account.plan}` : ''}, but its package price is not available. Please contact support before paying.`;
+    if (lookup.reason === 'not_configured') return 'I cannot check the package amount because the billing system has not been connected.';
+    return 'I could not check that account right now. Please try again shortly.';
+  }
+
+  await setPaymentState(conversationId, {
+    step: 'confirm',
+    startedAt: new Date().toISOString(),
+    phone: lookup.phone,
+    amount: lookup.amount,
+    plan: lookup.account.plan,
+    accountName: lookup.account.fullname || lookup.account.username || null,
+  });
+  const name = lookup.account.fullname || lookup.account.username;
+  return `${name ? `${name}, your` : 'Your'} package is ${lookup.account.plan} at KES ${formatMoney(lookup.amount)}. Should I send the M-Pesa prompt to +${lookup.phone}? Reply yes to confirm or no to cancel.`;
 }
 
 async function loadPayHeroConfig(clientId) {
@@ -178,6 +244,52 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
 }
 
 async function answerPayHeroPrompt({ client, conversationId, customerPhone, customerName, messageText }) {
+  const state = await getPaymentState(conversationId);
+  if (state) {
+    if (cancelledPayment(messageText)) {
+      await setPaymentState(conversationId, null);
+      return 'Okay, I have cancelled the payment request.';
+    }
+    if (state.step === 'choose_phone') {
+      if (selectedAnotherNumber(messageText)) {
+        await setPaymentState(conversationId, { step: 'enter_phone', startedAt: new Date().toISOString() });
+        return 'Please send the phone number linked to the internet account you want to pay for.';
+      }
+      const suppliedPhone = String(messageText || '').match(/(?:\+?254|0)[17]\d{8}/)?.[0];
+      if (selectedCurrentNumber(messageText) || suppliedPhone) {
+        return prepareAccountPayment({ client, conversationId, phone: suppliedPhone || customerPhone });
+      }
+      return `Would you like to pay for the account linked to this WhatsApp number (+${cleanPhone(customerPhone)}) or another number? Reply "this number" or "another number".`;
+    }
+    if (state.step === 'enter_phone') {
+      const suppliedPhone = String(messageText || '').match(/(?:\+?254|0)[17]\d{8}/)?.[0];
+      if (!suppliedPhone) return 'Please send a valid Kenyan phone number, for example 0712345678.';
+      return prepareAccountPayment({ client, conversationId, phone: suppliedPhone });
+    }
+    if (state.step === 'confirm') {
+      if (!confirmedPayment(messageText)) return `Please reply yes to send the KES ${formatMoney(state.amount)} prompt, or no to cancel.`;
+      await setPaymentState(conversationId, null);
+      const result = await initiatePayHeroPayment({
+        client,
+        conversationId,
+        customerPhone: state.phone,
+        customerName: state.accountName || customerName,
+        amount: Number(state.amount),
+      });
+      if (!result.success) return `I could not send the M-Pesa prompt: ${result.error}`;
+      return `M-Pesa prompt sent to +${state.phone} for KES ${formatMoney(state.amount)}. Complete it using your M-Pesa PIN.`;
+    }
+  }
+
+  if (isPaymentStart(messageText)) {
+    const config = await loadPayHeroConfig(client.id);
+    if (!config.enabled || !config.basicAuth || !config.channelId) {
+      return 'I cannot send an M-Pesa prompt yet because payments have not been enabled by the administrator.';
+    }
+    await setPaymentState(conversationId, { step: 'choose_phone', startedAt: new Date().toISOString() });
+    return `Would you like to pay for the account linked to this WhatsApp number (+${cleanPhone(customerPhone)}) or another number? Reply "this number" or "another number".`;
+  }
+
   const request = parsePaymentPromptRequest(messageText, customerPhone);
   if (!request) return null;
   const config = await loadPayHeroConfig(client.id);
@@ -187,16 +299,8 @@ async function answerPayHeroPrompt({ client, conversationId, customerPhone, cust
   if (!config.enabled || !config.basicAuth || !config.channelId) {
     return 'I cannot send an M-Pesa prompt yet because payments have not been enabled by the administrator.';
   }
-  if (!request.amount) return 'I can send an M-Pesa prompt. Please state the exact amount you want to pay.';
-  const result = await initiatePayHeroPayment({
-    client,
-    conversationId,
-    customerPhone: request.phone,
-    customerName,
-    amount: request.amount,
-  });
-  if (!result.success) return `I could not send the M-Pesa prompt: ${result.error}`;
-  return `M-Pesa prompt sent to +${request.phone} for KES ${request.amount}. Complete it using your M-Pesa PIN.`;
+  await setPaymentState(conversationId, { step: 'choose_phone', startedAt: new Date().toISOString() });
+  return `Before I send a prompt, should I use the account linked to this WhatsApp number (+${cleanPhone(customerPhone)}) or another number? I will confirm its package and exact price first.`;
 }
 
 async function testPayHeroConnection(basicAuth, channelId) {

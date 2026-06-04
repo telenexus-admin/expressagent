@@ -451,6 +451,42 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   return null;
 }
 
+async function lookupPaymentAccount({ clientId, phone }) {
+  const config = await loadClientBillingConfig(clientId);
+  if (!canUseConfig(config)) return { success: false, reason: 'not_configured' };
+
+  const normalizedPhone = compactPhone(phone);
+  if (!normalizedPhone) return { success: false, reason: 'invalid_phone' };
+
+  const status = await get('v1/clients/status', { phone: normalizedPhone }, config);
+  if (!status.success || !status.data) {
+    return {
+      success: false,
+      reason: status.status === 404 ? 'not_found' : 'lookup_failed',
+      error: status.error?.message || null,
+    };
+  }
+
+  const account = status.data;
+  const planName = String(account.plan || '').trim();
+  if (!planName) return { success: false, reason: 'plan_missing', account };
+
+  const plan = await get('v1/plans', { name: planName }, config);
+  const planData = Array.isArray(plan.data?.plans) ? plan.data.plans[0] : plan.data?.plans || plan.data;
+  const amount = Number(planData?.price);
+  if (!plan.success || !Number.isFinite(amount) || amount <= 0) {
+    return { success: false, reason: 'price_missing', account, plan: planData || null };
+  }
+
+  return {
+    success: true,
+    phone: normalizedPhone,
+    amount: Math.round(amount),
+    account,
+    plan: planData,
+  };
+}
+
 async function buildBillingContext({ clientId, customerPhone, messageText }) {
   const config = await loadClientBillingConfig(clientId);
   if (!canUseConfig(config) || !looksLikeBillingQuestion(messageText)) return null;
@@ -515,6 +551,7 @@ module.exports = {
   buildBillingContext,
   canUseBilling,
   loadClientBillingConfig,
+  lookupPaymentAccount,
   looksLikeBillingQuestion,
   testBillingConnection,
 };

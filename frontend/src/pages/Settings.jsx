@@ -263,9 +263,9 @@ export default function Settings() {
       const channel = data.channel;
       setPayheroStatus({
         type: 'success',
-        message: channel
+        message: `${channel
           ? `Connected to PayHero channel ${channel.id}${channel.description ? ` (${channel.description})` : ''}.`
-          : `PayHero connected. ${data.channels || 0} active payment channel(s) found.`,
+          : `PayHero connected. ${data.channels || 0} active payment channel(s) found.`} ${payhero.enabled ? 'Click Save PayHero to apply these settings.' : 'Turn on Enable M-Pesa prompts, then click Save PayHero.'}`,
       });
     } catch (err) {
       setPayheroStatus({ type: 'error', message: err.response?.data?.error || 'PayHero connection test failed.' });

@@ -90,6 +90,9 @@ function publicBackendUrl() {
 async function initiatePayHeroPayment({ client, conversationId, customerPhone, customerName, amount }) {
   const config = await loadPayHeroConfig(client.id);
   if (!config.enabled || !config.basicAuth || !config.channelId) {
+    console.warn(
+      `[client ${client.id}] PayHero prompt unavailable: enabled=${config.enabled}, has_basic_auth=${Boolean(config.basicAuth)}, channel_id=${config.channelId || 'none'}.`
+    );
     return { success: false, error: 'M-Pesa prompts are not configured for this provider.' };
   }
   const phone = cleanPhone(customerPhone);
@@ -128,6 +131,7 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
        WHERE external_reference = $5`,
       [data.reference || null, data.CheckoutRequestID || null, String(data.status || 'queued').toLowerCase(), JSON.stringify(data), externalReference]
     );
+    console.log(`[client ${client.id}] PayHero prompt accepted for +${phone}: amount=${amount}, reference=${externalReference}.`);
     return { success: true, externalReference, status: data.status || 'QUEUED', manualInstructions: data.manual_instructions || null };
   } catch (err) {
     const message = err.response?.data?.message || err.response?.data?.error || err.message || 'PayHero request failed';
@@ -136,15 +140,21 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
        WHERE external_reference = $3`,
       [String(message), JSON.stringify(err.response?.data || {}), externalReference]
     );
+    console.error(`[client ${client.id}] PayHero prompt failed for +${phone}:`, err.response?.data || err.message);
     return { success: false, error: String(message) };
   }
 }
 
 async function answerPayHeroPrompt({ client, conversationId, customerPhone, customerName, messageText }) {
-  const config = await loadPayHeroConfig(client.id);
-  if (!config.enabled || !config.basicAuth || !config.channelId) return null;
   const request = parsePaymentPromptRequest(messageText, customerPhone);
   if (!request) return null;
+  const config = await loadPayHeroConfig(client.id);
+  console.log(
+    `[client ${client.id}] PayHero request detected: amount=${request.amount || 'missing'}, phone=+${request.phone}, enabled=${config.enabled}, has_basic_auth=${Boolean(config.basicAuth)}, channel_id=${config.channelId || 'none'}.`
+  );
+  if (!config.enabled || !config.basicAuth || !config.channelId) {
+    return 'I cannot send an M-Pesa prompt yet because payments have not been enabled by the administrator.';
+  }
   if (!request.amount) return 'I can send an M-Pesa prompt. Please state the exact amount you want to pay.';
   const result = await initiatePayHeroPayment({
     client,

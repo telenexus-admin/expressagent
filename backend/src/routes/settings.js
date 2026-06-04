@@ -526,7 +526,13 @@ router.post('/payhero/test', async (req, res) => {
     const basicAuth = String(req.body.basic_auth || '').trim() || existing.rows[0]?.payhero_basic_auth || '';
     if (!basicAuth) return res.status(400).json({ error: 'PayHero Basic Auth token is required' });
     const result = await testPayHeroConnection(basicAuth, req.body.channel_id);
-    res.json({ success: true, wallets: Array.isArray(result) ? result.length : undefined });
+    res.json({
+      success: true,
+      channels: result.channels.length,
+      channel: result.selectedChannel
+        ? { id: result.selectedChannel.id, description: result.selectedChannel.description, type: result.selectedChannel.channel_type }
+        : null,
+    });
   } catch (err) {
     const message = err.response?.data?.message || err.response?.data?.error || err.message;
     console.error('POST /settings/payhero/test error:', message);

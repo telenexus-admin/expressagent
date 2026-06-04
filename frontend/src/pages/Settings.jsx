@@ -256,11 +256,17 @@ export default function Settings() {
     setPayheroTesting(true);
     setPayheroStatus(null);
     try {
-      await api.post('/settings/payhero/test', {
+      const { data } = await api.post('/settings/payhero/test', {
         basic_auth: payhero.basic_auth,
         channel_id: payhero.channel_id,
       });
-      setPayheroStatus({ type: 'success', message: 'PayHero credentials connected successfully.' });
+      const channel = data.channel;
+      setPayheroStatus({
+        type: 'success',
+        message: channel
+          ? `Connected to PayHero channel ${channel.id}${channel.description ? ` (${channel.description})` : ''}.`
+          : `PayHero connected. ${data.channels || 0} active payment channel(s) found.`,
+      });
     } catch (err) {
       setPayheroStatus({ type: 'error', message: err.response?.data?.error || 'PayHero connection test failed.' });
     } finally {

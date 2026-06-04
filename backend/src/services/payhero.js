@@ -158,13 +158,30 @@ async function answerPayHeroPrompt({ client, conversationId, customerPhone, cust
 }
 
 async function testPayHeroConnection(basicAuth, channelId) {
-  const endpoint = Number(channelId) > 0 ? `${PAYHERO_URL}/payment_channels/${Number(channelId)}` : `${PAYHERO_URL}/wallets`;
-  const response = await axios.get(endpoint, {
+  const response = await axios.get(`${PAYHERO_URL}/payment_channels`, {
     headers: { Authorization: authHeader(basicAuth), Accept: 'application/json' },
-    params: Number(channelId) > 0 ? undefined : { wallet_type: 'service_wallet' },
+    params: { is_active: true },
     timeout: 20000,
   });
-  return response.data;
+  const channels = Array.isArray(response.data)
+    ? response.data
+    : Array.isArray(response.data?.payment_channels)
+      ? response.data.payment_channels
+      : Array.isArray(response.data?.data)
+        ? response.data.data
+        : [];
+  const selectedId = Number(channelId);
+  if (selectedId > 0 && !channels.some((channel) => Number(channel.id) === selectedId)) {
+    const available = channels.map((channel) => channel.id).filter(Boolean);
+    const error = new Error(
+      available.length
+        ? `Channel ID ${selectedId} was not found. Available active channel IDs: ${available.join(', ')}.`
+        : `Channel ID ${selectedId} was not found and this PayHero account has no active payment channels.`
+    );
+    error.status = 404;
+    throw error;
+  }
+  return { channels, selectedChannel: channels.find((channel) => Number(channel.id) === selectedId) || null };
 }
 
 module.exports = {

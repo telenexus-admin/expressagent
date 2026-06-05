@@ -37,19 +37,35 @@ const { openAIModelSummary } = require('./services/openai');
 
 const app = express();
 
+function isAllowedCorsOrigin(origin) {
+  if (!origin) return true;
+  const allowed = [
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://neemainternetsolution.co.ke',
+    'https://www.neemainternetsolution.co.ke',
+    ...String(process.env.SITE_CHAT_ALLOWED_ORIGINS || '')
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean),
+  ];
+  if (allowed.includes(origin)) return true;
+  try {
+    const url = new URL(origin);
+    const host = url.hostname.toLowerCase();
+    return (
+      host === 'localhost' ||
+      host.endsWith('.neemainternetsolution.co.ke') ||
+      (host.includes('neema') && host.endsWith('.ondigitalocean.app'))
+    );
+  } catch {
+    return false;
+  }
+}
+
 app.use(
   cors({
     origin(origin, callback) {
-      const allowed = [
-        process.env.FRONTEND_URL || 'http://localhost:5173',
-        'https://neemainternetsolution.co.ke',
-        'https://www.neemainternetsolution.co.ke',
-        ...String(process.env.SITE_CHAT_ALLOWED_ORIGINS || '')
-          .split(',')
-          .map((item) => item.trim())
-          .filter(Boolean),
-      ];
-      if (!origin || allowed.includes(origin)) return callback(null, true);
+      if (isAllowedCorsOrigin(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));
     },
     credentials: true,

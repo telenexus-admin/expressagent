@@ -36,6 +36,20 @@ function visitorPhone(clientId, sessionId) {
   return `site:${clientId}:${sessionId}`.slice(0, 50);
 }
 
+function fallbackReply(messageText = '') {
+  const text = String(messageText || '').toLowerCase();
+  if (/\b(install|installation|get connected|connect me|new connection)\b/.test(text)) {
+    return 'I can help with installation. Please share your name, phone number and exact location or estate.';
+  }
+  if (/\b(package|packages|price|plan|speed|mbps|cost)\b/.test(text)) {
+    return 'I can help with packages. Please share your location so I can guide you on available plans.';
+  }
+  if (/\b(no internet|not working|down|slow|los|router|wifi|wi-fi)\b/.test(text)) {
+    return 'Sorry about that. Please share your registered phone number and what lights you see on the router.';
+  }
+  return 'I am here to help. Please share your phone number and what you need help with.';
+}
+
 async function loadConversation(clientId, sessionId, visitorName) {
   const phone = visitorPhone(clientId, sessionId);
   const existing = await db.query(
@@ -136,7 +150,13 @@ router.post('/:clientId/message', async (req, res) => {
     if (billingContext) systemPrompt += billingContext;
 
     console.log(`[client ${client.id}] Generating website chat reply for ${syntheticPhone}. OpenAI config: ${JSON.stringify(openAIModelSummary())}`);
-    const reply = await generateAIResponse(systemPrompt, recent.rows);
+    let reply;
+    try {
+      reply = await generateAIResponse(systemPrompt, recent.rows);
+    } catch (err) {
+      console.error(`[client ${client.id}] Website chat AI failed for ${syntheticPhone}:`, err.message);
+      reply = fallbackReply(messageText);
+    }
     await db.query(
       `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
       [conversation.id, reply]

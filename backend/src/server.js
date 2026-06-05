@@ -40,9 +40,11 @@ const app = express();
 function isAllowedCorsOrigin(origin) {
   if (!origin) return true;
   const allowed = [
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    'https://neemainternetsolution.co.ke',
-    'https://www.neemainternetsolution.co.ke',
+        process.env.FRONTEND_URL || 'http://localhost:5173',
+        'https://neemainternet.co.ke',
+        'https://www.neemainternet.co.ke',
+        'https://neemainternetsolution.co.ke',
+        'https://www.neemainternetsolution.co.ke',
     ...String(process.env.SITE_CHAT_ALLOWED_ORIGINS || '')
       .split(',')
       .map((item) => item.trim())
@@ -51,12 +53,14 @@ function isAllowedCorsOrigin(origin) {
   if (allowed.includes(origin)) return true;
   try {
     const url = new URL(origin);
-    const host = url.hostname.toLowerCase();
-    return (
-      host === 'localhost' ||
-      host.endsWith('.neemainternetsolution.co.ke') ||
-      (host.includes('neema') && host.endsWith('.ondigitalocean.app'))
-    );
+      const host = url.hostname.toLowerCase();
+      return (
+        host === 'localhost' ||
+        host === 'neemainternet.co.ke' ||
+        host.endsWith('.neemainternet.co.ke') ||
+        host.endsWith('.neemainternetsolution.co.ke') ||
+        ((host.includes('neema') || host.includes('nis')) && host.endsWith('.ondigitalocean.app'))
+      );
   } catch {
     return false;
   }

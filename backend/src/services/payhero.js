@@ -103,6 +103,16 @@ function selectedCustomAmount(text) {
   return /\b(?:another|other|different|custom)\s*(?:amount)?\b/i.test(String(text || '').trim());
 }
 
+function isPaymentContext(text) {
+  return /\b(pay|payment|paid|prompt|stk|mpesa|m-pesa|lipa|renew|recharge|amount|full|another|other|different|custom|kes|ksh|kshs)\b/i.test(String(text || ''));
+}
+
+function shouldClearPaymentState(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  return !extractPhone(value) && !extractAmount(value) && !isPaymentContext(value);
+}
+
 function extractAmount(text) {
   const value = String(text || '').replace(/(?:\+?254|0)[17]\d{8}/g, ' ');
   const matches = [...value.matchAll(/\b(?:kes|ksh|kshs)?\s*([1-9][\d, ]{0,8})(?:\.00)?\b/gi)];
@@ -325,6 +335,11 @@ async function answerPayHeroPrompt({ client, conversationId, customerPhone, cust
     if (cancelledPayment(messageText)) {
       await setPaymentState(conversationId, null);
       return 'Okay, I have cancelled the payment request.';
+    }
+    if (shouldClearPaymentState(messageText)) {
+      await setPaymentState(conversationId, null);
+      console.log(`[client ${client.id}] Cleared pending PayHero state for conversation ${conversationId}; message was unrelated to payment.`);
+      return null;
     }
     if (state.step === 'enter_phone') {
       const suppliedPhone = String(messageText || '').match(/(?:\+?254|0)[17]\d{8}/)?.[0];

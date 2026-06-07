@@ -56,6 +56,10 @@ function authHeader(value) {
   return /^basic\s+/i.test(token) ? token : `Basic ${token}`;
 }
 
+function getPayHeroBasicAuth(fallback = '') {
+  return String(process.env.PAYHERO_BASIC_AUTH || process.env.PAYHERO_BASIC_AUTH_TOKEN || fallback || '').trim();
+}
+
 function apiErrorMessage(err) {
   const data = err.response?.data;
   if (typeof data === 'string' && data.trim()) return data.trim();
@@ -179,7 +183,7 @@ async function loadPayHeroConfig(clientId) {
   const row = result.rows[0] || {};
   return {
     enabled: row.payhero_enabled === true,
-    basicAuth: String(row.payhero_basic_auth || '').trim(),
+    basicAuth: getPayHeroBasicAuth(row.payhero_basic_auth),
     channelId: Number(row.payhero_channel_id) || null,
     provider: String(row.payhero_provider || 'm-pesa').trim(),
     callbackSecret: String(row.payhero_callback_secret || '').trim(),
@@ -351,5 +355,6 @@ module.exports = {
   initiatePayHeroPayment,
   loadPayHeroConfig,
   parsePaymentPromptRequest,
+  getPayHeroBasicAuth,
   testPayHeroConnection,
 };

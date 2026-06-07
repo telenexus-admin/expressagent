@@ -5,7 +5,7 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
-const { ensurePayHeroSchema, testPayHeroConnection } = require('../services/payhero');
+const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -118,7 +118,7 @@ function safePayHeroConfig(row) {
     enabled: row.payhero_enabled === true,
     channel_id: row.payhero_channel_id || '',
     provider: row.payhero_provider || 'm-pesa',
-    has_basic_auth: Boolean(row.payhero_basic_auth),
+    has_basic_auth: Boolean(getPayHeroBasicAuth(row.payhero_basic_auth)),
   };
 }
 
@@ -505,20 +505,19 @@ router.put('/payhero', async (req, res) => {
   const enabled = req.body.enabled === true;
   const channelId = Number.parseInt(req.body.channel_id, 10);
   const provider = String(req.body.provider || 'm-pesa').trim();
-  const basicAuth = String(req.body.basic_auth || '').trim();
   if (enabled && (!Number.isInteger(channelId) || channelId <= 0)) return res.status(400).json({ error: 'A valid PayHero channel ID is required' });
   try {
     await ensurePayHeroSchema();
     const existing = await db.query(`SELECT payhero_basic_auth, payhero_callback_secret FROM clients WHERE id = $1`, [targetClient]);
     if (!existing.rows[0]) return res.status(404).json({ error: 'Client not found' });
-    if (enabled && !basicAuth && !existing.rows[0].payhero_basic_auth) return res.status(400).json({ error: 'PayHero Basic Auth token is required' });
+    if (enabled && !getPayHeroBasicAuth(existing.rows[0].payhero_basic_auth)) return res.status(400).json({ error: 'PAYHERO_BASIC_AUTH is required before enabling PayHero' });
     const callbackSecret = existing.rows[0].payhero_callback_secret || crypto.randomBytes(32).toString('hex');
     const result = await db.query(
       `UPDATE clients SET payhero_enabled = $1, payhero_channel_id = $2, payhero_provider = $3,
-         payhero_basic_auth = COALESCE(NULLIF($4, ''), payhero_basic_auth), payhero_callback_secret = $5
-       WHERE id = $6
+         payhero_callback_secret = $4
+       WHERE id = $5
        RETURNING payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth`,
-      [enabled, Number.isInteger(channelId) ? channelId : null, provider, basicAuth, callbackSecret, targetClient]
+      [enabled, Number.isInteger(channelId) ? channelId : null, provider, callbackSecret, targetClient]
     );
     res.json({ success: true, ...safePayHeroConfig(result.rows[0]) });
   } catch (err) {
@@ -534,7 +533,7 @@ router.post('/payhero/test', async (req, res) => {
   try {
     await ensurePayHeroSchema();
     const existing = await db.query(`SELECT payhero_basic_auth FROM clients WHERE id = $1`, [targetClient]);
-    const basicAuth = String(req.body.basic_auth || '').trim() || existing.rows[0]?.payhero_basic_auth || '';
+    const basicAuth = getPayHeroBasicAuth(existing.rows[0]?.payhero_basic_auth);
     if (!basicAuth) return res.status(400).json({ error: 'PayHero Basic Auth token is required' });
     const result = await testPayHeroConnection(basicAuth, req.body.channel_id);
     res.json({

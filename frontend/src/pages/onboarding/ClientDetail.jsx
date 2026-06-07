@@ -33,7 +33,6 @@ export default function ClientDetail() {
     enabled: false,
     channel_id: '',
     provider: 'm-pesa',
-    basic_auth: '',
     has_basic_auth: false,
   });
   const [payheroLoading, setPayheroLoading] = useState(true);
@@ -94,7 +93,7 @@ export default function ClientDetail() {
     setPayheroStatus(null);
     try {
       const { data } = await api.get(`/settings/payhero?clientId=${id}`);
-      setPayhero((current) => ({ ...current, ...data, basic_auth: '' }));
+      setPayhero((current) => ({ ...current, ...data }));
     } catch (err) {
       setPayheroStatus({
         type: 'error',
@@ -117,7 +116,6 @@ export default function ClientDetail() {
     setPayheroStatus(null);
     try {
       const { data } = await api.post(`/settings/payhero/test?clientId=${id}`, {
-        basic_auth: payhero.basic_auth,
         channel_id: payhero.channel_id,
       });
       const channel = data.channel;
@@ -142,7 +140,7 @@ export default function ClientDetail() {
     setPayheroStatus(null);
     try {
       const { data } = await api.put(`/settings/payhero?clientId=${id}`, payhero);
-      setPayhero((current) => ({ ...current, ...data, basic_auth: '' }));
+      setPayhero((current) => ({ ...current, ...data }));
       setPayheroStatus({ type: 'success', message: 'PayHero payment prompting saved for this client.' });
     } catch (err) {
       setPayheroStatus({
@@ -497,15 +495,11 @@ export default function ClientDetail() {
                 </div>
               </div>
 
-              <Field
-                label="Basic Auth Token"
-                value={payhero.basic_auth}
-                onChange={(v) => updatePayhero('basic_auth', v)}
-                placeholder={payhero.has_basic_auth ? 'Saved. Leave blank to keep current token.' : 'Paste PayHero Basic Auth token'}
-                type="password"
-                mono
-                hint={payhero.has_basic_auth ? 'A token is already saved for this client.' : 'Paste the Basic Auth token shown by PayHero.'}
-              />
+              <div className={`rounded-2xl border px-4 py-3 text-xs font-semibold leading-5 ${payhero.has_basic_auth ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-amber-100 bg-amber-50 text-amber-800'}`}>
+                {payhero.has_basic_auth
+                  ? 'Shared PayHero Basic Auth is configured on the server. You only need to choose this client channel.'
+                  : 'Shared PayHero Basic Auth is missing on the server. Add PAYHERO_BASIC_AUTH in the backend .env before enabling prompts.'}
+              </div>
 
               <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold leading-5 text-blue-800">
                 Customer flow: the agent checks the registered billing account, confirms full package amount or custom amount, then sends the STK prompt through this channel.
@@ -515,7 +509,7 @@ export default function ClientDetail() {
                 <button
                   type="button"
                   onClick={testPayhero}
-                  disabled={payheroTesting || (!payhero.basic_auth && !payhero.has_basic_auth)}
+                  disabled={payheroTesting || !payhero.has_basic_auth}
                   className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 disabled:opacity-50"
                 >
                   {payheroTesting ? 'Testing...' : 'Test PayHero'}

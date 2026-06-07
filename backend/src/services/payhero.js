@@ -110,10 +110,15 @@ function isPaymentContext(text) {
 function shouldClearPaymentState(text) {
   const value = String(text || '').trim();
   if (!value) return false;
-  return !extractPhone(value) && !extractAmount(value) && !isPaymentContext(value);
+  return !extractPhone(value) && !extractAmountCandidate(value) && !isPaymentContext(value);
 }
 
 function extractAmount(text) {
+  const candidate = extractAmountCandidate(text);
+  return candidate && candidate >= 10 && candidate <= 500000 ? candidate : null;
+}
+
+function extractAmountCandidate(text) {
   const value = String(text || '').replace(/(?:\+?254|0)[17]\d{8}/g, ' ');
   const matches = [...value.matchAll(/\b(?:kes|ksh|kshs)?\s*([1-9][\d, ]{0,8})(?:\.00)?\b/gi)];
   for (const match of matches) {
@@ -121,7 +126,7 @@ function extractAmount(text) {
     const after = value.slice(match.index + match[0].length, match.index + match[0].length + 12);
     if (/^\s*(?:mbps|gb|mb|days?|months?|hours?)/i.test(after)) continue;
     const amount = Number.parseInt(String(raw).replace(/[,\s]/g, ''), 10);
-    if (Number.isInteger(amount) && amount >= 10 && amount <= 500000) return amount;
+    if (Number.isInteger(amount)) return amount;
   }
   return null;
 }
@@ -174,6 +179,7 @@ async function prepareManualPayment({ client, conversationId, customerName, mess
   const phone = extractPhone(messageText) || previousState?.phone || null;
   const savedAmount = Number.parseInt(previousState?.amount, 10);
   const amount = extractAmount(messageText) || (Number.isInteger(savedAmount) ? savedAmount : null);
+  const amountCandidate = extractAmountCandidate(messageText);
 
   console.log(
     `[client ${client.id}] Manual PayHero flow: text="${String(messageText || '').slice(0, 80)}", ` +
@@ -188,6 +194,15 @@ async function prepareManualPayment({ client, conversationId, customerName, mess
       state: { phone },
       amount,
     });
+  }
+  if (phone && amountCandidate != null && !amount) {
+    await setPaymentState(conversationId, {
+      step: 'manual_payment_details',
+      startedAt: new Date().toISOString(),
+      phone,
+      amount: null,
+    });
+    return 'Please enter an amount between KES 10 and KES 500,000.';
   }
 
   await setPaymentState(conversationId, {

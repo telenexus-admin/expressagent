@@ -104,8 +104,16 @@ function selectedCustomAmount(text) {
 }
 
 function extractAmount(text) {
-  const match = String(text || '').match(/\b(?:kes|ksh|kshs)?\s*([1-9]\d{1,6})(?:\.00)?\b/i);
-  return match ? Number.parseInt(match[1], 10) : null;
+  const value = String(text || '').replace(/(?:\+?254|0)[17]\d{8}/g, ' ');
+  const matches = [...value.matchAll(/\b(?:kes|ksh|kshs)?\s*([1-9][\d, ]{0,8})(?:\.00)?\b/gi)];
+  for (const match of matches) {
+    const raw = match[1];
+    const after = value.slice(match.index + match[0].length, match.index + match[0].length + 12);
+    if (/^\s*(?:mbps|gb|mb|days?|months?|hours?)/i.test(after)) continue;
+    const amount = Number.parseInt(String(raw).replace(/[,\s]/g, ''), 10);
+    if (Number.isInteger(amount) && amount >= 10 && amount <= 500000) return amount;
+  }
+  return null;
 }
 
 function extractPhone(text) {
@@ -154,7 +162,13 @@ async function sendStoredPaymentPrompt({ client, conversationId, customerName, s
 
 async function prepareManualPayment({ client, conversationId, customerName, messageText = '', previousState = null }) {
   const phone = extractPhone(messageText) || previousState?.phone || null;
-  const amount = extractAmount(messageText) || (Number.isInteger(previousState?.amount) ? previousState.amount : null);
+  const savedAmount = Number.parseInt(previousState?.amount, 10);
+  const amount = extractAmount(messageText) || (Number.isInteger(savedAmount) ? savedAmount : null);
+
+  console.log(
+    `[client ${client.id}] Manual PayHero flow: text="${String(messageText || '').slice(0, 80)}", ` +
+      `phone=${phone || 'missing'}, amount=${amount || 'missing'}, previous_step=${previousState?.step || 'none'}.`
+  );
 
   if (phone && amount) {
     return sendStoredPaymentPrompt({

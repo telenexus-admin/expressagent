@@ -550,6 +550,7 @@ module.exports = {
   answerBillingQuestion,
   buildBillingContext,
   canUseBilling,
+  canUseConfig,
   loadClientBillingConfig,
   lookupPaymentAccount,
   looksLikeBillingQuestion,

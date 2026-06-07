@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../db');
-const { lookupPaymentAccount } = require('./billing');
+const { canUseConfig, loadClientBillingConfig, lookupPaymentAccount } = require('./billing');
 
 const PAYHERO_URL = 'https://backend.payhero.co.ke/api/v2';
 const EXPLICIT_PAYMENT_RE = /(?:^\s*(?:pay|prompt|lipa|renew|recharge)\b|\b(?:send|give|initiate|start|request|need|want|make|please)\b.{0,45}\b(?:stk|mpesa|m-pesa|prompt|pay|payment|lipa|renew|recharge)\b|\b(?:stk|mpesa|m-pesa)\s+prompt\b)/i;
@@ -108,6 +108,11 @@ function extractAmount(text) {
   return match ? Number.parseInt(match[1], 10) : null;
 }
 
+function extractPhone(text) {
+  const match = String(text || '').match(/(?:\+?254|0)[17]\d{8}/);
+  return match ? cleanPhone(match[0]) : null;
+}
+
 async function setPaymentState(conversationId, state) {
   await ensurePayHeroSchema();
   await db.query(`UPDATE conversations SET payhero_state = $1::jsonb, updated_at = NOW() WHERE id = $2`, [
@@ -145,6 +150,37 @@ async function sendStoredPaymentPrompt({ client, conversationId, customerName, s
   });
   if (!result.success) return `I could not send the M-Pesa prompt: ${result.error}`;
   return `M-Pesa prompt sent to +${state.phone} for KES ${formatMoney(amount)}. Complete it using your M-Pesa PIN.`;
+}
+
+async function prepareManualPayment({ client, conversationId, customerName, messageText = '', previousState = null }) {
+  const phone = extractPhone(messageText) || previousState?.phone || null;
+  const amount = extractAmount(messageText) || (Number.isInteger(previousState?.amount) ? previousState.amount : null);
+
+  if (phone && amount) {
+    return sendStoredPaymentPrompt({
+      client,
+      conversationId,
+      customerName,
+      state: { phone },
+      amount,
+    });
+  }
+
+  await setPaymentState(conversationId, {
+    step: 'manual_payment_details',
+    startedAt: new Date().toISOString(),
+    phone,
+    amount,
+  });
+
+  if (!phone && !amount) return 'Please send the M-Pesa number to prompt and the amount. Example: 0712345678 1500.';
+  if (!phone) return `Which M-Pesa number should I prompt for KES ${formatMoney(amount)}?`;
+  return `How much should I prompt +${phone} to pay?`;
+}
+
+async function hasBillingLookup(clientId) {
+  const config = await loadClientBillingConfig(clientId);
+  return canUseConfig(config);
 }
 
 async function prepareAccountPayment({ client, conversationId, phone }) {
@@ -298,6 +334,9 @@ async function answerPayHeroPrompt({ client, conversationId, customerPhone, cust
       if (!amount) return 'Please enter the amount you want to pay, for example 1000.';
       return sendStoredPaymentPrompt({ client, conversationId, customerName, state, amount });
     }
+    if (state.step === 'manual_payment_details') {
+      return prepareManualPayment({ client, conversationId, customerName, messageText, previousState: state });
+    }
     await setPaymentState(conversationId, null);
   }
 
@@ -305,6 +344,9 @@ async function answerPayHeroPrompt({ client, conversationId, customerPhone, cust
     const config = await loadPayHeroConfig(client.id);
     if (!config.enabled || !config.basicAuth || !config.channelId) {
       return 'I cannot send an M-Pesa prompt yet because payments have not been enabled by the administrator.';
+    }
+    if (!(await hasBillingLookup(client.id))) {
+      return prepareManualPayment({ client, conversationId, customerName, messageText });
     }
     return prepareAccountPayment({ client, conversationId, phone: customerPhone });
   }
@@ -317,6 +359,9 @@ async function answerPayHeroPrompt({ client, conversationId, customerPhone, cust
   );
   if (!config.enabled || !config.basicAuth || !config.channelId) {
     return 'I cannot send an M-Pesa prompt yet because payments have not been enabled by the administrator.';
+  }
+  if (!(await hasBillingLookup(client.id))) {
+    return prepareManualPayment({ client, conversationId, customerName, messageText });
   }
   return prepareAccountPayment({ client, conversationId, phone: customerPhone });
 }

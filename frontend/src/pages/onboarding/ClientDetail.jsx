@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 
 const VOICE_OPTIONS = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const MIN_META_ACCESS_TOKEN_LENGTH = 50;
 
 const STATUS_STYLES = {
   active: 'bg-emerald-50 text-emerald-700',
@@ -172,8 +173,14 @@ export default function ClientDetail() {
         opening_message: form.opening_message,
         photo_troubleshooting_enabled: form.photo_troubleshooting_enabled,
       };
-      if (form.meta_access_token && form.meta_access_token.trim()) {
-        payload.meta_access_token = form.meta_access_token.trim();
+      const nextMetaToken = form.meta_access_token.trim();
+      if (nextMetaToken) {
+        if (nextMetaToken.length < MIN_META_ACCESS_TOKEN_LENGTH) {
+          setSaveStatus('error');
+          setSaveError('Meta access token looks too short. Paste the full Meta token, or leave it blank to keep the current one.');
+          return;
+        }
+        payload.meta_access_token = nextMetaToken;
       }
       await api.put(`/clients/${id}`, payload);
       setSaveStatus('success');
@@ -375,6 +382,7 @@ export default function ClientDetail() {
             type="password"
             mono
             hint="The stored token is never displayed. Type a new value to replace it."
+            autoComplete="new-password"
           />
         </Card>
 
@@ -667,7 +675,7 @@ function Card({ title, subtitle, right, children }) {
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', mono = false, hint }) {
+function Field({ label, value, onChange, placeholder, type = 'text', mono = false, hint, autoComplete }) {
   return (
     <div>
       <label className="block text-xs font-semibold text-gray-700 mb-1.5">{label}</label>
@@ -676,6 +684,7 @@ function Field({ label, value, onChange, placeholder, type = 'text', mono = fals
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         className={`w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white ${mono ? 'font-mono text-xs' : ''}`}
       />
       {hint && <p className="text-[11px] text-gray-500 mt-1">{hint}</p>}

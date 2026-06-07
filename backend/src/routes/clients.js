@@ -12,6 +12,7 @@ const { logActivity } = require('../services/audit');
 router.use(authMiddleware, superadminMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const MIN_META_ACCESS_TOKEN_LENGTH = 50;
 const OPERATOR_ACCESS_PERMISSIONS = [
   'statistics',
   'conversations',
@@ -140,7 +141,10 @@ router.post(
     body('business_name').optional().trim(),
     body('contact_email').optional({ checkFalsy: true }).isEmail().withMessage('Valid contact email required'),
     body('meta_phone_number_id').trim().notEmpty().withMessage('Meta phone_number_id is required'),
-    body('meta_access_token').trim().notEmpty().withMessage('Meta access token is required'),
+    body('meta_access_token')
+      .trim()
+      .isLength({ min: MIN_META_ACCESS_TOKEN_LENGTH })
+      .withMessage('Meta access token looks too short. Paste the full token from Meta.'),
     body('meta_business_account_id').optional().trim(),
     body('meta_verify_token').optional().trim(),
     body('support_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Invalid support phone number'),
@@ -256,7 +260,11 @@ router.put(
     body('contact_email').optional({ checkFalsy: true }).isEmail(),
     body('status').optional().isIn(['active', 'suspended']),
     body('meta_phone_number_id').optional().trim().notEmpty(),
-    body('meta_access_token').optional().trim().notEmpty(),
+    body('meta_access_token')
+      .optional()
+      .trim()
+      .isLength({ min: MIN_META_ACCESS_TOKEN_LENGTH })
+      .withMessage('Meta access token looks too short. Paste the full token from Meta.'),
     body('meta_business_account_id').optional().trim(),
     body('meta_verify_token').optional().trim().notEmpty(),
     body('support_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/),

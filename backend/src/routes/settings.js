@@ -74,6 +74,14 @@ function resolveTargetClient(req, res) {
   return req.scope.clientId;
 }
 
+function requireOperator(req, res) {
+  if (!req.scope.isSuperadmin) {
+    res.status(403).json({ error: 'Only the Nexa operator can configure PayHero' });
+    return false;
+  }
+  return true;
+}
+
 function normalizeBillingBaseUrl(value) {
   const trimmed = String(value || '').trim().replace(/\/+$/, '');
   if (!trimmed) return '';
@@ -262,6 +270,7 @@ router.get('/communication', async (req, res) => {
 });
 
 router.get('/payhero', async (req, res) => {
+  if (!requireOperator(req, res)) return;
   const targetClient = resolveTargetClient(req, res);
   if (!targetClient) return;
   try {
@@ -490,6 +499,7 @@ router.put('/communication', async (req, res) => {
 });
 
 router.put('/payhero', async (req, res) => {
+  if (!requireOperator(req, res)) return;
   const targetClient = resolveTargetClient(req, res);
   if (!targetClient) return;
   const enabled = req.body.enabled === true;
@@ -518,6 +528,7 @@ router.put('/payhero', async (req, res) => {
 });
 
 router.post('/payhero/test', async (req, res) => {
+  if (!requireOperator(req, res)) return;
   const targetClient = resolveTargetClient(req, res);
   if (!targetClient) return;
   try {

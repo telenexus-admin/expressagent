@@ -77,11 +77,6 @@ export default function Settings() {
   const [billingTesting, setBillingTesting] = useState(false);
   const [billingEditing, setBillingEditing] = useState(false);
   const [billingStatus, setBillingStatus] = useState(null);
-  const [payhero, setPayhero] = useState({ enabled: false, channel_id: '', provider: 'm-pesa', basic_auth: '', has_basic_auth: false });
-  const [payheroLoading, setPayheroLoading] = useState(true);
-  const [payheroSaving, setPayheroSaving] = useState(false);
-  const [payheroTesting, setPayheroTesting] = useState(false);
-  const [payheroStatus, setPayheroStatus] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaSaving, setMediaSaving] = useState(false);
@@ -143,18 +138,6 @@ export default function Settings() {
     }
   };
 
-  const loadPayhero = async () => {
-    setPayheroLoading(true);
-    try {
-      const { data } = await api.get('/settings/payhero');
-      setPayhero((current) => ({ ...current, ...data, basic_auth: '' }));
-    } catch (err) {
-      setPayheroStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load PayHero settings.' });
-    } finally {
-      setPayheroLoading(false);
-    }
-  };
-
   const loadInstallationForm = async () => {
     setInstallationLoading(true);
     try {
@@ -172,7 +155,6 @@ export default function Settings() {
     async function run() {
       if (!cancelled) {
         await loadBilling();
-        await loadPayhero();
         await loadMedia();
         await loadInstallationForm();
       }
@@ -244,47 +226,6 @@ export default function Settings() {
       });
     } finally {
       setBillingSaving(false);
-    }
-  };
-
-  const updatePayhero = (field, value) => {
-    setPayhero((current) => ({ ...current, [field]: value }));
-    setPayheroStatus(null);
-  };
-
-  const testPayhero = async () => {
-    setPayheroTesting(true);
-    setPayheroStatus(null);
-    try {
-      const { data } = await api.post('/settings/payhero/test', {
-        basic_auth: payhero.basic_auth,
-        channel_id: payhero.channel_id,
-      });
-      const channel = data.channel;
-      setPayheroStatus({
-        type: 'success',
-        message: `${channel
-          ? `Connected to PayHero channel ${channel.id}${channel.description ? ` (${channel.description})` : ''}.`
-          : `PayHero connected. ${data.channels || 0} active payment channel(s) found.`} ${payhero.enabled ? 'Click Save PayHero to apply these settings.' : 'Turn on Enable M-Pesa prompts, then click Save PayHero.'}`,
-      });
-    } catch (err) {
-      setPayheroStatus({ type: 'error', message: err.response?.data?.error || 'PayHero connection test failed.' });
-    } finally {
-      setPayheroTesting(false);
-    }
-  };
-
-  const savePayhero = async () => {
-    setPayheroSaving(true);
-    setPayheroStatus(null);
-    try {
-      const { data } = await api.put('/settings/payhero', payhero);
-      setPayhero((current) => ({ ...current, ...data, basic_auth: '' }));
-      setPayheroStatus({ type: 'success', message: 'PayHero payment prompting saved.' });
-    } catch (err) {
-      setPayheroStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save PayHero settings.' });
-    } finally {
-      setPayheroSaving(false);
     }
   };
 
@@ -565,49 +506,6 @@ export default function Settings() {
             )}
           </SettingsCard>
 
-          <SettingsCard
-            icon={CreditCardIcon}
-            title="PayHero M-Pesa Prompts"
-            description="Allow the agent to send an STK prompt only when a customer explicitly asks to pay and confirms an amount."
-          >
-            {payheroLoading ? (
-              <div className="text-sm font-semibold text-slate-400">Loading PayHero settings...</div>
-            ) : (
-              <div className="space-y-4">
-                <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-100 bg-slate-50 px-4 py-3">
-                  <span>
-                    <span className="block text-sm font-black text-slate-900">Enable M-Pesa prompts</span>
-                    <span className="mt-0.5 block text-xs text-slate-500">Prompts require an explicit payment request and amount.</span>
-                  </span>
-                  <input type="checkbox" checked={payhero.enabled} onChange={(e) => updatePayhero('enabled', e.target.checked)} className="h-5 w-5 accent-[#3535FF]" />
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
-                    PayHero channel ID
-                    <input value={payhero.channel_id} onChange={(e) => updatePayhero('channel_id', e.target.value)} placeholder="e.g. 1234" inputMode="numeric" className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]" />
-                  </label>
-                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
-                    Provider
-                    <select value={payhero.provider} onChange={(e) => updatePayhero('provider', e.target.value)} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#3535FF]">
-                      <option value="m-pesa">M-Pesa</option>
-                    </select>
-                  </label>
-                </div>
-                <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
-                  Basic Auth token
-                  <input type="password" value={payhero.basic_auth} onChange={(e) => updatePayhero('basic_auth', e.target.value)} placeholder={payhero.has_basic_auth ? 'Saved. Leave blank to keep current token.' : 'Basic your-token-here'} className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]" />
-                </label>
-                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold leading-5 text-blue-800">
-                  Example customer request: “Send me an M-Pesa prompt for 1500.” The agent will prompt the customer’s WhatsApp number and report the callback result.
-                </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  <button type="button" onClick={testPayhero} disabled={payheroTesting || (!payhero.basic_auth && !payhero.has_basic_auth)} className="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-black text-slate-700 disabled:opacity-50">{payheroTesting ? 'Testing...' : 'Test connection'}</button>
-                  <button type="button" onClick={savePayhero} disabled={payheroSaving} className="rounded-xl bg-[#3535FF] px-4 py-2 text-sm font-black text-white disabled:opacity-50">{payheroSaving ? 'Saving...' : 'Save PayHero'}</button>
-                </div>
-                {payheroStatus && <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${payheroStatus.type === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>{payheroStatus.message}</div>}
-              </div>
-            )}
-          </SettingsCard>
 
           <SettingsCard
             icon={PulseIcon}

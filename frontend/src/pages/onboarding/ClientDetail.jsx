@@ -29,10 +29,22 @@ export default function ClientDetail() {
   const [adminForm, setAdminForm] = useState({ name: '', email: '', password: '' });
   const [adminFormError, setAdminFormError] = useState('');
   const [adminFormLoading, setAdminFormLoading] = useState(false);
+  const [payhero, setPayhero] = useState({
+    enabled: false,
+    channel_id: '',
+    provider: 'm-pesa',
+    basic_auth: '',
+    has_basic_auth: false,
+  });
+  const [payheroLoading, setPayheroLoading] = useState(true);
+  const [payheroSaving, setPayheroSaving] = useState(false);
+  const [payheroTesting, setPayheroTesting] = useState(false);
+  const [payheroStatus, setPayheroStatus] = useState(null);
 
   useEffect(() => {
     fetchClient();
     fetchAdmins();
+    fetchPayhero();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -77,7 +89,70 @@ export default function ClientDetail() {
     }
   };
 
+  const fetchPayhero = async () => {
+    setPayheroLoading(true);
+    setPayheroStatus(null);
+    try {
+      const { data } = await api.get(`/settings/payhero?clientId=${id}`);
+      setPayhero((current) => ({ ...current, ...data, basic_auth: '' }));
+    } catch (err) {
+      setPayheroStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to load PayHero settings',
+      });
+    } finally {
+      setPayheroLoading(false);
+    }
+  };
+
   const updateField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const updatePayhero = (key, value) => {
+    setPayhero((current) => ({ ...current, [key]: value }));
+    setPayheroStatus(null);
+  };
+
+  const testPayhero = async () => {
+    setPayheroTesting(true);
+    setPayheroStatus(null);
+    try {
+      const { data } = await api.post(`/settings/payhero/test?clientId=${id}`, {
+        basic_auth: payhero.basic_auth,
+        channel_id: payhero.channel_id,
+      });
+      const channel = data.channel;
+      setPayheroStatus({
+        type: 'success',
+        message: channel
+          ? `Connected to PayHero channel ${channel.id}${channel.description ? ` (${channel.description})` : ''}.`
+          : `PayHero connected. ${data.channels || 0} active payment channel(s) found.`,
+      });
+    } catch (err) {
+      setPayheroStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'PayHero connection test failed',
+      });
+    } finally {
+      setPayheroTesting(false);
+    }
+  };
+
+  const savePayhero = async () => {
+    setPayheroSaving(true);
+    setPayheroStatus(null);
+    try {
+      const { data } = await api.put(`/settings/payhero?clientId=${id}`, payhero);
+      setPayhero((current) => ({ ...current, ...data, basic_auth: '' }));
+      setPayheroStatus({ type: 'success', message: 'PayHero payment prompting saved for this client.' });
+    } catch (err) {
+      setPayheroStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to save PayHero settings',
+      });
+    } finally {
+      setPayheroSaving(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -377,6 +452,97 @@ export default function ClientDetail() {
               placeholder="Greeting sent on the first message of a new conversation."
             />
           </div>
+        </Card>
+
+        <Card
+          title="Operator Payment Integration"
+          subtitle="PayHero credentials are managed by Nexa operators only. Client admins cannot see or edit this setup."
+        >
+          {payheroLoading ? (
+            <div className="text-sm text-gray-400">Loading PayHero settings...</div>
+          ) : (
+            <div className="space-y-4">
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <span>
+                  <span className="block text-sm font-bold text-gray-900">Enable M-Pesa prompts</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    The agent can prompt customers only after a clear payment request and amount confirmation.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={payhero.enabled}
+                  onChange={(e) => updatePayhero('enabled', e.target.checked)}
+                  className="h-5 w-5 accent-[#3535FF]"
+                />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="PayHero Channel ID"
+                  value={payhero.channel_id}
+                  onChange={(v) => updatePayhero('channel_id', v)}
+                  placeholder="e.g. 9010"
+                  mono
+                />
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Provider</label>
+                  <select
+                    value={payhero.provider}
+                    onChange={(e) => updatePayhero('provider', e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+                  >
+                    <option value="m-pesa">M-Pesa</option>
+                  </select>
+                </div>
+              </div>
+
+              <Field
+                label="Basic Auth Token"
+                value={payhero.basic_auth}
+                onChange={(v) => updatePayhero('basic_auth', v)}
+                placeholder={payhero.has_basic_auth ? 'Saved. Leave blank to keep current token.' : 'Paste PayHero Basic Auth token'}
+                type="password"
+                mono
+                hint={payhero.has_basic_auth ? 'A token is already saved for this client.' : 'Paste the Basic Auth token shown by PayHero.'}
+              />
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold leading-5 text-blue-800">
+                Customer flow: the agent checks the registered billing account, confirms full package amount or custom amount, then sends the STK prompt through this channel.
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={testPayhero}
+                  disabled={payheroTesting || (!payhero.basic_auth && !payhero.has_basic_auth)}
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 disabled:opacity-50"
+                >
+                  {payheroTesting ? 'Testing...' : 'Test PayHero'}
+                </button>
+                <button
+                  type="button"
+                  onClick={savePayhero}
+                  disabled={payheroSaving}
+                  className="rounded-xl bg-[#3535FF] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {payheroSaving ? 'Saving...' : 'Save PayHero'}
+                </button>
+              </div>
+
+              {payheroStatus && (
+                <div
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+                    payheroStatus.type === 'success'
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      : 'border-red-100 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {payheroStatus.message}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
 
         <div className="sticky bottom-0 bg-white -mx-6 sm:-mx-8 px-6 sm:px-8 py-4 border-t border-gray-100 flex justify-end">

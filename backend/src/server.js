@@ -66,15 +66,17 @@ function isAllowedCorsOrigin(origin) {
   }
 }
 
-app.use(
-  cors({
+app.use((req, res, next) => {
+  const isPublicSiteChat = req.path.startsWith('/api/public/site-chat');
+  return cors({
     origin(origin, callback) {
+      if (isPublicSiteChat) return callback(null, true);
       if (isAllowedCorsOrigin(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));
     },
-    credentials: true,
-  })
-);
+    credentials: !isPublicSiteChat,
+  })(req, res, next);
+});
 
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);

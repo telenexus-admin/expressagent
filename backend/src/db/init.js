@@ -32,7 +32,7 @@ const schema = `
     sms_api_key TEXT,
     sms_sender_id VARCHAR(80),
     sms_configured_at TIMESTAMP WITH TIME ZONE,
-    connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta' CHECK (connection_provider IN ('meta', 'evolution')),
+    connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta' CHECK (connection_provider IN ('meta', 'evolution', 'website')),
     evolution_instance_name VARCHAR(120) UNIQUE,
     evolution_webhook_secret VARCHAR(96),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -57,7 +57,7 @@ const schema = `
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_instance_name VARCHAR(120);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_webhook_secret VARCHAR(96);
   ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_connection_provider_check;
-  ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution'));
+  ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution', 'website'));
   CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_evolution_instance_unique ON clients(evolution_instance_name) WHERE evolution_instance_name IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS admins (

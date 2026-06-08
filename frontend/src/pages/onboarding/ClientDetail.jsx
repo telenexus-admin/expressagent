@@ -4,6 +4,11 @@ import api from '../../utils/api';
 
 const VOICE_OPTIONS = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const MIN_META_ACCESS_TOKEN_LENGTH = 50;
+const CONNECTION_OPTIONS = [
+  { value: 'meta', label: 'Meta WhatsApp', description: 'Customer messages come through the official WhatsApp Cloud API.' },
+  { value: 'website', label: 'Website only', description: 'Use the website chat widget without linking a WhatsApp number.' },
+  { value: 'evolution', label: 'Evolution WhatsApp', description: 'For clients connected through the Evolution onboarding flow.' },
+];
 
 const STATUS_STYLES = {
   active: 'bg-emerald-50 text-emerald-700',
@@ -59,6 +64,7 @@ export default function ClientDetail() {
         business_name: data.business_name || '',
         contact_email: data.contact_email || '',
         status: data.status || 'active',
+        connection_provider: data.connection_provider || 'meta',
         meta_phone_number_id: data.meta_phone_number_id || '',
         meta_business_account_id: data.meta_business_account_id || '',
         meta_verify_token: data.meta_verify_token || '',
@@ -163,6 +169,7 @@ export default function ClientDetail() {
         business_name: form.business_name,
         contact_email: form.contact_email,
         status: form.status,
+        connection_provider: form.connection_provider,
         meta_phone_number_id: form.meta_phone_number_id,
         meta_business_account_id: form.meta_business_account_id,
         meta_verify_token: form.meta_verify_token,
@@ -353,6 +360,21 @@ export default function ClientDetail() {
           <Field label="Business Name (shown to customers)" value={form.business_name} onChange={(v) => updateField('business_name', v)} />
           <Field label="Contact Email" value={form.contact_email} onChange={(v) => updateField('contact_email', v)} type="email" />
           <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Connection Type</label>
+            <select
+              value={form.connection_provider}
+              onChange={(e) => updateField('connection_provider', e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+            >
+              {CONNECTION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-gray-500">
+              {CONNECTION_OPTIONS.find((option) => option.value === form.connection_provider)?.description}
+            </p>
+          </div>
+          <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Status</label>
             <select
               value={form.status}
@@ -365,6 +387,8 @@ export default function ClientDetail() {
           </div>
         </Card>
 
+        {form.connection_provider === 'meta' && (
+        <>
         <Card title="Meta WhatsApp Credentials">
           <Field label="phone_number_id" value={form.meta_phone_number_id} onChange={(v) => updateField('meta_phone_number_id', v)} mono />
           <Field label="WhatsApp Business Account ID" value={form.meta_business_account_id} onChange={(v) => updateField('meta_business_account_id', v)} mono />
@@ -394,6 +418,18 @@ export default function ClientDetail() {
           <ReadOnlyField label="Verify Token" value={client.meta_verify_token || '(none — set one above and save)'} />
           <ReadOnlyField label="phone_number_id" value={client.meta_phone_number_id || '(not set)'} />
         </Card>
+        </>
+        )}
+
+        {form.connection_provider === 'website' && (
+          <Card
+            title="Website Chat Setup"
+            subtitle="Use this client ID when installing the Nexa chat bubble on their website"
+          >
+            <ReadOnlyField label="Client ID" value={String(client.id)} />
+            <ReadOnlyField label="Public Config URL" value={`${window.location.origin}/api/public/site-chat/${client.id}/config`} />
+          </Card>
+        )}
 
         <Card title="Agent Configuration">
           <Field label="Agent Name" value={form.agent_name} onChange={(v) => updateField('agent_name', v)} />

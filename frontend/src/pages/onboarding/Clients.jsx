@@ -17,11 +17,18 @@ const DEFAULT_PROMPT = `You are a helpful and professional ISP customer support 
 - Use customer photos of routers, ONTs, cables and speed tests to give careful visual troubleshooting based only on what is visible`;
 
 const VOICE_OPTIONS = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const CONNECTION_OPTIONS = [
+  { value: 'meta', label: 'Meta WhatsApp', description: 'Customer messages come through the official WhatsApp Cloud API.' },
+  { value: 'website', label: 'Website only', description: 'Use the website chat widget without linking a WhatsApp number.' },
+  { value: 'evolution', label: 'Evolution WhatsApp', description: 'For clients connected through the Evolution onboarding flow.' },
+];
+const CONNECTION_LABELS = CONNECTION_OPTIONS.reduce((acc, option) => ({ ...acc, [option.value]: option.label }), {});
 
 const EMPTY_FORM = {
   name: '',
   business_name: '',
   contact_email: '',
+  connection_provider: 'meta',
   meta_phone_number_id: '',
   meta_access_token: '',
   meta_business_account_id: '',
@@ -73,12 +80,13 @@ export default function Clients() {
   const createClient = async () => {
     const required = [
       ['name', 'Client name'],
-      ['meta_phone_number_id', 'Meta phone_number_id'],
-      ['meta_access_token', 'Meta access token'],
       ['admin_name', 'Admin name'],
       ['admin_email', 'Admin email'],
       ['admin_password', 'Admin password'],
     ];
+    if (form.connection_provider === 'meta') {
+      required.splice(1, 0, ['meta_phone_number_id', 'Meta phone_number_id'], ['meta_access_token', 'Meta access token']);
+    }
     for (const [key, label] of required) {
       if (!form[key].trim()) {
         setFormError(`${label} is required`);
@@ -179,7 +187,7 @@ export default function Clients() {
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Client</th>
-                  <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">WhatsApp ID</th>
+                  <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Connection</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Admins</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Convos</th>
@@ -216,8 +224,13 @@ export default function Clients() {
                           </div>
                         </div>
                       </td>
-                      <td className="px-5 py-3.5 text-xs text-gray-600 font-mono">
-                        {c.meta_phone_number_id || <span className="text-gray-400 italic">not set</span>}
+                      <td className="px-5 py-3.5">
+                        <div className="text-xs font-bold text-gray-700">
+                          {CONNECTION_LABELS[c.connection_provider] || 'Meta WhatsApp'}
+                        </div>
+                        <div className="text-[11px] text-gray-400 font-mono">
+                          {c.meta_phone_number_id || (c.connection_provider === 'website' ? 'site chat' : 'not set')}
+                        </div>
                       </td>
                       <td className="px-5 py-3.5">
                         <span
@@ -297,24 +310,43 @@ export default function Clients() {
                   </div>
                 </div>
 
-                <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
-                  <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
-                    Meta Webhook Configuration
+                {created.client.connection_provider === 'website' ? (
+                  <div className="bg-blue-50 rounded-2xl border border-blue-100 p-4 space-y-3">
+                    <div className="text-xs font-bold text-blue-700 uppercase tracking-wider">
+                      Website Chat
+                    </div>
+                    <ReadOnlyField
+                      label="Client ID"
+                      value={String(created.client.id)}
+                      hint="Use this ID when installing the Nexa website chat widget."
+                    />
+                    <ReadOnlyField
+                      label="Public Config URL"
+                      value={`${window.location.origin}/api/public/site-chat/${created.client.id}/config`}
+                    />
                   </div>
-                  <ReadOnlyField
-                    label="Callback URL"
-                    value={`${window.location.origin}/webhook`}
-                    hint="Paste into Meta > WhatsApp > Configuration > Webhook callback URL."
-                  />
-                  <ReadOnlyField label="Verify Token" value={created.client.meta_verify_token} />
-                  <ReadOnlyField label="phone_number_id" value={created.client.meta_phone_number_id} />
-                </div>
+                ) : (
+                  <>
+                    <div className="bg-gray-50 rounded-2xl p-4 space-y-3">
+                      <div className="text-xs font-bold text-gray-600 uppercase tracking-wider">
+                        Meta Webhook Configuration
+                      </div>
+                      <ReadOnlyField
+                        label="Callback URL"
+                        value={`${window.location.origin}/webhook`}
+                        hint="Paste into Meta > WhatsApp > Configuration > Webhook callback URL."
+                      />
+                      <ReadOnlyField label="Verify Token" value={created.client.meta_verify_token} />
+                      <ReadOnlyField label="phone_number_id" value={created.client.meta_phone_number_id} />
+                    </div>
 
-                <p className="text-xs text-gray-500">
-                  In Meta &gt; WhatsApp &gt; Configuration, subscribe to <em>messages</em> on this
-                  callback URL and paste the verify token above. You can re-open these details any
-                  time from the client's "Manage" page.
-                </p>
+                    <p className="text-xs text-gray-500">
+                      In Meta &gt; WhatsApp &gt; Configuration, subscribe to <em>messages</em> on this
+                      callback URL and paste the verify token above. You can re-open these details any
+                      time from the client's "Manage" page.
+                    </p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="p-6 overflow-y-auto space-y-5">
@@ -328,21 +360,38 @@ export default function Clients() {
                   <Field label="Client / Company Name" value={form.name} onChange={(v) => updateField('name', v)} placeholder="Acme Internet" />
                   <Field label="Business Name (shown to customers)" value={form.business_name} onChange={(v) => updateField('business_name', v)} placeholder="Acme Internet" />
                   <Field label="Contact Email" value={form.contact_email} onChange={(v) => updateField('contact_email', v)} placeholder="ceo@acme.com" type="email" />
+                  <div>
+                    <label className="block text-xs font-semibold text-gray-700 mb-1.5">Connection Type</label>
+                    <select
+                      value={form.connection_provider}
+                      onChange={(e) => updateField('connection_provider', e.target.value)}
+                      className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+                    >
+                      {CONNECTION_OPTIONS.map((option) => (
+                        <option key={option.value} value={option.value}>{option.label}</option>
+                      ))}
+                    </select>
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      {CONNECTION_OPTIONS.find((option) => option.value === form.connection_provider)?.description}
+                    </p>
+                  </div>
                 </Section>
 
-                <Section title="Meta WhatsApp Credentials" subtitle="From the client's Meta for Developers app">
-                  <Field label="phone_number_id" value={form.meta_phone_number_id} onChange={(v) => updateField('meta_phone_number_id', v)} placeholder="123456789012345" mono />
-                  <Field label="Access Token (System User)" value={form.meta_access_token} onChange={(v) => updateField('meta_access_token', v)} placeholder="EAAGm..." mono />
-                  <Field label="WhatsApp Business Account ID" value={form.meta_business_account_id} onChange={(v) => updateField('meta_business_account_id', v)} placeholder="optional" mono />
-                  <Field
-                    label="Webhook Verify Token"
-                    value={form.meta_verify_token}
-                    onChange={(v) => updateField('meta_verify_token', v)}
-                    placeholder="leave blank to auto-generate"
-                    mono
-                    hint="A random one will be generated if you leave this blank."
-                  />
-                </Section>
+                {form.connection_provider === 'meta' && (
+                  <Section title="Meta WhatsApp Credentials" subtitle="From the client's Meta for Developers app">
+                    <Field label="phone_number_id" value={form.meta_phone_number_id} onChange={(v) => updateField('meta_phone_number_id', v)} placeholder="123456789012345" mono />
+                    <Field label="Access Token (System User)" value={form.meta_access_token} onChange={(v) => updateField('meta_access_token', v)} placeholder="EAAGm..." mono />
+                    <Field label="WhatsApp Business Account ID" value={form.meta_business_account_id} onChange={(v) => updateField('meta_business_account_id', v)} placeholder="optional" mono />
+                    <Field
+                      label="Webhook Verify Token"
+                      value={form.meta_verify_token}
+                      onChange={(v) => updateField('meta_verify_token', v)}
+                      placeholder="leave blank to auto-generate"
+                      mono
+                      hint="A random one will be generated if you leave this blank."
+                    />
+                  </Section>
+                )}
 
                 <Section title="Agent Configuration">
                   <Field label="Agent Name" value={form.agent_name} onChange={(v) => updateField('agent_name', v)} placeholder="e.g. Asha" />

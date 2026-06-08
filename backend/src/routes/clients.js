@@ -12,6 +12,7 @@ const { logActivity } = require('../services/audit');
 router.use(authMiddleware, superadminMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const ALLOWED_CONNECTION_PROVIDERS = ['meta', 'evolution', 'website'];
 const MIN_META_ACCESS_TOKEN_LENGTH = 50;
 const OPERATOR_ACCESS_PERMISSIONS = [
   'statistics',
@@ -35,12 +36,54 @@ function genVerifyToken() {
   return crypto.randomBytes(24).toString('hex');
 }
 
+let providerSchemaReady;
+
+async function ensureProviderSchema() {
+  if (!providerSchemaReady) {
+    providerSchemaReady = db.query(`
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
+      ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_connection_provider_check;
+      ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution', 'website'));
+    `);
+  }
+  return providerSchemaReady;
+}
+
+function normalizeConnectionProvider(value) {
+  const provider = String(value || 'meta').trim().toLowerCase();
+  return ALLOWED_CONNECTION_PROVIDERS.includes(provider) ? provider : 'meta';
+}
+
+function requiresMetaCredentials(req) {
+  return normalizeConnectionProvider(req.body.connection_provider) === 'meta';
+}
+
+function validateMetaPhoneNumber(value, { req }) {
+  const phoneNumberId = String(value || '').trim();
+  if (requiresMetaCredentials(req) && !phoneNumberId) {
+    throw new Error('Meta phone_number_id is required for Meta WhatsApp clients');
+  }
+  return true;
+}
+
+function validateMetaAccessToken(value, { req }) {
+  const token = String(value || '').trim();
+  if (requiresMetaCredentials(req) && !token) {
+    throw new Error('Meta access token is required for Meta WhatsApp clients');
+  }
+  if (token && token.length < MIN_META_ACCESS_TOKEN_LENGTH) {
+    throw new Error('Meta access token looks too short. Paste the full token from Meta.');
+  }
+  return true;
+}
+
 // GET /api/clients — list all clients with admin counts
 router.get('/', async (_req, res) => {
   try {
+    await ensureProviderSchema();
     const result = await db.query(
       `SELECT
-         c.id, c.name, c.business_name, c.contact_email, c.status,
+         c.id, c.name, c.business_name, c.contact_email, c.status, c.connection_provider,
          c.meta_phone_number_id, c.meta_business_account_id,
          c.support_number, c.agent_name, c.voice_id, c.photo_troubleshooting_enabled, c.created_at,
          (SELECT COUNT(*)::int FROM admins WHERE client_id = c.id) AS admin_count,
@@ -58,8 +101,9 @@ router.get('/', async (_req, res) => {
 // GET /api/clients/:id — full client incl. webhook config
 router.get('/:id', async (req, res) => {
   try {
+    await ensureProviderSchema();
     const result = await db.query(
-      `SELECT id, name, business_name, contact_email, status,
+      `SELECT id, name, business_name, contact_email, status, connection_provider,
               meta_phone_number_id, meta_business_account_id, meta_verify_token,
               support_number, system_prompt, agent_name, voice_id, opening_message,
               photo_troubleshooting_enabled, created_at
@@ -140,11 +184,9 @@ router.post(
     body('name').trim().notEmpty().withMessage('Client name is required'),
     body('business_name').optional().trim(),
     body('contact_email').optional({ checkFalsy: true }).isEmail().withMessage('Valid contact email required'),
-    body('meta_phone_number_id').trim().notEmpty().withMessage('Meta phone_number_id is required'),
-    body('meta_access_token')
-      .trim()
-      .isLength({ min: MIN_META_ACCESS_TOKEN_LENGTH })
-      .withMessage('Meta access token looks too short. Paste the full token from Meta.'),
+    body('connection_provider').optional().isIn(ALLOWED_CONNECTION_PROVIDERS).withMessage('Invalid connection provider'),
+    body('meta_phone_number_id').custom(validateMetaPhoneNumber),
+    body('meta_access_token').custom(validateMetaAccessToken),
     body('meta_business_account_id').optional().trim(),
     body('meta_verify_token').optional().trim(),
     body('support_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Invalid support phone number'),
@@ -167,6 +209,7 @@ router.post(
       name,
       business_name,
       contact_email,
+      connection_provider,
       meta_phone_number_id,
       meta_access_token,
       meta_business_account_id,
@@ -184,28 +227,31 @@ router.post(
 
     const client = await db.connect();
     try {
+      await ensureProviderSchema();
       await client.query('BEGIN');
 
       const verifyToken = (meta_verify_token || '').trim() || genVerifyToken();
+      const provider = normalizeConnectionProvider(connection_provider);
 
       const insertedClient = await client.query(
         `INSERT INTO clients (
-           name, business_name, contact_email, status,
+           name, business_name, contact_email, status, connection_provider,
            meta_phone_number_id, meta_access_token, meta_business_account_id, meta_verify_token,
            support_number, system_prompt, agent_name, voice_id, opening_message, photo_troubleshooting_enabled
          ) VALUES (
-           $1, $2, $3, 'active',
-           $4, $5, $6, $7,
-           $8, $9, $10, $11, $12, $13
-         ) RETURNING id, name, business_name, contact_email, status,
+           $1, $2, $3, 'active', $4,
+           $5, $6, $7, $8,
+           $9, $10, $11, $12, $13, $14
+         ) RETURNING id, name, business_name, contact_email, status, connection_provider,
                     meta_phone_number_id, meta_business_account_id, meta_verify_token,
                     support_number, agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
         [
           name.trim(),
           (business_name || '').trim() || null,
           (contact_email || '').trim() || null,
-          meta_phone_number_id.trim(),
-          meta_access_token.trim(),
+          provider,
+          (meta_phone_number_id || '').trim() || null,
+          (meta_access_token || '').trim() || null,
           (meta_business_account_id || '').trim() || null,
           verifyToken,
           (support_number || '').trim() || null,
@@ -259,12 +305,9 @@ router.put(
     body('business_name').optional().trim(),
     body('contact_email').optional({ checkFalsy: true }).isEmail(),
     body('status').optional().isIn(['active', 'suspended']),
-    body('meta_phone_number_id').optional().trim().notEmpty(),
-    body('meta_access_token')
-      .optional()
-      .trim()
-      .isLength({ min: MIN_META_ACCESS_TOKEN_LENGTH })
-      .withMessage('Meta access token looks too short. Paste the full token from Meta.'),
+    body('connection_provider').optional().isIn(ALLOWED_CONNECTION_PROVIDERS).withMessage('Invalid connection provider'),
+    body('meta_phone_number_id').optional({ nullable: true }).custom(validateMetaPhoneNumber),
+    body('meta_access_token').optional({ nullable: true, checkFalsy: true }).custom(validateMetaAccessToken),
     body('meta_business_account_id').optional().trim(),
     body('meta_verify_token').optional().trim().notEmpty(),
     body('support_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/),
@@ -281,7 +324,7 @@ router.put(
     }
 
     const allowed = [
-      'name', 'business_name', 'contact_email', 'status',
+      'name', 'business_name', 'contact_email', 'status', 'connection_provider',
       'meta_phone_number_id', 'meta_access_token', 'meta_business_account_id', 'meta_verify_token',
       'support_number', 'system_prompt', 'agent_name', 'voice_id', 'opening_message',
       'photo_troubleshooting_enabled',
@@ -303,10 +346,11 @@ router.put(
     }
 
     try {
+      await ensureProviderSchema();
       params.push(req.params.id);
       const result = await db.query(
         `UPDATE clients SET ${updates.join(', ')} WHERE id = $${params.length}
-         RETURNING id, name, business_name, contact_email, status,
+         RETURNING id, name, business_name, contact_email, status, connection_provider,
                    meta_phone_number_id, meta_business_account_id, meta_verify_token,
                    support_number, agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
         params

@@ -4,8 +4,12 @@
   var apiBase = String(config.apiBase || 'https://nexa.telenexustechnologies.com/api/public/site-chat').replace(/\/$/, '');
   if (!clientId || document.getElementById('nexa-site-chat-root')) return;
 
+  var scriptUrl = document.currentScript && document.currentScript.src ? document.currentScript.src : '';
+  var assetBase = scriptUrl ? scriptUrl.replace(/\/[^\/]*$/, '') : 'https://nexa.telenexustechnologies.com';
   var title = config.title || 'Talk to Support';
   var brandName = config.brandName || 'AI Support';
+  var launcherLabel = config.launcherLabel || 'Talk with Pronet virtual assistant';
+  var iconUrl = config.iconUrl || (assetBase + '/pronet-assistant-icon.jpg');
   var accent = config.accent || '#3535FF';
   var root = document.createElement('div');
   root.id = 'nexa-site-chat-root';
@@ -24,7 +28,9 @@
   style.textContent = [
     '#nexa-site-chat-root{position:fixed;z-index:2147483647;right:18px;bottom:18px;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#111827}',
     '#nexa-site-chat-root *{box-sizing:border-box}',
-    '.nexa-chat-button{width:62px;height:62px;border:0;border-radius:999px;background:' + accent + ';color:#fff;box-shadow:0 18px 40px rgba(53,53,255,.35);cursor:pointer;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:26px}',
+    '.nexa-chat-button{max-width:min(330px,calc(100vw - 28px));min-height:66px;border:0;border-radius:999px;background:#fff;color:#111827;box-shadow:0 18px 46px rgba(15,23,42,.22);cursor:pointer;display:flex;align-items:center;gap:11px;font-weight:900;font-size:13px;line-height:1.2;padding:8px 16px 8px 8px;text-align:left}',
+    '.nexa-chat-button-icon{width:50px;height:50px;border-radius:999px;object-fit:cover;border:2px solid ' + accent + ';background:#fff;box-shadow:0 6px 16px rgba(15,23,42,.18);flex:0 0 auto}',
+    '.nexa-chat-button-label{display:block;max-width:220px}',
     '.nexa-chat-panel{width:min(380px,calc(100vw - 28px));height:min(620px,calc(100vh - 110px));background:#fff;border:1px solid rgba(17,24,39,.08);border-radius:22px;box-shadow:0 24px 80px rgba(15,23,42,.25);overflow:hidden;display:flex;flex-direction:column;margin-bottom:12px}',
     '.nexa-chat-head{background:#0A0A0F;color:#fff;padding:15px 16px;display:flex;align-items:center;justify-content:space-between;gap:12px}',
     '.nexa-chat-title{font-size:15px;font-weight:900;line-height:1.2}.nexa-chat-subtitle{font-size:11px;color:rgba(255,255,255,.72);margin-top:2px}',
@@ -34,7 +40,7 @@
     '.nexa-chat-form{border-top:1px solid #e5e7eb;background:#fff;padding:10px;display:flex;gap:8px}.nexa-chat-input{flex:1;border:1px solid #d1d5db;border-radius:999px;padding:11px 13px;font-size:14px;outline:none}.nexa-chat-input:focus{border-color:' + accent + '}',
     '.nexa-chat-send{border:0;border-radius:999px;background:' + accent + ';color:#fff;padding:0 16px;font-size:13px;font-weight:900;cursor:pointer}.nexa-chat-send:disabled{opacity:.55;cursor:not-allowed}',
     '.nexa-hidden{display:none!important}',
-    '@media(max-width:520px){#nexa-site-chat-root{right:12px;bottom:12px}.nexa-chat-panel{width:calc(100vw - 24px);height:calc(100vh - 96px);border-radius:18px}.nexa-chat-button{width:58px;height:58px}}'
+    '@media(max-width:520px){#nexa-site-chat-root{right:12px;bottom:12px}.nexa-chat-panel{width:calc(100vw - 24px);height:calc(100vh - 96px);border-radius:18px}.nexa-chat-button{min-height:60px;padding-right:13px;font-size:12px}.nexa-chat-button-icon{width:46px;height:46px}.nexa-chat-button-label{max-width:190px}}'
   ].join('');
   document.head.appendChild(style);
 
@@ -59,7 +65,10 @@
         '</div>' +
         '<form class="nexa-chat-form"><input class="nexa-chat-input" autocomplete="off" placeholder="Type your message..." /><button class="nexa-chat-send" type="submit" ' + (state.busy ? 'disabled' : '') + '>Send</button></form>' +
       '</div>' +
-      '<button class="' + (state.open ? 'nexa-hidden' : 'nexa-chat-button') + '" type="button" aria-label="Open chat">?</button>';
+      '<button class="' + (state.open ? 'nexa-hidden' : 'nexa-chat-button') + '" type="button" aria-label="' + escapeHtml(launcherLabel) + '">' +
+        '<img class="nexa-chat-button-icon" src="' + escapeHtml(iconUrl) + '" alt="" />' +
+        '<span class="nexa-chat-button-label">' + escapeHtml(launcherLabel) + '</span>' +
+      '</button>';
 
     var messagesEl = root.querySelector('.nexa-chat-messages');
     if (messagesEl) messagesEl.scrollTop = messagesEl.scrollHeight;

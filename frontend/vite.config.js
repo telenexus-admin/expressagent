@@ -15,6 +15,12 @@ export default defineConfig({
         'favicon-16x16.png',
         'favicon-32x32.png',
         'apple-touch-icon.png',
+        'expressnet-favicon-16x16.png',
+        'expressnet-favicon-32x32.png',
+        'expressnet-apple-touch-icon.png',
+        'expressnet-pwa-192x192.png',
+        'expressnet-pwa-512x512.png',
+        'expressnet-manifest.webmanifest',
       ],
       manifest: {
         name: 'Nexa',

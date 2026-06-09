@@ -68,6 +68,8 @@ const DEFAULT_INSTALLATION_FORM = {
 //   superadmin    -> must pass ?clientId= (no global "settings" anymore)
 function resolveTargetClient(req, res) {
   if (req.scope.isSuperadmin && !req.scope.clientId) {
+    const fallbackClientId = parseInt(process.env.DEFAULT_CLIENT_ID || process.env.EXPRESSNET_CLIENT_ID || '1', 10);
+    if (Number.isInteger(fallbackClientId) && fallbackClientId > 0) return fallbackClientId;
     res.status(400).json({ error: 'clientId query parameter is required for superadmin' });
     return null;
   }

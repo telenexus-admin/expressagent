@@ -9,10 +9,29 @@
     <script>
       (function () {
         var isOperator = window.location.pathname.indexOf('/onboarding') === 0;
+        var isExpressNet = /express/i.test(window.location.hostname);
         var manifest = document.createElement('link');
         manifest.rel = 'manifest';
-        manifest.href = isOperator ? '/nexus-manifest.webmanifest' : '/manifest.webmanifest';
+        manifest.href = isOperator ? '/nexus-manifest.webmanifest' : (isExpressNet ? '/expressnet-manifest.webmanifest' : '/manifest.webmanifest');
         document.head.appendChild(manifest);
+
+        if (isExpressNet && !isOperator) {
+          document.title = 'ExpressNet Agent';
+          var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (appleTitle) appleTitle.setAttribute('content', 'ExpressNet');
+          [
+            ['icon', '/expressnet-favicon-32x32.png', 'image/png', '32x32'],
+            ['icon', '/expressnet-favicon-16x16.png', 'image/png', '16x16'],
+            ['apple-touch-icon', '/expressnet-apple-touch-icon.png', null, null]
+          ].forEach(function (item) {
+            var link = document.createElement('link');
+            link.rel = item[0];
+            link.href = item[1];
+            if (item[2]) link.type = item[2];
+            if (item[3]) link.sizes = item[3];
+            document.head.appendChild(link);
+          });
+        }
 
         window.__nexaInstallPrompt = null;
         window.addEventListener('beforeinstallprompt', function (event) {

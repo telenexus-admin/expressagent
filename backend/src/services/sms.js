@@ -4,19 +4,23 @@ const db = require('../db');
 const BLESSED_DEFAULT_URL = 'https://sms.blessedtexts.com/api/sms/v1/sendsms';
 const SAVVY_DEFAULT_URL = 'https://sms.savvybulksms.com/api/services/sendsms/';
 const SMS_PROVIDERS = ['blessed', 'savvy'];
-let schemaReady = false;
+let schemaPromise = null;
 
 async function ensureSmsSchema() {
-  if (schemaReady) return;
-
-  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(20) NOT NULL DEFAULT 'blessed'`);
-  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
-  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
-  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_partner_id VARCHAR(80)`);
-  await db.query(`ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_sms_provider_check`);
-  await db.query(`ALTER TABLE clients ADD CONSTRAINT clients_sms_provider_check CHECK (sms_provider IN ('blessed', 'savvy'))`);
-
-  schemaReady = true;
+  if (!schemaPromise) {
+    schemaPromise = (async () => {
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(20) NOT NULL DEFAULT 'blessed'`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_partner_id VARCHAR(80)`);
+      await db.query(`ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_sms_provider_check`);
+      await db.query(`ALTER TABLE clients ADD CONSTRAINT clients_sms_provider_check CHECK (sms_provider IN ('blessed', 'savvy'))`);
+    })().catch((err) => {
+      schemaPromise = null;
+      throw err;
+    });
+  }
+  return schemaPromise;
 }
 
 function normalizePhone(phone) {

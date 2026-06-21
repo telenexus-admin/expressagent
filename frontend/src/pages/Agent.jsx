@@ -224,6 +224,42 @@ export default function Agent() {
     }));
   };
 
+  const addWelcomeOption = () => {
+    setWelcomeMenu((current) => {
+      const options = Array.isArray(current.options) ? current.options : [];
+      if (options.length >= 10) return current;
+      return {
+        ...current,
+        options: [
+          ...options,
+          {
+            id: `welcome_option_${Date.now()}`,
+            title: '',
+            description: '',
+            text: '',
+          },
+        ],
+      };
+    });
+  };
+
+  const removeWelcomeOption = (index) => {
+    setWelcomeMenu((current) => ({
+      ...current,
+      options: (current.options || []).filter((_, optionIndex) => optionIndex !== index),
+    }));
+  };
+
+  const moveWelcomeOption = (index, direction) => {
+    setWelcomeMenu((current) => {
+      const options = [...(current.options || [])];
+      const nextIndex = index + direction;
+      if (nextIndex < 0 || nextIndex >= options.length) return current;
+      [options[index], options[nextIndex]] = [options[nextIndex], options[index]];
+      return { ...current, options };
+    });
+  };
+
   if (loading) {
     return (
       <div className="flex-1 bg-[#fbfcff]">
@@ -466,6 +502,36 @@ export default function Agent() {
               <div className="mt-4 space-y-3">
                 {welcomeMenu.options.map((option, index) => (
                   <div key={option.id || index} className="rounded-2xl border border-[#e7e9f2] bg-[#fbfcff] p-4">
+                    <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+                      <div className="text-xs font-black uppercase tracking-wide text-[#8a8fa6]">
+                        Option {index + 1}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => moveWelcomeOption(index, -1)}
+                          disabled={index === 0}
+                          className="h-8 rounded-lg border border-[#dfe2ee] bg-white px-3 text-xs font-black text-[#59607a] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Up
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => moveWelcomeOption(index, 1)}
+                          disabled={index === welcomeMenu.options.length - 1}
+                          className="h-8 rounded-lg border border-[#dfe2ee] bg-white px-3 text-xs font-black text-[#59607a] disabled:cursor-not-allowed disabled:opacity-40"
+                        >
+                          Down
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => removeWelcomeOption(index)}
+                          className="h-8 rounded-lg border border-red-100 bg-red-50 px-3 text-xs font-black text-red-600"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
                     <div className="grid gap-3 md:grid-cols-2">
                       <label>
                         <span className="mb-2 block text-xs font-black uppercase tracking-wide text-[#8a8fa6]">
@@ -502,6 +568,25 @@ export default function Agent() {
                     </label>
                   </div>
                 ))}
+                {welcomeMenu.options.length === 0 && (
+                  <div className="rounded-2xl border border-dashed border-[#d7dbea] bg-white px-4 py-6 text-center text-sm font-bold text-[#858aa2]">
+                    No welcome options yet.
+                  </div>
+                )}
+              </div>
+
+              <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="text-xs font-bold text-[#858aa2]">
+                  {welcomeMenu.options.length}/10 options configured
+                </div>
+                <button
+                  type="button"
+                  onClick={addWelcomeOption}
+                  disabled={welcomeMenu.options.length >= 10}
+                  className="h-11 rounded-xl bg-[#4f35f5] px-5 text-sm font-black text-white shadow-[0_10px_22px_rgba(79,53,245,0.2)] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Add Option
+                </button>
               </div>
             </SettingsCard>
           </main>

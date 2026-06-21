@@ -33,6 +33,17 @@ export default function SmsSettings() {
       .finally(() => setLoading(false));
   }, [query]);
 
+  const selectProvider = (nextProvider) => {
+    if (nextProvider === provider) return;
+    setProvider(nextProvider);
+    setApiKey('');
+    setApiKeyConfigured(false);
+    setSenderId('');
+    setPartnerId('');
+    setNotice('');
+    setError('');
+  };
+
   const save = async () => {
     setSaving(true);
     setNotice('');
@@ -74,7 +85,7 @@ export default function SmsSettings() {
             {PROVIDERS.map((item) => {
               const selected = provider === item.id;
               return (
-                <button key={item.id} type="button" onClick={() => setProvider(item.id)} className={`rounded-2xl border p-4 text-left ${selected ? 'border-[#4B16B5] bg-[#F3EFFF]' : 'border-slate-200 bg-slate-50'}`}>
+                <button key={item.id} type="button" onClick={() => selectProvider(item.id)} className={`rounded-2xl border p-4 text-left ${selected ? 'border-[#4B16B5] bg-[#F3EFFF]' : 'border-slate-200 bg-slate-50'}`}>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-sm font-black text-slate-900">{item.label}</span>
                     {selected && <span className="rounded-full bg-[#4B16B5] px-3 py-1 text-[10px] font-black text-white">Selected</span>}

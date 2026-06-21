@@ -20,6 +20,30 @@ const providerCopy = {
   },
 };
 
+function parseSavvySender(value) {
+  const sender = String(value || '');
+  const [partnerId, ...senderParts] = sender.split('--');
+  const senderId = senderParts.join('--');
+  if (!partnerId || !senderId) return null;
+  return { partnerId, senderId };
+}
+
+function providerPayload(form) {
+  if (form.provider !== 'savvy') {
+    return {
+      provider: 'blessed_text',
+      sender_id: form.sender_id,
+      api_key: form.api_key,
+    };
+  }
+
+  return {
+    provider: 'savvy',
+    sender_id: `${form.partner_id.trim()}--${form.sender_id.trim()}`,
+    api_key: form.api_key,
+  };
+}
+
 export default function Communication() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -51,18 +75,23 @@ export default function Communication() {
     setStatus(null);
   };
 
+  const applyLoadedConfig = (data) => {
+    const savvy = data.provider === 'savvy' ? parseSavvySender(data.sender_id) : null;
+    setForm((current) => ({
+      ...current,
+      provider: data.provider || 'blessed_text',
+      sender_id: savvy ? savvy.senderId : (data.sender_id || ''),
+      partner_id: savvy ? savvy.partnerId : '',
+      api_key: '',
+      has_api_key: Boolean(data.has_api_key),
+    }));
+  };
+
   const load = async () => {
     setLoading(true);
     try {
       const { data } = await api.get('/settings/communication');
-      setForm((current) => ({
-        ...current,
-        provider: data.provider || 'blessed_text',
-        sender_id: data.sender_id || '',
-        partner_id: data.partner_id || '',
-        api_key: '',
-        has_api_key: Boolean(data.has_api_key),
-      }));
+      applyLoadedConfig(data);
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load communication settings.' });
     } finally {
@@ -72,25 +101,32 @@ export default function Communication() {
 
   useEffect(() => { load(); }, []);
 
+  const validateSavvy = () => {
+    if (form.provider !== 'savvy') return true;
+    if (!form.partner_id.trim()) {
+      setStatus({ type: 'error', message: 'Savvy Partner ID is required.' });
+      return false;
+    }
+    if (!form.sender_id.trim()) {
+      setStatus({ type: 'error', message: 'Savvy Sender ID / Shortcode is required.' });
+      return false;
+    }
+    const combined = `${form.partner_id.trim()}--${form.sender_id.trim()}`;
+    if (combined.length > 40) {
+      setStatus({ type: 'error', message: 'Partner ID and Sender ID are too long. Their combined length must be 38 characters or fewer.' });
+      return false;
+    }
+    return true;
+  };
+
   const save = async () => {
+    if (!validateSavvy()) return;
     setSaving(true);
     setStatus(null);
     try {
-      const { data } = await api.put('/settings/communication', {
-        provider: form.provider,
-        sender_id: form.sender_id,
-        partner_id: form.provider === 'savvy' ? form.partner_id : '',
-        api_key: form.api_key,
-      });
-      setForm((current) => ({
-        ...current,
-        provider: data.provider || current.provider,
-        sender_id: data.sender_id || current.sender_id,
-        partner_id: data.partner_id || '',
-        api_key: '',
-        has_api_key: Boolean(data.has_api_key),
-      }));
-      setStatus({ type: 'success', message: 'SMS provider saved.' });
+      const { data } = await api.put('/settings/communication', providerPayload(form));
+      applyLoadedConfig(data);
+      setStatus({ type: 'success', message: `${form.provider === 'savvy' ? 'Savvy Bulk SMS' : 'Blessed Text'} provider saved.` });
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save SMS provider.' });
     } finally {
@@ -99,14 +135,12 @@ export default function Communication() {
   };
 
   const test = async () => {
+    if (!validateSavvy()) return;
     setTesting(true);
     setStatus(null);
     try {
       const { data } = await api.post('/settings/communication/test', {
-        provider: form.provider,
-        sender_id: form.sender_id,
-        partner_id: form.provider === 'savvy' ? form.partner_id : '',
-        api_key: form.api_key,
+        ...providerPayload(form),
         phone: form.test_phone,
       });
       setStatus({ type: 'success', message: `Test SMS sent to +${data.sent_to}.` });

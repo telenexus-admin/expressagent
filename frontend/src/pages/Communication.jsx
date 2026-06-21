@@ -4,7 +4,50 @@ import { ChatIcon, CheckCircleIcon } from '../components/Icons';
 
 const SMS_PROVIDERS = [
   { value: 'blessed_text', label: 'Blessed Text' },
+  { value: 'savvy', label: 'Savvy Bulk SMS' },
 ];
+
+const SAVVY_MARKER = 'savvy__';
+
+const PROVIDER_COPY = {
+  blessed_text: {
+    description: 'Use the API key and sender ID from your Blessed Text account.',
+    keyPlaceholder: 'Paste Blessed Text API key',
+    senderPlaceholder: 'e.g. NEXA',
+  },
+  savvy: {
+    description: 'Use your Savvy API key, Partner ID and approved Sender ID / shortcode.',
+    keyPlaceholder: 'Paste Savvy API key',
+    senderPlaceholder: 'Enter approved shortcode or Sender ID',
+  },
+};
+
+function parseSavvySender(value) {
+  const sender = String(value || '');
+  if (!sender.startsWith(SAVVY_MARKER)) return null;
+  const encoded = sender.slice(SAVVY_MARKER.length);
+  const separator = encoded.indexOf('__');
+  if (separator <= 0) return null;
+  const partnerId = encoded.slice(0, separator);
+  const senderId = encoded.slice(separator + 2);
+  if (!partnerId || !senderId) return null;
+  return { partnerId, senderId };
+}
+
+function communicationPayload(form) {
+  if (form.provider === 'savvy') {
+    return {
+      provider: 'blessed_text',
+      sender_id: `${SAVVY_MARKER}${form.partner_id.trim()}__${form.sender_id.trim()}`,
+      api_key: form.api_key,
+    };
+  }
+  return {
+    provider: 'blessed_text',
+    sender_id: form.sender_id.trim(),
+    api_key: form.api_key,
+  };
+}
 
 export default function Communication() {
   const [loading, setLoading] = useState(true);
@@ -14,6 +57,7 @@ export default function Communication() {
   const [form, setForm] = useState({
     provider: 'blessed_text',
     sender_id: '',
+    partner_id: '',
     api_key: '',
     has_api_key: false,
     test_phone: '',
@@ -24,17 +68,35 @@ export default function Communication() {
     setStatus(null);
   };
 
+  const changeProvider = (provider) => {
+    setForm((current) => ({
+      ...current,
+      provider,
+      sender_id: '',
+      partner_id: '',
+      api_key: '',
+      has_api_key: false,
+    }));
+    setStatus(null);
+  };
+
+  const applyLoadedConfig = (data) => {
+    const savvy = parseSavvySender(data.sender_id);
+    setForm((current) => ({
+      ...current,
+      provider: savvy ? 'savvy' : 'blessed_text',
+      sender_id: savvy ? savvy.senderId : (data.sender_id || ''),
+      partner_id: savvy ? savvy.partnerId : '',
+      api_key: '',
+      has_api_key: Boolean(data.has_api_key),
+    }));
+  };
+
   const load = async () => {
     setLoading(true);
     try {
       const { data } = await api.get('/settings/communication');
-      setForm((current) => ({
-        ...current,
-        provider: data.provider || 'blessed_text',
-        sender_id: data.sender_id || '',
-        api_key: '',
-        has_api_key: Boolean(data.has_api_key),
-      }));
+      applyLoadedConfig(data);
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load communication settings.' });
     } finally {
@@ -44,23 +106,37 @@ export default function Communication() {
 
   useEffect(() => { load(); }, []);
 
+  const validate = () => {
+    if (!form.sender_id.trim()) {
+      setStatus({ type: 'error', message: 'Sender ID / Shortcode is required.' });
+      return false;
+    }
+    if (!form.has_api_key && !form.api_key.trim()) {
+      setStatus({ type: 'error', message: 'API key is required.' });
+      return false;
+    }
+    if (form.provider === 'savvy') {
+      if (!form.partner_id.trim()) {
+        setStatus({ type: 'error', message: 'Savvy Partner ID is required.' });
+        return false;
+      }
+      const encoded = `${SAVVY_MARKER}${form.partner_id.trim()}__${form.sender_id.trim()}`;
+      if (encoded.length > 40) {
+        setStatus({ type: 'error', message: 'Partner ID and Sender ID are too long. Their combined encoded length must be 40 characters or fewer.' });
+        return false;
+      }
+    }
+    return true;
+  };
+
   const save = async () => {
+    if (!validate()) return;
     setSaving(true);
     setStatus(null);
     try {
-      const { data } = await api.put('/settings/communication', {
-        provider: form.provider,
-        sender_id: form.sender_id,
-        api_key: form.api_key,
-      });
-      setForm((current) => ({
-        ...current,
-        provider: data.provider || current.provider,
-        sender_id: data.sender_id || current.sender_id,
-        api_key: '',
-        has_api_key: Boolean(data.has_api_key),
-      }));
-      setStatus({ type: 'success', message: 'SMS provider saved.' });
+      const { data } = await api.put('/settings/communication', communicationPayload(form));
+      applyLoadedConfig(data);
+      setStatus({ type: 'success', message: `${form.provider === 'savvy' ? 'Savvy Bulk SMS' : 'Blessed Text'} provider saved.` });
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save SMS provider.' });
     } finally {
@@ -69,13 +145,12 @@ export default function Communication() {
   };
 
   const test = async () => {
+    if (!validate()) return;
     setTesting(true);
     setStatus(null);
     try {
       const { data } = await api.post('/settings/communication/test', {
-        provider: form.provider,
-        sender_id: form.sender_id,
-        api_key: form.api_key,
+        ...communicationPayload(form),
         phone: form.test_phone,
       });
       setStatus({ type: 'success', message: `Test SMS sent to +${data.sent_to}.` });
@@ -89,6 +164,8 @@ export default function Communication() {
   if (loading) {
     return <div className="flex flex-1 items-center justify-center text-sm font-bold text-slate-400">Loading communication settings...</div>;
   }
+
+  const copy = PROVIDER_COPY[form.provider] || PROVIDER_COPY.blessed_text;
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#f8fafc] p-5 sm:p-8">
@@ -107,9 +184,7 @@ export default function Communication() {
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div>
                   <h2 className="text-lg font-black text-slate-950">SMS Provider</h2>
-                  <p className="mt-1 text-sm leading-relaxed text-slate-500">
-                    Blessed Text is currently supported. Use the API key and sender ID from your Blessed Text account.
-                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-slate-500">{copy.description}</p>
                 </div>
                 {form.has_api_key && (
                   <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
@@ -123,7 +198,7 @@ export default function Communication() {
                   Provider
                   <select
                     value={form.provider}
-                    onChange={(event) => update('provider', event.target.value)}
+                    onChange={(event) => changeProvider(event.target.value)}
                     className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
                   >
                     {SMS_PROVIDERS.map((provider) => (
@@ -132,15 +207,27 @@ export default function Communication() {
                   </select>
                 </label>
                 <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
-                  Sender ID
+                  Sender ID / Shortcode
                   <input
                     value={form.sender_id}
                     onChange={(event) => update('sender_id', event.target.value)}
-                    placeholder="e.g. NEXA"
+                    placeholder={copy.senderPlaceholder}
                     className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
                   />
                 </label>
               </div>
+
+              {form.provider === 'savvy' && (
+                <label className="mt-4 flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                  Partner ID
+                  <input
+                    value={form.partner_id}
+                    onChange={(event) => update('partner_id', event.target.value)}
+                    placeholder="Enter Savvy Partner ID"
+                    className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                  />
+                </label>
+              )}
 
               <label className="mt-4 flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
                 API Key
@@ -148,7 +235,7 @@ export default function Communication() {
                   type="password"
                   value={form.api_key}
                   onChange={(event) => update('api_key', event.target.value)}
-                  placeholder={form.has_api_key ? 'Saved. Leave blank to keep current key.' : 'Paste Blessed Text API key'}
+                  placeholder={form.has_api_key ? 'Saved. Leave blank to keep current key.' : copy.keyPlaceholder}
                   className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
                 />
               </label>

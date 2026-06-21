@@ -149,6 +149,7 @@ export default function ClientDashboard() {
       label: 'Agent',
       items: [
         ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
+        ['/dashboard/sms-settings', 'SMS Provider', AgentIcon, 'agent'],
         ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
         ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
         ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],

@@ -19,10 +19,23 @@ api.interceptors.response.use(
       const hasSession = Boolean(sessionStorage.getItem('token'));
       sessionStorage.removeItem('token');
       sessionStorage.removeItem('admin');
+      const operatorToken = localStorage.getItem('operator_token');
+      const operatorAdmin = localStorage.getItem('operator_admin');
+      if (operatorToken && operatorAdmin) {
+        localStorage.setItem('token', operatorToken);
+        localStorage.setItem('admin', operatorAdmin);
+        localStorage.removeItem('operator_token');
+        localStorage.removeItem('operator_admin');
+        window.location.href = '/onboarding/clients';
+        return Promise.reject(error);
+      }
+
       if (!hasSession) {
         localStorage.removeItem('token');
         localStorage.removeItem('admin');
       }
+      localStorage.removeItem('operator_token');
+      localStorage.removeItem('operator_admin');
       const onOnboarding = window.location.pathname.startsWith('/onboarding');
       window.location.href = onOnboarding ? '/onboarding/login' : '/login';
     }

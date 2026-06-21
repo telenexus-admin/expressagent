@@ -11,6 +11,7 @@ import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
 import OnboardingClients from './pages/onboarding/Clients';
 import OnboardingClientDetail from './pages/onboarding/ClientDetail';
+import ClientAccess from './pages/onboarding/ClientAccess';
 import EvoClients from './pages/onboarding/EvoClients';
 import NexaWhatsApp from './pages/onboarding/NexaWhatsApp';
 import Dashboard from './pages/DashboardShell';
@@ -19,6 +20,7 @@ import ChatView from './components/ChatView';
 import AIHealth from './pages/AIHealth';
 import Statistics from './pages/Statistics';
 import DailyReports from './pages/DailyReports';
+import SmsSettings from './pages/SmsSettings';
 import ClientRemarks from './pages/ClientRemarks';
 import AdminManagement from './pages/AdminManagement';
 import Employees from './pages/Employees';
@@ -141,6 +143,7 @@ export default function App() {
             <Route index element={<OnboardingOverview />} />
             <Route path="clients" element={<OnboardingClients />} />
             <Route path="clients/:id" element={<OnboardingClientDetail />} />
+            <Route path="client-access" element={<ClientAccess />} />
             <Route path="evo-clients" element={<EvoClients />} />
             <Route path="nexa-whatsapp" element={<NexaWhatsApp />} />
           </Route>
@@ -159,6 +162,7 @@ export default function App() {
             <Route path="ai-health" element={<PermissionRoute permission="ai_health"><AIHealth /></PermissionRoute>} />
             <Route path="statistics" element={<PermissionRoute permission="statistics"><Statistics /></PermissionRoute>} />
             <Route path="reports" element={<PermissionRoute permission="statistics"><DailyReports /></PermissionRoute>} />
+            <Route path="sms-settings" element={<PermissionRoute permission="agent"><SmsSettings /></PermissionRoute>} />
             <Route path="admins" element={<PermissionRoute permission="admins"><AdminManagement /></PermissionRoute>} />
             <Route path="employees" element={<PermissionRoute permission="employees"><Employees /></PermissionRoute>} />
             <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />

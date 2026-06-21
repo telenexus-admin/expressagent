@@ -1,5 +1,5 @@
 const db = require('../db');
-const { sendSMS } = require('./sms');
+const { sendSMS, ensureSmsSchema } = require('./sms');
 
 const TIME_ZONE = 'Africa/Nairobi';
 let tablesReady = false;
@@ -8,6 +8,7 @@ let running = false;
 
 async function ensureDailyReportTables() {
   if (tablesReady) return;
+  await ensureSmsSchema();
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_report_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_report_phone VARCHAR(50)`);
   await db.query(`
@@ -156,7 +157,7 @@ async function sendClientReport(client, reportDate, { force = false } = {}) {
   let error = null;
   let sentAt = new Date();
   try {
-    await sendSMS(phone, reportText);
+    await sendSMS(phone, reportText, client);
     console.log(`Daily report SMS sent for client ${client.id} to ${phone}.`);
   } catch (err) {
     status = 'failed';
@@ -190,7 +191,8 @@ async function runDueReports() {
     if (clock.hour < 20) return;
     const reportDate = nairobiDate();
     const clients = await db.query(
-      `SELECT id, name, business_name, support_number, daily_report_phone
+      `SELECT id, name, business_name, support_number, daily_report_phone,
+              sms_provider, sms_api_key, sms_sender_id, sms_partner_id
        FROM clients
        WHERE status = 'active' AND daily_report_enabled = TRUE`
     );

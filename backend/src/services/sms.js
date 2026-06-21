@@ -1,39 +1,41 @@
 const axios = require('axios');
 
-const DEFAULT_URL = 'https://sms.blessedtexts.com/api/sms/v1/sendsms';
+const BLESSED_DEFAULT_URL = 'https://sms.blessedtexts.com/api/sms/v1/sendsms';
+const SAVVY_DEFAULT_URL = 'https://sms.savvybulksms.com/api/services/sendsms/';
 
 function normalizePhone(phone) {
   return String(phone || '').replace(/[^0-9]/g, '');
 }
 
-function envConfig() {
-  return {
-    provider: 'blessed_text',
-    apiKey: process.env.BLESSED_API_KEY,
-    senderId: process.env.BLESSED_SENDER_ID,
-    url: process.env.BLESSED_API_URL || DEFAULT_URL,
-  };
-}
-
 function normalizeProvider(value) {
   const provider = String(value || 'blessed_text').trim().toLowerCase();
-  if (provider === 'blessed' || provider === 'blessedtexts') return 'blessed_text';
+  if (provider === 'blessed' || provider === 'blessedtexts' || provider === 'blessed_text') return 'blessed_text';
+  if (provider === 'savvy' || provider === 'savvy_bulk_sms' || provider === 'savvybulksms') return 'savvy';
   return provider;
 }
 
 function resolveConfig(options = {}) {
-  const fallback = envConfig();
   const client = options.client || {};
+  const provider = normalizeProvider(
+    options.provider || client.sms_provider || process.env.SMS_PROVIDER || 'blessed_text'
+  );
+  const isSavvy = provider === 'savvy';
   return {
-    provider: normalizeProvider(options.provider || client.sms_provider || fallback.provider),
-    apiKey: options.apiKey || client.sms_api_key || fallback.apiKey,
-    senderId: options.senderId || client.sms_sender_id || fallback.senderId,
-    url: options.url || process.env.BLESSED_API_URL || DEFAULT_URL,
+    provider,
+    apiKey: options.apiKey || client.sms_api_key || (isSavvy ? process.env.SAVVY_API_KEY : process.env.BLESSED_API_KEY),
+    senderId: options.senderId || client.sms_sender_id || (isSavvy ? process.env.SAVVY_SENDER_ID : process.env.BLESSED_SENDER_ID),
+    partnerId: options.partnerId || client.sms_partner_id || process.env.SAVVY_PARTNER_ID,
+    url: options.url || (isSavvy
+      ? (process.env.SAVVY_API_URL || SAVVY_DEFAULT_URL)
+      : (process.env.BLESSED_API_URL || BLESSED_DEFAULT_URL)),
   };
 }
 
 function hasSMSConfig(options = {}) {
   const config = resolveConfig(options);
+  if (config.provider === 'savvy') {
+    return Boolean(config.apiKey && config.partnerId && config.senderId);
+  }
   return config.provider === 'blessed_text' && Boolean(config.apiKey && config.senderId);
 }
 
@@ -54,33 +56,18 @@ function blessedTextError(data) {
   return data.status_desc || data.message || data.error || JSON.stringify(data);
 }
 
-// Send an SMS via Blessed Texts. `phone` may be a single MSISDN or an array.
-// Returns the provider response on success; throws on failure.
-async function sendSMS(phone, message, options = {}) {
-  const { provider, apiKey, senderId, url } = resolveConfig(options);
-
-  if (provider !== 'blessed_text') {
-    throw new Error('Unsupported SMS provider');
-  }
-
-  if (!apiKey || !senderId) {
+async function sendBlessedText(recipients, message, config) {
+  if (!config.apiKey || !config.senderId) {
     throw new Error('SMS not configured: Blessed Text API key and sender ID required');
   }
 
-  const phones = Array.isArray(phone)
-    ? phone.map(normalizePhone).filter(Boolean).join(',')
-    : normalizePhone(phone);
-
-  if (!phones) throw new Error('No recipient phone number');
-  if (!message || !message.trim()) throw new Error('SMS message is empty');
-
-  const res = await axios.post(
-    url,
+  const response = await axios.post(
+    config.url,
     {
-      api_key: apiKey,
-      sender_id: senderId,
-      message,
-      phone: phones,
+      api_key: config.apiKey,
+      sender_id: config.senderId,
+      message: String(message),
+      phone: recipients.join(','),
     },
     {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
@@ -88,11 +75,78 @@ async function sendSMS(phone, message, options = {}) {
     }
   );
 
-  if (!blessedTextAccepted(res.data)) {
-    throw new Error(blessedTextError(res.data));
+  if (!blessedTextAccepted(response.data)) {
+    throw new Error(blessedTextError(response.data));
   }
-
-  return res.data;
+  return response.data;
 }
 
-module.exports = { sendSMS, hasSMSConfig, DEFAULT_URL };
+function savvyResponseError(data) {
+  const responses = Array.isArray(data?.responses) ? data.responses : [];
+  if (!responses.length) return `Savvy Bulk SMS returned an unexpected response: ${JSON.stringify(data)}`;
+  const failed = responses.find((item) => {
+    const code = Number(item?.['respose-code'] ?? item?.['response-code']);
+    return code !== 200;
+  });
+  if (!failed) return null;
+  return failed['response-description'] || `Savvy Bulk SMS failed with code ${failed['respose-code'] ?? failed['response-code']}`;
+}
+
+async function sendSavvyOne(recipient, message, config) {
+  if (!config.apiKey || !config.partnerId || !config.senderId) {
+    throw new Error('SMS not configured: Savvy API key, Partner ID and Sender ID / Shortcode required');
+  }
+
+  const response = await axios.post(
+    config.url,
+    {
+      apikey: config.apiKey,
+      partnerID: config.partnerId,
+      message: String(message),
+      shortcode: config.senderId,
+      mobile: recipient,
+    },
+    {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      timeout: 15000,
+    }
+  );
+
+  const error = savvyResponseError(response.data);
+  if (error) throw new Error(error);
+  return response.data;
+}
+
+// Sends through the provider selected for the client.
+// Existing Blessed Text callers remain compatible.
+async function sendSMS(phone, message, options = {}) {
+  if (!message || !String(message).trim()) throw new Error('SMS message is empty');
+
+  const config = resolveConfig(options);
+  const recipients = (Array.isArray(phone) ? phone : [phone])
+    .map(normalizePhone)
+    .filter(Boolean);
+
+  if (!recipients.length) throw new Error('No recipient phone number');
+
+  if (config.provider === 'savvy') {
+    const results = await Promise.all(
+      recipients.map((recipient) => sendSavvyOne(recipient, message, config))
+    );
+    return Array.isArray(phone) ? results : results[0];
+  }
+
+  if (config.provider !== 'blessed_text') {
+    throw new Error(`Unsupported SMS provider: ${config.provider}`);
+  }
+
+  return sendBlessedText(recipients, message, config);
+}
+
+module.exports = {
+  sendSMS,
+  hasSMSConfig,
+  normalizeProvider,
+  BLESSED_DEFAULT_URL,
+  SAVVY_DEFAULT_URL,
+};

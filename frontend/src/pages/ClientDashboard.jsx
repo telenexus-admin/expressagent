@@ -136,6 +136,7 @@ export default function ClientDashboard() {
     ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
     ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
     ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
+    ['/dashboard/sms-settings', 'SMS Provider', AgentIcon, 'agent'],
     ['/dashboard/agent', 'Agent', AgentIcon, 'agent'],
   ].filter((item) => canAccess(admin, item[3]));
 

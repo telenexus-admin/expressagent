@@ -57,12 +57,14 @@ router.put('/', async (req, res) => {
 
     const current = currentResult.rows[0];
     const provider = String(sms_provider ?? current.sms_provider ?? 'blessed').trim().toLowerCase();
-    const apiKey = String(sms_api_key || '').trim() || current.sms_api_key || '';
+    const providerChanged = provider !== (current.sms_provider || 'blessed');
+    const enteredApiKey = String(sms_api_key || '').trim();
+    const apiKey = enteredApiKey || (providerChanged ? '' : (current.sms_api_key || ''));
     const senderId = sms_sender_id === undefined
-      ? (current.sms_sender_id || '')
+      ? (providerChanged ? '' : (current.sms_sender_id || ''))
       : String(sms_sender_id || '').trim();
     const partnerId = sms_partner_id === undefined
-      ? (current.sms_partner_id || '')
+      ? (providerChanged ? '' : (current.sms_partner_id || ''))
       : String(sms_partner_id || '').trim();
 
     if (!SMS_PROVIDERS.includes(provider)) {
@@ -93,9 +95,11 @@ router.put('/', async (req, res) => {
     const updates = ['sms_provider = $1', 'sms_sender_id = $2', 'sms_partner_id = $3'];
     const params = [provider, senderId || null, partnerId || null];
 
-    if (String(sms_api_key || '').trim()) {
-      params.push(String(sms_api_key).trim());
+    if (enteredApiKey) {
+      params.push(enteredApiKey);
       updates.push(`sms_api_key = $${params.length}`);
+    } else if (providerChanged) {
+      updates.push('sms_api_key = NULL');
     }
 
     params.push(clientId);

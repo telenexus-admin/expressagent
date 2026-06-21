@@ -13,8 +13,7 @@ import expressnetLogo from '../assets/expressnetLogo';
 
 function canAccess(admin, permission) {
   if (!admin) return false;
-  if (permission === 'billing') return false;
-  if (permission === 'settings') return true;
+  if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
 }
@@ -82,6 +81,7 @@ export default function ExpressnetDashboard() {
       items: [
         ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
         ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
+        ['/dashboard/billing', 'Billing', ChartIcon, 'billing'],
         ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
         ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
         ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],
@@ -103,6 +103,7 @@ export default function ExpressnetDashboard() {
         ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
         ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
         ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
+        ['/dashboard/communication', 'Communication', ChatIcon, 'communication'],
         ['/dashboard/settings', 'Settings', CogIcon, 'settings'],
       ],
     },

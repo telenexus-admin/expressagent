@@ -42,12 +42,6 @@ const NexaMark = () => (
   </span>
 );
 
-const HeaderPulseIcon = () => (
-  <span className="hidden h-[70px] w-[70px] shrink-0 items-center justify-center rounded-[20px] border border-[#d6d5ff] bg-[#f5f2ff] text-[#5535ff] shadow-[0_14px_26px_rgba(75,63,196,0.12)] sm:flex">
-    <PulseIcon className="h-7 w-7" />
-  </span>
-);
-
 const BellIcon = ({ className = 'h-6 w-6' }) => (
   <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
     <path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
@@ -89,6 +83,17 @@ function AiSidebarHero({ compact = false }) {
   return (
     <div className={`${compact ? 'mx-4 mb-3 h-[94px]' : 'mx-5 mb-5 h-[138px]'} dashboard-ai-card relative shrink-0 overflow-hidden rounded-[20px] border border-[#dbe5ff] bg-gradient-to-br from-[#eef6ff] via-[#f6f1ff] to-[#e9f2ff] shadow-[0_16px_34px_rgba(80,83,140,0.12)]`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(53,108,255,0.18),transparent_18%),radial-gradient(circle_at_90%_15%,rgba(124,58,237,0.18),transparent_22%)]" />
+      {!compact && (
+        <div className="absolute left-5 top-4 z-20 flex items-center gap-2">
+          <span className="flex h-8 w-8 items-center justify-center overflow-hidden rounded-lg">
+            <NexaMark />
+          </span>
+          <div>
+            <p className="text-xs font-extrabold leading-4 text-[#0d1438] dashboard-brand-title">Nexa</p>
+            <p className="text-[10px] font-medium leading-3 text-[#6d7697] dashboard-muted">AI Support Portal</p>
+          </div>
+        </div>
+      )}
       <img
         src={aiBotArtwork}
         alt="Nexa AI assistant"
@@ -228,7 +233,8 @@ export default function ClientDashboard() {
     <div className="dashboard-shell h-screen overflow-hidden bg-[#f7f9fd] text-slate-900">
       <div className="flex h-full min-h-0 gap-3 p-2">
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} dashboard-sidebar hidden w-[330px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)] z-20`}>
-          <div className={expressnet ? 'px-6 pt-6 pb-5' : 'px-7 pt-6 pb-5'}><Brand expressnet={expressnet} /></div>
+          {expressnet && <div className="px-6 pt-6 pb-5"><Brand expressnet={expressnet} /></div>}
+          {!expressnet && <div className="h-5 shrink-0" />}
           <AiSidebarHero />
           <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-5 pb-4">{navList()}</nav>
           <div className="mx-5 mb-5 rounded-2xl border border-[#e2e7f4] bg-[#f8f6ff] p-4">
@@ -245,14 +251,18 @@ export default function ClientDashboard() {
             <div className="flex items-center gap-4 min-w-0">
               <button onClick={() => setDrawerOpen(true)} className="lg:hidden w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-600"><MenuIcon className="w-6 h-6" /></button>
               <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm items-center justify-center text-[#263150] hover:text-[#6d35ff]"><MenuIcon className="w-5 h-5" /></button>
-              <HeaderPulseIcon />
               <div className="min-w-0"><h1 className="truncate text-3xl font-extrabold tracking-normal text-[#0d1438] dashboard-brand-title">{title}</h1><p className="mt-1 truncate text-sm font-medium text-[#6d7697] dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
             </div>
             <div className="flex items-center gap-4">
               <GlobalConversationSearch />
-              <button className="relative hidden h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#263150] sm:flex">
+              <button
+                type="button"
+                onClick={() => navigate('/dashboard/conversations')}
+                title={`${badges.conversations || 0} new messages`}
+                className="relative hidden h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#263150] sm:flex"
+              >
                 <BellIcon />
-                <span className="absolute right-2 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5b22f5] px-1 text-[10px] font-black text-white">3</span>
+                {badges.conversations > 0 && <span className="absolute right-2 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5b22f5] px-1 text-[10px] font-black text-white">{badges.conversations > 99 ? '99+' : badges.conversations}</span>}
               </button>
               <div className="hidden items-center gap-3 lg:flex">
                 <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-[#80d9ff] bg-[#f0f8ff] text-sm font-extrabold text-[#0d1438]">

@@ -5,6 +5,8 @@ const { parseEvolutionInbound } = require('../services/evolution');
 const { sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
+const { sendSMS } = require('../services/sms');
+const { sendWorkflowEmployeeEmail } = require('../services/email');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
@@ -73,6 +75,123 @@ function shouldReplyAsVoice(replyMode, inboundIsVoice) {
   if (replyMode === 'voice') return true;
   if (replyMode === 'text' || replyMode === 'silent') return false;
   return Boolean(inboundIsVoice);
+}
+
+function normalizeWorkflowChannels(value) {
+  const raw = Array.isArray(value) ? value : ['sms'];
+  const allowed = new Set(['sms', 'email', 'whatsapp']);
+  const clean = raw.map((item) => String(item || '').toLowerCase()).filter((item) => allowed.has(item));
+  return [...new Set(clean)].length ? [...new Set(clean)] : ['sms'];
+}
+
+function normalizeWorkflowEmployeeIds(value, fallback = null) {
+  const raw = Array.isArray(value) ? value : [];
+  const ids = raw.map((item) => parseInt(item, 10)).filter((item) => Number.isInteger(item) && item > 0);
+  if (ids.length === 0 && fallback) ids.push(parseInt(fallback, 10));
+  return [...new Set(ids)].filter((item) => Number.isInteger(item) && item > 0);
+}
+
+async function sendWorkflowNotice({ client, employee, channels, subject, notice }) {
+  const results = {};
+  await Promise.all(channels.map(async (channel) => {
+    try {
+      if (channel === 'sms') {
+        if (!employee.emp_phone) throw new Error('Assigned employee has no phone number');
+        await sendSMS(employee.emp_phone, notice, { client });
+      } else if (channel === 'email') {
+        const result = await sendWorkflowEmployeeEmail(client, { email: employee.emp_email }, { subject, message: notice });
+        if (result.status !== 'sent') throw new Error(result.error || result.status);
+      } else if (channel === 'whatsapp') {
+        if (!employee.emp_phone) throw new Error('Assigned employee has no phone number');
+        await sendClientText(client, employee.emp_phone, notice);
+      }
+      results[channel] = { status: 'sent', error: null };
+    } catch (err) {
+      results[channel] = { status: 'failed', error: safeError(err) };
+      console.error(`Evolution workflow ${channel} to employee ${employee.emp_name} failed:`, results[channel].error);
+    }
+  }));
+  return results;
+}
+
+async function dispatchWorkflowToEmployees({ client, conversation, intent, messageText, phoneNumber }) {
+  if (!intent || intent === 'general_inquiry') return;
+
+  try {
+    await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb`);
+    await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
+    await db.query(`ALTER TABLE workflow_dispatches ADD COLUMN IF NOT EXISTS employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb`);
+    await db.query(`UPDATE workflow_routes SET employee_ids = jsonb_build_array(employee_id) WHERE employee_id IS NOT NULL AND employee_ids = '[]'::jsonb`);
+
+    const routeRes = await db.query(
+      `SELECT employee_id, employee_ids, is_enabled, notification_channels
+       FROM workflow_routes
+       WHERE client_id = $1 AND intent_key = $2
+       LIMIT 1`,
+      [client.id, intent]
+    );
+    const route = routeRes.rows[0];
+    const employeeIds = normalizeWorkflowEmployeeIds(route?.employee_ids, route?.employee_id);
+    if (!route || !route.is_enabled || employeeIds.length === 0) return;
+
+    const employees = (await db.query(
+      `SELECT id AS emp_id, name AS emp_name, phone AS emp_phone, email AS emp_email
+       FROM employees
+       WHERE client_id = $1 AND is_active = TRUE AND id = ANY($2::int[])
+       ORDER BY array_position($2::int[], id)`,
+      [client.id, employeeIds]
+    )).rows;
+    if (employees.length === 0) return;
+
+    const existing = await db.query(
+      `SELECT id FROM workflow_dispatches WHERE conversation_id = $1 AND intent_key = $2`,
+      [conversation.id, intent]
+    );
+    if (existing.rows.length > 0) return;
+
+    const intentLabelMap = {
+      new_installation: 'New installation request',
+      payment_billing: 'Payment/billing issue',
+      technical_issue: 'Technical problem',
+      human_request: 'Customer wants a human agent',
+      compliment_feedback: 'Compliment/feedback',
+    };
+    const heading = intentLabelMap[intent] || 'Customer message';
+    const nameLine = conversation.customer_name ? `Customer: ${conversation.customer_name}\n` : '';
+    const notice =
+      `${heading}\n\n` +
+      nameLine +
+      `Customer number: +${phoneNumber}\n` +
+      `Their message: "${messageText}"\n\n` +
+      `Please follow up directly.`;
+
+    const channels = normalizeWorkflowChannels(route.notification_channels);
+    const allResults = await Promise.all(employees.map(async (employee) => ({
+      employee,
+      results: await sendWorkflowNotice({ client, employee, channels, subject: heading, notice }),
+    })));
+    const notifyStatus = allResults.some(({ results }) => Object.values(results).some((result) => result.status === 'sent')) ? 'sent' : 'failed';
+    const notifyError = allResults.flatMap(({ employee, results }) =>
+      Object.entries(results)
+        .filter(([, result]) => result.status !== 'sent')
+        .map(([channel, result]) => `${employee.emp_name} ${channel}: ${result.error || result.status}`)
+    ).join(' | ') || null;
+
+    await db.query(
+      `INSERT INTO workflow_dispatches
+         (conversation_id, client_id, intent_key, employee_id, employee_ids, customer_phone,
+          trigger_message, notify_status, notify_error)
+       VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
+       ON CONFLICT (conversation_id, intent_key) DO NOTHING`,
+      [conversation.id, client.id, intent, employees[0].emp_id, JSON.stringify(employees.map((employee) => employee.emp_id)), phoneNumber, messageText, notifyStatus, notifyError]
+    );
+    console.log(
+      `[evo client ${client.id}] Dispatched intent="${intent}" to ${employees.length} employee(s) via ${channels.join(', ')} ` +
+      `status=${notifyStatus}${notifyError ? ` error=${notifyError}` : ''}.`
+    );
+  } catch (err) {
+    console.error('Evolution workflow dispatch error:', safeError(err));
+  }
 }
 
 function imageFilename(mimeType) {
@@ -332,6 +451,13 @@ router.post('/client/:clientId', async (req, res) => {
          VALUES ($1, $2, $3, $4, $5, $6, 'logged', NULL, 'human')`,
         [conversation.id, client.id, incoming.phone, conversation.customer_name, userText, client.support_number || null]
       );
+      runAfterReply('Evolution human workflow dispatch', () => dispatchWorkflowToEmployees({
+        client,
+        conversation,
+        intent: 'human_request',
+        messageText: userText,
+        phoneNumber: incoming.phone,
+      }));
       runAfterReply('Evolution human support ticket creation', () => createOrUpdateTicket({
         clientId: client.id,
         conversationId: conversation.id,

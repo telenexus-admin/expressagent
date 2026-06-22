@@ -84,6 +84,12 @@ function normalizeWorkflowChannels(value) {
   return [...new Set(clean)].length ? [...new Set(clean)] : ['sms'];
 }
 
+function channelsForWorkflowIntent(intent, value) {
+  const channels = normalizeWorkflowChannels(value);
+  if (intent === 'human_request' && !channels.includes('whatsapp')) channels.push('whatsapp');
+  return channels;
+}
+
 function normalizeWorkflowEmployeeIds(value, fallback = null) {
   const raw = Array.isArray(value) ? value : [];
   const ids = raw.map((item) => parseInt(item, 10)).filter((item) => Number.isInteger(item) && item > 0);
@@ -143,12 +149,6 @@ async function dispatchWorkflowToEmployees({ client, conversation, intent, messa
     )).rows;
     if (employees.length === 0) return;
 
-    const existing = await db.query(
-      `SELECT id FROM workflow_dispatches WHERE conversation_id = $1 AND intent_key = $2`,
-      [conversation.id, intent]
-    );
-    if (existing.rows.length > 0) return;
-
     const intentLabelMap = {
       new_installation: 'New installation request',
       payment_billing: 'Payment/billing issue',
@@ -165,7 +165,7 @@ async function dispatchWorkflowToEmployees({ client, conversation, intent, messa
       `Their message: "${messageText}"\n\n` +
       `Please follow up directly.`;
 
-    const channels = normalizeWorkflowChannels(route.notification_channels);
+    const channels = channelsForWorkflowIntent(intent, route.notification_channels);
     const allResults = await Promise.all(employees.map(async (employee) => ({
       employee,
       results: await sendWorkflowNotice({ client, employee, channels, subject: heading, notice }),
@@ -182,7 +182,14 @@ async function dispatchWorkflowToEmployees({ client, conversation, intent, messa
          (conversation_id, client_id, intent_key, employee_id, employee_ids, customer_phone,
           trigger_message, notify_status, notify_error)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
-       ON CONFLICT (conversation_id, intent_key) DO NOTHING`,
+       ON CONFLICT (conversation_id, intent_key)
+       DO UPDATE SET employee_id = EXCLUDED.employee_id,
+                     employee_ids = EXCLUDED.employee_ids,
+                     customer_phone = EXCLUDED.customer_phone,
+                     trigger_message = EXCLUDED.trigger_message,
+                     notify_status = EXCLUDED.notify_status,
+                     notify_error = EXCLUDED.notify_error,
+                     created_at = NOW()`,
       [conversation.id, client.id, intent, employees[0].emp_id, JSON.stringify(employees.map((employee) => employee.emp_id)), phoneNumber, messageText, notifyStatus, notifyError]
     );
     console.log(

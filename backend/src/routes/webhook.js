@@ -118,12 +118,6 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
     const employees = employeesRes.rows;
     if (employees.length === 0) return;
 
-    const existing = await db.query(
-      `SELECT id FROM workflow_dispatches WHERE conversation_id = $1 AND intent_key = $2`,
-      [conversation.id, intent]
-    );
-    if (existing.rows.length > 0) return;
-
     const nameLine = conversation.customer_name ? `Customer: ${conversation.customer_name}\n` : '';
     const intentLabelMap = {
       new_installation: 'New installation request',
@@ -140,7 +134,7 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
       `Their message: "${messageText}"\n\n` +
       `Please follow up directly.`;
 
-    const channels = normalizeWorkflowChannels(route.notification_channels);
+    const channels = channelsForWorkflowIntent(intent, route.notification_channels);
     const allResults = await Promise.all(employees.map(async (employee) => ({
       employee,
       results: await sendWorkflowNotice({ client, employee, channels, subject: heading, notice }),
@@ -161,7 +155,14 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
          (conversation_id, client_id, intent_key, employee_id, employee_ids, customer_phone,
           trigger_message, notify_status, notify_error)
        VALUES ($1, $2, $3, $4, $5::jsonb, $6, $7, $8, $9)
-       ON CONFLICT (conversation_id, intent_key) DO NOTHING`,
+       ON CONFLICT (conversation_id, intent_key)
+       DO UPDATE SET employee_id = EXCLUDED.employee_id,
+                     employee_ids = EXCLUDED.employee_ids,
+                     customer_phone = EXCLUDED.customer_phone,
+                     trigger_message = EXCLUDED.trigger_message,
+                     notify_status = EXCLUDED.notify_status,
+                     notify_error = EXCLUDED.notify_error,
+                     created_at = NOW()`,
       [conversation.id, client.id, intent, employees[0].emp_id, JSON.stringify(employees.map((employee) => employee.emp_id)), phoneNumber, messageText, notifyStatus, notifyError]
     );
   } catch (err) {
@@ -302,6 +303,12 @@ function normalizeWorkflowChannels(value) {
   const allowed = new Set(['sms', 'email', 'whatsapp']);
   const clean = raw.map((item) => String(item || '').toLowerCase()).filter((item) => allowed.has(item));
   return [...new Set(clean)].length ? [...new Set(clean)] : ['sms'];
+}
+
+function channelsForWorkflowIntent(intent, value) {
+  const channels = normalizeWorkflowChannels(value);
+  if (intent === 'human_request' && !channels.includes('whatsapp')) channels.push('whatsapp');
+  return channels;
 }
 
 function normalizeWorkflowEmployeeIds(value, fallback = null) {

@@ -30,6 +30,16 @@ async function ensureClientSmsColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS support_email VARCHAR(255)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_email_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_name VARCHAR(160)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_address VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_reply_to VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_host VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_port INTEGER`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_username VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_password TEXT`);
 }
 
 async function loadConversationWithClient(conversationId, scope) {
@@ -50,7 +60,17 @@ async function loadConversationWithClient(conversationId, scope) {
        cl.sms_provider AS cl_sms_provider,
        cl.sms_api_key AS cl_sms_api_key,
        cl.sms_sender_id AS cl_sms_sender_id,
-       cl.installation_email_enabled AS cl_installation_email_enabled
+       cl.installation_email_enabled AS cl_installation_email_enabled,
+       cl.email_provider AS cl_email_provider,
+       cl.email_enabled AS cl_email_enabled,
+       cl.email_from_name AS cl_email_from_name,
+       cl.email_from_address AS cl_email_from_address,
+       cl.email_reply_to AS cl_email_reply_to,
+       cl.email_smtp_host AS cl_email_smtp_host,
+       cl.email_smtp_port AS cl_email_smtp_port,
+       cl.email_smtp_secure AS cl_email_smtp_secure,
+       cl.email_smtp_username AS cl_email_smtp_username,
+       cl.email_smtp_password AS cl_email_smtp_password
      FROM conversations conv
      JOIN clients cl ON cl.id = conv.client_id
      WHERE conv.id = $1`,
@@ -85,6 +105,16 @@ async function loadConversationWithClient(conversationId, scope) {
       sms_api_key: row.cl_sms_api_key,
       sms_sender_id: row.cl_sms_sender_id,
       installation_email_enabled: row.cl_installation_email_enabled,
+      email_provider: row.cl_email_provider,
+      email_enabled: row.cl_email_enabled,
+      email_from_name: row.cl_email_from_name,
+      email_from_address: row.cl_email_from_address,
+      email_reply_to: row.cl_email_reply_to,
+      email_smtp_host: row.cl_email_smtp_host,
+      email_smtp_port: row.cl_email_smtp_port,
+      email_smtp_secure: row.cl_email_smtp_secure,
+      email_smtp_username: row.cl_email_smtp_username,
+      email_smtp_password: row.cl_email_smtp_password,
     },
   };
 }

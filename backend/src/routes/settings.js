@@ -5,6 +5,7 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
+const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
 
 router.use(authMiddleware, scopeMiddleware);
@@ -12,6 +13,7 @@ router.use(authMiddleware, scopeMiddleware);
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const BILLING_PROVIDERS = ['wispman'];
 const SMS_PROVIDERS = ['blessed_text'];
+const EMAIL_PROVIDERS = ['smtp', 'gmail', 'disabled'];
 const DEFAULT_WELCOME_MENU = {
   enabled: true,
   body: '',
@@ -115,6 +117,22 @@ function safeCommunicationConfig(row) {
   };
 }
 
+function safeEmailConfig(row) {
+  return {
+    provider: row.email_provider || 'smtp',
+    enabled: row.email_enabled === true,
+    from_name: row.email_from_name || '',
+    from_address: row.email_from_address || '',
+    reply_to: row.email_reply_to || '',
+    smtp_host: row.email_smtp_host || '',
+    smtp_port: row.email_smtp_port || null,
+    smtp_secure: row.email_smtp_secure !== false,
+    smtp_username: row.email_smtp_username || '',
+    has_password: Boolean(row.email_smtp_password),
+    configured_at: row.email_configured_at || null,
+  };
+}
+
 function safePayHeroConfig(row) {
   return {
     enabled: row.payhero_enabled === true,
@@ -129,6 +147,66 @@ async function ensureCommunicationColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
+}
+
+async function ensureEmailColumns() {
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_name VARCHAR(160)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_address VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_reply_to VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_host VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_port INTEGER`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_username VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_password TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_configured_at TIMESTAMP WITH TIME ZONE`);
+}
+
+function normalizeEmailProvider(value) {
+  const provider = String(value || 'smtp').trim().toLowerCase();
+  return EMAIL_PROVIDERS.includes(provider) ? provider : 'smtp';
+}
+
+function normalizeEmailAddress(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function cleanEmailConfig(body = {}, existing = {}) {
+  const provider = normalizeEmailProvider(body.provider);
+  const enabled = provider !== 'disabled' && body.enabled !== false;
+  const fromAddress = normalizeEmailAddress(body.from_address || existing.email_from_address);
+  const smtpUsername = String(body.smtp_username || existing.email_smtp_username || '').trim();
+  const smtpHost = provider === 'gmail'
+    ? 'smtp.gmail.com'
+    : String(body.smtp_host || existing.email_smtp_host || '').trim();
+  const smtpPort = provider === 'gmail'
+    ? Number(body.smtp_port || existing.email_smtp_port || 465)
+    : Number(body.smtp_port || existing.email_smtp_port || 465);
+  const smtpSecure = body.smtp_secure === undefined ? (smtpPort === 465) : Boolean(body.smtp_secure);
+  return {
+    provider,
+    enabled,
+    from_name: String(body.from_name || existing.email_from_name || '').trim().slice(0, 160),
+    from_address: fromAddress,
+    reply_to: normalizeEmailAddress(body.reply_to || existing.email_reply_to || fromAddress),
+    smtp_host: smtpHost,
+    smtp_port: smtpPort,
+    smtp_secure: smtpSecure,
+    smtp_username: smtpUsername,
+    smtp_password: String(body.smtp_password || '').trim(),
+  };
+}
+
+function validateEmailConfig(config, hasSavedPassword) {
+  if (!config.enabled) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.from_address)) return 'Enter a valid from email address';
+  if (config.reply_to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.reply_to)) return 'Enter a valid reply-to email address';
+  if (!config.smtp_host) return 'SMTP host is required';
+  if (!Number.isInteger(config.smtp_port) || config.smtp_port < 1 || config.smtp_port > 65535) return 'Enter a valid SMTP port';
+  if (!config.smtp_username) return 'SMTP username is required';
+  if (!config.smtp_password && !hasSavedPassword) return 'SMTP password or Gmail app password is required';
+  return null;
 }
 
 async function ensureAgentSettingsColumns() {
@@ -267,6 +345,27 @@ router.get('/communication', async (req, res) => {
     res.json(safeCommunicationConfig(result.rows[0]));
   } catch (err) {
     console.error('GET /settings/communication error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/communication/email', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureEmailColumns();
+    const result = await db.query(
+      `SELECT email_provider, email_enabled, email_from_name, email_from_address, email_reply_to,
+              email_smtp_host, email_smtp_port, email_smtp_secure, email_smtp_username,
+              email_smtp_password, email_configured_at
+       FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'Client not found' });
+    res.json(safeEmailConfig(result.rows[0]));
+  } catch (err) {
+    console.error('GET /settings/communication/email error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });
@@ -500,6 +599,61 @@ router.put('/communication', async (req, res) => {
   }
 });
 
+router.put('/communication/email', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureEmailColumns();
+    const existing = await db.query(
+      `SELECT email_smtp_password, email_from_name, email_from_address, email_reply_to,
+              email_smtp_host, email_smtp_port, email_smtp_secure, email_smtp_username
+       FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Client not found' });
+    const config = cleanEmailConfig(req.body, existing.rows[0]);
+    const validation = validateEmailConfig(config, Boolean(existing.rows[0].email_smtp_password));
+    if (validation) return res.status(400).json({ error: validation });
+
+    const result = await db.query(
+      `UPDATE clients
+       SET email_provider = $1,
+           email_enabled = $2,
+           email_from_name = $3,
+           email_from_address = $4,
+           email_reply_to = $5,
+           email_smtp_host = $6,
+           email_smtp_port = $7,
+           email_smtp_secure = $8,
+           email_smtp_username = $9,
+           email_smtp_password = COALESCE(NULLIF($10, ''), email_smtp_password),
+           email_configured_at = CASE WHEN $2 THEN NOW() ELSE email_configured_at END
+       WHERE id = $11
+       RETURNING email_provider, email_enabled, email_from_name, email_from_address, email_reply_to,
+                 email_smtp_host, email_smtp_port, email_smtp_secure, email_smtp_username,
+                 email_smtp_password, email_configured_at`,
+      [
+        config.provider,
+        config.enabled,
+        config.from_name || null,
+        config.from_address || null,
+        config.reply_to || null,
+        config.smtp_host || null,
+        config.smtp_port || null,
+        config.smtp_secure,
+        config.smtp_username || null,
+        config.smtp_password,
+        targetClient,
+      ]
+    );
+    res.json({ success: true, ...safeEmailConfig(result.rows[0]) });
+  } catch (err) {
+    console.error('PUT /settings/communication/email error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.put('/payhero', async (req, res) => {
   if (!requireOperator(req, res)) return;
   const targetClient = resolveTargetClient(req, res);
@@ -658,6 +812,47 @@ router.post('/communication/test', async (req, res) => {
     const message = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
     console.error('POST /settings/communication/test error:', message);
     res.status(500).json({ error: `SMS could not be sent: ${message}` });
+  }
+});
+
+router.post('/communication/email/test', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  const recipient = normalizeEmailAddress(req.body.to);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    return res.status(400).json({ error: 'Enter a valid test email address' });
+  }
+
+  try {
+    await ensureEmailColumns();
+    const existing = await db.query(
+      `SELECT email_provider, email_enabled, email_from_name, email_from_address, email_reply_to,
+              email_smtp_host, email_smtp_port, email_smtp_secure, email_smtp_username,
+              email_smtp_password
+       FROM clients WHERE id = $1`,
+      [targetClient]
+    );
+    if (existing.rows.length === 0) return res.status(404).json({ error: 'Client not found' });
+    const config = cleanEmailConfig(req.body, existing.rows[0]);
+    config.email_provider = config.provider;
+    config.email_enabled = config.enabled;
+    config.email_from_name = config.from_name;
+    config.email_from_address = config.from_address;
+    config.email_reply_to = config.reply_to;
+    config.email_smtp_host = config.smtp_host;
+    config.email_smtp_port = config.smtp_port;
+    config.email_smtp_secure = config.smtp_secure;
+    config.email_smtp_username = config.smtp_username;
+    config.email_smtp_password = config.smtp_password || existing.rows[0].email_smtp_password;
+    const validation = validateEmailConfig(config, Boolean(config.email_smtp_password));
+    if (validation) return res.status(400).json({ error: validation });
+    const result = await testEmailConfig(config, recipient);
+    if (result.status !== 'sent') return res.status(400).json({ error: result.error || 'Test email failed' });
+    res.json({ success: true, sent_to: recipient });
+  } catch (err) {
+    console.error('POST /settings/communication/email/test error:', err.message);
+    res.status(500).json({ error: `Email could not be sent: ${err.message}` });
   }
 });
 

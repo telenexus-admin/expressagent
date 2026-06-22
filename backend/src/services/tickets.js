@@ -308,7 +308,9 @@ async function loadClientForWorkflowNotify(clientId) {
   const result = await db.query(
     `SELECT id, name, business_name, contact_email, support_number, agent_name,
             connection_provider, meta_phone_number_id, meta_access_token, evolution_instance_name,
-            sms_provider, sms_api_key, sms_sender_id
+            sms_provider, sms_api_key, sms_sender_id,
+            email_provider, email_enabled, email_from_name, email_from_address, email_reply_to,
+            email_smtp_host, email_smtp_port, email_smtp_secure, email_smtp_username, email_smtp_password
      FROM clients WHERE id = $1 LIMIT 1`,
     [clientId]
   );

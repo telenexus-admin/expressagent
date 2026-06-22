@@ -32,6 +32,17 @@ const schema = `
     sms_api_key TEXT,
     sms_sender_id VARCHAR(80),
     sms_configured_at TIMESTAMP WITH TIME ZONE,
+    email_provider VARCHAR(40),
+    email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+    email_from_name VARCHAR(160),
+    email_from_address VARCHAR(180),
+    email_reply_to VARCHAR(180),
+    email_smtp_host VARCHAR(180),
+    email_smtp_port INTEGER,
+    email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE,
+    email_smtp_username VARCHAR(180),
+    email_smtp_password TEXT,
+    email_configured_at TIMESTAMP WITH TIME ZONE,
     connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta' CHECK (connection_provider IN ('meta', 'evolution', 'website')),
     evolution_instance_name VARCHAR(120) UNIQUE,
     evolution_webhook_secret VARCHAR(96),
@@ -53,6 +64,17 @@ const schema = `
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_provider VARCHAR(40);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_name VARCHAR(160);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_address VARCHAR(180);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_reply_to VARCHAR(180);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_host VARCHAR(180);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_port INTEGER;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_username VARCHAR(180);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_password TEXT;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_configured_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_instance_name VARCHAR(120);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_webhook_secret VARCHAR(96);

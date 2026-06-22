@@ -12,6 +12,17 @@ const empty = {
   system_prompt: '',
   webhook_url: '',
   evolution_api_key_configured: false,
+  email_enabled: false,
+  email_from_name: 'Nexa',
+  email_from_address: '',
+  email_reply_to: '',
+  email_smtp_host: 'mail.privateemail.com',
+  email_smtp_port: 465,
+  email_smtp_secure: true,
+  email_smtp_username: '',
+  email_smtp_password: '',
+  email_smtp_password_configured: false,
+  email_configured_at: null,
 };
 
 const replyModes = [
@@ -78,7 +89,9 @@ export default function NexaWhatsApp() {
   const [liveSaving, setLiveSaving] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
   const [testPhone, setTestPhone] = useState('');
+  const [testEmail, setTestEmail] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [conversations, setConversations] = useState([]);
@@ -161,10 +174,26 @@ export default function NexaWhatsApp() {
   const save = async () => {
     setSaving(true); setNotice(''); setError('');
     try {
-      const payload = { enabled: Boolean(form.enabled), evolution_base_url: form.evolution_base_url, evolution_instance: form.evolution_instance, agent_name: form.agent_name, owner_phone: form.owner_phone, system_prompt: form.system_prompt };
+      const payload = {
+        enabled: Boolean(form.enabled),
+        evolution_base_url: form.evolution_base_url,
+        evolution_instance: form.evolution_instance,
+        agent_name: form.agent_name,
+        owner_phone: form.owner_phone,
+        system_prompt: form.system_prompt,
+        email_enabled: Boolean(form.email_enabled),
+        email_from_name: form.email_from_name,
+        email_from_address: form.email_from_address,
+        email_reply_to: form.email_reply_to,
+        email_smtp_host: form.email_smtp_host,
+        email_smtp_port: Number(form.email_smtp_port || 465),
+        email_smtp_secure: Boolean(form.email_smtp_secure),
+        email_smtp_username: form.email_smtp_username,
+      };
       if (form.evolution_api_key.trim()) payload.evolution_api_key = form.evolution_api_key.trim();
+      if (form.email_smtp_password.trim()) payload.email_smtp_password = form.email_smtp_password.trim();
       const { data } = await api.put('/operator-agent/config', payload);
-      setForm((current) => ({ ...current, ...data, evolution_api_key: '' }));
+      setForm((current) => ({ ...current, ...data, evolution_api_key: '', email_smtp_password: '' }));
       setNotice(form.enabled ? 'Nexa official WhatsApp configuration saved and enabled.' : 'Configuration saved. Nexa is currently disabled.');
     } catch (err) {
       setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not save configuration.');
@@ -196,6 +225,28 @@ export default function NexaWhatsApp() {
     try { await api.post('/operator-agent/test-message', { phone: testPhone }); setNotice(`Test WhatsApp message sent to ${testPhone}.`); }
     catch (err) { setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not send test message.'); }
     finally { setSending(false); }
+  };
+
+  const sendEmailTest = async () => {
+    setTestingEmail(true); setNotice(''); setError('');
+    try {
+      const payload = {
+        to: testEmail,
+        email_enabled: true,
+        email_from_name: form.email_from_name,
+        email_from_address: form.email_from_address,
+        email_reply_to: form.email_reply_to,
+        email_smtp_host: form.email_smtp_host,
+        email_smtp_port: Number(form.email_smtp_port || 465),
+        email_smtp_secure: Boolean(form.email_smtp_secure),
+        email_smtp_username: form.email_smtp_username,
+      };
+      if (form.email_smtp_password.trim()) payload.email_smtp_password = form.email_smtp_password.trim();
+      await api.post('/operator-agent/email-test', payload);
+      setNotice(`Test email sent to ${testEmail}.`);
+    } catch (err) {
+      setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not send test email.');
+    } finally { setTestingEmail(false); }
   };
 
   const copyWebhook = async () => {
@@ -342,11 +393,19 @@ export default function NexaWhatsApp() {
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="space-y-6">
             <div className="rounded-[30px] border border-white bg-white p-6 shadow-lg shadow-indigo-100/50 sm:p-7">
               <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Evolution API connection</h2><p className="mt-1 text-xs text-slate-400">Credentials for the normal WhatsApp number hosting Nexa.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>{form.enabled ? 'Online' : 'Offline'}</span><Toggle checked={Boolean(form.enabled)} disabled={liveSaving} onChange={toggleLive} /></label></div>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Input label="Evolution API URL" value={form.evolution_base_url || ''} onChange={(value) => set('evolution_base_url', value)} placeholder="https://evoapi.yourdomain.com" /><Input label="Instance name" value={form.evolution_instance || ''} onChange={(value) => set('evolution_instance', value)} placeholder="nexa-official" /><Input label="API key" type="password" value={form.evolution_api_key || ''} onChange={(value) => set('evolution_api_key', value)} placeholder={form.evolution_api_key_configured ? 'Saved — enter only to change it' : 'Paste Evolution API key'} helper={form.evolution_api_key_configured ? 'An API key is already securely saved.' : ''} /><Input label="Owner phone for alerts" value={form.owner_phone || ''} onChange={(value) => set('owner_phone', value)} placeholder="2547XXXXXXXX" /><Input label="Agent name" value={form.agent_name || ''} onChange={(value) => set('agent_name', value)} placeholder="Nexa" /></div>
               <label className="mt-5 block"><span className="mb-2 block text-xs font-bold text-slate-600">Nexa system prompt</span><textarea value={form.system_prompt || ''} onChange={(event) => set('system_prompt', event.target.value)} rows={8} className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-[#3535FF]" /></label>
               <div className="mt-6 flex flex-wrap gap-3"><button onClick={save} disabled={saving} className="rounded-2xl bg-[#3535FF] px-6 py-3 text-sm font-black text-white disabled:opacity-60">{saving ? 'Saving...' : 'Save configuration'}</button><button onClick={connectWebhook} disabled={connecting} className="rounded-2xl bg-[#ececff] px-6 py-3 text-sm font-black text-[#3535FF] disabled:opacity-60">{connecting ? 'Connecting...' : 'Connect webhook'}</button></div>
+            </div>
+            <div className="rounded-[30px] border border-white bg-white p-6 shadow-lg shadow-indigo-100/50 sm:p-7">
+              <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Official Nexa Email</h2><p className="mt-1 text-xs text-slate-400">Namecheap Private Email or any SMTP mailbox used by Nexa.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>{form.email_enabled ? 'Enabled' : 'Disabled'}</span><Toggle checked={Boolean(form.email_enabled)} onChange={(value) => set('email_enabled', value)} /></label></div>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Input label="From name" value={form.email_from_name || ''} onChange={(value) => set('email_from_name', value)} placeholder="Nexa" /><Input label="From email" value={form.email_from_address || ''} onChange={(value) => set('email_from_address', value)} placeholder="support@yourdomain.com" /><Input label="Reply-to email" value={form.email_reply_to || ''} onChange={(value) => set('email_reply_to', value)} placeholder="support@yourdomain.com" /><Input label="SMTP username" value={form.email_smtp_username || ''} onChange={(value) => set('email_smtp_username', value)} placeholder="support@yourdomain.com" /><Input label="SMTP host" value={form.email_smtp_host || ''} onChange={(value) => set('email_smtp_host', value)} placeholder="mail.privateemail.com" /><Input label="SMTP port" value={String(form.email_smtp_port || '')} onChange={(value) => set('email_smtp_port', value)} placeholder="465" /><Input label="SMTP password" type="password" value={form.email_smtp_password || ''} onChange={(value) => set('email_smtp_password', value)} placeholder={form.email_smtp_password_configured ? 'Saved - enter only to change it' : 'Mailbox password'} helper={form.email_smtp_password_configured ? 'A mailbox password is already securely saved.' : 'Use the mailbox password from Namecheap Private Email.'} /><label className="block"><span className="mb-2 block text-xs font-bold text-slate-600">Security</span><button type="button" onClick={() => set('email_smtp_secure', !form.email_smtp_secure)} className={`flex h-[46px] w-full items-center justify-between rounded-2xl border px-4 text-sm font-black ${form.email_smtp_secure ? 'border-[#3535FF]/20 bg-[#f1efff] text-[#3535FF]' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>SSL/TLS</span><span>{form.email_smtp_secure ? 'On' : 'Off'}</span></button></label></div>
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-xs leading-5 text-slate-500"><strong className="text-slate-700">Namecheap Private Email:</strong> host <span className="font-mono">mail.privateemail.com</span>, port <span className="font-mono">465</span>, SSL/TLS on, username is the full email address.</div>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row"><Input label="Send test email to" value={testEmail} onChange={setTestEmail} placeholder="you@example.com" /><button onClick={sendEmailTest} disabled={testingEmail || !testEmail.trim()} className="mt-6 rounded-2xl bg-[#101027] px-5 py-3 text-sm font-black text-white disabled:opacity-50 sm:min-w-40">{testingEmail ? 'Sending...' : 'Send test email'}</button></div>
+            </div>
             </div>
             <div className="space-y-6">
               <div className="rounded-[30px] bg-[#101027] p-6 text-white shadow-xl"><h2 className="text-lg font-black">Webhook connection</h2><p className="mb-4 mt-1 text-xs text-white/55">Evolution sends incoming messages to this URL.</p><div className="break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-4 text-xs leading-5 text-white/75">{form.webhook_url || 'Generated after setup loads.'}</div><button onClick={copyWebhook} className="mt-4 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold">Copy webhook URL</button></div>

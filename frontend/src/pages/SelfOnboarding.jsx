@@ -39,6 +39,9 @@ export default function SelfOnboarding() {
   const [qrBackup, setQrBackup] = useState('');
   const [requestingPairing, setRequestingPairing] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [otp, setOtp] = useState('');
+  const [verifyingOtp, setVerifyingOtp] = useState(false);
+  const [resendingOtp, setResendingOtp] = useState(false);
 
   useEffect(() => {
     if (!sessionToken || stage !== 'qr') return undefined;
@@ -63,9 +66,29 @@ export default function SelfOnboarding() {
     try {
       const { data } = await api.post('/public/evo-onboarding/start', form);
       setSessionToken(data.session_token); setSession(data); setQrBackup(data.qr_code || ''); setPairingPhone(form.phone); setConnectMethod('qr');
-      setStage(data.status === 'connected' ? 'connected' : 'qr');
+      setStage(data.status === 'connected' ? 'connected' : (data.phone_verified ? 'qr' : 'otp'));
     } catch (err) { setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not begin onboarding. Please try again.'); }
     finally { setSubmitting(false); }
+  };
+
+  const verifyOtp = async (event) => {
+    event.preventDefault();
+    setVerifyingOtp(true); setError('');
+    try {
+      const { data } = await api.post(`/public/evo-onboarding/verify-otp/${sessionToken}`, { otp });
+      setSession((current) => ({ ...current, ...data })); setQrBackup(data.qr_code || ''); setConnectMethod('qr');
+      setStage(data.status === 'connected' ? 'connected' : 'qr');
+    } catch (err) { setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not verify the confirmation code.'); }
+    finally { setVerifyingOtp(false); }
+  };
+
+  const resendOtp = async () => {
+    setResendingOtp(true); setError('');
+    try {
+      const { data } = await api.post(`/public/evo-onboarding/resend-otp/${sessionToken}`);
+      setSession((current) => ({ ...current, ...data }));
+    } catch (err) { setError(err.response?.data?.error || 'Could not resend the confirmation code.'); }
+    finally { setResendingOtp(false); }
   };
 
   const getPairingCode = async () => {
@@ -84,9 +107,14 @@ export default function SelfOnboarding() {
   if (stage === 'intro') return <Intro slide={slide} onNext={nextIntro} onSkip={() => setStage('details')} />;
   if (stage === 'connected') return <div className="flex min-h-screen items-center justify-center bg-[#090916] p-5 text-white"><div className="w-full max-w-md rounded-[34px] border border-white/10 bg-white/[0.06] p-7 text-center shadow-2xl backdrop-blur"><div className="mx-auto mb-5 flex h-20 w-20 items-center justify-center rounded-full bg-emerald-400/15 text-4xl text-emerald-300">✓</div><p className="text-xs font-black tracking-[0.22em] text-emerald-300">WHATSAPP CONNECTED</p><h1 className="mt-4 text-3xl font-black">You are in, {session?.business_name || form.business_name}.</h1><p className="mt-4 text-sm leading-6 text-white/65">Your connection request has been securely received. The Telenexus team will review your business and prepare your Nexa AI workspace.</p><div className="mt-7 rounded-2xl bg-white/10 px-5 py-4 text-sm text-white/70">We will contact you using the details submitted during onboarding.</div></div></div>;
 
+  if (stage === 'otp') {
+    const displayPhone = String(session?.phone || form.phone || '').replace(/^\+/, '');
+    return <div className="min-h-screen bg-[#F6F7FF] px-5 py-6"><div className="mx-auto max-w-md"><div className="mb-7 flex items-center justify-between"><NexaMiniBrand /><span className="rounded-full bg-[#E9E9FF] px-4 py-2 text-xs font-black text-[#3535FF]">Step 2 of 3</span></div><div className="rounded-[34px] bg-white p-6 text-center shadow-xl shadow-indigo-100/70"><div className="mx-auto flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#E9E9FF] text-2xl font-black text-[#3535FF]">#</div><h1 className="mt-5 text-2xl font-black text-slate-950">Confirm your WhatsApp</h1><p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">We sent a 6-digit code from the official Nexa WhatsApp number to +{displayPhone}.</p><form onSubmit={verifyOtp} className="mt-6"><input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, 6))} inputMode="numeric" autoComplete="one-time-code" placeholder="000000" className="w-full rounded-[24px] border border-slate-200 bg-[#F8F8FD] px-5 py-4 text-center font-mono text-3xl font-black tracking-[0.25em] text-slate-950 outline-none focus:border-[#3535FF] focus:ring-2 focus:ring-[#3535FF]/10" /><button type="submit" disabled={verifyingOtp || otp.length !== 6} className="mt-5 w-full rounded-2xl bg-[#3535FF] px-5 py-4 text-sm font-black text-white disabled:opacity-50">{verifyingOtp ? 'Confirming...' : 'Confirm and continue'}</button></form><button type="button" onClick={resendOtp} disabled={resendingOtp} className="mt-4 text-sm font-bold text-[#3535FF]">{resendingOtp ? 'Sending again...' : 'Resend code'}</button>{session?.otp_expires_at && <p className="mt-3 text-xs text-slate-400">Code expires at {new Date(session.otp_expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}.</p>}{error && <p className="mt-4 rounded-2xl bg-rose-50 p-3 text-sm text-rose-600">{error}</p>}</div><p className="mt-5 px-4 text-center text-xs leading-5 text-slate-400">This confirms that you control the WhatsApp number before Nexa prepares the connection.</p></div></div>;
+  }
+
   if (stage === 'qr') {
     const visibleQr = session?.qr_code || qrBackup;
-    return <div className="min-h-screen bg-[#F6F7FF] px-5 py-6"><div className="mx-auto max-w-md"><div className="mb-7 flex items-center justify-between"><NexaMiniBrand /><span className="rounded-full bg-[#E9E9FF] px-4 py-2 text-xs font-black text-[#3535FF]">Step 2 of 2</span></div><div className="rounded-[34px] bg-white p-6 text-center shadow-xl shadow-indigo-100/70"><h1 className="text-2xl font-black text-slate-950">Connect WhatsApp</h1>
+    return <div className="min-h-screen bg-[#F6F7FF] px-5 py-6"><div className="mx-auto max-w-md"><div className="mb-7 flex items-center justify-between"><NexaMiniBrand /><span className="rounded-full bg-[#E9E9FF] px-4 py-2 text-xs font-black text-[#3535FF]">Step 3 of 3</span></div><div className="rounded-[34px] bg-white p-6 text-center shadow-xl shadow-indigo-100/70"><h1 className="text-2xl font-black text-slate-950">Connect WhatsApp</h1>
       {connectMethod === 'qr' ? <>
         <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">On another device, open WhatsApp → Linked devices → Link a device, then scan this QR code.</p>
         <div className="mx-auto mt-6 flex h-[270px] w-[270px] items-center justify-center rounded-[28px] border border-slate-100 bg-white p-4 shadow-inner">{visibleQr ? <img src={visibleQr} alt="WhatsApp connection QR code" className="h-full w-full object-contain" /> : <div className="text-sm text-slate-400">Preparing secure QR code...</div>}</div>

@@ -1,6 +1,8 @@
 const express = require('express');
+const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
+const { getOperatorSettings, sendEvolutionText } = require('../services/evolution');
 const {
   ensureEvoOnboardingTable,
   makeSessionToken,
@@ -13,6 +15,7 @@ const {
 
 const router = express.Router();
 const attempts = new Map();
+const OTP_TTL_MINUTES = 10;
 
 function allowStart(req) {
   const now = Date.now();
@@ -36,7 +39,63 @@ function publicView(row) {
     connection_state: row.connection_state,
     connected_at: row.connected_at,
     provider_error: row.status === 'failed' ? row.provider_error : null,
+    phone: row.phone,
+    phone_verified: Boolean(row.phone_verified_at),
+    otp_required: !row.phone_verified_at,
+    otp_sent_at: row.phone_otp_sent_at,
+    otp_expires_at: row.phone_otp_expires_at,
   };
+}
+
+function cleanPhone(number) {
+  return String(number || '').replace(/[^0-9]/g, '');
+}
+
+function makeOtp() {
+  return String(crypto.randomInt(100000, 1000000));
+}
+
+function hashOtp(sessionToken, phone, code) {
+  return crypto
+    .createHash('sha256')
+    .update(`${sessionToken}:${cleanPhone(phone)}:${code}`)
+    .digest('hex');
+}
+
+async function sendOnboardingOtp(row) {
+  const code = makeOtp();
+  const settings = await getOperatorSettings({ includeKey: true });
+  const agentName = settings.agent_name || 'Nexa';
+  await sendEvolutionText(
+    settings,
+    row.phone,
+    `${agentName} confirmation code: ${code}\n\nEnter this code to confirm your WhatsApp number and continue onboarding. It expires in ${OTP_TTL_MINUTES} minutes.`
+  );
+  const updated = await db.query(
+    `UPDATE evo_client_onboardings
+     SET phone_otp_hash = $1,
+         phone_otp_expires_at = NOW() + ($2 || ' minutes')::interval,
+         phone_otp_sent_at = NOW(),
+         connection_state = 'otp_sent',
+         provider_error = NULL,
+         updated_at = NOW()
+     WHERE id = $3
+     RETURNING *`,
+    [hashOtp(row.session_token, row.phone, code), OTP_TTL_MINUTES, row.id]
+  );
+  return updated.rows[0];
+}
+
+async function prepareQrAfterOtp(row) {
+  const qrCode = await createInstance(row.instance_name);
+  const updated = await db.query(
+    `UPDATE evo_client_onboardings
+     SET status = 'pending_qr', qr_code = $1, connection_method = 'qr',
+         connection_state = 'waiting_scan', updated_at = NOW()
+     WHERE id = $2 RETURNING *`,
+    [qrCode, row.id]
+  );
+  return updated.rows[0];
 }
 
 router.post(
@@ -64,7 +123,7 @@ router.post(
         `INSERT INTO evo_client_onboardings
           (business_name, owner_name, phone, email, location, service_interest, consent_accepted,
            session_token, instance_name, status, connection_method, connection_state)
-         VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8, 'provisioning', 'qr', 'creating')
+         VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8, 'provisioning', 'qr', 'otp_pending')
          RETURNING *`,
         [
           req.body.business_name.trim(),
@@ -79,22 +138,16 @@ router.post(
       );
       const row = insert.rows[0];
       try {
-        const qrCode = await createInstance(instanceName);
-        const updated = await db.query(
-          `UPDATE evo_client_onboardings
-           SET status = 'pending_qr', qr_code = $1, connection_method = 'qr', connection_state = 'waiting_scan', updated_at = NOW()
-           WHERE id = $2 RETURNING *`,
-          [qrCode, row.id]
-        );
-        return res.status(201).json({ session_token: sessionToken, ...publicView(updated.rows[0]) });
+        const updated = await sendOnboardingOtp(row);
+        return res.status(201).json({ session_token: sessionToken, ...publicView(updated) });
       } catch (providerErr) {
         const error = cleanProviderError(providerErr);
         await db.query(
           `UPDATE evo_client_onboardings SET status = 'failed', provider_error = $1, updated_at = NOW() WHERE id = $2`,
           [error, row.id]
         );
-        console.error('Evolution instance creation failed:', error);
-        return res.status(502).json({ error: 'We could not prepare the WhatsApp QR code. Your request has been recorded for assistance.' });
+        console.error('Nexa onboarding OTP failed:', error);
+        return res.status(502).json({ error: 'We could not send the WhatsApp confirmation code from Nexa. Please try again shortly.' });
       }
     } catch (err) {
       console.error('POST /public/evo-onboarding/start error:', err.message);
@@ -102,6 +155,92 @@ router.post(
     }
   }
 );
+
+router.post(
+  '/verify-otp/:token',
+  [body('otp').trim().matches(/^[0-9]{6}$/).withMessage('Enter the 6-digit confirmation code')],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      await ensureEvoOnboardingTable();
+      const result = await db.query(`SELECT * FROM evo_client_onboardings WHERE session_token = $1 LIMIT 1`, [req.params.token]);
+      const row = result.rows[0];
+      if (!row) return res.status(404).json({ error: 'Onboarding session not found' });
+      if (row.phone_verified_at && row.qr_code) return res.json(publicView(row));
+      if (['connected', 'reviewed', 'active', 'archived'].includes(row.status)) return res.json(publicView(row));
+      if (row.phone_verified_at && !row.qr_code) {
+        try {
+          const updated = await prepareQrAfterOtp(row);
+          return res.json(publicView(updated));
+        } catch (providerErr) {
+          const error = cleanProviderError(providerErr);
+          await db.query(
+            `UPDATE evo_client_onboardings SET status = 'failed', provider_error = $1, updated_at = NOW() WHERE id = $2`,
+            [error, row.id]
+          );
+          console.error('Evolution instance creation after prior OTP verification failed:', error);
+          return res.status(502).json({ error: 'Your number is confirmed, but we could not prepare the WhatsApp QR code. Please try again shortly.' });
+        }
+      }
+      if (!row.phone_otp_hash || !row.phone_otp_expires_at) {
+        return res.status(400).json({ error: 'No active confirmation code. Please resend the code.' });
+      }
+      if (new Date(row.phone_otp_expires_at).getTime() < Date.now()) {
+        return res.status(400).json({ error: 'That confirmation code has expired. Please resend a new code.' });
+      }
+      const expected = hashOtp(row.session_token, row.phone, req.body.otp);
+      if (expected !== row.phone_otp_hash) {
+        return res.status(400).json({ error: 'That confirmation code is not correct.' });
+      }
+
+      const verified = await db.query(
+        `UPDATE evo_client_onboardings
+         SET phone_verified_at = NOW(), phone_otp_hash = NULL, phone_otp_expires_at = NULL,
+             connection_state = 'creating', updated_at = NOW()
+         WHERE id = $1 RETURNING *`,
+        [row.id]
+      );
+      try {
+        const updated = await prepareQrAfterOtp(verified.rows[0]);
+        return res.json(publicView(updated));
+      } catch (providerErr) {
+        const error = cleanProviderError(providerErr);
+        await db.query(
+          `UPDATE evo_client_onboardings SET status = 'failed', provider_error = $1, updated_at = NOW() WHERE id = $2`,
+          [error, row.id]
+        );
+        console.error('Evolution instance creation after OTP failed:', error);
+        return res.status(502).json({ error: 'Your number was confirmed, but we could not prepare the WhatsApp QR code. Please try again shortly.' });
+      }
+    } catch (err) {
+      console.error('POST /public/evo-onboarding/verify-otp error:', err.message);
+      res.status(500).json({ error: 'Could not verify the confirmation code.' });
+    }
+  }
+);
+
+router.post('/resend-otp/:token', async (req, res) => {
+  try {
+    await ensureEvoOnboardingTable();
+    const result = await db.query(`SELECT * FROM evo_client_onboardings WHERE session_token = $1 LIMIT 1`, [req.params.token]);
+    const row = result.rows[0];
+    if (!row) return res.status(404).json({ error: 'Onboarding session not found' });
+    if (row.phone_verified_at) return res.status(400).json({ error: 'This WhatsApp number is already confirmed.' });
+    if (['connected', 'reviewed', 'active', 'archived'].includes(row.status)) {
+      return res.status(400).json({ error: 'This onboarding session can no longer resend a confirmation code.' });
+    }
+    if (row.phone_otp_sent_at && Date.now() - new Date(row.phone_otp_sent_at).getTime() < 60 * 1000) {
+      return res.status(429).json({ error: 'Please wait a minute before requesting another confirmation code.' });
+    }
+    const updated = await sendOnboardingOtp(row);
+    res.json(publicView(updated));
+  } catch (err) {
+    const error = cleanProviderError(err);
+    console.error('POST /public/evo-onboarding/resend-otp error:', error);
+    res.status(502).json({ error: 'We could not resend the WhatsApp confirmation code. Please try again shortly.' });
+  }
+});
 
 router.post(
   '/pairing-code/:token',
@@ -116,6 +255,9 @@ router.post(
       if (!row) return res.status(404).json({ error: 'Onboarding session not found' });
       if (['connected', 'reviewed', 'active', 'archived'].includes(row.status)) {
         return res.status(400).json({ error: 'This onboarding session can no longer request a pairing code.' });
+      }
+      if (!row.phone_verified_at) {
+        return res.status(403).json({ error: 'Confirm your WhatsApp number before requesting a pairing code.' });
       }
       const paired = await requestPairingCode(row.instance_name, req.body.phone);
       const updated = await db.query(

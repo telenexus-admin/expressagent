@@ -26,6 +26,10 @@ async function ensureEvoOnboardingTable() {
       connected_number VARCHAR(80),
       connection_state VARCHAR(40),
       provider_error TEXT,
+      phone_otp_hash TEXT,
+      phone_otp_expires_at TIMESTAMP WITH TIME ZONE,
+      phone_otp_sent_at TIMESTAMP WITH TIME ZONE,
+      phone_verified_at TIMESTAMP WITH TIME ZONE,
       connected_at TIMESTAMP WITH TIME ZONE,
       reviewed_at TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -34,6 +38,10 @@ async function ensureEvoOnboardingTable() {
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS pairing_code VARCHAR(40);
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS pairing_number VARCHAR(50);
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS connection_method VARCHAR(20) DEFAULT 'qr';
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_hash TEXT;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_expires_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_sent_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE evo_client_onboardings DROP CONSTRAINT IF EXISTS evo_client_onboardings_connection_method_check;
     ALTER TABLE evo_client_onboardings ADD CONSTRAINT evo_client_onboardings_connection_method_check CHECK (connection_method IN ('qr', 'pairing_code'));
     CREATE INDEX IF NOT EXISTS idx_evo_onboarding_status ON evo_client_onboardings(status, created_at DESC);

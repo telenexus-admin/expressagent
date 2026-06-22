@@ -58,17 +58,17 @@ export default function ConversationList({ conversations, compact = false, initi
   ];
 
   return (
-    <div className={`conversation-panel flex h-full flex-col ${compact ? 'p-3' : 'p-7'}`}>
+    <div className={`conversation-panel flex h-full flex-col ${compact ? 'p-3' : 'p-6'}`}>
       {!compact && (
-        <div className="mb-6 flex items-center gap-5">
-          <span className="conversation-hero-icon flex h-16 w-16 shrink-0 items-center justify-center rounded-[20px] border border-[#d9d8ff] bg-[#f5f2ff] text-[#5e35ff] shadow-[0_12px_28px_rgba(84,72,190,0.12)]">
-            <ChatIcon />
+        <div className="mb-5 flex items-center gap-4">
+          <span className="conversation-hero-icon flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] border border-[#d9d8ff] bg-[#f5f2ff] text-[#5e35ff] shadow-[0_10px_22px_rgba(84,72,190,0.11)]">
+            <ChatIcon className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-2xl font-black text-[#0d1438] dashboard-brand-title">
+            <h2 className="text-xl font-extrabold text-[#0d1438] dashboard-brand-title">
               {conversations.length} total conversations
             </h2>
-            <p className="mt-1 text-sm font-semibold text-[#6c7699] dashboard-muted">All customer interactions in one place.</p>
+            <p className="mt-1 text-xs font-medium text-[#6c7699] dashboard-muted">All customer interactions in one place.</p>
           </div>
         </div>
       )}
@@ -81,7 +81,7 @@ export default function ConversationList({ conversations, compact = false, initi
             placeholder="Search name, phone or latest message..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#263150] outline-none placeholder:text-[#8b94b8]"
+            className="h-full min-w-0 flex-1 bg-transparent text-xs font-medium text-[#263150] outline-none placeholder:text-[#8b94b8]"
           />
         </div>
         {!compact && (
@@ -98,7 +98,7 @@ export default function ConversationList({ conversations, compact = false, initi
           <button
             key={value}
             onClick={() => setFilter(value)}
-            className={`conversation-filter-tab h-12 rounded-2xl border text-sm font-bold transition ${
+            className={`conversation-filter-tab h-11 rounded-2xl border text-xs font-semibold transition ${
               filter === value
                 ? 'border-transparent bg-gradient-to-r from-[#2f5bff] to-[#8b25ff] text-white shadow-[0_12px_24px_rgba(98,52,245,0.22)]'
                 : 'border-[#dfe5f2] bg-white text-[#475274] hover:bg-[#f7f8fc]'
@@ -120,22 +120,22 @@ export default function ConversationList({ conversations, compact = false, initi
                 <button
                   key={conversation.id}
                   onClick={() => navigate(`/dashboard/conversations/${conversation.id}`)}
-                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[54px_minmax(0,1fr)_22px] gap-3 px-3 py-3' : 'grid-cols-[72px_220px_minmax(0,1fr)_120px_28px] gap-4 px-6 py-4'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
+                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[50px_minmax(0,1fr)_20px] gap-3 px-3 py-3' : 'grid-cols-[64px_200px_minmax(0,1fr)_96px_22px] gap-4 px-5 py-3'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
                 >
-                  <span className={`${compact ? 'h-11 w-11 text-sm' : 'h-14 w-14 text-lg'} relative flex items-center justify-center rounded-full border border-[#d7d7ff] bg-[#f6f3ff] font-black text-[#4f35f5]`}>
+                  <span className={`${compact ? 'h-10 w-10 text-xs' : 'h-12 w-12 text-sm'} relative flex items-center justify-center rounded-full border border-[#d7d7ff] bg-[#f6f3ff] font-extrabold text-[#4f35f5]`}>
                     {initials(conversation)}
                     <span className="absolute -right-0.5 bottom-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
                   </span>
                   <span className="min-w-0">
-                    <span className={`${compact ? 'text-sm' : 'text-base'} block truncate font-black text-[#0d1438] dashboard-brand-title`}>{conversation.customer_name || '-'}</span>
-                    <span className="mt-1 block truncate text-sm font-semibold text-[#5d6a92] dashboard-muted">+{conversation.customer_phone}</span>
+                    <span className={`${compact ? 'text-sm' : 'text-[13px]'} block truncate font-extrabold text-[#0d1438] dashboard-brand-title`}>{conversation.customer_name || '-'}</span>
+                    <span className="mt-1 block truncate text-xs font-medium text-[#5d6a92] dashboard-muted">+{conversation.customer_phone}</span>
                     {compact && <span className="mt-1 block truncate text-xs font-medium text-[#4f5d84] dashboard-muted">{conversation.last_message || 'No messages yet'}</span>}
                   </span>
-                  {!compact && <span className="min-w-0 truncate text-sm font-medium leading-6 text-[#4f5d84] dashboard-muted">
+                  {!compact && <span className="min-w-0 truncate text-xs font-medium leading-5 text-[#4f5d84] dashboard-muted">
                     {conversation.last_message || 'No messages yet'}
                   </span>}
-                  {!compact && <span className="text-right text-sm font-semibold text-[#58658b] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
-                  <span className="text-2xl font-light text-[#7c35ff] transition group-hover:translate-x-1">&rsaquo;</span>
+                  {!compact && <span className="text-right text-xs font-medium text-[#58658b] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
+                  <span className="text-xl font-light text-[#7c35ff] transition group-hover:translate-x-1">&rsaquo;</span>
                 </button>
               );
             })}

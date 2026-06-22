@@ -25,10 +25,14 @@ import GlobalConversationSearch from '../components/GlobalConversationSearch';
 import DashboardHelpBot from '../components/DashboardHelpBot';
 import expressnetLogo from '../assets/expressnetLogo';
 import aiBotArtwork from '../assets/aiBotArtwork';
-import nexaLogo from '../assets/nexa-logo.png';
 
 const NexaMark = () => (
-  <img src={nexaLogo} alt="Nexa" className="h-full w-full object-contain" />
+  <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#13c8ff] via-[#3455ff] to-[#812fff] shadow-[0_8px_18px_rgba(53,53,255,0.18)]">
+    <span className="absolute left-2 top-2 h-7 w-2 rotate-[-28deg] rounded-full bg-white/90" />
+    <span className="absolute left-5 top-2 h-7 w-2 rotate-[-28deg] rounded-full bg-cyan-200/90" />
+    <span className="absolute right-2.5 top-2 h-7 w-2 rotate-[-28deg] rounded-full bg-white/80" />
+    <span className="absolute bottom-1 right-1 rounded-full bg-white px-1 text-[7px] font-black leading-3 text-[#3a35ff]">AI</span>
+  </span>
 );
 
 function canAccess(admin, permission) {
@@ -49,8 +53,8 @@ function Brand({ expressnet, compact = false }) {
   }
   return (
     <div className="flex items-center gap-3">
-      <div className={`${compact ? 'w-11 h-11' : 'w-12 h-12'} flex items-center justify-center shrink-0`}><NexaMark /></div>
-      <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-black text-[#0d1438] dashboard-brand-title`}>Nexa</div>{!compact && <div className="text-xs font-semibold text-[#7b84a8] dashboard-muted">AI Support Portal</div>}</div>
+      <div className={`${compact ? 'w-10 h-10' : 'w-11 h-11'} flex items-center justify-center shrink-0`}><NexaMark /></div>
+      <div><div className={`${compact ? 'text-lg' : 'text-xl'} font-extrabold text-[#0d1438] dashboard-brand-title`}>Nexa</div>{!compact && <div className="text-xs font-semibold text-[#7b84a8] dashboard-muted">AI Support Portal</div>}</div>
     </div>
   );
 }
@@ -215,7 +219,7 @@ export default function ClientDashboard() {
             <div className="flex items-center gap-4 min-w-0">
               <button onClick={() => setDrawerOpen(true)} className="lg:hidden w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-600"><MenuIcon className="w-6 h-6" /></button>
               <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm items-center justify-center text-[#263150] hover:text-[#6d35ff]"><MenuIcon className="w-5 h-5" /></button>
-              <div className="min-w-0"><h1 className="text-2xl font-black truncate text-[#0d1438] dashboard-brand-title">{title}</h1><p className="text-xs font-semibold text-[#8a94b8] mt-1 truncate dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
+              <div className="min-w-0"><h1 className="text-xl font-extrabold truncate text-[#0d1438] dashboard-brand-title">{title}</h1><p className="text-xs font-medium text-[#8a94b8] mt-1 truncate dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
             </div>
             <div className="flex items-center gap-4"><GlobalConversationSearch /><div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm flex items-center justify-center text-[#667092]"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
           </header>

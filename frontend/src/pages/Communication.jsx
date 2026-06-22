@@ -93,7 +93,7 @@ function FieldShell({ label, icon, children, large = false }) {
 function EmailProviderIcon({ provider }) {
   if (provider === 'gmail') {
     return (
-      <svg className="h-14 w-14" viewBox="0 0 64 64" aria-hidden="true">
+      <svg className="h-11 w-11 shrink-0" viewBox="0 0 64 64" aria-hidden="true">
         <path fill="#4285F4" d="M8 18v32h10V28.8L32 39.3l14-10.5V50h10V18L32 36 8 18Z" />
         <path fill="#EA4335" d="M8 18l24 18 24-18v-4c0-4.4-5-6.9-8.5-4.2L32 21.5 16.5 9.8C13 7.1 8 9.6 8 14v4Z" />
         <path fill="#FBBC04" d="M46 18v32h10V18L46 25.5V18Z" />
@@ -103,15 +103,15 @@ function EmailProviderIcon({ provider }) {
   }
   if (provider === 'disabled') {
     return (
-      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#f0f1f7] text-[#111a3c]">
-        <span className="h-8 w-2 rounded-full bg-current" />
-        <span className="ml-2 h-8 w-2 rounded-full bg-current" />
+      <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#f0f1f7] text-[#111a3c]">
+        <span className="h-7 w-1.5 rounded-full bg-current" />
+        <span className="ml-2 h-7 w-1.5 rounded-full bg-current" />
       </span>
     );
   }
   return (
-    <span className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#f0ebff] text-[#6134f5]">
-      <svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+    <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-[18px] bg-[#f0ebff] text-[#6134f5]">
+      <svg className="h-7 w-7" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
         <rect x="5" y="4" width="14" height="5" rx="1.2" />
         <rect x="5" y="15" width="14" height="5" rx="1.2" />
         <path d="M8 6.5h.01M8 17.5h.01M19 7h2v10h-2" />
@@ -612,31 +612,31 @@ export default function Communication() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-[30px] border border-[#dfe2f1] bg-white p-8 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
-          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-7">
-              <span className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-[#8d55ff] to-[#2d27f3] text-white shadow-[0_18px_34px_rgba(94,45,245,0.28)]">
-                <Icon name="mail" className="h-14 w-14" />
+        <section className="mt-6 rounded-[26px] border border-[#dfe2f1] bg-white p-6 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
+          <div className="mb-6 flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-4">
+              <span className="flex h-16 w-16 shrink-0 items-center justify-center rounded-[20px] bg-gradient-to-br from-[#8d55ff] to-[#2d27f3] text-white shadow-[0_16px_30px_rgba(94,45,245,0.22)]">
+                <Icon name="mail" className="h-8 w-8" />
               </span>
-              <div>
-                <h2 className="text-4xl font-black tracking-tight text-[#0d1438]">Email Configuration</h2>
-                <p className="mt-4 text-2xl font-medium leading-snug text-[#4e5a83]">
+              <div className="min-w-0">
+                <h2 className="text-2xl font-black tracking-tight text-[#0d1438]">Email Configuration</h2>
+                <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-[#657096]">
                   Connect cPanel SMTP or Gmail app-password SMTP for email alerts and customer notifications.
                 </p>
               </div>
             </div>
-            <span className={`inline-flex h-[62px] items-center gap-4 rounded-full border px-8 text-xl font-bold ${
+            <span className={`inline-flex h-10 shrink-0 items-center gap-2 self-start rounded-full border px-4 text-sm font-bold lg:self-center ${
               emailConfigured
                 ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
                 : 'border-[#e0e4f2] bg-white text-[#667098]'
             }`}>
-              <span className={`h-4 w-4 rounded-full ${emailConfigured ? 'bg-emerald-500' : 'bg-[#aab3cf]'}`} />
+              <span className={`h-2.5 w-2.5 rounded-full ${emailConfigured ? 'bg-emerald-500' : 'bg-[#aab3cf]'}`} />
               {emailConfigured ? 'Configured' : 'Not Configured'}
             </span>
           </div>
 
-          <div className="rounded-[24px] border border-[#dfe2f1] bg-white p-7">
-            <div className="mb-7 grid gap-8 xl:grid-cols-3">
+          <div className="rounded-[24px] border border-[#dfe2f1] bg-white p-5">
+            <div className="mb-5 grid gap-4 xl:grid-cols-3">
               {[
                 ['smtp', 'cPanel / SMTP', 'Use mail.yourdomain.com or host SMTP details.'],
                 ['gmail', 'Gmail', 'Use smtp.gmail.com with an app password.'],
@@ -646,7 +646,7 @@ export default function Communication() {
                   key={value}
                   type="button"
                   onClick={() => changeEmailProvider(value)}
-                  className={`relative flex min-h-[178px] items-center gap-8 rounded-[24px] border p-8 text-left transition ${
+                  className={`relative flex min-h-[118px] items-center gap-4 rounded-[20px] border p-5 text-left transition ${
                     emailForm.provider === value
                       ? 'border-[#6134f5] bg-white text-[#2526c9] shadow-[0_14px_30px_rgba(98,52,245,0.14)]'
                       : 'border-[#e2e6f2] bg-white text-[#0d1438] hover:border-[#c7cef0]'
@@ -654,12 +654,12 @@ export default function Communication() {
                 >
                   <EmailProviderIcon provider={value} />
                   <span className="min-w-0 flex-1">
-                    <span className="block text-2xl font-black">{title}</span>
-                    <span className="mt-3 block text-xl font-medium leading-relaxed text-[#4e5a83]">{description}</span>
+                    <span className="block break-words text-lg font-black leading-tight">{title}</span>
+                    <span className="mt-2 block text-sm font-semibold leading-6 text-[#4e5a83]">{description}</span>
                   </span>
                   {emailForm.provider === value && (
-                    <span className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full bg-[#6134f5] text-white shadow-lg">
-                      <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                    <span className="absolute right-4 top-4 flex h-8 w-8 items-center justify-center rounded-full bg-[#6134f5] text-white shadow-lg">
+                      <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
                         <path d="m5 12 4 4 10-10" />
                       </svg>
                     </span>
@@ -668,15 +668,15 @@ export default function Communication() {
               ))}
             </div>
 
-            <label className="mb-7 flex h-20 items-center gap-7 rounded-2xl border border-[#dfe3f1] bg-white px-7 text-2xl font-black text-[#0d1438] shadow-[0_8px_24px_rgba(31,35,82,0.03)]">
+            <label className="mb-6 flex h-14 items-center gap-4 rounded-2xl border border-[#dfe3f1] bg-white px-4 text-sm font-black text-[#0d1438] shadow-[0_8px_24px_rgba(31,35,82,0.03)]">
               <input
                 type="checkbox"
                 checked={emailForm.enabled}
                 onChange={(event) => updateEmail('enabled', event.target.checked)}
                 disabled={emailForm.provider === 'disabled'}
-                className="h-8 w-8 rounded-lg accent-[#5d2df5]"
+                className="h-5 w-5 rounded-lg accent-[#5d2df5]"
               />
-              Enable outgoing email for this client
+              Enable outgoing email
             </label>
 
             <div className="grid gap-6 lg:grid-cols-2">

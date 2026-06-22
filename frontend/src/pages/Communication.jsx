@@ -100,6 +100,7 @@ export default function Communication() {
   const [emailStatus, setEmailStatus] = useState(null);
   const [showKey, setShowKey] = useState(false);
   const [showEmailPassword, setShowEmailPassword] = useState(false);
+  const [showHelp, setShowHelp] = useState(false);
   const [form, setForm] = useState({
     provider: 'savvy',
     sender_id: '',
@@ -368,12 +369,67 @@ export default function Communication() {
           </div>
           <button
             type="button"
+            onClick={() => setShowHelp((value) => !value)}
             className="inline-flex h-12 items-center justify-center gap-2 rounded-xl border border-[#bfa9ff] bg-white px-5 text-sm font-black text-[#5c28ff] shadow-sm transition hover:bg-[#f7f3ff]"
           >
             <Icon name="help" className="h-5 w-5" />
             Need help
           </button>
         </header>
+
+        {showHelp && (
+          <section className="mb-6 rounded-[24px] border border-[#dfe2f1] bg-white p-5 shadow-[0_18px_45px_rgba(53,57,102,0.07)]">
+            <div className="mb-4 flex items-start justify-between gap-4">
+              <div>
+                <h2 className="text-lg font-black text-[#0d1438]">Communication Setup Help</h2>
+                <p className="mt-1 text-sm font-semibold text-[#727a9f]">
+                  Use these notes to find the SMS and email credentials needed for this page.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowHelp(false)}
+                className="rounded-xl border border-[#e0e4f2] px-3 py-2 text-xs font-black text-[#667098] hover:bg-[#f8f9ff]"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-3">
+              <div className="rounded-2xl border border-[#e5e8f5] bg-[#fbfcff] p-4">
+                <h3 className="text-sm font-black text-[#0d1438]">Savvy Bulk SMS</h3>
+                <ul className="mt-3 space-y-2 text-sm font-semibold leading-6 text-[#626b95]">
+                  <li>Log in to your Savvy Bulk SMS dashboard.</li>
+                  <li>Copy the API key from the API or developer section.</li>
+                  <li>Copy the Partner ID shown on the account/API page.</li>
+                  <li>Use the approved sender ID or shortcode assigned to the account.</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-[#e5e8f5] bg-[#fbfcff] p-4">
+                <h3 className="text-sm font-black text-[#0d1438]">cPanel / Domain Email</h3>
+                <ul className="mt-3 space-y-2 text-sm font-semibold leading-6 text-[#626b95]">
+                  <li>Open cPanel, then go to Email Accounts.</li>
+                  <li>Choose the mailbox and open Connect Devices or Configure Mail Client.</li>
+                  <li>Use the outgoing SMTP server, usually mail.yourdomain.com.</li>
+                  <li>Use port 465 with SSL/TLS, or port 587 with TLS if your host recommends it.</li>
+                  <li>Username is normally the full email address. Password is the mailbox password.</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-[#e5e8f5] bg-[#fbfcff] p-4">
+                <h3 className="text-sm font-black text-[#0d1438]">Gmail</h3>
+                <ul className="mt-3 space-y-2 text-sm font-semibold leading-6 text-[#626b95]">
+                  <li>Use smtp.gmail.com as the SMTP host.</li>
+                  <li>Use port 465 with SSL/TLS enabled.</li>
+                  <li>Username is the Gmail address.</li>
+                  <li>Password should be a Google App Password, not the normal login password.</li>
+                  <li>If app passwords are unavailable, enable 2-Step Verification first.</li>
+                </ul>
+              </div>
+            </div>
+          </section>
+        )}
 
         <section className="rounded-[26px] border border-[#dfe2f1] bg-white p-6 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
           <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
@@ -579,7 +635,7 @@ export default function Communication() {
                 disabled={emailForm.provider === 'disabled'}
                 className="h-4 w-4 accent-[#5d2df5]"
               />
-              Enable outgoing email for this client
+              Enable outgoing email
             </label>
 
             <div className="grid gap-6 lg:grid-cols-2">

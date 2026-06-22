@@ -207,6 +207,7 @@ export default function ClientDashboard() {
 
   const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
   const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
+  const showConversationSearch = location.pathname.startsWith('/dashboard/conversations');
   const signOut = () => { logout(); navigate('/login'); };
 
   const itemButton = (item, mobile = false) => {
@@ -236,14 +237,7 @@ export default function ClientDashboard() {
           {expressnet && <div className="px-6 pt-6 pb-5"><Brand expressnet={expressnet} /></div>}
           {!expressnet && <div className="h-5 shrink-0" />}
           <AiSidebarHero />
-          <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-5 pb-4">{navList()}</nav>
-          <div className="mx-5 mb-5 rounded-2xl border border-[#e2e7f4] bg-[#f8f6ff] p-4">
-            <div className="flex items-center gap-3">
-              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ede6ff] text-[#6535ff]"><LifebuoyIcon className="h-5 w-5" /></span>
-              <div className="min-w-0 flex-1"><div className="text-sm font-black text-[#0d1438] dashboard-brand-title">Need help?</div><div className="mt-0.5 text-xs font-semibold text-[#637091] dashboard-muted">Visit our help center</div></div>
-              <span className="text-[#6d35ff]">&gt;</span>
-            </div>
-          </div>
+          <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-5 pb-5">{navList()}</nav>
         </aside>
 
         <section className="dashboard-main flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)]">
@@ -251,10 +245,10 @@ export default function ClientDashboard() {
             <div className="flex items-center gap-4 min-w-0">
               <button onClick={() => setDrawerOpen(true)} className="lg:hidden w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-600"><MenuIcon className="w-6 h-6" /></button>
               <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm items-center justify-center text-[#263150] hover:text-[#6d35ff]"><MenuIcon className="w-5 h-5" /></button>
-              <div className="min-w-0"><h1 className="truncate text-3xl font-extrabold tracking-normal text-[#0d1438] dashboard-brand-title">{title}</h1><p className="mt-1 truncate text-sm font-medium text-[#6d7697] dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
+              <div className="min-w-0"><h1 className="truncate text-2xl font-extrabold tracking-normal text-[#0d1438] dashboard-brand-title">{title}</h1><p className="mt-1 truncate text-xs font-medium text-[#6d7697] dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
             </div>
             <div className="flex items-center gap-4">
-              <GlobalConversationSearch />
+              {showConversationSearch && <GlobalConversationSearch />}
               <button
                 type="button"
                 onClick={() => navigate('/dashboard/conversations')}

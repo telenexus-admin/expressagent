@@ -76,13 +76,13 @@ function communicationPayload(form) {
 function FieldShell({ label, icon, children, large = false }) {
   return (
     <label className="block">
-      <span className={`${large ? 'mb-4 text-2xl' : 'mb-3 text-[13px]'} flex items-center gap-2 font-black text-[#0d1438]`}>
+      <span className={`${large ? 'mb-3 text-sm' : 'mb-3 text-[13px]'} flex items-center gap-2 font-black text-[#0d1438]`}>
         {label}
-        <Icon name="info" className={`${large ? 'h-6 w-6' : 'h-4 w-4'} text-[#9ca4c7]`} />
+        <Icon name="info" className="h-4 w-4 text-[#9ca4c7]" />
       </span>
-      <div className={`${large ? 'h-20 gap-6 px-5' : 'h-14 gap-3 px-3'} flex items-center rounded-2xl border border-[#dfe3f1] bg-white shadow-[0_8px_24px_rgba(31,35,82,0.04)] transition focus-within:border-[#8e6cff] focus-within:ring-4 focus-within:ring-[#efeaff]`}>
-        <span className={`${large ? 'h-14 w-14' : 'h-10 w-10'} flex shrink-0 items-center justify-center rounded-2xl bg-[#f1edff] text-[#5d2df5]`}>
-          <Icon name={icon} className={large ? 'h-7 w-7' : 'h-4 w-4'} />
+      <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#dfe3f1] bg-white px-3 shadow-[0_8px_24px_rgba(31,35,82,0.04)] transition focus-within:border-[#8e6cff] focus-within:ring-4 focus-within:ring-[#efeaff]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#f1edff] text-[#5d2df5]">
+          <Icon name={icon} className="h-4 w-4" />
         </span>
         {children}
       </div>
@@ -619,7 +619,7 @@ export default function Communication() {
                 <Icon name="mail" className="h-8 w-8" />
               </span>
               <div className="min-w-0">
-                <h2 className="text-2xl font-black tracking-tight text-[#0d1438]">Email Configuration</h2>
+                <h2 className="text-xl font-black tracking-tight text-[#0d1438]">Email Configuration</h2>
                 <p className="mt-1 max-w-3xl text-sm font-semibold leading-6 text-[#657096]">
                   Connect cPanel SMTP or Gmail app-password SMTP for email alerts and customer notifications.
                 </p>
@@ -685,7 +685,7 @@ export default function Communication() {
                   value={emailForm.from_name}
                   onChange={(event) => updateEmail('from_name', event.target.value)}
                   placeholder="Company or support name"
-                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#8b94b8]"
                 />
               </FieldShell>
               <FieldShell label="From Email" icon="mail" large>
@@ -696,7 +696,7 @@ export default function Communication() {
                     if (emailForm.provider === 'gmail' && !emailForm.smtp_username) updateEmail('smtp_username', event.target.value);
                   }}
                   placeholder="support@yourdomain.com"
-                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#8b94b8]"
                 />
               </FieldShell>
               <FieldShell label="Reply-To Email" icon="mail" large>
@@ -704,7 +704,7 @@ export default function Communication() {
                   value={emailForm.reply_to}
                   onChange={(event) => updateEmail('reply_to', event.target.value)}
                   placeholder="Optional, defaults to from email"
-                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#8b94b8]"
                 />
               </FieldShell>
               <FieldShell label="SMTP Username" icon="users" large>
@@ -712,7 +712,7 @@ export default function Communication() {
                   value={emailForm.smtp_username}
                   onChange={(event) => updateEmail('smtp_username', event.target.value)}
                   placeholder="Usually the full email address"
-                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#8b94b8]"
                 />
               </FieldShell>
               <FieldShell label="SMTP Host" icon="building">

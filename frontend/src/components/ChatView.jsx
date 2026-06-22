@@ -110,6 +110,7 @@ export default function ChatView() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [replyModeLoading, setReplyModeLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const [configOpen, setConfigOpen] = useState(false);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
   const messagesRef = useRef(null);
@@ -152,6 +153,7 @@ export default function ChatView() {
       setConversation(null);
       setReply('');
       setError('');
+      setConfigOpen(false);
       shouldStickToBottomRef.current = true;
       lastMessageCountRef.current = 0;
       prevIdRef.current = id;
@@ -332,69 +334,7 @@ export default function ChatView() {
         </div>
 
         {conversation && (
-          <div className="flex items-center gap-1.5 sm:gap-3 shrink-0">
-            {!isResolved && (
-              <div className="flex items-center gap-1.5 sm:gap-2 bg-gray-50 rounded-full px-2 sm:px-3 py-1 sm:py-1.5">
-                <span className="hidden sm:inline text-xs font-medium text-gray-600">AI Agent</span>
-                <span className="sm:hidden text-[10px] font-semibold text-gray-600">AI</span>
-                <button
-                  onClick={toggleAi}
-                  disabled={statusLoading}
-                  role="switch"
-                  aria-checked={aiOn}
-                  title={aiOn ? 'Turn AI off (admin will reply manually)' : 'Turn AI on (AI will auto-reply)'}
-                  className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors disabled:opacity-50 ${
-                    aiOn ? 'bg-[#3535FF]' : 'bg-gray-300'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition-transform ${
-                      aiOn ? 'translate-x-4' : 'translate-x-0.5'
-                    }`}
-                  />
-                </button>
-                <span className={`hidden sm:inline text-xs font-semibold w-6 ${aiOn ? 'text-[#3535FF]' : 'text-gray-500'}`}>
-                  {aiOn ? 'On' : 'Off'}
-                </span>
-              </div>
-            )}
-            {!isResolved && (
-              <select
-                value={replyMode}
-                onChange={(e) => updateReplyMode(e.target.value)}
-                disabled={replyModeLoading}
-                title="Choose how the AI replies in this conversation"
-                className="hidden lg:block h-9 rounded-full border border-gray-200 bg-white px-3 text-xs font-semibold text-gray-700 outline-none focus:border-[#3535FF] disabled:opacity-50"
-              >
-                {REPLY_MODES.map((mode) => (
-                  <option key={mode.value} value={mode.value}>{mode.label}</option>
-                ))}
-              </select>
-            )}
-            {!isResolved && (
-              <button
-                onClick={confirmInstallation}
-                disabled={confirming}
-                title="Send an SMS to the customer confirming their installation"
-                className="text-[10px] sm:text-xs bg-emerald-50 hover:bg-emerald-100 text-emerald-700 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-              >
-                {confirming ? 'Sending...' : (
-                  <>
-                    <span className="hidden sm:inline">Confirm Installation</span>
-                    <span className="sm:hidden">Confirm</span>
-                  </>
-                )}
-              </button>
-            )}
-            {!isResolved && (
-              <button
-                onClick={() => updateStatus('resolved')}
-                disabled={statusLoading}
-                className="text-[10px] sm:text-xs bg-gray-100 hover:bg-gray-200 text-gray-700 px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-              >
-                Resolve
-              </button>
-            )}
+          <div className="flex items-center gap-2 shrink-0">
             {isResolved && (
               <button
                 onClick={() => updateStatus('active')}
@@ -407,6 +347,83 @@ export default function ChatView() {
           </div>
         )}
       </div>
+
+      {conversation && !isResolved && (
+        <div className="shrink-0 border-b border-gray-100 bg-white px-3 py-2 sm:px-6">
+          <div className="flex flex-wrap items-center gap-2 text-xs">
+            <button
+              type="button"
+              onClick={() => setConfigOpen((value) => !value)}
+              className="flex items-center gap-2 rounded-full bg-[#f4f2ff] px-3 py-2 font-bold text-[#3535FF]"
+            >
+              <span>Agent configuration</span>
+              <span className="text-[10px]">{configOpen ? 'Hide' : 'Show'}</span>
+            </button>
+            <span className={`rounded-full px-2.5 py-1 font-semibold ${aiOn ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
+              {aiOn ? 'AI on' : 'Human reply'}
+            </span>
+            <span className="rounded-full bg-gray-100 px-2.5 py-1 font-semibold uppercase text-gray-600">{replyMode}</span>
+            <span className="hidden text-gray-400 sm:inline">{REPLY_MODES.find((mode) => mode.value === replyMode)?.description}</span>
+          </div>
+          {configOpen && (
+            <div className="mt-3 rounded-2xl border border-gray-100 bg-[#fbfbff] p-3">
+              <div className="grid gap-3 xl:grid-cols-[minmax(150px,190px)_minmax(260px,1fr)_auto_auto] xl:items-center">
+                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
+                  <span className="text-xs font-bold text-gray-700">AI Agent</span>
+                  <button
+                    onClick={toggleAi}
+                    disabled={statusLoading}
+                    role="switch"
+                    aria-checked={aiOn}
+                    title={aiOn ? 'Turn AI off (admin will reply manually)' : 'Turn AI on (AI will auto-reply)'}
+                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
+                      aiOn ? 'bg-[#3535FF]' : 'bg-gray-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
+                        aiOn ? 'translate-x-5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {REPLY_MODES.map((mode) => (
+                    <button
+                      key={mode.value}
+                      type="button"
+                      onClick={() => updateReplyMode(mode.value)}
+                      disabled={replyModeLoading}
+                      className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
+                        replyMode === mode.value
+                          ? 'bg-[#3535FF] text-white'
+                          : 'bg-white text-gray-600 hover:bg-gray-100'
+                      }`}
+                    >
+                      {mode.label}
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={confirmInstallation}
+                  disabled={confirming}
+                  title="Send an SMS to the customer confirming their installation"
+                  className="rounded-xl bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                >
+                  {confirming ? 'Sending...' : 'Confirm Installation'}
+                </button>
+                <button
+                  onClick={() => updateStatus('resolved')}
+                  disabled={statusLoading}
+                  className="rounded-xl bg-gray-100 px-4 py-2 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-50"
+                >
+                  Resolve
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Messages */}
       <div
@@ -475,49 +492,24 @@ export default function ChatView() {
               <span>AI agent is off — your replies are sent directly to the customer</span>
             </div>
           )}
-          <div className="mb-3 rounded-2xl border border-gray-100 bg-gray-50 p-2.5">
-            <div className="mb-2 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-bold text-gray-900">Reply style</p>
-                <p className="text-[11px] text-gray-500">{REPLY_MODES.find((mode) => mode.value === replyMode)?.description}</p>
-              </div>
-              <span className="rounded-full bg-white px-2.5 py-1 text-[10px] font-black uppercase text-[#3535FF]">
-                {replyMode}
-              </span>
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-xs font-semibold text-gray-500">Manual reply</span>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setManualMode('text')}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${manualMode === 'text' ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600'}`}
+              >
+                Text
+              </button>
+              <button
+                type="button"
+                onClick={() => setManualMode('voice')}
+                className={`rounded-full px-3 py-1.5 text-xs font-bold ${manualMode === 'voice' ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600'}`}
+              >
+                Voice note
+              </button>
             </div>
-            <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-              {REPLY_MODES.map((mode) => (
-                <button
-                  key={mode.value}
-                  type="button"
-                  onClick={() => updateReplyMode(mode.value)}
-                  disabled={replyModeLoading}
-                  className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
-                    replyMode === mode.value
-                      ? 'bg-[#3535FF] text-white'
-                      : 'bg-white text-gray-600 hover:bg-gray-100'
-                  }`}
-                >
-                  {mode.label}
-                </button>
-              ))}
-            </div>
-          </div>
-          <div className="mb-2 flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setManualMode('text')}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ${manualMode === 'text' ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600'}`}
-            >
-              Send text
-            </button>
-            <button
-              type="button"
-              onClick={() => setManualMode('voice')}
-              className={`rounded-full px-3 py-1.5 text-xs font-bold ${manualMode === 'voice' ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600'}`}
-            >
-              Send voice note
-            </button>
           </div>
           <div className="flex gap-2 items-end">
             <textarea

@@ -10,6 +10,7 @@ const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
   'tickets',
+  'invoices',
   'escalations',
   'installations',
   'complaints',

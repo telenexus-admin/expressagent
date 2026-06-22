@@ -18,6 +18,7 @@ const OPERATOR_ACCESS_PERMISSIONS = [
   'statistics',
   'conversations',
   'tickets',
+  'invoices',
   'billing',
   'communication',
   'escalations',

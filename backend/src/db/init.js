@@ -149,6 +149,76 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_media_library_client ON media_library(client_id, is_active, attach_on_welcome);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_media_library_client_tag_unique ON media_library(client_id, LOWER(tag)) WHERE tag IS NOT NULL AND tag <> '';
 
+  CREATE TABLE IF NOT EXISTS invoice_profiles (
+    client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
+    company_name VARCHAR(180),
+    logo_url TEXT,
+    phone VARCHAR(80),
+    email VARCHAR(180),
+    address TEXT,
+    website VARCHAR(180),
+    payment_method VARCHAR(120),
+    account_name VARCHAR(160),
+    account_number VARCHAR(120),
+    branch_name VARCHAR(120),
+    signature_name VARCHAR(160),
+    signature_title VARCHAR(120),
+    signature_image_url TEXT,
+    terms TEXT,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS invoice_products (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(180) NOT NULL,
+    description TEXT,
+    unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+    tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS invoices (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    invoice_number VARCHAR(40) NOT NULL,
+    customer_name VARCHAR(180) NOT NULL,
+    customer_phone VARCHAR(80),
+    customer_email VARCHAR(180),
+    customer_address TEXT,
+    issue_date DATE NOT NULL DEFAULT CURRENT_DATE,
+    due_date DATE,
+    status VARCHAR(20) NOT NULL DEFAULT 'draft',
+    subtotal NUMERIC(12,2) NOT NULL DEFAULT 0,
+    discount_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    tax_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    total_amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    notes TEXT,
+    public_token VARCHAR(80) UNIQUE NOT NULL,
+    sent_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, invoice_number)
+  );
+  ALTER TABLE invoices DROP CONSTRAINT IF EXISTS invoices_status_check;
+  ALTER TABLE invoices ADD CONSTRAINT invoices_status_check CHECK (status IN ('draft', 'sent', 'paid', 'overdue', 'cancelled'));
+
+  CREATE TABLE IF NOT EXISTS invoice_items (
+    id SERIAL PRIMARY KEY,
+    invoice_id INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
+    product_id INTEGER REFERENCES invoice_products(id) ON DELETE SET NULL,
+    description TEXT NOT NULL,
+    quantity NUMERIC(10,2) NOT NULL DEFAULT 1,
+    unit_price NUMERIC(12,2) NOT NULL DEFAULT 0,
+    tax_rate NUMERIC(5,2) NOT NULL DEFAULT 0,
+    line_total NUMERIC(12,2) NOT NULL DEFAULT 0
+  );
+  CREATE INDEX IF NOT EXISTS idx_invoice_products_client ON invoice_products(client_id, is_active, name);
+  CREATE INDEX IF NOT EXISTS idx_invoices_client_due ON invoices(client_id, status, due_date DESC);
+  CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
+
   CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,

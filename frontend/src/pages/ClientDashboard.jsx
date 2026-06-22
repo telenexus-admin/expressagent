@@ -25,6 +25,7 @@ import GlobalConversationSearch from '../components/GlobalConversationSearch';
 import DashboardHelpBot from '../components/DashboardHelpBot';
 import expressnetLogo from '../assets/expressnetLogo';
 import aiBotArtwork from '../assets/aiBotArtwork';
+import nexaLogo from '../assets/nexa-logo.png';
 
 const NexaMark = () => (
   <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#13c8ff] via-[#3455ff] to-[#812fff] shadow-[0_8px_18px_rgba(53,53,255,0.18)]">
@@ -32,7 +33,32 @@ const NexaMark = () => (
     <span className="absolute left-5 top-2 h-7 w-2 rotate-[-28deg] rounded-full bg-cyan-200/90" />
     <span className="absolute right-2.5 top-2 h-7 w-2 rotate-[-28deg] rounded-full bg-white/80" />
     <span className="absolute bottom-1 right-1 rounded-full bg-white px-1 text-[7px] font-black leading-3 text-[#3a35ff]">AI</span>
+    <img
+      src={nexaLogo}
+      alt=""
+      className="absolute inset-0 h-full w-full object-cover"
+      onError={(event) => { event.currentTarget.style.display = 'none'; }}
+    />
   </span>
+);
+
+const HeaderPulseIcon = () => (
+  <span className="hidden h-[70px] w-[70px] shrink-0 items-center justify-center rounded-[20px] border border-[#d6d5ff] bg-[#f5f2ff] text-[#5535ff] shadow-[0_14px_26px_rgba(75,63,196,0.12)] sm:flex">
+    <PulseIcon className="h-7 w-7" />
+  </span>
+);
+
+const BellIcon = ({ className = 'h-6 w-6' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M18 8a6 6 0 1 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9" />
+    <path d="M10 21h4" />
+  </svg>
+);
+
+const ChevronDownIcon = ({ className = 'h-5 w-5' }) => (
+  <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+    <path d="m6 9 6 6 6-6" />
+  </svg>
 );
 
 function canAccess(admin, permission) {
@@ -54,7 +80,7 @@ function Brand({ expressnet, compact = false }) {
   return (
     <div className="flex items-center gap-3">
       <div className={`${compact ? 'w-10 h-10' : 'w-11 h-11'} flex items-center justify-center shrink-0`}><NexaMark /></div>
-      <div><div className={`${compact ? 'text-lg' : 'text-xl'} font-extrabold text-[#0d1438] dashboard-brand-title`}>Nexa</div>{!compact && <div className="text-xs font-semibold text-[#7b84a8] dashboard-muted">AI Support Portal</div>}</div>
+      <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-extrabold text-[#0d1438] dashboard-brand-title`}>Nexa</div>{!compact && <div className="text-sm font-medium text-[#7b84a8] dashboard-muted">AI Support Portal</div>}</div>
     </div>
   );
 }
@@ -215,13 +241,31 @@ export default function ClientDashboard() {
         </aside>
 
         <section className="dashboard-main flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)]">
-          <header className="h-[86px] shrink-0 px-4 sm:px-7 lg:px-10 flex items-center justify-between gap-5">
+          <header className="h-[96px] shrink-0 px-4 sm:px-7 lg:px-10 flex items-center justify-between gap-5">
             <div className="flex items-center gap-4 min-w-0">
               <button onClick={() => setDrawerOpen(true)} className="lg:hidden w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-600"><MenuIcon className="w-6 h-6" /></button>
               <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm items-center justify-center text-[#263150] hover:text-[#6d35ff]"><MenuIcon className="w-5 h-5" /></button>
-              <div className="min-w-0"><h1 className="text-xl font-extrabold truncate text-[#0d1438] dashboard-brand-title">{title}</h1><p className="text-xs font-medium text-[#8a94b8] mt-1 truncate dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
+              <HeaderPulseIcon />
+              <div className="min-w-0"><h1 className="truncate text-3xl font-extrabold tracking-normal text-[#0d1438] dashboard-brand-title">{title}</h1><p className="mt-1 truncate text-sm font-medium text-[#6d7697] dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
             </div>
-            <div className="flex items-center gap-4"><GlobalConversationSearch /><div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm flex items-center justify-center text-[#667092]"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
+            <div className="flex items-center gap-4">
+              <GlobalConversationSearch />
+              <button className="relative hidden h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#263150] sm:flex">
+                <BellIcon />
+                <span className="absolute right-2 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5b22f5] px-1 text-[10px] font-black text-white">3</span>
+              </button>
+              <div className="hidden items-center gap-3 lg:flex">
+                <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-[#80d9ff] bg-[#f0f8ff] text-sm font-extrabold text-[#0d1438]">
+                  {(admin?.name || 'Nexa Admin').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'NA'}
+                  <span className="absolute bottom-0 right-0 h-3.5 w-3.5 rounded-full border-2 border-white bg-emerald-500" />
+                </span>
+                <div className="min-w-[112px]">
+                  <div className="truncate text-sm font-extrabold text-[#0d1438]">{admin?.name || 'Nexa Admin'}</div>
+                  <div className="truncate text-xs font-medium capitalize text-[#6d7697]">{admin?.role || 'Administrator'}</div>
+                </div>
+              </div>
+              <div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm flex items-center justify-center text-[#667092]"><span className="hidden lg:block"><ChevronDownIcon className="h-5 w-5" /></span><span className="lg:hidden"><DotsVerticalIcon className="w-5 h-5" /></span></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div>
+            </div>
           </header>
           <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-10 pb-7 overflow-hidden"><div className="dashboard-content h-full min-h-0 overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_14px_34px_rgba(31,41,80,0.06)] flex flex-col"><Outlet /></div></main>
           <DashboardHelpBot />

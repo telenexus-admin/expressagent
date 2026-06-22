@@ -33,6 +33,24 @@ function ChatIcon({ className = 'h-6 w-6' }) {
   );
 }
 
+function ClockIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="9" />
+      <path d="M12 7v5l3 2" />
+    </svg>
+  );
+}
+
+function UserIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="8" r="3.5" />
+      <path d="M5 20a7 7 0 0 1 14 0" />
+    </svg>
+  );
+}
+
 export default function ConversationList({ conversations, compact = false, initialSearch = '' }) {
   const [search, setSearch] = useState(initialSearch);
   const [filter, setFilter] = useState('all');
@@ -52,9 +70,9 @@ export default function ConversationList({ conversations, compact = false, initi
   });
 
   const filters = [
-    ['all', 'All'],
-    ['active', 'Active'],
-    ['human_takeover', 'Human'],
+    ['all', 'All', ChatIcon],
+    ['active', 'Active', ClockIcon],
+    ['human_takeover', 'Human', UserIcon],
   ];
 
   return (
@@ -65,10 +83,10 @@ export default function ConversationList({ conversations, compact = false, initi
             <ChatIcon className="h-5 w-5" />
           </span>
           <div>
-            <h2 className="text-xl font-extrabold text-[#0d1438] dashboard-brand-title">
+            <h2 className="text-xl font-bold text-[#0d1438] dashboard-brand-title">
               {conversations.length} total conversations
             </h2>
-            <p className="mt-1 text-xs font-medium text-[#6c7699] dashboard-muted">All customer interactions in one place.</p>
+            <p className="mt-1 text-sm font-medium text-[#6c7699] dashboard-muted">All customer interactions in one place.</p>
           </div>
         </div>
       )}
@@ -94,16 +112,17 @@ export default function ConversationList({ conversations, compact = false, initi
       </div>
 
       <div className={`${compact ? 'mb-3 grid grid-cols-1 gap-2' : 'mb-5 grid grid-cols-3 gap-4'}`}>
-        {filters.map(([value, label]) => (
+        {filters.map(([value, label, Icon]) => (
           <button
             key={value}
             onClick={() => setFilter(value)}
-            className={`conversation-filter-tab h-11 rounded-2xl border text-xs font-semibold transition ${
+            className={`conversation-filter-tab flex h-12 items-center justify-center gap-2 rounded-2xl border text-sm font-medium transition ${
               filter === value
                 ? 'border-transparent bg-gradient-to-r from-[#2f5bff] to-[#8b25ff] text-white shadow-[0_12px_24px_rgba(98,52,245,0.22)]'
                 : 'border-[#dfe5f2] bg-white text-[#475274] hover:bg-[#f7f8fc]'
             }`}
           >
+            <Icon className="h-4 w-4" />
             {label}
           </button>
         ))}
@@ -120,22 +139,22 @@ export default function ConversationList({ conversations, compact = false, initi
                 <button
                   key={conversation.id}
                   onClick={() => navigate(`/dashboard/conversations/${conversation.id}`)}
-                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[50px_minmax(0,1fr)_20px] gap-3 px-3 py-3' : 'grid-cols-[64px_200px_minmax(0,1fr)_96px_22px] gap-4 px-5 py-3'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
+                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[50px_minmax(0,1fr)_20px] gap-3 px-3 py-3' : 'grid-cols-[72px_220px_minmax(0,1fr)_110px_24px] gap-4 px-6 py-3.5'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
                 >
-                  <span className={`${compact ? 'h-10 w-10 text-xs' : 'h-12 w-12 text-sm'} relative flex items-center justify-center rounded-full border border-[#d7d7ff] bg-[#f6f3ff] font-extrabold text-[#4f35f5]`}>
+                  <span className={`${compact ? 'h-10 w-10 text-xs' : 'h-14 w-14 text-base'} relative flex items-center justify-center rounded-full border border-[#d7d7ff] bg-[#f6f3ff] font-semibold text-[#4f35f5]`}>
                     {initials(conversation)}
                     <span className="absolute -right-0.5 bottom-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
                   </span>
                   <span className="min-w-0">
-                    <span className={`${compact ? 'text-sm' : 'text-[13px]'} block truncate font-extrabold text-[#0d1438] dashboard-brand-title`}>{conversation.customer_name || '-'}</span>
-                    <span className="mt-1 block truncate text-xs font-medium text-[#5d6a92] dashboard-muted">+{conversation.customer_phone}</span>
+                    <span className={`${compact ? 'text-sm' : 'text-base'} block truncate font-bold text-[#0d1438] dashboard-brand-title`}>{conversation.customer_name || '-'}</span>
+                    <span className="mt-1 block truncate text-sm font-medium text-[#5d6a92] dashboard-muted">+{conversation.customer_phone}</span>
                     {compact && <span className="mt-1 block truncate text-xs font-medium text-[#4f5d84] dashboard-muted">{conversation.last_message || 'No messages yet'}</span>}
                   </span>
-                  {!compact && <span className="min-w-0 truncate text-xs font-medium leading-5 text-[#4f5d84] dashboard-muted">
+                  {!compact && <span className="min-w-0 truncate text-sm font-medium leading-6 text-[#4f5d84] dashboard-muted">
                     {conversation.last_message || 'No messages yet'}
                   </span>}
-                  {!compact && <span className="text-right text-xs font-medium text-[#58658b] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
-                  <span className="text-xl font-light text-[#7c35ff] transition group-hover:translate-x-1">&rsaquo;</span>
+                  {!compact && <span className="text-right text-sm font-medium text-[#58658b] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
+                  <span className="text-2xl font-light text-[#7c35ff] transition group-hover:translate-x-1">&rsaquo;</span>
                 </button>
               );
             })}

@@ -9,6 +9,7 @@ import {
   PulseIcon,
   WarningIcon,
 } from '../components/Icons';
+import robotAgentImage from '../assets/robot-agent.jpg';
 
 const VOICE_OPTIONS = [
   { id: 'alloy', label: 'Alloy', description: 'Neutral, balanced - works for most use cases' },
@@ -596,10 +597,12 @@ export default function Agent() {
               <h2 className="text-lg font-black text-[#171733]">Agent Summary</h2>
 
               <div className="mt-8 flex flex-col items-center text-center">
-                <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#ded6ff] via-[#9c86ff] to-[#f3f0ff]">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-[#23204f] text-white shadow-lg">
-                    <AgentIcon className="h-8 w-8" />
-                  </div>
+                <div className="relative flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-[#ded6ff] via-[#9c86ff] to-[#f3f0ff] p-1">
+                  <img
+                    src={robotAgentImage}
+                    alt="AI agent"
+                    className="h-full w-full rounded-full border-4 border-white object-cover object-top shadow-lg"
+                  />
                   <span className="absolute -right-2 top-8 h-2 w-2 rounded-full bg-[#7f69ff]" />
                   <span className="absolute left-0 top-10 h-2 w-2 rounded-full bg-[#bbaeff]" />
                 </div>

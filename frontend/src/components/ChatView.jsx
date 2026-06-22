@@ -99,6 +99,67 @@ function MessageAttachment({ msg }) {
   return <audio controls preload="metadata" src={src} className="w-64 max-w-full" />;
 }
 
+function IconButton({ children, label, onClick }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      title={label}
+      className="flex h-10 w-10 items-center justify-center rounded-2xl border border-[#e1e6f2] bg-white text-[#1f2b4d] shadow-sm transition-colors hover:bg-[#f8f9ff]"
+    >
+      {children}
+    </button>
+  );
+}
+
+function PhoneIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M5 4h3l2 5-2.5 1.5a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z" />
+    </svg>
+  );
+}
+
+function VideoIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="6" width="13" height="12" rx="2" />
+      <path d="m16 10 5-3v10l-5-3" />
+    </svg>
+  );
+}
+
+function DotsIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="currentColor">
+      <circle cx="12" cy="5" r="1.8" />
+      <circle cx="12" cy="12" r="1.8" />
+      <circle cx="12" cy="19" r="1.8" />
+    </svg>
+  );
+}
+
+function GearIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.2a1.6 1.6 0 0 0-1-1.5 1.6 1.6 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.2a1.6 1.6 0 0 0 1.5-1 1.6 1.6 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.6 1.6 0 0 0 1.8.3 1.6 1.6 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.2a1.6 1.6 0 0 0 1 1.5 1.6 1.6 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1h.2a2 2 0 1 1 0 4h-.2a1.6 1.6 0 0 0-1.5 1Z" />
+    </svg>
+  );
+}
+
+function TrashIcon() {
+  return (
+    <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6 18 21H6L5 6" />
+      <path d="M10 11v6M14 11v6" />
+    </svg>
+  );
+}
+
 export default function ChatView() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -110,9 +171,11 @@ export default function ChatView() {
   const [statusLoading, setStatusLoading] = useState(false);
   const [replyModeLoading, setReplyModeLoading] = useState(false);
   const [confirming, setConfirming] = useState(false);
-  const [configOpen, setConfigOpen] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [toast, setToast] = useState('');
   const [error, setError] = useState('');
+  const menuRef = useRef(null);
   const messagesRef = useRef(null);
   const bottomRef = useRef(null);
   const prevIdRef = useRef(null);
@@ -153,7 +216,7 @@ export default function ChatView() {
       setConversation(null);
       setReply('');
       setError('');
-      setConfigOpen(false);
+      setMenuOpen(false);
       shouldStickToBottomRef.current = true;
       lastMessageCountRef.current = 0;
       prevIdRef.current = id;
@@ -163,6 +226,14 @@ export default function ChatView() {
       fetchConversation();
     }
   }, [id, fetchMessages, fetchConversation]);
+
+  useEffect(() => {
+    const onPointerDown = (event) => {
+      if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false);
+    };
+    window.addEventListener('mousedown', onPointerDown);
+    return () => window.removeEventListener('mousedown', onPointerDown);
+  }, []);
 
   useEffect(() => {
     if (!id) return;
@@ -245,6 +316,22 @@ export default function ChatView() {
       setError(err.response?.data?.error || 'Failed to send confirmation SMS');
     } finally {
       setConfirming(false);
+    }
+  };
+
+  const deleteConversation = async () => {
+    if (!conversation || deleting) return;
+    const ok = window.confirm(`Delete this conversation with ${conversation.customer_phone}? This cannot be undone.`);
+    if (!ok) return;
+    setDeleting(true);
+    setError('');
+    try {
+      await api.delete(`/conversations/${id}`);
+      navigate('/dashboard/conversations');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to delete conversation');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -334,96 +421,93 @@ export default function ChatView() {
         </div>
 
         {conversation && (
-          <div className="flex items-center gap-2 shrink-0">
-            {isResolved && (
-              <button
-                onClick={() => updateStatus('active')}
-                disabled={statusLoading}
-                className="text-[10px] sm:text-xs bg-[#3535FF] hover:bg-[#2828DD] text-white px-2.5 sm:px-4 py-1.5 sm:py-2 rounded-full font-medium transition-colors disabled:opacity-50 whitespace-nowrap"
-              >
-                Reopen
-              </button>
+          <div className="relative flex items-center gap-2 shrink-0" ref={menuRef}>
+            <IconButton label="Call customer"><PhoneIcon /></IconButton>
+            <IconButton label="Video call"><VideoIcon /></IconButton>
+            <IconButton label="Conversation menu" onClick={() => setMenuOpen((value) => !value)}><DotsIcon /></IconButton>
+            {menuOpen && (
+              <div className="absolute right-0 top-12 z-30 w-[330px] max-w-[calc(100vw-32px)] rounded-[22px] border border-[#e1e6f2] bg-white p-3 text-xs shadow-[0_18px_44px_rgba(31,41,80,0.18)]">
+                <div className="mb-3 flex items-center gap-2 rounded-2xl bg-[#f5f2ff] px-3 py-2 font-bold text-[#3535FF]">
+                  <GearIcon />
+                  <span>Agent configuration</span>
+                </div>
+                {!isResolved ? (
+                  <>
+                    <div className="mb-3 flex items-center justify-between rounded-2xl border border-gray-100 bg-[#fbfbff] px-3 py-2">
+                      <div>
+                        <p className="font-bold text-[#0d1438]">AI Agent</p>
+                        <p className="mt-0.5 text-[11px] text-gray-400">{aiOn ? 'AI replies automatically' : 'Human reply mode'}</p>
+                      </div>
+                      <button
+                        onClick={toggleAi}
+                        disabled={statusLoading}
+                        role="switch"
+                        aria-checked={aiOn}
+                        title={aiOn ? 'Turn AI off' : 'Turn AI on'}
+                        className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${aiOn ? 'bg-[#3535FF]' : 'bg-gray-300'}`}
+                      >
+                        <span className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${aiOn ? 'translate-x-5' : 'translate-x-0.5'}`} />
+                      </button>
+                    </div>
+                    <div className="mb-3 grid grid-cols-2 gap-2">
+                      {REPLY_MODES.map((mode) => (
+                        <button
+                          key={mode.value}
+                          type="button"
+                          onClick={() => updateReplyMode(mode.value)}
+                          disabled={replyModeLoading}
+                          className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
+                            replyMode === mode.value
+                              ? 'bg-[#3535FF] text-white'
+                              : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                          }`}
+                        >
+                          {mode.label}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="mb-3 rounded-2xl bg-gray-50 px-3 py-2 text-[11px] font-medium text-gray-500">
+                      {REPLY_MODES.find((mode) => mode.value === replyMode)?.description}
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button
+                        onClick={confirmInstallation}
+                        disabled={confirming}
+                        className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
+                      >
+                        {confirming ? 'Sending...' : 'Confirm'}
+                      </button>
+                      <button
+                        onClick={() => updateStatus('resolved')}
+                        disabled={statusLoading}
+                        className="rounded-xl bg-gray-100 px-3 py-2 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-50"
+                      >
+                        Resolve
+                      </button>
+                    </div>
+                  </>
+                ) : (
+                  <button
+                    onClick={() => updateStatus('active')}
+                    disabled={statusLoading}
+                    className="mb-3 w-full rounded-xl bg-[#3535FF] px-3 py-2 text-xs font-bold text-white transition-colors hover:bg-[#2828DD] disabled:opacity-50"
+                  >
+                    Reopen conversation
+                  </button>
+                )}
+                <button
+                  onClick={deleteConversation}
+                  disabled={deleting}
+                  className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600 transition-colors hover:bg-red-100 disabled:opacity-50"
+                >
+                  <TrashIcon />
+                  {deleting ? 'Deleting...' : 'Delete conversation'}
+                </button>
+              </div>
             )}
           </div>
         )}
       </div>
-
-      {conversation && !isResolved && (
-        <div className="shrink-0 border-b border-gray-100 bg-white px-3 py-2 sm:px-6">
-          <div className="flex flex-wrap items-center gap-2 text-xs">
-            <button
-              type="button"
-              onClick={() => setConfigOpen((value) => !value)}
-              className="flex items-center gap-2 rounded-full bg-[#f4f2ff] px-3 py-2 font-bold text-[#3535FF]"
-            >
-              <span>Agent configuration</span>
-              <span className="text-[10px]">{configOpen ? 'Hide' : 'Show'}</span>
-            </button>
-            <span className={`rounded-full px-2.5 py-1 font-semibold ${aiOn ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>
-              {aiOn ? 'AI on' : 'Human reply'}
-            </span>
-            <span className="rounded-full bg-gray-100 px-2.5 py-1 font-semibold uppercase text-gray-600">{replyMode}</span>
-            <span className="hidden text-gray-400 sm:inline">{REPLY_MODES.find((mode) => mode.value === replyMode)?.description}</span>
-          </div>
-          {configOpen && (
-            <div className="mt-3 rounded-2xl border border-gray-100 bg-[#fbfbff] p-3">
-              <div className="grid gap-3 xl:grid-cols-[minmax(150px,190px)_minmax(260px,1fr)_auto_auto] xl:items-center">
-                <div className="flex items-center justify-between rounded-xl bg-white px-3 py-2">
-                  <span className="text-xs font-bold text-gray-700">AI Agent</span>
-                  <button
-                    onClick={toggleAi}
-                    disabled={statusLoading}
-                    role="switch"
-                    aria-checked={aiOn}
-                    title={aiOn ? 'Turn AI off (admin will reply manually)' : 'Turn AI on (AI will auto-reply)'}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors disabled:opacity-50 ${
-                      aiOn ? 'bg-[#3535FF]' : 'bg-gray-300'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform ${
-                        aiOn ? 'translate-x-5' : 'translate-x-0.5'
-                      }`}
-                    />
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {REPLY_MODES.map((mode) => (
-                    <button
-                      key={mode.value}
-                      type="button"
-                      onClick={() => updateReplyMode(mode.value)}
-                      disabled={replyModeLoading}
-                      className={`rounded-xl px-3 py-2 text-xs font-bold transition-colors disabled:opacity-50 ${
-                        replyMode === mode.value
-                          ? 'bg-[#3535FF] text-white'
-                          : 'bg-white text-gray-600 hover:bg-gray-100'
-                      }`}
-                    >
-                      {mode.label}
-                    </button>
-                  ))}
-                </div>
-                <button
-                  onClick={confirmInstallation}
-                  disabled={confirming}
-                  title="Send an SMS to the customer confirming their installation"
-                  className="rounded-xl bg-emerald-50 px-4 py-2 text-xs font-bold text-emerald-700 transition-colors hover:bg-emerald-100 disabled:opacity-50"
-                >
-                  {confirming ? 'Sending...' : 'Confirm Installation'}
-                </button>
-                <button
-                  onClick={() => updateStatus('resolved')}
-                  disabled={statusLoading}
-                  className="rounded-xl bg-gray-100 px-4 py-2 text-xs font-bold text-gray-700 transition-colors hover:bg-gray-200 disabled:opacity-50"
-                >
-                  Resolve
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* Messages */}
       <div

@@ -111,12 +111,12 @@ export default function ConversationList({ conversations, compact = false, initi
         )}
       </div>
 
-      <div className={`${compact ? 'mb-3 grid grid-cols-1 gap-2' : 'mb-5 grid grid-cols-3 gap-4'}`}>
+      <div className={`${compact ? 'mb-3 grid grid-cols-3 gap-2' : 'mb-5 grid grid-cols-3 gap-4'}`}>
         {filters.map(([value, label, Icon]) => (
           <button
             key={value}
             onClick={() => setFilter(value)}
-            className={`conversation-filter-tab flex h-12 items-center justify-center gap-2 rounded-2xl border text-sm font-medium transition ${
+            className={`conversation-filter-tab flex ${compact ? 'h-10 rounded-xl text-xs' : 'h-12 rounded-2xl text-sm'} items-center justify-center gap-2 border font-medium transition ${
               filter === value
                 ? 'border-transparent bg-gradient-to-r from-[#2f5bff] to-[#8b25ff] text-white shadow-[0_12px_24px_rgba(98,52,245,0.22)]'
                 : 'border-[#dfe5f2] bg-white text-[#475274] hover:bg-[#f7f8fc]'

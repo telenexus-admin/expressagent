@@ -395,4 +395,20 @@ router.patch('/:id/status', async (req, res) => {
   }
 });
 
+router.delete('/:id', async (req, res) => {
+  try {
+    const ownership = await db.query(`SELECT client_id FROM conversations WHERE id = $1`, [req.params.id]);
+    if (ownership.rows.length === 0) return res.status(404).json({ error: 'Conversation not found' });
+    if (!req.scope.isSuperadmin && ownership.rows[0].client_id !== req.scope.clientId) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    await db.query(`DELETE FROM conversations WHERE id = $1`, [req.params.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /conversations/:id error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 module.exports = router;

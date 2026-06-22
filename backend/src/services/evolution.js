@@ -148,20 +148,8 @@ async function sendEvolutionVoiceNote(settings, number, audioBuffer) {
   try {
     return await axios.post(`${baseUrl}/message/sendWhatsAppAudio/${encodeURIComponent(instance)}`, audioPayload, { headers, timeout: 60000 });
   } catch (err) {
-    const firstError = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
-    try {
-      return await axios.post(`${baseUrl}/message/sendMedia/${encodeURIComponent(instance)}`, {
-        number: phone,
-        mediatype: 'audio',
-        mimetype: 'audio/ogg; codecs=opus',
-        fileName: 'voice-note.ogg',
-        media: base64Audio,
-        ptt: true,
-      }, { headers, timeout: 60000 });
-    } catch (fallbackErr) {
-      const secondError = typeof fallbackErr.response?.data === 'object' ? JSON.stringify(fallbackErr.response.data) : (fallbackErr.response?.data || fallbackErr.message);
-      throw new Error(`Evolution voice send failed. sendWhatsAppAudio: ${firstError}; sendMedia: ${secondError}`);
-    }
+    const detail = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    throw new Error(`Evolution voice note send failed via sendWhatsAppAudio. Refusing sendMedia fallback because it can deliver downloadable audio instead of a WhatsApp voice note. Details: ${detail}`);
   }
 }
 

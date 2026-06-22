@@ -32,22 +32,14 @@ export default function Conversations() {
   const hasOpenChat = Boolean(id);
 
   return (
-    <div className="flex w-full h-full overflow-hidden">
+    <div className="dashboard-conversations flex w-full h-full overflow-hidden bg-transparent">
       <div
-        className={`border-r border-gray-100 ${
+        className={`${
           hasOpenChat
-            ? 'hidden md:flex md:flex-col md:w-80 md:shrink-0'
+            ? 'hidden md:flex md:flex-col md:w-[360px] md:shrink-0 border-r border-[#dfe5f2]'
             : 'flex flex-col flex-1'
         }`}
       >
-        {!hasOpenChat && (
-          <div className="px-5 pt-6 pb-2 shrink-0">
-            <h1 className="text-2xl font-bold text-gray-900">Conversations</h1>
-            <p className="text-sm text-gray-500 mt-1">
-              {loading ? 'Loading...' : `${conversations.length} total`}
-            </p>
-          </div>
-        )}
         <div className="flex-1 min-h-0">
           <ConversationList conversations={conversations} compact={hasOpenChat} initialSearch={headerSearch} />
         </div>

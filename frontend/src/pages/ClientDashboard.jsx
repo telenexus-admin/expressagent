@@ -50,27 +50,24 @@ function Brand({ expressnet, compact = false }) {
   return (
     <div className="flex items-center gap-3">
       <div className={`${compact ? 'w-11 h-11' : 'w-12 h-12'} flex items-center justify-center shrink-0`}><NexaMark /></div>
-      <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-black`}>Nexa</div>{!compact && <div className="text-xs text-white/50">AI Support Portal</div>}</div>
+      <div><div className={`${compact ? 'text-lg' : 'text-2xl'} font-black text-[#0d1438] dashboard-brand-title`}>Nexa</div>{!compact && <div className="text-xs font-semibold text-[#7b84a8] dashboard-muted">AI Support Portal</div>}</div>
     </div>
   );
 }
 
 function AiSidebarHero({ compact = false }) {
   return (
-    <div className={`${compact ? 'mx-4 mb-3 h-[94px]' : 'mx-5 mb-3 h-[118px]'} relative shrink-0 overflow-hidden rounded-[22px] border border-white/10 bg-gradient-to-b from-[#301273] via-[#27105f] to-[#19083e] shadow-xl shadow-black/20`}>
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_58%_32%,rgba(33,167,255,0.42),transparent_32%),radial-gradient(circle_at_50%_100%,rgba(87,36,211,0.75),transparent_60%)]" />
-      <div className="absolute left-3 top-4 h-1.5 w-1.5 rounded-full bg-sky-300/80 shadow-[0_0_12px_3px_rgba(125,211,252,0.85)]" />
-      <div className="absolute right-7 top-8 h-1 w-1 rounded-full bg-white/75 shadow-[0_0_10px_2px_rgba(255,255,255,0.6)]" />
-      <div className="absolute bottom-3 left-6 h-1 w-1 rounded-full bg-blue-300/75 shadow-[0_0_12px_3px_rgba(96,165,250,0.7)]" />
+    <div className={`${compact ? 'mx-4 mb-3 h-[94px]' : 'mx-5 mb-5 h-[138px]'} dashboard-ai-card relative shrink-0 overflow-hidden rounded-[20px] border border-[#dbe5ff] bg-gradient-to-br from-[#eef6ff] via-[#f6f1ff] to-[#e9f2ff] shadow-[0_16px_34px_rgba(80,83,140,0.12)]`}>
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(53,108,255,0.18),transparent_18%),radial-gradient(circle_at_90%_15%,rgba(124,58,237,0.18),transparent_22%)]" />
       <img
         src={aiBotArtwork}
         alt="Nexa AI assistant"
-        className={`${compact ? 'h-[112px] -bottom-8 right-4' : 'h-[142px] -bottom-11 right-4'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_0_16px_rgba(48,167,255,0.5)]`}
+        className={`${compact ? 'h-[112px] -bottom-8 right-4' : 'h-[150px] -bottom-9 right-1'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_12px_18px_rgba(48,90,180,0.25)]`}
       />
       {!compact && (
-        <div className="absolute bottom-3 left-4 z-20">
-          <p className="text-[10px] font-black uppercase tracking-[0.17em] text-sky-300">Nexa AI</p>
-          <p className="mt-0.5 text-[10px] text-white/65">Always ready to assist</p>
+        <div className="absolute bottom-5 left-5 z-20">
+          <p className="text-lg font-black tracking-wide text-[#2086ff]">NEXA AI</p>
+          <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-[#121a3d]"><span className="h-2.5 w-2.5 rounded-full bg-[#6d35ff]" />Always ready to assist</p>
         </div>
       )}
     </div>
@@ -181,16 +178,16 @@ export default function ClientDashboard() {
     const [path, label, Icon, , badge] = item;
     const selected = active(path);
     return (
-      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`group relative w-full flex items-center gap-3 px-5 py-2.5 text-sm transition-all ${selected ? `${mobile ? 'rounded-[22px]' : 'sidebar-active-link'} bg-white text-[#42149b] font-black` : 'rounded-[22px] text-white/75 hover:bg-white/10 hover:text-white'}`}>
-        <span className={`w-9 h-9 rounded-2xl flex items-center justify-center shrink-0 ${selected ? 'bg-[#efe9ff] text-[#4d1ab8]' : 'bg-white/10 text-white/80'}`}><Icon className="w-5 h-5" /></span>
+      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`dashboard-nav-item group relative w-full flex items-center gap-3 px-4 py-3 text-sm transition-all ${selected ? 'dashboard-nav-active text-white font-black' : 'text-[#20284d] hover:bg-[#f4f1ff]'}`}>
+        <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-white/16 text-white' : 'bg-[#f2f4fb] text-[#273459]'}`}><Icon className="w-5 h-5" /></span>
         <span className="flex-1 text-left truncate">{label}</span>
-        {badge > 0 && <span className={`text-[10px] font-black rounded-full min-w-[22px] h-6 flex items-center justify-center px-2 ${selected ? 'bg-[#4d1ab8] text-white' : 'bg-white text-[#4d1ab8]'}`}>{badge > 99 ? '99+' : badge}</span>}
+        {badge > 0 && <span className={`text-[10px] font-black rounded-full min-w-[24px] h-6 flex items-center justify-center px-2 ${selected ? 'bg-white/20 text-white' : 'bg-[#7c35ff] text-white'}`}>{badge > 99 ? '99+' : badge}</span>}
       </button>
     );
   };
   const navList = (mobile = false) => navSections.map((section) => (
     <div key={section.label} className="space-y-1">
-      <div className={`px-5 pt-4 pb-1 text-[10px] font-black uppercase tracking-[0.18em] ${mobile ? 'text-white/45' : 'text-white/40'}`}>
+      <div className="px-4 pt-4 pb-2 text-[11px] font-black uppercase tracking-[0.16em] text-[#98a0bd] dashboard-section-label">
         {section.label}
       </div>
       {section.items.map((item) => itemButton(item, mobile))}
@@ -198,33 +195,40 @@ export default function ClientDashboard() {
   ));
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f2f0f7] text-slate-900">
-      <div className="flex h-full min-h-0">
-        <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
-          <div className={expressnet ? 'px-6 pt-5 pb-4' : 'px-8 pt-6 pb-4'}><Brand expressnet={expressnet} /></div>
+    <div className="dashboard-shell h-screen overflow-hidden bg-[#f7f9fd] text-slate-900">
+      <div className="flex h-full min-h-0 gap-3 p-2">
+        <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} dashboard-sidebar hidden w-[330px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)] z-20`}>
+          <div className={expressnet ? 'px-6 pt-6 pb-5' : 'px-7 pt-6 pb-5'}><Brand expressnet={expressnet} /></div>
           <AiSidebarHero />
-          <nav className="sidebar-nav no-visible-scrollbar pl-5 pr-0 flex-1 overflow-y-auto pb-6">{navList()}</nav>
+          <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-5 pb-4">{navList()}</nav>
+          <div className="mx-5 mb-5 rounded-2xl border border-[#e2e7f4] bg-[#f8f6ff] p-4">
+            <div className="flex items-center gap-3">
+              <span className="flex h-11 w-11 items-center justify-center rounded-full bg-[#ede6ff] text-[#6535ff]"><LifebuoyIcon className="h-5 w-5" /></span>
+              <div className="min-w-0 flex-1"><div className="text-sm font-black text-[#0d1438] dashboard-brand-title">Need help?</div><div className="mt-0.5 text-xs font-semibold text-[#637091] dashboard-muted">Visit our help center</div></div>
+              <span className="text-[#6d35ff]">&gt;</span>
+            </div>
+          </div>
         </aside>
 
-        <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
-          <header className="h-[84px] shrink-0 px-4 sm:px-7 lg:px-9 flex items-center justify-between gap-5">
+        <section className="dashboard-main flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)]">
+          <header className="h-[86px] shrink-0 px-4 sm:px-7 lg:px-10 flex items-center justify-between gap-5">
             <div className="flex items-center gap-4 min-w-0">
               <button onClick={() => setDrawerOpen(true)} className="lg:hidden w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-600"><MenuIcon className="w-6 h-6" /></button>
-              <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-11 h-11 rounded-2xl bg-white shadow-sm items-center justify-center text-slate-600 hover:text-[#4b16b5]"><MenuIcon className="w-5 h-5" /></button>
-              <div className="min-w-0"><h1 className="text-2xl font-black truncate">{title}</h1><p className="text-xs text-slate-400 mt-1 truncate">Monitor support, installations, complaints and AI performance.</p></div>
+              <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm items-center justify-center text-[#263150] hover:text-[#6d35ff]"><MenuIcon className="w-5 h-5" /></button>
+              <div className="min-w-0"><h1 className="text-2xl font-black truncate text-[#0d1438] dashboard-brand-title">{title}</h1><p className="text-xs font-semibold text-[#8a94b8] mt-1 truncate dashboard-muted">Monitor support, installations, complaints and AI performance.</p></div>
             </div>
-            <div className="flex items-center gap-4"><GlobalConversationSearch /><div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-500"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
+            <div className="flex items-center gap-4"><GlobalConversationSearch /><div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm flex items-center justify-center text-[#667092]"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
           </header>
-          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-9 pb-7 overflow-hidden"><div className="h-full min-h-0 rounded-[34px] overflow-hidden bg-white shadow-2xl shadow-slate-200/70 border border-white flex flex-col"><Outlet /></div></main>
+          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-10 pb-7 overflow-hidden"><div className="dashboard-content h-full min-h-0 overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_14px_34px_rgba(31,41,80,0.06)] flex flex-col"><Outlet /></div></main>
           <DashboardHelpBot />
         </section>
       </div>
 
       <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
-      <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-        <div className="px-5 pt-5 pb-3 border-b border-white/10 flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] bg-white text-[#0d1438] flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <div className="px-5 pt-5 pb-3 border-b border-[#e2e7f4] flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center text-[#263150]"><CloseIcon className="w-5 h-5" /></button></div>
         <AiSidebarHero compact />
-        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 pb-6">{navList(true)}</nav>
+        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-4 py-3 pb-6">{navList(true)}</nav>
       </aside>
     </div>
   );

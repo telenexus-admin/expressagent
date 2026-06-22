@@ -1,26 +1,36 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 
-const STATUS_STYLES = {
-  active: 'bg-emerald-100 text-emerald-700',
-  resolved: 'bg-gray-100 text-gray-500',
-  human_takeover: 'bg-orange-100 text-orange-700',
-};
-
-const STATUS_LABELS = {
-  active: 'Active',
-  resolved: 'Resolved',
-  human_takeover: 'Human',
-};
-
 function formatTime(ts) {
   if (!ts) return '';
   const d = new Date(ts);
   const now = new Date();
-  const isToday = d.toDateString() === now.toDateString();
-  return isToday
+  return d.toDateString() === now.toDateString()
     ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     : d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+}
+
+function initials(conversation) {
+  const name = conversation.customer_name || '';
+  if (!name.trim()) return '?';
+  const parts = name.trim().split(/\s+/);
+  return (parts[0]?.[0] || '').concat(parts[1]?.[0] || '').toUpperCase().slice(0, 2);
+}
+
+function SearchIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m21 21-4.35-4.35M11 19a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z" />
+    </svg>
+  );
+}
+
+function ChatIcon({ className = 'h-6 w-6' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.42-4.03 8-9 8a9.86 9.86 0 0 1-4.25-.95L3 20l1.39-3.72A7.35 7.35 0 0 1 3 12c0-4.42 4.03-8 9-8s9 3.58 9 8Z" />
+    </svg>
+  );
 }
 
 export default function ConversationList({ conversations, compact = false, initialSearch = '' }) {
@@ -41,60 +51,91 @@ export default function ConversationList({ conversations, compact = false, initi
     return matchSearch && matchFilter;
   });
 
+  const filters = [
+    ['all', 'All'],
+    ['active', 'Active'],
+    ['human_takeover', 'Human'],
+  ];
+
   return (
-    <div className="flex flex-col h-full">
-      <div className={`${compact ? 'px-3 pb-3' : 'px-5 pt-5 pb-3'} space-y-2 border-b border-gray-100`}>
-        <div className="relative">
-          <svg className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
-          </svg>
+    <div className={`conversation-panel flex h-full flex-col ${compact ? 'p-3' : 'p-7'}`}>
+      {!compact && (
+        <div className="mb-6 flex items-center gap-5">
+          <span className="conversation-hero-icon flex h-16 w-16 shrink-0 items-center justify-center rounded-[20px] border border-[#d9d8ff] bg-[#f5f2ff] text-[#5e35ff] shadow-[0_12px_28px_rgba(84,72,190,0.12)]">
+            <ChatIcon />
+          </span>
+          <div>
+            <h2 className="text-2xl font-black text-[#0d1438] dashboard-brand-title">
+              {conversations.length} total conversations
+            </h2>
+            <p className="mt-1 text-sm font-semibold text-[#6c7699] dashboard-muted">All customer interactions in one place.</p>
+          </div>
+        </div>
+      )}
+
+      <div className={`${compact ? 'mb-3' : 'mb-5'} flex items-center gap-3`}>
+        <div className="conversation-search flex h-12 flex-1 items-center gap-3 rounded-2xl border border-[#dfe5f2] bg-white px-4">
+          <SearchIcon className="h-5 w-5 shrink-0 text-[#253150]" />
           <input
             type="text"
             placeholder="Search name, phone or latest message..."
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            className="w-full bg-gray-50 border border-gray-200 text-gray-900 placeholder-gray-400 rounded-full pl-9 pr-3 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:border-transparent"
+            className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#263150] outline-none placeholder:text-[#8b94b8]"
           />
         </div>
-        <div className="flex gap-1">
-          {['all', 'active', 'human_takeover', 'resolved'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setFilter(status)}
-              className={`flex-1 text-[10px] py-1.5 rounded-full capitalize transition-colors font-medium ${filter === status ? 'bg-[#3535FF] text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-            >
-              {status === 'all' ? 'All' : status === 'human_takeover' ? 'Human' : status.charAt(0).toUpperCase() + status.slice(1)}
-            </button>
-          ))}
-        </div>
+        {!compact && (
+          <button className="conversation-filter flex h-12 w-14 items-center justify-center rounded-2xl border border-[#dfe5f2] bg-white text-[#253150]">
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M4 5h16l-6 7v5l-4 2v-7L4 5Z" />
+            </svg>
+          </button>
+        )}
       </div>
 
-      <div className="no-visible-scrollbar flex-1 overflow-y-auto px-2 py-2">
+      <div className={`${compact ? 'mb-3 grid grid-cols-1 gap-2' : 'mb-5 grid grid-cols-3 gap-4'}`}>
+        {filters.map(([value, label]) => (
+          <button
+            key={value}
+            onClick={() => setFilter(value)}
+            className={`conversation-filter-tab h-12 rounded-2xl border text-sm font-bold transition ${
+              filter === value
+                ? 'border-transparent bg-gradient-to-r from-[#2f5bff] to-[#8b25ff] text-white shadow-[0_12px_24px_rgba(98,52,245,0.22)]'
+                : 'border-[#dfe5f2] bg-white text-[#475274] hover:bg-[#f7f8fc]'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      <div className="no-visible-scrollbar flex-1 overflow-y-auto">
         {filtered.length === 0 ? (
-          <p className="text-center text-gray-400 text-xs mt-10 px-4">No conversations match your search or filter.</p>
+          <p className="mt-10 px-4 text-center text-sm font-semibold text-[#8b94b8]">No conversations match your search or filter.</p>
         ) : (
-          <div className="space-y-1">
+          <div className="conversation-list overflow-hidden rounded-[18px] border border-[#dfe5f2] bg-white">
             {filtered.map((conversation) => {
               const isCurrent = String(id) === String(conversation.id);
               return (
                 <button
                   key={conversation.id}
                   onClick={() => navigate(`/dashboard/conversations/${conversation.id}`)}
-                  className={`w-full text-left p-3 rounded-xl transition-colors ${isCurrent ? 'bg-[#3535FF] text-white' : 'text-gray-900 hover:bg-gray-50'}`}
+                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[54px_minmax(0,1fr)_22px] gap-3 px-3 py-3' : 'grid-cols-[72px_220px_minmax(0,1fr)_120px_28px] gap-4 px-6 py-4'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
                 >
-                  <div className="flex items-center justify-between mb-0.5">
-                    <span className={`font-semibold text-xs truncate max-w-[160px] ${isCurrent ? 'text-white' : 'text-gray-900'}`}>
-                      {conversation.customer_name || `+${conversation.customer_phone}`}
-                    </span>
-                    <span className={`text-[10px] ${isCurrent ? 'text-white/70' : 'text-gray-400'}`}>{formatTime(conversation.last_message_at)}</span>
-                  </div>
-                  {conversation.customer_name && <p className={`text-[10px] mb-1 ${isCurrent ? 'text-white/65' : 'text-gray-400'}`}>+{conversation.customer_phone}</p>}
-                  <div className="flex items-center justify-between gap-2">
-                    <p className={`text-[11px] truncate ${isCurrent ? 'text-white/80' : 'text-gray-500'}`}>{conversation.last_message || 'No messages yet'}</p>
-                    <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${isCurrent ? 'bg-white/20 text-white' : STATUS_STYLES[conversation.status]}`}>
-                      {STATUS_LABELS[conversation.status]}
-                    </span>
-                  </div>
+                  <span className={`${compact ? 'h-11 w-11 text-sm' : 'h-14 w-14 text-lg'} relative flex items-center justify-center rounded-full border border-[#d7d7ff] bg-[#f6f3ff] font-black text-[#4f35f5]`}>
+                    {initials(conversation)}
+                    <span className="absolute -right-0.5 bottom-1 h-3 w-3 rounded-full border-2 border-white bg-emerald-500" />
+                  </span>
+                  <span className="min-w-0">
+                    <span className={`${compact ? 'text-sm' : 'text-base'} block truncate font-black text-[#0d1438] dashboard-brand-title`}>{conversation.customer_name || '-'}</span>
+                    <span className="mt-1 block truncate text-sm font-semibold text-[#5d6a92] dashboard-muted">+{conversation.customer_phone}</span>
+                    {compact && <span className="mt-1 block truncate text-xs font-medium text-[#4f5d84] dashboard-muted">{conversation.last_message || 'No messages yet'}</span>}
+                  </span>
+                  {!compact && <span className="min-w-0 truncate text-sm font-medium leading-6 text-[#4f5d84] dashboard-muted">
+                    {conversation.last_message || 'No messages yet'}
+                  </span>}
+                  {!compact && <span className="text-right text-sm font-semibold text-[#58658b] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
+                  <span className="text-2xl font-light text-[#7c35ff] transition group-hover:translate-x-1">&rsaquo;</span>
                 </button>
               );
             })}

@@ -79,9 +79,9 @@ function FieldShell({ label, icon, children }) {
         {label}
         <Icon name="info" className="h-4 w-4 text-[#9ca4c7]" />
       </span>
-      <div className="flex h-[64px] items-center gap-4 rounded-2xl border border-[#dfe3f1] bg-white px-3 shadow-[0_8px_24px_rgba(31,35,82,0.04)] transition focus-within:border-[#8e6cff] focus-within:ring-4 focus-within:ring-[#efeaff]">
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f1edff] text-[#5d2df5]">
-          <Icon name={icon} className="h-5 w-5" />
+      <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#dfe3f1] bg-white px-3 shadow-[0_8px_24px_rgba(31,35,82,0.04)] transition focus-within:border-[#8e6cff] focus-within:ring-4 focus-within:ring-[#efeaff]">
+        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#f1edff] text-[#5d2df5]">
+          <Icon name={icon} className="h-4 w-4" />
         </span>
         {children}
       </div>
@@ -216,23 +216,17 @@ export default function Communication() {
   return (
     <div className="flex-1 overflow-y-auto bg-[#fbfcff] px-5 py-6 text-[#0d1438] sm:px-8">
       <div className="mx-auto max-w-7xl">
-        <header className="mb-8 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
+        <header className="mb-6 flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <div className="mb-8 flex items-center gap-3 text-sm font-bold text-[#8b92b6]">
+            <div className="mb-7 flex items-center gap-3 text-sm font-bold text-[#8b92b6]">
               <Icon name="home" className="h-4 w-4" />
               <span>/</span>
               <span>Settings</span>
               <span>/</span>
               <span className="text-[#551fff]">Communication</span>
             </div>
-            <div className="flex flex-wrap items-center gap-4">
-              <h1 className="text-4xl font-black tracking-tight text-[#0c1239]">Communication</h1>
-              <span className="inline-flex h-10 items-center gap-2 rounded-full border border-emerald-100 bg-emerald-50 px-4 text-sm font-black text-emerald-700">
-                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500" />
-                Active
-              </span>
-            </div>
-            <p className="mt-3 text-base font-semibold text-[#626b95]">
+            <h1 className="text-3xl font-black tracking-tight text-[#0c1239]">Communication</h1>
+            <p className="mt-2 text-sm font-semibold text-[#626b95]">
               Monitor support, installations, complaints and AI performance.
             </p>
           </div>
@@ -245,18 +239,18 @@ export default function Communication() {
           </button>
         </header>
 
-        <section className="rounded-[26px] border border-[#dfe2f1] bg-white p-7 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
-          <div className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-5">
-              <span className="flex h-16 w-16 items-center justify-center rounded-[20px] bg-gradient-to-br from-[#7d3cff] to-[#4310da] text-white shadow-[0_16px_30px_rgba(94,45,245,0.28)]">
-                <Icon name="chat" className="h-8 w-8" />
+        <section className="rounded-[26px] border border-[#dfe2f1] bg-white p-6 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
+          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-4">
+              <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-gradient-to-br from-[#7d3cff] to-[#4310da] text-white shadow-[0_16px_30px_rgba(94,45,245,0.22)]">
+                <Icon name="chat" className="h-6 w-6" />
               </span>
               <div>
-                <h2 className="text-2xl font-black text-[#0d1438]">SMS Provider</h2>
-                <p className="mt-1 text-base font-semibold text-[#858daf]">{copy.description}</p>
+                <h2 className="text-xl font-black text-[#0d1438]">SMS Provider</h2>
+                <p className="mt-1 text-sm font-semibold text-[#858daf]">{copy.description}</p>
               </div>
             </div>
-            <span className={`inline-flex h-10 items-center gap-2 rounded-full border px-4 text-sm font-bold ${
+            <span className={`inline-flex h-9 items-center gap-2 rounded-full border px-4 text-xs font-bold ${
               configured
                 ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
                 : 'border-[#e0e4f2] bg-white text-[#667098]'
@@ -266,13 +260,13 @@ export default function Communication() {
             </span>
           </div>
 
-          <div className="rounded-[24px] border border-[#dfe2f1] bg-white p-6 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]">
+          <div className="rounded-[24px] border border-[#dfe2f1] bg-white p-5 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.6)]">
             <div className="grid gap-6 lg:grid-cols-2">
               <FieldShell label="Provider" icon="building">
                 <select
                   value={form.provider}
                   onChange={(event) => changeProvider(event.target.value)}
-                  className="h-full flex-1 bg-transparent text-base font-bold text-[#25305d] outline-none"
+                  className="h-full flex-1 bg-transparent text-sm font-bold text-[#25305d] outline-none"
                 >
                   {SMS_PROVIDERS.map((provider) => (
                     <option key={provider.value} value={provider.value}>{provider.label}</option>
@@ -285,7 +279,7 @@ export default function Communication() {
                   value={form.sender_id}
                   onChange={(event) => update('sender_id', event.target.value)}
                   placeholder={copy.senderPlaceholder}
-                  className="h-full min-w-0 flex-1 bg-transparent text-base font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
                 />
               </FieldShell>
             </div>
@@ -297,7 +291,7 @@ export default function Communication() {
                     value={form.partner_id}
                     onChange={(event) => update('partner_id', event.target.value)}
                     placeholder="Enter Savvy Partner ID"
-                    className="h-full min-w-0 flex-1 bg-transparent text-base font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                    className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
                   />
                 </FieldShell>
               </div>
@@ -310,7 +304,7 @@ export default function Communication() {
                   value={form.api_key}
                   onChange={(event) => update('api_key', event.target.value)}
                   placeholder={form.has_api_key ? 'Saved. Leave blank to keep current key.' : copy.keyPlaceholder}
-                  className="h-full min-w-0 flex-1 bg-transparent text-base font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
                 />
                 <button
                   type="button"

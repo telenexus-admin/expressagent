@@ -73,20 +73,51 @@ function communicationPayload(form) {
   };
 }
 
-function FieldShell({ label, icon, children }) {
+function FieldShell({ label, icon, children, large = false }) {
   return (
     <label className="block">
-      <span className="mb-3 flex items-center gap-2 text-[13px] font-black text-[#505987]">
+      <span className={`${large ? 'mb-4 text-2xl' : 'mb-3 text-[13px]'} flex items-center gap-2 font-black text-[#0d1438]`}>
         {label}
-        <Icon name="info" className="h-4 w-4 text-[#9ca4c7]" />
+        <Icon name="info" className={`${large ? 'h-6 w-6' : 'h-4 w-4'} text-[#9ca4c7]`} />
       </span>
-      <div className="flex h-14 items-center gap-3 rounded-2xl border border-[#dfe3f1] bg-white px-3 shadow-[0_8px_24px_rgba(31,35,82,0.04)] transition focus-within:border-[#8e6cff] focus-within:ring-4 focus-within:ring-[#efeaff]">
-        <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-[#f1edff] text-[#5d2df5]">
-          <Icon name={icon} className="h-4 w-4" />
+      <div className={`${large ? 'h-20 gap-6 px-5' : 'h-14 gap-3 px-3'} flex items-center rounded-2xl border border-[#dfe3f1] bg-white shadow-[0_8px_24px_rgba(31,35,82,0.04)] transition focus-within:border-[#8e6cff] focus-within:ring-4 focus-within:ring-[#efeaff]`}>
+        <span className={`${large ? 'h-14 w-14' : 'h-10 w-10'} flex shrink-0 items-center justify-center rounded-2xl bg-[#f1edff] text-[#5d2df5]`}>
+          <Icon name={icon} className={large ? 'h-7 w-7' : 'h-4 w-4'} />
         </span>
         {children}
       </div>
     </label>
+  );
+}
+
+function EmailProviderIcon({ provider }) {
+  if (provider === 'gmail') {
+    return (
+      <svg className="h-14 w-14" viewBox="0 0 64 64" aria-hidden="true">
+        <path fill="#4285F4" d="M8 18v32h10V28.8L32 39.3l14-10.5V50h10V18L32 36 8 18Z" />
+        <path fill="#EA4335" d="M8 18l24 18 24-18v-4c0-4.4-5-6.9-8.5-4.2L32 21.5 16.5 9.8C13 7.1 8 9.6 8 14v4Z" />
+        <path fill="#FBBC04" d="M46 18v32h10V18L46 25.5V18Z" />
+        <path fill="#34A853" d="M8 18v32h10V25.5L8 18Z" />
+      </svg>
+    );
+  }
+  if (provider === 'disabled') {
+    return (
+      <span className="flex h-16 w-16 items-center justify-center rounded-full bg-[#f0f1f7] text-[#111a3c]">
+        <span className="h-8 w-2 rounded-full bg-current" />
+        <span className="ml-2 h-8 w-2 rounded-full bg-current" />
+      </span>
+    );
+  }
+  return (
+    <span className="flex h-16 w-16 items-center justify-center rounded-[22px] bg-[#f0ebff] text-[#6134f5]">
+      <svg className="h-9 w-9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="5" y="4" width="14" height="5" rx="1.2" />
+        <rect x="5" y="15" width="14" height="5" rx="1.2" />
+        <path d="M8 6.5h.01M8 17.5h.01M19 7h2v10h-2" />
+        <path d="M12 9v6" />
+      </svg>
+    </span>
   );
 }
 
@@ -581,31 +612,31 @@ export default function Communication() {
           </div>
         </section>
 
-        <section className="mt-6 rounded-[26px] border border-[#dfe2f1] bg-white p-6 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
-          <div className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <div className="flex items-center gap-4">
-              <span className="flex h-14 w-14 items-center justify-center rounded-[18px] bg-gradient-to-br from-[#7045ff] to-[#1d4fff] text-white shadow-[0_16px_30px_rgba(65,83,245,0.22)]">
-                <Icon name="mail" className="h-6 w-6" />
+        <section className="mt-6 rounded-[30px] border border-[#dfe2f1] bg-white p-8 shadow-[0_18px_55px_rgba(53,57,102,0.08)]">
+          <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-7">
+              <span className="flex h-24 w-24 items-center justify-center rounded-[28px] bg-gradient-to-br from-[#8d55ff] to-[#2d27f3] text-white shadow-[0_18px_34px_rgba(94,45,245,0.28)]">
+                <Icon name="mail" className="h-14 w-14" />
               </span>
               <div>
-                <h2 className="text-xl font-black text-[#0d1438]">Email Configuration</h2>
-                <p className="mt-1 text-sm font-semibold text-[#858daf]">
+                <h2 className="text-4xl font-black tracking-tight text-[#0d1438]">Email Configuration</h2>
+                <p className="mt-4 text-2xl font-medium leading-snug text-[#4e5a83]">
                   Connect cPanel SMTP or Gmail app-password SMTP for email alerts and customer notifications.
                 </p>
               </div>
             </div>
-            <span className={`inline-flex h-9 items-center gap-2 rounded-full border px-4 text-xs font-bold ${
+            <span className={`inline-flex h-[62px] items-center gap-4 rounded-full border px-8 text-xl font-bold ${
               emailConfigured
                 ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
                 : 'border-[#e0e4f2] bg-white text-[#667098]'
             }`}>
-              <span className={`h-2 w-2 rounded-full ${emailConfigured ? 'bg-emerald-500' : 'bg-[#9aa3c2]'}`} />
+              <span className={`h-4 w-4 rounded-full ${emailConfigured ? 'bg-emerald-500' : 'bg-[#aab3cf]'}`} />
               {emailConfigured ? 'Configured' : 'Not Configured'}
             </span>
           </div>
 
-          <div className="rounded-[24px] border border-[#dfe2f1] bg-white p-5">
-            <div className="mb-5 grid gap-3 sm:grid-cols-3">
+          <div className="rounded-[24px] border border-[#dfe2f1] bg-white p-7">
+            <div className="mb-7 grid gap-8 xl:grid-cols-3">
               {[
                 ['smtp', 'cPanel / SMTP', 'Use mail.yourdomain.com or host SMTP details.'],
                 ['gmail', 'Gmail', 'Use smtp.gmail.com with an app password.'],
@@ -615,39 +646,49 @@ export default function Communication() {
                   key={value}
                   type="button"
                   onClick={() => changeEmailProvider(value)}
-                  className={`rounded-2xl border p-4 text-left transition ${
+                  className={`relative flex min-h-[178px] items-center gap-8 rounded-[24px] border p-8 text-left transition ${
                     emailForm.provider === value
-                      ? 'border-[#805dff] bg-[#f6f2ff] text-[#3d24b8] shadow-sm'
-                      : 'border-[#e2e6f2] bg-white text-[#596285] hover:border-[#c7cef0]'
+                      ? 'border-[#6134f5] bg-white text-[#2526c9] shadow-[0_14px_30px_rgba(98,52,245,0.14)]'
+                      : 'border-[#e2e6f2] bg-white text-[#0d1438] hover:border-[#c7cef0]'
                   }`}
                 >
-                  <div className="text-sm font-black">{title}</div>
-                  <div className="mt-1 text-xs font-semibold leading-5 opacity-75">{description}</div>
+                  <EmailProviderIcon provider={value} />
+                  <span className="min-w-0 flex-1">
+                    <span className="block text-2xl font-black">{title}</span>
+                    <span className="mt-3 block text-xl font-medium leading-relaxed text-[#4e5a83]">{description}</span>
+                  </span>
+                  {emailForm.provider === value && (
+                    <span className="absolute right-6 top-6 flex h-10 w-10 items-center justify-center rounded-full bg-[#6134f5] text-white shadow-lg">
+                      <svg className="h-6 w-6" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.3" strokeLinecap="round" strokeLinejoin="round">
+                        <path d="m5 12 4 4 10-10" />
+                      </svg>
+                    </span>
+                  )}
                 </button>
               ))}
             </div>
 
-            <label className="mb-5 flex items-center gap-3 rounded-2xl border border-[#e2e6f2] bg-[#fbfcff] px-4 py-3 text-sm font-black text-[#25305d]">
+            <label className="mb-7 flex h-20 items-center gap-7 rounded-2xl border border-[#dfe3f1] bg-white px-7 text-2xl font-black text-[#0d1438] shadow-[0_8px_24px_rgba(31,35,82,0.03)]">
               <input
                 type="checkbox"
                 checked={emailForm.enabled}
                 onChange={(event) => updateEmail('enabled', event.target.checked)}
                 disabled={emailForm.provider === 'disabled'}
-                className="h-4 w-4 accent-[#5d2df5]"
+                className="h-8 w-8 rounded-lg accent-[#5d2df5]"
               />
-              Enable outgoing email
+              Enable outgoing email for this client
             </label>
 
             <div className="grid gap-6 lg:grid-cols-2">
-              <FieldShell label="From Name" icon="users">
+              <FieldShell label="From Name" icon="users" large>
                 <input
                   value={emailForm.from_name}
                   onChange={(event) => updateEmail('from_name', event.target.value)}
                   placeholder="Company or support name"
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
                 />
               </FieldShell>
-              <FieldShell label="From Email" icon="mail">
+              <FieldShell label="From Email" icon="mail" large>
                 <input
                   value={emailForm.from_address}
                   onChange={(event) => {
@@ -655,23 +696,23 @@ export default function Communication() {
                     if (emailForm.provider === 'gmail' && !emailForm.smtp_username) updateEmail('smtp_username', event.target.value);
                   }}
                   placeholder="support@yourdomain.com"
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
                 />
               </FieldShell>
-              <FieldShell label="Reply-To Email" icon="mail">
+              <FieldShell label="Reply-To Email" icon="mail" large>
                 <input
                   value={emailForm.reply_to}
                   onChange={(event) => updateEmail('reply_to', event.target.value)}
                   placeholder="Optional, defaults to from email"
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
                 />
               </FieldShell>
-              <FieldShell label="SMTP Username" icon="users">
+              <FieldShell label="SMTP Username" icon="users" large>
                 <input
                   value={emailForm.smtp_username}
                   onChange={(event) => updateEmail('smtp_username', event.target.value)}
                   placeholder="Usually the full email address"
-                  className="h-full min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#25305d] outline-none placeholder:text-[#a9b0cb]"
+                  className="h-full min-w-0 flex-1 bg-transparent text-xl font-medium text-[#0d1438] outline-none placeholder:text-[#667092]"
                 />
               </FieldShell>
               <FieldShell label="SMTP Host" icon="building">

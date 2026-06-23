@@ -4,9 +4,20 @@ function cleanPublicBase() {
     .replace(/\/$/, '');
 }
 
+function installationFormIsEnabled(client) {
+  const rawConfig = client?.installation_form_config;
+  if (!rawConfig) return true;
+  try {
+    const config = typeof rawConfig === 'string' ? JSON.parse(rawConfig || '{}') : rawConfig;
+    return config?.enabled !== false;
+  } catch {
+    return true;
+  }
+}
+
 function buildCustomerIntakeUrl(client, { phone, name } = {}) {
   const base = cleanPublicBase();
-  if (!base || !client?.id) return '';
+  if (!base || !client?.id || !installationFormIsEnabled(client)) return '';
   const params = new URLSearchParams();
   if (phone) params.set('phone', String(phone).replace(/^\+/, ''));
   if (name) params.set('name', String(name).trim());

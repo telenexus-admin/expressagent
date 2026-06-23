@@ -8,6 +8,7 @@ const router = express.Router();
 const MAX_ID_BYTES = 8 * 1024 * 1024;
 const ALLOWED_ID_MIME = new Set(['image/jpeg', 'image/jpg', 'image/png', 'image/webp', 'image/heic', 'image/heif', 'application/pdf']);
 const DEFAULT_INSTALLATION_FORM = {
+  enabled: true,
   title: 'Installation form',
   intro: 'Share your contact and location details so the installation team can prepare before calling you.',
   accent_color: '#3535FF',
@@ -75,6 +76,7 @@ function normalizeInstallationFormConfig(raw = {}) {
   const pickBool = (key) => source[key] === undefined ? DEFAULT_INSTALLATION_FORM[key] : Boolean(source[key]);
   const accent = String(source.accent_color || DEFAULT_INSTALLATION_FORM.accent_color).trim();
   return {
+    enabled: pickBool('enabled'),
     title: String(source.title || DEFAULT_INSTALLATION_FORM.title).trim().slice(0, 80),
     intro: String(source.intro || DEFAULT_INSTALLATION_FORM.intro).trim().slice(0, 300),
     accent_color: /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_INSTALLATION_FORM.accent_color,
@@ -127,11 +129,15 @@ router.get('/:clientId', async (req, res) => {
     );
     const client = result.rows[0];
     if (!client) return res.status(404).json({ error: 'Intake form is not available' });
+    const formConfig = normalizeInstallationFormConfig(client.installation_form_config);
+    if (!formConfig.enabled) {
+      return res.status(403).json({ error: 'Installation form is currently disabled' });
+    }
     res.json({
       client_id: client.id,
       business_name: client.business_name || client.name || 'your ISP',
       agent_name: client.agent_name || 'AI assistant',
-      installation_form: normalizeInstallationFormConfig(client.installation_form_config),
+      installation_form: formConfig,
     });
   } catch (err) {
     console.error('GET /public/customer-intake error:', err.message);
@@ -149,6 +155,9 @@ router.post('/:clientId', async (req, res) => {
     const client = clientResult.rows[0];
     if (!client) return res.status(404).json({ error: 'Intake form is not available' });
     const formConfig = normalizeInstallationFormConfig(client.installation_form_config);
+    if (!formConfig.enabled) {
+      return res.status(403).json({ error: 'Installation form is currently disabled' });
+    }
 
     const customerName = text(req.body.customer_name, 255);
     const customerPhone = cleanPhone(req.body.customer_phone);

@@ -49,6 +49,7 @@ const DEFAULT_WELCOME_MENU = {
   ],
 };
 const DEFAULT_INSTALLATION_FORM = {
+  enabled: true,
   title: 'Installation form',
   intro: 'Share your contact and location details so the installation team can prepare before calling you.',
   accent_color: '#3535FF',
@@ -262,6 +263,7 @@ function normalizeInstallationFormConfig(raw = {}) {
   const pickBool = (key) => source[key] === undefined ? DEFAULT_INSTALLATION_FORM[key] : Boolean(source[key]);
   const accent = String(source.accent_color || DEFAULT_INSTALLATION_FORM.accent_color).trim();
   return {
+    enabled: pickBool('enabled'),
     title: String(source.title || DEFAULT_INSTALLATION_FORM.title).trim().slice(0, 80),
     intro: String(source.intro || DEFAULT_INSTALLATION_FORM.intro).trim().slice(0, 300),
     accent_color: /^#[0-9a-f]{6}$/i.test(accent) ? accent : DEFAULT_INSTALLATION_FORM.accent_color,

@@ -15,6 +15,7 @@ const BILLING_PROVIDERS = [
   { value: 'wispman', label: 'Wispman' },
 ];
 const DEFAULT_INSTALLATION_FORM = {
+  enabled: true,
   title: 'Installation form',
   intro: 'Share your contact and location details so the installation team can prepare before calling you.',
   accent_color: '#3535FF',
@@ -678,6 +679,23 @@ export default function Settings() {
               <div className="text-sm font-semibold text-slate-400">Loading installation form settings...</div>
             ) : (
               <div className="space-y-4">
+                <label className={`flex items-center justify-between gap-4 rounded-2xl border px-4 py-3 ${
+                  installationForm.enabled ? 'border-emerald-100 bg-emerald-50' : 'border-slate-100 bg-slate-50'
+                }`}>
+                  <span>
+                    <span className="block text-sm font-black text-slate-950">Enable installation form</span>
+                    <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">
+                      When enabled, the agent can send customers the public intake link for installation requests.
+                    </span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(installationForm.enabled)}
+                    onChange={(event) => updateInstallationForm('enabled', event.target.checked)}
+                    className="h-5 w-5 shrink-0 accent-[#3535FF]"
+                  />
+                </label>
+
                 <div className="grid gap-3 sm:grid-cols-[1fr_140px]">
                   <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
                     Form title
@@ -727,7 +745,7 @@ export default function Settings() {
                   <div className="mt-3 overflow-hidden rounded-[26px] bg-[#0A0A0F] text-white">
                     <div className="p-5">
                       <div className="mb-4 inline-flex rounded-full bg-white/10 px-3 py-1.5 text-[11px] font-black text-white/75">
-                        Secure customer intake
+                        {installationForm.enabled ? 'Secure customer intake' : 'Form disabled'}
                       </div>
                       <h3 className="text-2xl font-black" style={{ color: installationForm.accent_color }}>
                         {installationForm.title || 'Installation form'}

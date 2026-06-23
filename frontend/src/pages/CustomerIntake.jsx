@@ -46,6 +46,7 @@ const buildingTypes = [
   ['other', 'Other'],
 ];
 const DEFAULT_INSTALLATION_FORM = {
+  enabled: true,
   title: 'Installation form',
   intro: 'Share your contact and location details so the installation team can prepare before calling you.',
   accent_color: '#3535FF',

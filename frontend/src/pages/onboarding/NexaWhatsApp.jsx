@@ -175,6 +175,23 @@ export default function NexaWhatsApp() {
     return conversations.filter((item) => `${item.customer_name || ''} ${item.customer_phone} ${item.last_message || ''}`.toLowerCase().includes(key));
   }, [conversations, search]);
 
+  const buildEmailPayload = () => {
+    const payload = {
+      email_provider: form.email_provider || 'smtp',
+      email_enabled: Boolean(form.email_enabled),
+      email_from_name: form.email_from_name,
+      email_from_address: form.email_from_address,
+      email_reply_to: form.email_reply_to,
+      email_smtp_host: form.email_smtp_host,
+      email_smtp_port: Number(form.email_smtp_port || 465),
+      email_smtp_secure: Boolean(form.email_smtp_secure),
+      email_smtp_username: form.email_smtp_username,
+    };
+    if (form.email_smtp_password.trim()) payload.email_smtp_password = form.email_smtp_password.trim();
+    if (form.email_resend_api_key.trim()) payload.email_resend_api_key = form.email_resend_api_key.trim();
+    return payload;
+  };
+
   const save = async () => {
     setSaving(true); setNotice(''); setError('');
     try {
@@ -185,24 +202,27 @@ export default function NexaWhatsApp() {
         agent_name: form.agent_name,
         owner_phone: form.owner_phone,
         system_prompt: form.system_prompt,
-        email_provider: form.email_provider || 'smtp',
-        email_enabled: Boolean(form.email_enabled),
-        email_from_name: form.email_from_name,
-        email_from_address: form.email_from_address,
-        email_reply_to: form.email_reply_to,
-        email_smtp_host: form.email_smtp_host,
-        email_smtp_port: Number(form.email_smtp_port || 465),
-        email_smtp_secure: Boolean(form.email_smtp_secure),
-        email_smtp_username: form.email_smtp_username,
+        ...buildEmailPayload(),
       };
       if (form.evolution_api_key.trim()) payload.evolution_api_key = form.evolution_api_key.trim();
-      if (form.email_smtp_password.trim()) payload.email_smtp_password = form.email_smtp_password.trim();
-      if (form.email_resend_api_key.trim()) payload.email_resend_api_key = form.email_resend_api_key.trim();
       const { data } = await api.put('/operator-agent/config', payload);
       setForm((current) => ({ ...current, ...data, evolution_api_key: '', email_smtp_password: '', email_resend_api_key: '' }));
       setNotice(form.enabled ? 'Nexa official WhatsApp configuration saved and enabled.' : 'Configuration saved. Nexa is currently disabled.');
     } catch (err) {
       setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not save configuration.');
+    } finally { setSaving(false); }
+  };
+
+  const saveEmail = async () => {
+    setSaving(true); setNotice(''); setError(''); setEmailTestStatus('');
+    try {
+      const { data } = await api.put('/operator-agent/config', buildEmailPayload());
+      setForm((current) => ({ ...current, ...data, evolution_api_key: '', email_smtp_password: '', email_resend_api_key: '' }));
+      const message = 'Official Nexa email configuration saved.';
+      setNotice(message);
+      setEmailTestStatus(message);
+    } catch (err) {
+      setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not save email configuration.');
     } finally { setSaving(false); }
   };
 
@@ -421,8 +441,12 @@ export default function NexaWhatsApp() {
               <div className="mb-5 grid grid-cols-2 gap-3 rounded-2xl bg-slate-50 p-2"><button type="button" onClick={() => set('email_provider', 'resend')} className={`rounded-xl px-4 py-3 text-xs font-black ${form.email_provider === 'resend' ? 'bg-[#3535FF] text-white' : 'text-slate-500'}`}>Resend API</button><button type="button" onClick={() => set('email_provider', 'smtp')} className={`rounded-xl px-4 py-3 text-xs font-black ${form.email_provider !== 'resend' ? 'bg-[#3535FF] text-white' : 'text-slate-500'}`}>SMTP</button></div>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Input label="From name" value={form.email_from_name || ''} onChange={(value) => set('email_from_name', value)} placeholder="Nexa" /><Input label="From email" value={form.email_from_address || ''} onChange={(value) => set('email_from_address', value)} placeholder="support@yourdomain.com" /><Input label="Reply-to email" value={form.email_reply_to || ''} onChange={(value) => set('email_reply_to', value)} placeholder="support@yourdomain.com" /><Input label="SMTP username" value={form.email_smtp_username || ''} onChange={(value) => set('email_smtp_username', value)} placeholder="support@yourdomain.com" /><Input label="SMTP host" value={form.email_smtp_host || ''} onChange={(value) => set('email_smtp_host', value)} placeholder="mail.privateemail.com" /><Input label="SMTP port" value={String(form.email_smtp_port || '')} onChange={(value) => set('email_smtp_port', value)} placeholder="465" /><Input label="SMTP password" type="password" value={form.email_smtp_password || ''} onChange={(value) => set('email_smtp_password', value)} placeholder={form.email_smtp_password_configured ? 'Saved - enter only to change it' : 'Mailbox password'} helper={form.email_smtp_password_configured ? 'A mailbox password is already securely saved.' : 'Use the mailbox password from Namecheap Private Email.'} /><label className="block"><span className="mb-2 block text-xs font-bold text-slate-600">Security</span><button type="button" onClick={() => set('email_smtp_secure', !form.email_smtp_secure)} className={`flex h-[46px] w-full items-center justify-between rounded-2xl border px-4 text-sm font-black ${form.email_smtp_secure ? 'border-[#3535FF]/20 bg-[#f1efff] text-[#3535FF]' : 'border-slate-200 bg-slate-50 text-slate-500'}`}><span>SSL/TLS</span><span>{form.email_smtp_secure ? 'On' : 'Off'}</span></button></label></div>
               {form.email_provider === 'resend' && <div className="mt-5"><Input label="Resend API key" type="password" value={form.email_resend_api_key || ''} onChange={(value) => set('email_resend_api_key', value)} placeholder={form.email_resend_api_key_configured ? 'Saved - enter only to change it' : 're_...'} helper={form.email_resend_api_key_configured ? 'A Resend API key is already securely saved.' : 'Create this in Resend > API Keys after verifying your domain.'} /></div>}
-              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">{form.email_provider === 'resend' ? <><strong className="text-slate-700">Resend:</strong> verify your domain in Resend, create an API key, then use a From email on that verified domain.</> : <><strong className="text-slate-700">Namecheap Private Email:</strong> host <span className="font-mono">mail.privateemail.com</span>, port <span className="font-mono">465</span>, SSL/TLS on, username is the full email address.</>}</div>
-              <div className="mt-5 flex flex-col gap-3 sm:flex-row"><Input label="Send test email to" value={testEmail} onChange={setTestEmail} placeholder="you@example.com" /><button onClick={sendEmailTest} disabled={testingEmail || !testEmail.trim()} className="mt-6 rounded-2xl bg-[#101027] px-5 py-3 text-sm font-black text-white disabled:opacity-50 sm:min-w-40">{testingEmail ? 'Testing...' : 'Send test email'}</button></div>
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-xs leading-5 text-slate-500">{form.email_provider === 'resend' ? <><strong className="text-slate-700">Resend:</strong> save a Resend API key and set From email to an address on your verified Resend domain before testing.</> : <><strong className="text-slate-700">Namecheap Private Email:</strong> host <span className="font-mono">mail.privateemail.com</span>, port <span className="font-mono">465</span>, SSL/TLS on, username is the full email address.</>}</div>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <button onClick={saveEmail} disabled={saving} className="rounded-2xl bg-[#3535FF] px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 disabled:opacity-60 sm:min-w-52">{saving ? 'Saving...' : 'Save email configuration'}</button>
+                <Input label="Send test email to" value={testEmail} onChange={setTestEmail} placeholder="you@example.com" />
+                <button onClick={sendEmailTest} disabled={testingEmail || !testEmail.trim()} className="rounded-2xl bg-[#101027] px-5 py-3 text-sm font-black text-white disabled:opacity-50 sm:min-w-40">{testingEmail ? 'Testing...' : 'Send test email'}</button>
+              </div>
               {emailTestStatus && <div className={`mt-3 rounded-2xl px-4 py-3 text-xs font-bold ${emailTestStatus.startsWith('Success') ? 'bg-emerald-50 text-emerald-700' : emailTestStatus.startsWith('Failed') ? 'bg-rose-50 text-rose-700' : 'bg-[#f1efff] text-[#3535FF]'}`}>{emailTestStatus}</div>}
             </div>
             </div>

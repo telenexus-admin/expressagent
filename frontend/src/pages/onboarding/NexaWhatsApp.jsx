@@ -242,8 +242,8 @@ export default function NexaWhatsApp() {
         email_smtp_username: form.email_smtp_username,
       };
       if (form.email_smtp_password.trim()) payload.email_smtp_password = form.email_smtp_password.trim();
-      await api.post('/operator-agent/email-test', payload);
-      setNotice(`Test email sent to ${testEmail}.`);
+      const { data } = await api.post('/operator-agent/email-test', payload, { timeout: 35000 });
+      setNotice(`Test email sent to ${testEmail}${data.id ? ` (${data.id})` : ''}.`);
     } catch (err) {
       setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not send test email.');
     } finally { setTestingEmail(false); }

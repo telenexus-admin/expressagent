@@ -73,6 +73,9 @@ function smtpTransportConfig(client = null) {
       host: client.email_smtp_host,
       port: Number(client.email_smtp_port),
       secure: client.email_smtp_secure !== false && client.email_smtp_secure !== 'false',
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
       auth: {
         user: client.email_smtp_username,
         pass: client.email_smtp_password,
@@ -85,6 +88,9 @@ function smtpTransportConfig(client = null) {
       host: process.env.SMTP_HOST,
       port: Number(process.env.SMTP_PORT || 465),
       secure: String(process.env.SMTP_SECURE || 'true') !== 'false',
+      connectionTimeout: 15000,
+      greetingTimeout: 15000,
+      socketTimeout: 20000,
       auth: {
         user: process.env.SMTP_USER,
         pass: process.env.SMTP_PASSWORD,
@@ -108,6 +114,7 @@ async function sendViaSmtp(client, payload) {
       text: payload.text,
       html: payload.html,
     });
+    transporter.close();
     return { status: 'sent', error: null, id: info.messageId || null };
   } catch (err) {
     return { status: 'failed', error: err.message || 'SMTP email sending failed' };

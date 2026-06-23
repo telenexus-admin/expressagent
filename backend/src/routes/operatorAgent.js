@@ -153,7 +153,7 @@ router.post('/email-test', [
     if (validation) return res.status(400).json({ error: validation });
     const result = await testEmailConfig(config, normalizeEmail(req.body.to));
     if (result.status !== 'sent') return res.status(400).json({ error: result.error || 'Test email failed' });
-    res.json({ success: true });
+    res.json({ success: true, status: result.status, id: result.id || null });
   } catch (err) {
     console.error('POST /operator-agent/email-test error:', err.message);
     res.status(500).json({ error: `Email could not be sent: ${err.message}` });

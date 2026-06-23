@@ -778,6 +778,19 @@ router.post('/', async (req, res) => {
         await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, reply);
         console.log(`Installation intake form link sent to ${phoneNumber}.`);
+        runAfterReply('Installation ticket creation', () => createOrUpdateTicket({
+          clientId: client.id,
+          conversationId: conversation.id,
+          customerPhone: phoneNumber,
+          customerName: conversation.customer_name,
+          title: 'Installation request',
+          category: 'installation',
+          priority: 'normal',
+          intent: 'new_installation',
+          source: 'whatsapp_meta',
+          summary: messageText,
+          messageText,
+        }));
         return;
       }
     }

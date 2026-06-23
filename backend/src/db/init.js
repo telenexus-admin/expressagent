@@ -410,7 +410,7 @@ const schema = `
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_status_check;
   ALTER TABLE tickets ADD CONSTRAINT tickets_status_check CHECK (status IN ('open', 'in_progress', 'waiting_customer', 'resolved', 'closed'));
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_source_check;
-  ALTER TABLE tickets ADD CONSTRAINT tickets_source_check CHECK (source IN ('whatsapp_meta', 'whatsapp_evolution', 'admin', 'system'));
+  ALTER TABLE tickets ADD CONSTRAINT tickets_source_check CHECK (source IN ('whatsapp_meta', 'whatsapp_evolution', 'customer_intake_form', 'admin', 'system'));
   ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_status VARCHAR(20);
   ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_error TEXT;
   ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notified_at TIMESTAMP WITH TIME ZONE;
@@ -448,6 +448,29 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_tickets_client_category ON tickets(client_id, category, updated_at DESC);
   CREATE INDEX IF NOT EXISTS idx_tickets_conversation ON tickets(conversation_id);
   CREATE INDEX IF NOT EXISTS idx_ticket_events_ticket ON ticket_events(ticket_id, created_at ASC);
+
+  CREATE TABLE IF NOT EXISTS installation_work_orders (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id) ON DELETE CASCADE,
+    assigned_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
+    public_token VARCHAR(80) UNIQUE NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'open',
+    installation_started_at TIMESTAMP WITH TIME ZONE,
+    installation_completed_at TIMESTAMP WITH TIME ZONE,
+    installation_time_minutes INTEGER,
+    power_dcbs VARCHAR(120),
+    signal_power VARCHAR(120),
+    equipment_used JSONB NOT NULL DEFAULT '[]'::jsonb,
+    notes TEXT,
+    submitted_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (ticket_id)
+  );
+  ALTER TABLE installation_work_orders DROP CONSTRAINT IF EXISTS installation_work_orders_status_check;
+  ALTER TABLE installation_work_orders ADD CONSTRAINT installation_work_orders_status_check CHECK (status IN ('open', 'submitted', 'closed'));
+  CREATE INDEX IF NOT EXISTS idx_installation_work_orders_client ON installation_work_orders(client_id, status, created_at DESC);
 
   CREATE TABLE IF NOT EXISTS admin_push_subscriptions (
     id SERIAL PRIMARY KEY,

@@ -5,6 +5,7 @@ import Login from './pages/Login';
 import ExpressnetLogin from './pages/ExpressnetLogin';
 import SelfOnboarding from './pages/SelfOnboarding';
 import CustomerIntake from './pages/CustomerIntake';
+import InstallationWorkOrder from './pages/InstallationWorkOrder';
 import ClientAccess from './pages/ClientAccess';
 import OnboardingLogin from './pages/OnboardingLogin';
 import OnboardingLayout from './pages/onboarding/Layout';
@@ -146,6 +147,7 @@ export default function App() {
         <Routes>
           <Route path="/self-onboarding" element={<SelfOnboarding />} />
           <Route path="/customer-intake/:clientId" element={<CustomerIntake />} />
+          <Route path="/installation-work-order/:token" element={<InstallationWorkOrder />} />
           <Route path="/client-access" element={<ClientAccess />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />

@@ -439,6 +439,19 @@ router.post('/client/:clientId', async (req, res) => {
           `It collects your ID scan, location and contact details for the setup team.`;
         await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
         console.log(`[evo client ${client.id}] Installation intake form link sent to ${incoming.phone}.`);
+        runAfterReply('Evolution installation ticket creation', () => createOrUpdateTicket({
+          clientId: client.id,
+          conversationId: conversation.id,
+          customerPhone: incoming.phone,
+          customerName: conversation.customer_name,
+          title: 'Installation request',
+          category: 'installation',
+          priority: 'normal',
+          intent: 'new_installation',
+          source: 'whatsapp_evolution',
+          summary: userText,
+          messageText: userText,
+        }));
         return;
       }
     }

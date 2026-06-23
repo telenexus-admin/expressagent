@@ -3,6 +3,7 @@ const { sendSMS, hasSMSConfig } = require('./sms');
 const { sendHighPriorityTicketEmail, sendWorkflowEmployeeEmail } = require('./email');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
+const { buildInstallationWorkOrderUrl, getOrCreateInstallationWorkOrder } = require('./installationWorkOrders');
 
 let schemaReady = false;
 
@@ -56,7 +57,7 @@ async function ensureTicketSchema() {
 
     ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_source_check;
     ALTER TABLE tickets ADD CONSTRAINT tickets_source_check
-      CHECK (source IN ('whatsapp_meta', 'whatsapp_evolution', 'admin', 'system'));
+      CHECK (source IN ('whatsapp_meta', 'whatsapp_evolution', 'customer_intake_form', 'admin', 'system'));
 
     ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_status VARCHAR(20);
     ALTER TABLE tickets ADD COLUMN IF NOT EXISTS assignment_notify_error TEXT;
@@ -272,17 +273,27 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
 
   const customer = customerName ? `${customerName} (+${customerPhone})` : `+${customerPhone}`;
   const link = ticketLink(ticket.id);
+  let installationFormLine = '';
+  if (ticket.category === 'installation') {
+    const workOrder = await getOrCreateInstallationWorkOrder(ticket, assignment.employeeId);
+    const formUrl = buildInstallationWorkOrderUrl(workOrder.public_token);
+    installationFormLine = formUrl
+      ? `\n\nTechnician installation form:\n${formUrl}\n\nRecord equipment used, installation time, power/DCBs and notes after the site visit.`
+      : '\n\nTechnician installation form is ready, but PUBLIC_FRONTEND_URL is not configured.';
+  }
   const message =
     `New ticket assigned to you\n\n` +
     `Ticket #${ticket.id}: ${ticket.title}\n` +
     `Priority: ${ticket.priority}\n` +
     `Customer: ${customer}\n` +
     `Issue: ${summary || ticket.summary || ticket.last_message || 'No summary yet'}` +
-    (link ? `\n\nOpen: ${link}` : '');
+    (link ? `\n\nOpen ticket: ${link}` : '') +
+    installationFormLine;
 
   const client = await loadClientForWorkflowNotify(ticket.client_id);
   if (!client) return { status: 'failed', error: 'Client not found for workflow notification' };
   const channels = normalizeWorkflowChannels(assignment.notificationChannels);
+  if (ticket.category === 'installation' && !channels.includes('whatsapp')) channels.push('whatsapp');
   const recipients = Array.isArray(assignment.employees) && assignment.employees.length ? assignment.employees : [assignment];
   const recipientResults = await Promise.all(recipients.map(async (employee) => ({
     employee,

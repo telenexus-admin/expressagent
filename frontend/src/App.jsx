@@ -31,6 +31,7 @@ import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
 import Tickets from './pages/Tickets';
 import InvoiceManagement from './pages/InvoiceManagement';
+import Inventory from './pages/Inventory';
 import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 import Billing from './pages/Billing';
@@ -42,6 +43,7 @@ const ALL_PERMISSIONS = [
   'conversations',
   'tickets',
   'invoices',
+  'inventory',
   'billing',
   'communication',
   'documentation',
@@ -73,6 +75,7 @@ function firstAllowedPath(admin) {
     conversations: 'conversations',
     tickets: 'tickets',
     invoices: 'invoices',
+    inventory: 'inventory',
     billing: 'billing',
     communication: 'communication',
     documentation: 'documentation',
@@ -161,6 +164,7 @@ export default function App() {
             </Route>
             <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
             <Route path="invoices" element={<PermissionRoute permission="invoices"><InvoiceManagement /></PermissionRoute>} />
+            <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="communication" element={<PermissionRoute permission="communication"><Communication /></PermissionRoute>} />
             <Route path="documentation" element={<PermissionRoute permission="documentation"><Documentation /></PermissionRoute>} />

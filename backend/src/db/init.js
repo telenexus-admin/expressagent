@@ -243,6 +243,26 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_invoices_client_due ON invoices(client_id, status, due_date DESC);
   CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
 
+  CREATE TABLE IF NOT EXISTS inventory_items (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(180) NOT NULL,
+    sku VARCHAR(80),
+    category VARCHAR(120),
+    quantity NUMERIC(12,2) NOT NULL DEFAULT 0,
+    reorder_level NUMERIC(12,2) NOT NULL DEFAULT 0,
+    unit_cost NUMERIC(12,2) NOT NULL DEFAULT 0,
+    location VARCHAR(160),
+    notes TEXT,
+    status VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+  ALTER TABLE inventory_items DROP CONSTRAINT IF EXISTS inventory_items_status_check;
+  ALTER TABLE inventory_items ADD CONSTRAINT inventory_items_status_check CHECK (status IN ('active', 'archived'));
+  CREATE INDEX IF NOT EXISTS idx_inventory_items_client_status ON inventory_items(client_id, status, name);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_inventory_items_client_sku_unique ON inventory_items(client_id, LOWER(sku)) WHERE sku IS NOT NULL AND sku <> '';
+
   CREATE TABLE IF NOT EXISTS settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,

@@ -41,6 +41,11 @@ const sections = [
         body: 'Create invoice products, customer invoices, company branding, signatures and due-payment messages that the agent can send to one number or selected groups.',
       },
       {
+        icon: WrenchIcon,
+        title: 'Inventory',
+        body: 'Track stock items such as routers, ONTs, cables and installation equipment, including quantities, reorder levels, unit costs, storage location and archived items.',
+      },
+      {
         icon: ChartIcon,
         title: 'Billing',
         body: 'Connect and review billing-related customer data, payment checks and account information used by the assistant during support.',

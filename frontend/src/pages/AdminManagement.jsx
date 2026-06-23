@@ -12,6 +12,7 @@ const PERMISSION_OPTIONS = [
   { key: 'conversations', label: 'Conversations' },
   { key: 'tickets', label: 'Tickets' },
   { key: 'invoices', label: 'Invoice Management' },
+  { key: 'inventory', label: 'Inventory' },
   { key: 'billing', label: 'Billing' },
   { key: 'communication', label: 'Communication' },
   { key: 'escalations', label: 'Human Handover' },

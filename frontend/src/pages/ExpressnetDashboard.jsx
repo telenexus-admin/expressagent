@@ -82,6 +82,7 @@ export default function ExpressnetDashboard() {
       items: [
         ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
         ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
+        ['/dashboard/inventory', 'Inventory', WrenchIcon, 'inventory'],
         ['/dashboard/billing', 'Billing', ChartIcon, 'billing'],
         ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
         ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],

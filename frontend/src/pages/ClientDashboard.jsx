@@ -174,6 +174,7 @@ export default function ClientDashboard() {
           ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
           ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
           ['/dashboard/invoices', 'Invoice Management', ChartIcon, 'invoices'],
+          ['/dashboard/inventory', 'Inventory', WrenchIcon, 'inventory'],
           ['/dashboard/billing', 'Billing', ChartIcon, 'billing'],
         ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
         ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],

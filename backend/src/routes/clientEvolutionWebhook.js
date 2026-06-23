@@ -52,6 +52,21 @@ function runAfterReply(label, task) {
   });
 }
 
+async function isPendingInvoiceContinuation(conversationId, text) {
+  if (!/(?:\+?254|0)\d[\d\s-]{7,15}|\b[A-Za-z0-9_.-]{3,40}\b/.test(String(text || '').trim())) return false;
+  const recent = await db.query(
+    `SELECT role, content FROM messages
+     WHERE conversation_id = $1
+     ORDER BY timestamp DESC
+     LIMIT 6`,
+    [conversationId]
+  );
+  return recent.rows.some((message) =>
+    message.role === 'assistant' &&
+    /\bgenerate the invoice\b|\bbilling account\b|\bregistered phone number\b/i.test(String(message.content || ''))
+  );
+}
+
 function audioFilename(mimeType) {
   if (String(mimeType || '').includes('mpeg')) return 'voice-note.mp3';
   if (String(mimeType || '').includes('mp4')) return 'voice-note.m4a';
@@ -458,7 +473,7 @@ router.post('/client/:clientId', async (req, res) => {
       }
     }
 
-    if (!incoming.isImage && INVOICE_RE.test(userText)) {
+    if (!incoming.isImage && (INVOICE_RE.test(userText) || await isPendingInvoiceContinuation(conversation.id, userText))) {
       try {
         const result = await invoiceRoutes.createAndSendCustomerInvoice({
           client,

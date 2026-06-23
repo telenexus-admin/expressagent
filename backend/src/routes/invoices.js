@@ -3,8 +3,8 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { sendWhatsAppMessage } = require('../services/whatsapp');
-const { sendClientText } = require('../services/clientEvolution');
+const { sendWhatsAppMediaMessage } = require('../services/whatsapp');
+const { sendClientMedia } = require('../services/clientEvolution');
 const { lookupInvoiceCustomer } = require('../services/billing');
 
 const router = express.Router();
@@ -202,22 +202,129 @@ function invoiceUrl(token, req = null) {
 function invoiceMessage(invoice, url) {
   return [
     `Hello ${invoice.customer_name},`,
-    `Your invoice ${invoice.invoice_number} for ${Number(invoice.total_amount).toFixed(2)} is ready.`,
+    `Your PDF invoice ${invoice.invoice_number} for ${Number(invoice.total_amount).toFixed(2)} is ready.`,
     invoice.due_date ? `Due date: ${new Date(invoice.due_date).toISOString().slice(0, 10)}` : '',
     `View invoice: ${url}`,
     'Thank you.',
   ].filter(Boolean).join('\n');
 }
 
-async function sendInvoiceNotice(client, phone, message) {
+function pdfText(value) {
+  return String(value ?? '')
+    .replace(/\\/g, '\\\\')
+    .replace(/\(/g, '\\(')
+    .replace(/\)/g, '\\)')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E]/g, '');
+}
+
+function pdfMoney(value) {
+  return `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+function invoicePdfBuffer({ invoice, profile }) {
+  const company = profile.company_name || invoice.business_name || invoice.client_name || 'Company';
+  const lines = [
+    { x: 52, y: 745, size: 22, text: company, color: 'white' },
+    { x: 408, y: 745, size: 12, text: profile.phone || '', color: 'white' },
+    { x: 408, y: 725, size: 12, text: profile.email || '', color: 'white' },
+    { x: 52, y: 655, size: 12, text: 'INVOICE TO', color: 'red' },
+    { x: 52, y: 630, size: 18, text: invoice.customer_name, color: 'black' },
+    { x: 52, y: 608, size: 10, text: `Phone: ${invoice.customer_phone || '-'}`, color: 'gray' },
+    { x: 52, y: 592, size: 10, text: `Email: ${invoice.customer_email || '-'}`, color: 'gray' },
+    { x: 358, y: 655, size: 30, text: 'INVOICE', color: 'black' },
+    { x: 358, y: 620, size: 10, text: `Invoice No: ${invoice.invoice_number}`, color: 'black' },
+    { x: 358, y: 604, size: 10, text: `Issue Date: ${new Date(invoice.issue_date).toISOString().slice(0, 10)}`, color: 'black' },
+    { x: 358, y: 588, size: 10, text: `Due Date: ${invoice.due_date ? new Date(invoice.due_date).toISOString().slice(0, 10) : '-'}`, color: 'black' },
+    { x: 358, y: 560, size: 11, text: 'Payment Method', color: 'red' },
+    { x: 358, y: 542, size: 10, text: `Method: ${profile.payment_method || '-'}`, color: 'black' },
+    { x: 358, y: 526, size: 10, text: `Account: ${profile.account_number || '-'}`, color: 'black' },
+    { x: 358, y: 510, size: 10, text: `Name: ${profile.account_name || '-'}`, color: 'black' },
+  ];
+  let y = 452;
+  (invoice.items || []).slice(0, 12).forEach((item, index) => {
+    lines.push(
+      { x: 58, y, size: 9, text: String(index + 1).padStart(2, '0'), color: 'black' },
+      { x: 98, y, size: 9, text: item.description, color: 'black' },
+      { x: 330, y, size: 9, text: pdfMoney(item.unit_price), color: 'black' },
+      { x: 420, y, size: 9, text: Number(item.quantity).toFixed(2), color: 'black' },
+      { x: 485, y, size: 9, text: pdfMoney(item.line_total), color: 'black' }
+    );
+    y -= 28;
+  });
+  lines.push(
+    { x: 52, y: 185, size: 12, text: 'Thank you for your business with us.', color: 'black' },
+    { x: 52, y: 160, size: 10, text: profile.terms || invoice.notes || 'Payment is due by the invoice due date.', color: 'gray' },
+    { x: 52, y: 100, size: 10, text: profile.signature_name || 'Authorized Signature', color: 'black' },
+    { x: 380, y: 190, size: 10, text: `Subtotal: ${pdfMoney(invoice.subtotal)}`, color: 'black' },
+    { x: 380, y: 168, size: 10, text: `Discount: ${pdfMoney(invoice.discount_amount)}`, color: 'black' },
+    { x: 380, y: 146, size: 10, text: `Tax: ${pdfMoney(invoice.tax_amount)}`, color: 'black' },
+    { x: 380, y: 112, size: 15, text: `Total: ${pdfMoney(invoice.total_amount)}`, color: 'white' }
+  );
+  const color = (name) => {
+    if (name === 'red') return '0.89 0.05 0.16 rg';
+    if (name === 'white') return '1 1 1 rg';
+    if (name === 'gray') return '0.36 0.40 0.45 rg';
+    return '0.08 0.10 0.15 rg';
+  };
+  const textOps = lines.map((line) => `BT /F1 ${line.size} Tf ${color(line.color)} ${line.x} ${line.y} Td (${pdfText(line.text).slice(0, 92)}) Tj ET`).join('\n');
+  const stream = [
+    '0.09 0.11 0.16 rg 40 705 310 78 re f',
+    '0.89 0.05 0.16 rg 350 705 205 78 re f',
+    '0.89 0.05 0.16 rg 52 468 503 28 re f',
+    'BT /F1 9 Tf 1 1 1 rg 58 477 Td (NO.) Tj ET',
+    'BT /F1 9 Tf 1 1 1 rg 98 477 Td (ITEM DESCRIPTION) Tj ET',
+    'BT /F1 9 Tf 1 1 1 rg 330 477 Td (PRICE) Tj ET',
+    'BT /F1 9 Tf 1 1 1 rg 420 477 Td (QTY.) Tj ET',
+    'BT /F1 9 Tf 1 1 1 rg 485 477 Td (TOTAL) Tj ET',
+    '0.89 0.05 0.16 rg 370 96 185 38 re f',
+    '0.09 0.11 0.16 rg 220 35 335 28 re f',
+    textOps,
+  ].join('\n');
+  const objects = [
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj',
+    '4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj',
+    `5 0 obj << /Length ${Buffer.byteLength(stream, 'utf8')} >> stream\n${stream}\nendstream endobj`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += `${obj}\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i += 1) pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, 'utf8');
+}
+
+async function loadInvoiceDocument(invoice) {
+  const items = invoice.items || (await db.query(`SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY id ASC`, [invoice.id])).rows;
+  const profileResult = await db.query(`SELECT * FROM invoice_profiles WHERE client_id = $1`, [invoice.client_id]);
+  const fullInvoice = { ...invoice, items };
+  const profile = invoiceProfileForRender(profileResult.rows[0] || {});
+  const pdf = invoicePdfBuffer({ invoice: fullInvoice, profile });
+  return {
+    data: pdf,
+    mime_type: 'application/pdf',
+    filename: `${invoice.invoice_number}.pdf`,
+    title: `Invoice ${invoice.invoice_number}`,
+    description: invoiceMessage(invoice, invoice.public_url || ''),
+  };
+}
+
+async function sendInvoiceNotice(client, phone, message, invoice = null) {
+  const media = invoice ? await loadInvoiceDocument({ ...client, ...invoice }) : null;
   if (client.evolution_instance_name) {
-    await sendClientText(client, phone, message);
+    if (media) await sendClientMedia(client, phone, { ...media, description: message });
     return;
   }
   if (!client.meta_phone_number_id || !client.meta_access_token) {
     throw new Error('WhatsApp credentials are not configured for this client');
   }
-  await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phone, message);
+  if (media) await sendWhatsAppMediaMessage(client.meta_phone_number_id, client.meta_access_token, phone, { ...media, description: message });
 }
 
 function invoiceProfileResponse(row = {}) {
@@ -575,7 +682,7 @@ router.post('/:id/send', async (req, res) => {
     const phone = cleanPhone(req.body.phone || invoice.customer_phone);
     if (!/^[0-9]{9,15}$/.test(phone)) return res.status(400).json({ error: 'A valid WhatsApp number is required' });
     const url = invoiceUrl(invoice.public_token, req);
-    await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url));
+    await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
     await db.query(`UPDATE invoices SET status = CASE WHEN status = 'draft' THEN 'sent' ELSE status END, sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
     res.json({ success: true, sent_to: phone, public_url: url });
   } catch (err) {
@@ -606,7 +713,7 @@ router.post('/send-due/bulk', async (req, res) => {
       }
       try {
         const url = invoiceUrl(invoice.public_token, req);
-        await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url));
+        await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
         await db.query(`UPDATE invoices SET status = 'overdue', sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
         results.push({ id: invoice.id, status: 'sent', phone });
       } catch (err) {
@@ -660,7 +767,7 @@ router.createAndSendCustomerInvoice = async function createAndSendCustomerInvoic
   if (!/^[0-9]{9,15}$/.test(phone)) {
     return { success: false, reply: 'I found the account, but I need a valid WhatsApp number before sending the invoice.' };
   }
-  await sendInvoiceNotice({ ...client, ...invoice }, phone, invoiceMessage(invoice, url));
+  await sendInvoiceNotice({ ...client, ...invoice }, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
   return {
     success: true,
     invoice,

@@ -1,6 +1,7 @@
 import React, { useRef, useState } from 'react';
 import api from '../utils/api';
-import { AgentIcon, CloseIcon } from './Icons';
+import { CloseIcon } from './Icons';
+import nexaHelpRobot from '../assets/nexa-help-robot.jpg';
 
 const STARTER_MESSAGES = [
   'How do I install the app?',
@@ -53,21 +54,28 @@ export default function DashboardHelpBot() {
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className="fixed bottom-5 right-5 z-40 flex h-14 w-14 items-center justify-center rounded-2xl bg-[#3535FF] text-white shadow-2xl shadow-indigo-500/35 hover:bg-[#2828DD]"
+        className="fixed bottom-5 right-5 z-40 flex items-center gap-2 rounded-[22px] border border-[#dce3f1] bg-white p-2 pr-4 text-[#0d1438] shadow-2xl shadow-indigo-500/20 transition hover:-translate-y-0.5 hover:shadow-indigo-500/30"
         aria-label="Open help bot"
       >
-        <AgentIcon className="h-7 w-7" />
+        <img
+          src={nexaHelpRobot}
+          alt=""
+          className="h-12 w-12 rounded-2xl object-cover object-top"
+        />
+        <span className="hidden text-left text-xs font-black leading-4 sm:block">
+          Ask Nexa
+          <br />
+          for help
+        </span>
       </button>
 
       {open && (
         <div className="fixed bottom-5 right-5 z-50 flex h-[620px] max-h-[calc(100vh-2rem)] w-[390px] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-[28px] border border-slate-100 bg-white shadow-2xl shadow-slate-900/20">
           <div className="flex items-center justify-between gap-3 bg-[#0A0A0F] px-5 py-4 text-white">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-white/10">
-                <AgentIcon className="h-5 w-5" />
-              </div>
+              <img src={nexaHelpRobot} alt="" className="h-11 w-11 rounded-2xl object-cover object-top" />
               <div>
-                <div className="text-sm font-black">Nexa Help Bot</div>
+                <div className="text-sm font-black">Ask Nexa for help</div>
                 <div className="text-xs text-white/55">System help and safe auto-config</div>
               </div>
             </div>

@@ -16,6 +16,7 @@ import {
   MenuIcon,
   CogIcon,
   PulseIcon,
+  QuestionIcon,
   TicketIcon,
   UsersIcon,
   WarningIcon,
@@ -57,6 +58,7 @@ const ChevronDownIcon = ({ className = 'h-5 w-5' }) => (
 
 function canAccess(admin, permission) {
   if (!admin) return false;
+  if (permission === 'documentation') return true;
   if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
@@ -81,7 +83,7 @@ function Brand({ expressnet, compact = false }) {
 
 function AiSidebarHero({ compact = false }) {
   return (
-    <div className={`${compact ? 'mx-4 mb-3 h-[94px]' : 'mx-5 mb-5 h-[138px]'} dashboard-ai-card relative shrink-0 overflow-hidden rounded-[20px] border border-[#dbe5ff] bg-gradient-to-br from-[#eef6ff] via-[#f6f1ff] to-[#e9f2ff] shadow-[0_16px_34px_rgba(80,83,140,0.12)]`}>
+    <div className={`${compact ? 'mx-4 mb-2 h-[78px]' : 'mx-4 mb-3 h-[106px]'} dashboard-ai-card relative shrink-0 overflow-hidden rounded-[18px] border border-[#dbe5ff] bg-gradient-to-br from-[#eef6ff] via-[#f6f1ff] to-[#e9f2ff] shadow-[0_12px_26px_rgba(80,83,140,0.1)]`}>
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_18%_18%,rgba(53,108,255,0.18),transparent_18%),radial-gradient(circle_at_90%_15%,rgba(124,58,237,0.18),transparent_22%)]" />
       {!compact && (
         <div className="absolute left-5 top-4 z-20 flex items-center gap-2">
@@ -97,12 +99,12 @@ function AiSidebarHero({ compact = false }) {
       <img
         src={aiBotArtwork}
         alt="Nexa AI assistant"
-        className={`${compact ? 'h-[112px] -bottom-8 right-4' : 'h-[150px] -bottom-9 right-1'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_12px_18px_rgba(48,90,180,0.25)]`}
+        className={`${compact ? 'h-[92px] -bottom-7 right-4' : 'h-[118px] -bottom-7 right-1'} absolute z-10 w-auto max-w-none object-contain drop-shadow-[0_12px_18px_rgba(48,90,180,0.22)]`}
       />
       {!compact && (
-        <div className="absolute bottom-5 left-5 z-20">
-          <p className="text-lg font-black tracking-wide text-[#2086ff]">NEXA AI</p>
-          <p className="mt-1 flex items-center gap-2 text-sm font-semibold text-[#121a3d]"><span className="h-2.5 w-2.5 rounded-full bg-[#6d35ff]" />Always ready to assist</p>
+        <div className="absolute bottom-4 left-4 z-20">
+          <p className="text-base font-black tracking-wide text-[#2086ff]">NEXA AI</p>
+          <p className="mt-0.5 flex items-center gap-2 text-xs font-semibold text-[#121a3d]"><span className="h-2.5 w-2.5 rounded-full bg-[#6d35ff]" />Always ready to assist</p>
         </div>
       )}
     </div>
@@ -199,6 +201,12 @@ export default function ClientDashboard() {
         ['/dashboard/settings', 'Settings', CogIcon, 'settings'],
       ],
     },
+    {
+      label: 'Support',
+      items: [
+        ['/dashboard/documentation', 'Documentation', QuestionIcon, 'documentation'],
+      ],
+    },
   ].map((section) => ({
     ...section,
     items: section.items.filter((item) => canAccess(admin, item[3])),
@@ -214,16 +222,16 @@ export default function ClientDashboard() {
     const [path, label, Icon, , badge] = item;
     const selected = active(path);
     return (
-      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`dashboard-nav-item group relative w-full flex items-center gap-3 px-4 py-3 text-sm transition-all ${selected ? 'dashboard-nav-active text-white font-black' : 'text-[#20284d] hover:bg-[#f4f1ff]'}`}>
-        <span className={`w-10 h-10 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-white/16 text-white' : 'bg-[#f2f4fb] text-[#273459]'}`}><Icon className="w-5 h-5" /></span>
+      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`dashboard-nav-item group relative w-full flex items-center gap-3 px-3 py-2 text-sm transition-all ${selected ? 'dashboard-nav-active text-white font-black' : 'text-[#20284d] hover:bg-[#f4f1ff]'}`}>
+        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-white/16 text-white' : 'bg-[#f2f4fb] text-[#273459]'}`}><Icon className="w-4 h-4" /></span>
         <span className="flex-1 text-left truncate">{label}</span>
         {badge > 0 && <span className={`text-[10px] font-black rounded-full min-w-[24px] h-6 flex items-center justify-center px-2 ${selected ? 'bg-white/20 text-white' : 'bg-[#7c35ff] text-white'}`}>{badge > 99 ? '99+' : badge}</span>}
       </button>
     );
   };
   const navList = (mobile = false) => navSections.map((section) => (
-    <div key={section.label} className="space-y-1">
-      <div className="px-4 pt-4 pb-2 text-[11px] font-black uppercase tracking-[0.16em] text-[#98a0bd] dashboard-section-label">
+    <div key={section.label} className="space-y-0.5">
+      <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-[#98a0bd] dashboard-section-label">
         {section.label}
       </div>
       {section.items.map((item) => itemButton(item, mobile))}
@@ -235,9 +243,9 @@ export default function ClientDashboard() {
       <div className="flex h-full min-h-0 gap-3 p-2">
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} dashboard-sidebar hidden w-[330px] shrink-0 flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)] z-20`}>
           {expressnet && <div className="px-6 pt-6 pb-5"><Brand expressnet={expressnet} /></div>}
-          {!expressnet && <div className="h-5 shrink-0" />}
+          {!expressnet && <div className="h-4 shrink-0" />}
           <AiSidebarHero />
-          <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-5 pb-5">{navList()}</nav>
+          <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-4 pb-4">{navList()}</nav>
         </aside>
 
         <section className="dashboard-main flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)]">

@@ -5,7 +5,7 @@ import api from '../utils/api';
 import {
   AgentIcon, BriefcaseIcon, ChartIcon, ChatIcon, CloseIcon, DotsVerticalIcon,
   FlowIcon, HomeIcon, LifebuoyIcon, LogoutIcon, MenuIcon, PulseIcon,
-  TicketIcon, UsersIcon, WarningIcon, WrenchIcon, CogIcon,
+  QuestionIcon, TicketIcon, UsersIcon, WarningIcon, WrenchIcon, CogIcon,
 } from '../components/Icons';
 import GlobalConversationSearch from '../components/GlobalConversationSearch';
 import DashboardHelpBot from '../components/DashboardHelpBot';
@@ -13,6 +13,7 @@ import expressnetLogo from '../assets/expressnetLogo';
 
 function canAccess(admin, permission) {
   if (!admin) return false;
+  if (permission === 'documentation') return true;
   if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
@@ -107,6 +108,12 @@ export default function ExpressnetDashboard() {
         ['/dashboard/settings', 'Settings', CogIcon, 'settings'],
       ],
     },
+    {
+      label: 'Support',
+      items: [
+        ['/dashboard/documentation', 'Documentation', QuestionIcon, 'documentation'],
+      ],
+    },
   ].map((section) => ({
     ...section,
     items: section.items.filter((item) => canAccess(admin, item[3])),
@@ -115,6 +122,7 @@ export default function ExpressnetDashboard() {
 
   const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
   const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
+  const showConversationSearch = location.pathname.startsWith('/dashboard/conversations');
   const signOut = () => { logout(); navigate('/login'); };
   const itemButton = (item, mobile = false) => {
     const [path, label, Icon, , badge] = item;
@@ -150,7 +158,7 @@ export default function ExpressnetDashboard() {
               <button onClick={() => setSidebarOpen((value) => !value)} className="hidden lg:flex w-11 h-11 rounded-2xl bg-white shadow-sm items-center justify-center text-slate-600 hover:text-[#4b16b5]"><MenuIcon className="w-5 h-5" /></button>
               <div className="min-w-0"><h1 className="text-2xl font-black truncate">{title}</h1><p className="text-xs text-slate-400 mt-1 truncate">Monitor support, installations, complaints and AI performance.</p></div>
             </div>
-            <div className="flex items-center gap-4"><GlobalConversationSearch /><div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-500"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
+            <div className="flex items-center gap-4">{showConversationSearch && <GlobalConversationSearch />}<div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-500"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
           </header>
           <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-9 pb-7 overflow-hidden"><div className="h-full min-h-0 rounded-[34px] overflow-hidden bg-white shadow-2xl shadow-slate-200/70 border border-white flex flex-col"><Outlet /></div></main>
           <DashboardHelpBot />

@@ -35,6 +35,7 @@ import Logs from './pages/Logs';
 import Settings from './pages/Settings';
 import Billing from './pages/Billing';
 import Communication from './pages/Communication';
+import Documentation from './pages/Documentation';
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -43,6 +44,7 @@ const ALL_PERMISSIONS = [
   'invoices',
   'billing',
   'communication',
+  'documentation',
   'escalations',
   'installations',
   'complaints',
@@ -57,6 +59,7 @@ const ALL_PERMISSIONS = [
 
 function hasPermission(admin, permission) {
   if (!admin) return false;
+  if (permission === 'documentation') return true;
   if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
@@ -72,6 +75,7 @@ function firstAllowedPath(admin) {
     invoices: 'invoices',
     billing: 'billing',
     communication: 'communication',
+    documentation: 'documentation',
     escalations: 'escalations',
     installations: 'installations',
     complaints: 'complaints',
@@ -159,6 +163,7 @@ export default function App() {
             <Route path="invoices" element={<PermissionRoute permission="invoices"><InvoiceManagement /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="communication" element={<PermissionRoute permission="communication"><Communication /></PermissionRoute>} />
+            <Route path="documentation" element={<PermissionRoute permission="documentation"><Documentation /></PermissionRoute>} />
             <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
             <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />

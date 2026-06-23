@@ -132,6 +132,11 @@ export default function Agent() {
   const [welcomeMenu, setWelcomeMenu] = useState(DEFAULT_WELCOME_MENU);
   const [agentsInfo, setAgentsInfo] = useState({ agents: [], onboarding_path: '/self-onboarding' });
   const [agentsLoading, setAgentsLoading] = useState(true);
+  const [blockedNumbers, setBlockedNumbers] = useState([]);
+  const [blockedLoading, setBlockedLoading] = useState(true);
+  const [blockForm, setBlockForm] = useState({ phone: '', reason: '' });
+  const [blockSaving, setBlockSaving] = useState(false);
+  const [blockStatus, setBlockStatus] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
@@ -158,6 +163,19 @@ export default function Agent() {
       console.error('Failed to fetch agents:', err.message);
     } finally {
       setAgentsLoading(false);
+    }
+  };
+
+  const fetchBlockedNumbers = async () => {
+    setBlockedLoading(true);
+    try {
+      const { data } = await api.get(`/settings/blocked-numbers${settingsQuery}`);
+      setBlockedNumbers(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch blocked numbers:', err.message);
+      setBlockStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load blocked numbers.' });
+    } finally {
+      setBlockedLoading(false);
     }
   };
 
@@ -199,6 +217,7 @@ export default function Agent() {
   useEffect(() => {
     fetchSettings();
     fetchAgents();
+    fetchBlockedNumbers();
     if (clientIdParam) fetchClientName(clientIdParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientIdParam]);
@@ -211,6 +230,38 @@ export default function Agent() {
   const displayName = agentName.trim() || 'Agent';
   const openAddAgent = () => {
     window.location.href = agentsInfo.onboarding_path || '/self-onboarding';
+  };
+
+  const blockNumber = async () => {
+    if (!blockForm.phone.trim()) {
+      setBlockStatus({ type: 'error', message: 'Enter a phone number to block.' });
+      return;
+    }
+    setBlockSaving(true);
+    setBlockStatus(null);
+    try {
+      const { data } = await api.post(`/settings/blocked-numbers${settingsQuery}`, {
+        phone: blockForm.phone,
+        reason: blockForm.reason,
+      });
+      setBlockedNumbers((current) => [data, ...current.filter((row) => row.id !== data.id)]);
+      setBlockForm({ phone: '', reason: '' });
+      setBlockStatus({ type: 'success', message: 'Number blocked. The agent will no longer send replies to it.' });
+    } catch (err) {
+      setBlockStatus({ type: 'error', message: err.response?.data?.error || 'Failed to block number.' });
+    } finally {
+      setBlockSaving(false);
+    }
+  };
+
+  const unblockNumber = async (id) => {
+    try {
+      await api.delete(`/settings/blocked-numbers/${id}${settingsQuery}`);
+      setBlockedNumbers((current) => current.filter((row) => row.id !== id));
+      setBlockStatus({ type: 'success', message: 'Number unblocked.' });
+    } catch (err) {
+      setBlockStatus({ type: 'error', message: err.response?.data?.error || 'Failed to unblock number.' });
+    }
   };
 
   const isValidSupportNumber = (value) => {
@@ -406,6 +457,67 @@ export default function Agent() {
                   {agentsInfo.agents.map((agent) => <AgentStatusCard key={`${agent.kind}-${agent.id}`} agent={agent} />)}
                 </div>
               )}
+            </SettingsCard>
+
+            <SettingsCard
+              icon={<WarningIcon className="h-5 w-5" />}
+              title="Blocked Numbers"
+              description="Flag a WhatsApp number so the agent records incoming messages but does not send automated replies."
+            >
+              {blockStatus && (
+                <div className={`mb-4 rounded-2xl border px-4 py-3 text-sm font-bold ${blockStatus.type === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>
+                  {blockStatus.message}
+                </div>
+              )}
+              <div className="grid gap-3 rounded-2xl border border-[#e7e9f2] bg-[#fbfcff] p-4 md:grid-cols-[1fr_1fr_auto] md:items-end">
+                <label>
+                  <span className="mb-2 block text-xs font-black uppercase tracking-wide text-[#8a8fa6]">Phone number</span>
+                  <input
+                    value={blockForm.phone}
+                    onChange={(event) => setBlockForm((current) => ({ ...current, phone: event.target.value }))}
+                    placeholder="2547XXXXXXXX"
+                    className="h-11 w-full rounded-xl border border-[#e4e7f1] bg-white px-4 text-sm font-bold text-[#15162f] outline-none focus:border-[#5b35f5]"
+                  />
+                </label>
+                <label>
+                  <span className="mb-2 block text-xs font-black uppercase tracking-wide text-[#8a8fa6]">Reason</span>
+                  <input
+                    value={blockForm.reason}
+                    onChange={(event) => setBlockForm((current) => ({ ...current, reason: event.target.value }))}
+                    placeholder="Spam, abuse, wrong contact..."
+                    className="h-11 w-full rounded-xl border border-[#e4e7f1] bg-white px-4 text-sm font-bold text-[#15162f] outline-none focus:border-[#5b35f5]"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={blockNumber}
+                  disabled={blockSaving}
+                  className="h-11 rounded-xl bg-[#171733] px-5 text-sm font-black text-white disabled:opacity-50"
+                >
+                  {blockSaving ? 'Blocking...' : 'Block'}
+                </button>
+              </div>
+              <div className="mt-4 space-y-3">
+                {blockedLoading ? (
+                  <div className="rounded-2xl border border-dashed border-[#d7dbea] bg-white px-4 py-6 text-center text-sm font-bold text-[#858aa2]">Loading blocked numbers...</div>
+                ) : blockedNumbers.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-[#d7dbea] bg-white px-4 py-6 text-center text-sm font-bold text-[#858aa2]">No blocked numbers yet.</div>
+                ) : blockedNumbers.map((row) => (
+                  <div key={row.id} className="flex flex-col gap-3 rounded-2xl border border-[#e7e9f2] bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="font-mono text-sm font-black text-[#171733]">{row.phone}</div>
+                      <div className="mt-1 text-xs font-semibold text-[#858aa2]">{row.reason || 'No reason added'} · {new Date(row.created_at).toLocaleDateString()}</div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => unblockNumber(row.id)}
+                      className="h-10 rounded-xl border border-red-100 bg-red-50 px-4 text-xs font-black text-red-600"
+                    >
+                      Unblock
+                    </button>
+                  </div>
+                ))}
+              </div>
             </SettingsCard>
 
             <SettingsCard

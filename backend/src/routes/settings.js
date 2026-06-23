@@ -7,6 +7,7 @@ const { testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
 const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
+const { listBlockedNumbers, addBlockedNumber, removeBlockedNumber } = require('../services/blockedNumbers');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -373,6 +374,50 @@ router.get('/agents', async (req, res) => {
   } catch (err) {
     console.error('GET /settings/agents error:', err.message);
     res.status(500).json({ error: 'Failed to load agent onboarding status' });
+  }
+});
+
+router.get('/blocked-numbers', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    const rows = await listBlockedNumbers(targetClient);
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /settings/blocked-numbers error:', err.message);
+    res.status(500).json({ error: 'Failed to load blocked numbers' });
+  }
+});
+
+router.post('/blocked-numbers', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    const row = await addBlockedNumber({
+      clientId: targetClient,
+      phone: req.body.phone,
+      reason: req.body.reason,
+    });
+    res.status(201).json(row);
+  } catch (err) {
+    console.error('POST /settings/blocked-numbers error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to block number' });
+  }
+});
+
+router.delete('/blocked-numbers/:id', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    const removed = await removeBlockedNumber(targetClient, req.params.id);
+    if (!removed) return res.status(404).json({ error: 'Blocked number not found' });
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /settings/blocked-numbers/:id error:', err.message);
+    res.status(500).json({ error: 'Failed to unblock number' });
   }
 });
 

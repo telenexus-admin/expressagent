@@ -12,6 +12,7 @@ const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, 
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
+const { isBlockedNumber } = require('../services/blockedNumbers');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -384,6 +385,11 @@ router.post('/client/:clientId', async (req, res) => {
       `[evo client ${client.id}] Conversation state for ${incoming.phone}: ` +
       `id=${conversation.id}, status=${conversation.status}, reply_mode=${conversation.reply_mode || 'auto'}, opted_out=${Boolean(conversation.opted_out_at)}`
     );
+
+    if (await isBlockedNumber(client.id, incoming.phone)) {
+      console.log(`[evo client ${client.id}] Reply skipped for ${incoming.phone}: number is blocked in Agent Configuration.`);
+      return;
+    }
 
     const normalized = userText.toLowerCase();
     if (conversation.opted_out_at && RESUME.has(normalized)) {

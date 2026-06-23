@@ -5,6 +5,7 @@ import api from '../utils/api';
 const PROVIDERS = [
   { id: 'blessed', label: 'Blessed Text', note: 'Use Blessed Text for Nexa SMS messages.' },
   { id: 'savvy', label: 'Savvy Bulk SMS', note: 'Requires API key, Partner ID and Sender ID.' },
+  { id: 'talksasa', label: 'Talk Sasa', note: 'Requires API token and approved Sender ID.' },
 ];
 
 export default function SmsSettings() {
@@ -81,7 +82,7 @@ export default function SmsSettings() {
         {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
 
         <div className="rounded-[30px] bg-white p-6 shadow-xl shadow-purple-100/50">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
             {PROVIDERS.map((item) => {
               const selected = provider === item.id;
               return (
@@ -98,8 +99,8 @@ export default function SmsSettings() {
 
           <div className="mt-6 grid grid-cols-1 gap-5 sm:grid-cols-2">
             <label className="block">
-              <span className="text-xs font-black uppercase tracking-wide text-slate-500">API key</span>
-              <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={apiKeyConfigured ? 'Saved — enter a new value to replace it' : 'Enter API key'} className="mt-2 w-full rounded-2xl border border-purple-100 bg-[#fbfaff] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#4B16B5]/20" />
+              <span className="text-xs font-black uppercase tracking-wide text-slate-500">{provider === 'talksasa' ? 'API token' : 'API key'}</span>
+              <input type="password" value={apiKey} onChange={(event) => setApiKey(event.target.value)} placeholder={apiKeyConfigured ? 'Saved - enter a new value to replace it' : provider === 'talksasa' ? 'Enter Talk Sasa API token' : 'Enter API key'} className="mt-2 w-full rounded-2xl border border-purple-100 bg-[#fbfaff] px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#4B16B5]/20" />
               <span className="mt-1 block text-[11px] text-slate-400">{apiKeyConfigured ? 'A key is already saved and is not displayed.' : 'Required before this provider can send messages.'}</span>
             </label>
 

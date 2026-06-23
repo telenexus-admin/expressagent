@@ -12,7 +12,7 @@ router.use(authMiddleware, scopeMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const BILLING_PROVIDERS = ['wispman'];
-const SMS_PROVIDERS = ['blessed_text'];
+const SMS_PROVIDERS = ['blessed_text', 'savvy', 'talksasa'];
 const EMAIL_PROVIDERS = ['smtp', 'gmail', 'disabled'];
 const DEFAULT_WELCOME_MENU = {
   enabled: true,
@@ -109,9 +109,11 @@ function safeBillingConfig(row) {
 }
 
 function safeCommunicationConfig(row) {
+  const provider = row.sms_provider === 'blessed' ? 'blessed_text' : (row.sms_provider || 'blessed_text');
   return {
-    provider: row.sms_provider || 'blessed_text',
+    provider,
     sender_id: row.sms_sender_id || '',
+    partner_id: row.sms_partner_id || '',
     has_api_key: Boolean(row.sms_api_key),
     configured_at: row.sms_configured_at || null,
   };
@@ -146,6 +148,7 @@ async function ensureCommunicationColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_partner_id VARCHAR(80)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
 }
 
@@ -335,7 +338,7 @@ router.get('/communication', async (req, res) => {
   try {
     await ensureCommunicationColumns();
     const result = await db.query(
-      `SELECT sms_provider, sms_api_key, sms_sender_id, sms_configured_at
+      `SELECT sms_provider, sms_api_key, sms_sender_id, sms_partner_id, sms_configured_at
        FROM clients WHERE id = $1`,
       [targetClient]
     );
@@ -557,6 +560,7 @@ router.put('/communication', async (req, res) => {
   const selectedProvider = String(req.body.provider || 'blessed_text').trim().toLowerCase();
   const apiKey = String(req.body.api_key || '').trim();
   const senderId = String(req.body.sender_id || '').trim();
+  const partnerId = String(req.body.partner_id || '').trim();
 
   if (!SMS_PROVIDERS.includes(selectedProvider)) {
     return res.status(400).json({ error: 'Unsupported SMS provider' });
@@ -568,7 +572,7 @@ router.put('/communication', async (req, res) => {
   try {
     await ensureCommunicationColumns();
     const existing = await db.query(
-      `SELECT sms_api_key, sms_sender_id FROM clients WHERE id = $1`,
+      `SELECT sms_api_key, sms_sender_id, sms_partner_id FROM clients WHERE id = $1`,
       [targetClient]
     );
     if (existing.rows.length === 0) {
@@ -577,8 +581,12 @@ router.put('/communication', async (req, res) => {
 
     const savedKey = existing.rows[0].sms_api_key || '';
     const finalSender = senderId || existing.rows[0].sms_sender_id || '';
+    const finalPartnerId = selectedProvider === 'savvy' ? (partnerId || existing.rows[0].sms_partner_id || '') : '';
     if (!finalSender || (!apiKey && !savedKey)) {
       return res.status(400).json({ error: 'API key and sender ID are required before saving SMS provider' });
+    }
+    if (selectedProvider === 'savvy' && !finalPartnerId) {
+      return res.status(400).json({ error: 'Savvy Partner ID is required before saving SMS provider' });
     }
 
     const result = await db.query(
@@ -586,10 +594,11 @@ router.put('/communication', async (req, res) => {
        SET sms_provider = $1,
            sms_api_key = COALESCE(NULLIF($2, ''), sms_api_key),
            sms_sender_id = $3,
+           sms_partner_id = $4,
            sms_configured_at = NOW()
-       WHERE id = $4
-       RETURNING sms_provider, sms_api_key, sms_sender_id, sms_configured_at`,
-      [selectedProvider, apiKey, finalSender, targetClient]
+       WHERE id = $5
+       RETURNING sms_provider, sms_api_key, sms_sender_id, sms_partner_id, sms_configured_at`,
+      [selectedProvider, apiKey, finalSender, finalPartnerId || null, targetClient]
     );
 
     res.json({ success: true, ...safeCommunicationConfig(result.rows[0]) });
@@ -792,7 +801,7 @@ router.post('/communication/test', async (req, res) => {
   try {
     await ensureCommunicationColumns();
     const existing = await db.query(
-      `SELECT sms_provider, sms_api_key, sms_sender_id FROM clients WHERE id = $1`,
+      `SELECT sms_provider, sms_api_key, sms_sender_id, sms_partner_id FROM clients WHERE id = $1`,
       [targetClient]
     );
     if (existing.rows.length === 0) {
@@ -802,10 +811,13 @@ router.post('/communication/test', async (req, res) => {
     const row = existing.rows[0];
     const apiKey = submittedKey || row.sms_api_key || '';
     const senderId = submittedSender || row.sms_sender_id || '';
-    await sendSMS(phone, 'Nexa SMS provider test. Your Blessed Text configuration is working.', {
+    const partnerId = String(req.body.partner_id || '').trim() || row.sms_partner_id || '';
+    const providerLabel = selectedProvider === 'talksasa' ? 'Talk Sasa' : selectedProvider === 'savvy' ? 'Savvy Bulk SMS' : 'Blessed Text';
+    await sendSMS(phone, `Nexa SMS provider test. Your ${providerLabel} configuration is working.`, {
       provider: selectedProvider,
       apiKey,
       senderId,
+      partnerId,
     });
     res.json({ success: true, sent_to: phone });
   } catch (err) {

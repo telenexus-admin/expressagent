@@ -31,6 +31,7 @@ const schema = `
     sms_provider VARCHAR(40),
     sms_api_key TEXT,
     sms_sender_id VARCHAR(80),
+    sms_partner_id VARCHAR(80),
     sms_configured_at TIMESTAMP WITH TIME ZONE,
     email_provider VARCHAR(40),
     email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
@@ -63,6 +64,7 @@ const schema = `
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_partner_id VARCHAR(80);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_provider VARCHAR(40);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE;

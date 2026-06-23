@@ -3,19 +3,20 @@ const db = require('../db');
 
 const BLESSED_DEFAULT_URL = 'https://sms.blessedtexts.com/api/sms/v1/sendsms';
 const SAVVY_DEFAULT_URL = 'https://sms.savvybulksms.com/api/services/sendsms/';
-const SMS_PROVIDERS = ['blessed', 'blessed_text', 'savvy'];
+const TALK_SASA_DEFAULT_URL = 'https://api.talksasa.com/v1/sms/send';
+const SMS_PROVIDERS = ['blessed', 'blessed_text', 'savvy', 'talksasa', 'talk_sasa'];
 const SAVVY_MARKER = 'savvy__';
 let schemaPromise = null;
 
 async function ensureSmsSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
-      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(20) NOT NULL DEFAULT 'blessed'`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40) NOT NULL DEFAULT 'blessed'`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_partner_id VARCHAR(80)`);
       await db.query(`ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_sms_provider_check`);
-      await db.query(`ALTER TABLE clients ADD CONSTRAINT clients_sms_provider_check CHECK (sms_provider IN ('blessed', 'blessed_text', 'savvy'))`);
+      await db.query(`ALTER TABLE clients ADD CONSTRAINT clients_sms_provider_check CHECK (sms_provider IN ('blessed', 'blessed_text', 'savvy', 'talksasa', 'talk_sasa'))`);
     })().catch((err) => {
       schemaPromise = null;
       throw err;
@@ -32,6 +33,7 @@ function normalizeProvider(value) {
   const provider = String(value || 'blessed').trim().toLowerCase();
   if (provider === 'blessedtexts' || provider === 'blessed_text') return 'blessed';
   if (provider === 'savvy_bulk_sms' || provider === 'savvybulksms') return 'savvy';
+  if (provider === 'talk_sasa' || provider === 'talk-sasa' || provider === 'talk sasa') return 'talksasa';
   return SMS_PROVIDERS.includes(provider) ? provider : 'blessed';
 }
 
@@ -111,6 +113,10 @@ function hasSMSConfig(options = {}) {
     return Boolean(config.sms_api_key || process.env.SAVVY_API_KEY)
       && Boolean(config.sms_partner_id || process.env.SAVVY_PARTNER_ID)
       && Boolean(config.sms_sender_id || process.env.SAVVY_SENDER_ID);
+  }
+  if (config.sms_provider === 'talksasa') {
+    return Boolean(config.sms_api_key || process.env.TALK_SASA_API_TOKEN || process.env.TALKSASA_API_TOKEN)
+      && Boolean(config.sms_sender_id || process.env.TALK_SASA_SENDER_ID || process.env.TALKSASA_SENDER_ID);
   }
   return Boolean(config.sms_api_key || process.env.BLESSED_API_KEY)
     && Boolean(config.sms_sender_id || process.env.BLESSED_SENDER_ID);
@@ -203,6 +209,55 @@ async function sendSavvySms(phone, message, config = {}) {
   return response.data;
 }
 
+function genericProviderAccepted(data) {
+  if (!data || typeof data !== 'object') return true;
+  if (data.success === false || data.status === false || data.ok === false) return false;
+  const status = String(data.status || data.code || data.status_code || '').toLowerCase();
+  return !/fail|error|invalid|reject/.test(status);
+}
+
+function genericProviderError(data) {
+  if (!data || typeof data !== 'object') return 'SMS provider rejected the message';
+  return data.message || data.error || data.error_message || data.description || JSON.stringify(data);
+}
+
+async function sendTalkSasaSms(phone, message, config = {}) {
+  const apiToken = config.sms_api_key || process.env.TALK_SASA_API_TOKEN || process.env.TALKSASA_API_TOKEN;
+  const senderId = config.sms_sender_id || process.env.TALK_SASA_SENDER_ID || process.env.TALKSASA_SENDER_ID;
+  const url = process.env.TALK_SASA_API_URL || process.env.TALKSASA_API_URL || TALK_SASA_DEFAULT_URL;
+
+  if (!apiToken || !senderId) {
+    throw new Error('Talk Sasa is not configured: API token and Sender ID are required');
+  }
+
+  const response = await axios.post(
+    url,
+    {
+      sender_id: senderId,
+      sender: senderId,
+      from: senderId,
+      recipient: phone,
+      phone,
+      mobile: phone,
+      to: phone,
+      message: String(message),
+    },
+    {
+      headers: {
+        Authorization: `Bearer ${apiToken}`,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+      },
+      timeout: 15000,
+    }
+  );
+
+  if (!genericProviderAccepted(response.data)) {
+    throw new Error(genericProviderError(response.data));
+  }
+  return response.data;
+}
+
 async function sendOne(phone, message, explicitConfig) {
   const cleanPhone = normalizePhone(phone);
   if (!cleanPhone) throw new Error('No recipient phone number');
@@ -214,6 +269,9 @@ async function sendOne(phone, message, explicitConfig) {
 
   if (provider === 'savvy') {
     return sendSavvySms(cleanPhone, message, config);
+  }
+  if (provider === 'talksasa') {
+    return sendTalkSasaSms(cleanPhone, message, config);
   }
   return sendBlessedSms(cleanPhone, message, config);
 }
@@ -246,4 +304,5 @@ module.exports = {
   parseSavvySender,
   BLESSED_DEFAULT_URL,
   SAVVY_DEFAULT_URL,
+  TALK_SASA_DEFAULT_URL,
 };

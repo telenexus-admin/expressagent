@@ -4,6 +4,7 @@ import api from '../utils/api';
 const SMS_PROVIDERS = [
   { value: 'blessed_text', label: 'Blessed Text' },
   { value: 'savvy', label: 'Savvy Bulk SMS' },
+  { value: 'talksasa', label: 'Talk Sasa' },
 ];
 
 const SAVVY_MARKER = 'savvy__';
@@ -18,6 +19,11 @@ const PROVIDER_COPY = {
     description: 'Configure SMS delivery for alerts, reports and customer notifications.',
     keyPlaceholder: 'Paste Savvy API key',
     senderPlaceholder: 'Enter approved shortcode or Sender ID',
+  },
+  talksasa: {
+    description: 'Configure Talk Sasa SMS delivery for alerts, reports and customer notifications.',
+    keyPlaceholder: 'Paste Talk Sasa API token',
+    senderPlaceholder: 'Enter approved Talk Sasa Sender ID',
   },
 };
 
@@ -61,13 +67,14 @@ function parseSavvySender(value) {
 function communicationPayload(form) {
   if (form.provider === 'savvy') {
     return {
-      provider: 'blessed_text',
-      sender_id: `${SAVVY_MARKER}${form.partner_id.trim()}__${form.sender_id.trim()}`,
+      provider: 'savvy',
+      sender_id: form.sender_id.trim(),
+      partner_id: form.partner_id.trim(),
       api_key: form.api_key,
     };
   }
   return {
-    provider: 'blessed_text',
+    provider: form.provider,
     sender_id: form.sender_id.trim(),
     api_key: form.api_key,
   };
@@ -181,9 +188,9 @@ export default function Communication() {
     const savvy = parseSavvySender(data.sender_id);
     setForm((current) => ({
       ...current,
-      provider: savvy ? 'savvy' : 'blessed_text',
+      provider: savvy ? 'savvy' : (data.provider || 'blessed_text'),
       sender_id: savvy ? savvy.senderId : (data.sender_id || ''),
-      partner_id: savvy ? savvy.partnerId : '',
+      partner_id: savvy ? savvy.partnerId : (data.partner_id || ''),
       api_key: '',
       has_api_key: Boolean(data.has_api_key),
     }));
@@ -344,7 +351,7 @@ export default function Communication() {
     try {
       const { data } = await api.put('/settings/communication', communicationPayload(form));
       applyLoadedConfig(data);
-      setStatus({ type: 'success', message: `${form.provider === 'savvy' ? 'Savvy Bulk SMS' : 'Blessed Text'} provider saved.` });
+      setStatus({ type: 'success', message: `${form.provider === 'talksasa' ? 'Talk Sasa' : form.provider === 'savvy' ? 'Savvy Bulk SMS' : 'Blessed Text'} provider saved.` });
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to save SMS provider.' });
     } finally {
@@ -438,6 +445,16 @@ export default function Communication() {
               </div>
 
               <div className="rounded-2xl border border-[#e5e8f5] bg-[#fbfcff] p-4">
+                <h3 className="text-sm font-black text-[#0d1438]">Talk Sasa</h3>
+                <ul className="mt-3 space-y-2 text-sm font-semibold leading-6 text-[#626b95]">
+                  <li>Log in to your Talk Sasa dashboard.</li>
+                  <li>Copy the API token from the API or developer section.</li>
+                  <li>Use the approved Sender ID assigned to your account.</li>
+                  <li>Save the credentials here, then send a test SMS.</li>
+                </ul>
+              </div>
+
+              <div className="rounded-2xl border border-[#e5e8f5] bg-[#fbfcff] p-4">
                 <h3 className="text-sm font-black text-[#0d1438]">cPanel / Domain Email</h3>
                 <ul className="mt-3 space-y-2 text-sm font-semibold leading-6 text-[#626b95]">
                   <li>Open cPanel, then go to Email Accounts.</li>
@@ -521,7 +538,7 @@ export default function Communication() {
             )}
 
             <div className="mt-6">
-              <FieldShell label="API Key" icon="key">
+              <FieldShell label={form.provider === 'talksasa' ? 'API Token' : 'API Key'} icon="key">
                 <input
                   type={showKey ? 'text' : 'password'}
                   value={form.api_key}

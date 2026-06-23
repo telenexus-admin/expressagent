@@ -24,9 +24,6 @@ function normalizeEmail(value) {
 }
 
 function operatorEmailConfig(body = {}, current = {}) {
-  const provider = ['smtp', 'resend'].includes(String(body.email_provider || current.email_provider || 'smtp').toLowerCase())
-    ? String(body.email_provider || current.email_provider || 'smtp').toLowerCase()
-    : 'smtp';
   const host = clean(body.email_smtp_host) || current.email_smtp_host || '';
   const port = Number(body.email_smtp_port || current.email_smtp_port || 465);
   const fromAddress = normalizeEmail(body.email_from_address || current.email_from_address);
@@ -34,7 +31,7 @@ function operatorEmailConfig(body = {}, current = {}) {
   const username = clean(body.email_smtp_username) || current.email_smtp_username || '';
   const password = clean(body.email_smtp_password) || '';
   return {
-    email_provider: provider,
+    email_provider: 'resend',
     email_enabled: body.email_enabled === undefined ? current.email_enabled === true : Boolean(body.email_enabled),
     email_from_name: clean(body.email_from_name) || current.email_from_name || 'Nexa',
     email_from_address: fromAddress,
@@ -52,21 +49,12 @@ function validateOperatorEmailConfig(config, hasSavedPassword) {
   if (!config.email_enabled) return null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email_from_address)) return 'Enter a valid from email address';
   if (config.email_reply_to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email_reply_to)) return 'Enter a valid reply-to email address';
-  if (config.email_provider === 'resend') {
-    if (!config.email_resend_api_key && !hasSavedPassword) return 'Resend API key is required';
-    return null;
-  }
-  if (!config.email_smtp_host) return 'SMTP host is required';
-  if (!Number.isInteger(config.email_smtp_port) || config.email_smtp_port < 1 || config.email_smtp_port > 65535) return 'Enter a valid SMTP port';
-  if (!config.email_smtp_username) return 'SMTP username is required';
-  if (!config.email_smtp_password && !hasSavedPassword) return 'SMTP password is required';
+  if (!config.email_resend_api_key && !hasSavedPassword) return 'Resend API key is required';
   return null;
 }
 
 function hasSavedEmailSecret(config, current = {}) {
-  return config.email_provider === 'resend'
-    ? Boolean(current.email_resend_api_key)
-    : Boolean(current.email_smtp_password);
+  return Boolean(current.email_resend_api_key);
 }
 
 function withTimeout(promise, ms, message) {
@@ -179,7 +167,7 @@ router.post('/email-test', [
     const config = operatorEmailConfig({ ...req.body, email_enabled: true }, current);
     config.email_smtp_password = config.email_smtp_password || current.email_smtp_password;
     config.email_resend_api_key = config.email_resend_api_key || current.email_resend_api_key;
-    const validation = validateOperatorEmailConfig(config, config.email_provider === 'resend' ? Boolean(config.email_resend_api_key) : Boolean(config.email_smtp_password));
+    const validation = validateOperatorEmailConfig(config, Boolean(config.email_resend_api_key));
     if (validation) return res.status(400).json({ error: validation });
     const result = await withTimeout(
       testEmailConfig(config, normalizeEmail(req.body.to)),

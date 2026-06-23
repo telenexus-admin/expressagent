@@ -13,6 +13,7 @@ import expressnetLogo from '../assets/expressnetLogo';
 
 function canAccess(admin, permission) {
   if (!admin) return false;
+  if (permission === 'inventory') return true;
   if (permission === 'documentation') return true;
   if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;

@@ -61,6 +61,7 @@ const ALL_PERMISSIONS = [
 
 function hasPermission(admin, permission) {
   if (!admin) return false;
+  if (permission === 'inventory') return true;
   if (permission === 'documentation') return true;
   if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;

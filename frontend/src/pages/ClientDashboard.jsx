@@ -58,6 +58,7 @@ const ChevronDownIcon = ({ className = 'h-5 w-5' }) => (
 
 function canAccess(admin, permission) {
   if (!admin) return false;
+  if (permission === 'inventory') return true;
   if (permission === 'documentation') return true;
   if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;

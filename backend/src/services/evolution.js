@@ -25,6 +25,7 @@ async function ensureOperatorAgentTables() {
       agent_name VARCHAR(80) NOT NULL DEFAULT 'Nexa',
       system_prompt TEXT NOT NULL,
       owner_phone VARCHAR(50),
+      email_provider VARCHAR(40) NOT NULL DEFAULT 'smtp',
       email_enabled BOOLEAN NOT NULL DEFAULT FALSE,
       email_from_name VARCHAR(160),
       email_from_address VARCHAR(180),
@@ -34,6 +35,7 @@ async function ensureOperatorAgentTables() {
       email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE,
       email_smtp_username VARCHAR(180),
       email_smtp_password TEXT,
+      email_resend_api_key TEXT,
       email_configured_at TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
@@ -70,6 +72,7 @@ async function ensureOperatorAgentTables() {
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS call_schedule_requested_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS call_schedule_notified_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE operator_conversations ADD COLUMN IF NOT EXISTS internal_note TEXT`);
+  await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_provider VARCHAR(40) NOT NULL DEFAULT 'smtp'`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_from_name VARCHAR(160)`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_from_address VARCHAR(180)`);
@@ -79,6 +82,7 @@ async function ensureOperatorAgentTables() {
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_smtp_username VARCHAR(180)`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_smtp_password TEXT`);
+  await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_resend_api_key TEXT`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_configured_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`ALTER TABLE operator_conversations DROP CONSTRAINT IF EXISTS operator_conversations_reply_mode_check`);
   await db.query(`ALTER TABLE operator_conversations ADD CONSTRAINT operator_conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
@@ -102,8 +106,10 @@ async function getOperatorSettings({ includeKey = false } = {}) {
   if (!includeKey && settings) {
     settings.evolution_api_key_configured = Boolean(settings.evolution_api_key);
     settings.email_smtp_password_configured = Boolean(settings.email_smtp_password);
+    settings.email_resend_api_key_configured = Boolean(settings.email_resend_api_key);
     delete settings.evolution_api_key;
     delete settings.email_smtp_password;
+    delete settings.email_resend_api_key;
   }
   return settings;
 }

@@ -24,6 +24,9 @@ function normalizeEmail(value) {
 }
 
 function operatorEmailConfig(body = {}, current = {}) {
+  const provider = ['smtp', 'resend'].includes(String(body.email_provider || current.email_provider || 'smtp').toLowerCase())
+    ? String(body.email_provider || current.email_provider || 'smtp').toLowerCase()
+    : 'smtp';
   const host = clean(body.email_smtp_host) || current.email_smtp_host || '';
   const port = Number(body.email_smtp_port || current.email_smtp_port || 465);
   const fromAddress = normalizeEmail(body.email_from_address || current.email_from_address);
@@ -31,6 +34,7 @@ function operatorEmailConfig(body = {}, current = {}) {
   const username = clean(body.email_smtp_username) || current.email_smtp_username || '';
   const password = clean(body.email_smtp_password) || '';
   return {
+    email_provider: provider,
     email_enabled: body.email_enabled === undefined ? current.email_enabled === true : Boolean(body.email_enabled),
     email_from_name: clean(body.email_from_name) || current.email_from_name || 'Nexa',
     email_from_address: fromAddress,
@@ -40,6 +44,7 @@ function operatorEmailConfig(body = {}, current = {}) {
     email_smtp_secure: body.email_smtp_secure === undefined ? current.email_smtp_secure !== false : Boolean(body.email_smtp_secure),
     email_smtp_username: username,
     email_smtp_password: password,
+    email_resend_api_key: clean(body.email_resend_api_key) || '',
   };
 }
 
@@ -47,11 +52,21 @@ function validateOperatorEmailConfig(config, hasSavedPassword) {
   if (!config.email_enabled) return null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email_from_address)) return 'Enter a valid from email address';
   if (config.email_reply_to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email_reply_to)) return 'Enter a valid reply-to email address';
+  if (config.email_provider === 'resend') {
+    if (!config.email_resend_api_key && !hasSavedPassword) return 'Resend API key is required';
+    return null;
+  }
   if (!config.email_smtp_host) return 'SMTP host is required';
   if (!Number.isInteger(config.email_smtp_port) || config.email_smtp_port < 1 || config.email_smtp_port > 65535) return 'Enter a valid SMTP port';
   if (!config.email_smtp_username) return 'SMTP username is required';
   if (!config.email_smtp_password && !hasSavedPassword) return 'SMTP password is required';
   return null;
+}
+
+function hasSavedEmailSecret(config, current = {}) {
+  return config.email_provider === 'resend'
+    ? Boolean(current.email_resend_api_key)
+    : Boolean(current.email_smtp_password);
 }
 
 function withTimeout(promise, ms, message) {
@@ -85,6 +100,7 @@ router.put('/config', [
   body('agent_name').optional().isString().isLength({ max: 80 }),
   body('system_prompt').optional().isString().isLength({ min: 20 }),
   body('owner_phone').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter a valid owner phone number'),
+  body('email_provider').optional().isIn(['smtp', 'resend']),
   body('email_enabled').optional().isBoolean(),
   body('email_from_name').optional({ checkFalsy: true }).isString().isLength({ max: 160 }),
   body('email_from_address').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid from email address'),
@@ -94,6 +110,7 @@ router.put('/config', [
   body('email_smtp_secure').optional().isBoolean(),
   body('email_smtp_username').optional({ checkFalsy: true }).isString().isLength({ max: 180 }),
   body('email_smtp_password').optional({ checkFalsy: true }).isString(),
+  body('email_resend_api_key').optional({ checkFalsy: true }).isString(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -101,7 +118,7 @@ router.put('/config', [
     await ensureOperatorAgentTables();
     const current = await getOperatorSettings({ includeKey: true });
     const emailConfig = operatorEmailConfig(req.body, current);
-    const emailValidation = validateOperatorEmailConfig(emailConfig, Boolean(current.email_smtp_password));
+    const emailValidation = validateOperatorEmailConfig(emailConfig, hasSavedEmailSecret(emailConfig, current));
     if (emailValidation) return res.status(400).json({ error: emailValidation });
     const values = {
       enabled: req.body.enabled !== undefined ? Boolean(req.body.enabled) : current.enabled,
@@ -118,17 +135,19 @@ router.put('/config', [
     await db.query(
       `UPDATE operator_agent_settings SET enabled = $1, evolution_base_url = $2, evolution_instance = $3,
        evolution_api_key = $4, agent_name = $5, system_prompt = $6, owner_phone = $7,
-       email_enabled = $8, email_from_name = $9, email_from_address = $10, email_reply_to = $11,
-       email_smtp_host = $12, email_smtp_port = $13, email_smtp_secure = $14,
-       email_smtp_username = $15, email_smtp_password = COALESCE(NULLIF($16, ''), email_smtp_password),
-       email_configured_at = CASE WHEN $8 THEN NOW() ELSE email_configured_at END,
+       email_provider = $8, email_enabled = $9, email_from_name = $10, email_from_address = $11, email_reply_to = $12,
+       email_smtp_host = $13, email_smtp_port = $14, email_smtp_secure = $15,
+       email_smtp_username = $16, email_smtp_password = COALESCE(NULLIF($17, ''), email_smtp_password),
+       email_resend_api_key = COALESCE(NULLIF($18, ''), email_resend_api_key),
+       email_configured_at = CASE WHEN $9 THEN NOW() ELSE email_configured_at END,
        updated_at = NOW() WHERE id = 1`,
       [
         values.enabled, values.evolution_base_url, values.evolution_instance, values.evolution_api_key,
         values.agent_name, values.system_prompt, values.owner_phone,
-        emailConfig.email_enabled, emailConfig.email_from_name, emailConfig.email_from_address || null,
+        emailConfig.email_provider, emailConfig.email_enabled, emailConfig.email_from_name, emailConfig.email_from_address || null,
         emailConfig.email_reply_to || null, emailConfig.email_smtp_host || null, emailConfig.email_smtp_port || null,
         emailConfig.email_smtp_secure, emailConfig.email_smtp_username || null, emailConfig.email_smtp_password,
+        emailConfig.email_resend_api_key,
       ]
     );
     const saved = await getOperatorSettings();
@@ -141,6 +160,7 @@ router.put('/config', [
 
 router.post('/email-test', [
   body('to').isEmail().withMessage('Enter a valid test email address'),
+  body('email_provider').optional().isIn(['smtp', 'resend']),
   body('email_enabled').optional().isBoolean(),
   body('email_from_name').optional({ checkFalsy: true }).isString().isLength({ max: 160 }),
   body('email_from_address').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid from email address'),
@@ -150,6 +170,7 @@ router.post('/email-test', [
   body('email_smtp_secure').optional().isBoolean(),
   body('email_smtp_username').optional({ checkFalsy: true }).isString().isLength({ max: 180 }),
   body('email_smtp_password').optional({ checkFalsy: true }).isString(),
+  body('email_resend_api_key').optional({ checkFalsy: true }).isString(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
@@ -157,12 +178,13 @@ router.post('/email-test', [
     const current = await getOperatorSettings({ includeKey: true });
     const config = operatorEmailConfig({ ...req.body, email_enabled: true }, current);
     config.email_smtp_password = config.email_smtp_password || current.email_smtp_password;
-    const validation = validateOperatorEmailConfig(config, Boolean(config.email_smtp_password));
+    config.email_resend_api_key = config.email_resend_api_key || current.email_resend_api_key;
+    const validation = validateOperatorEmailConfig(config, config.email_provider === 'resend' ? Boolean(config.email_resend_api_key) : Boolean(config.email_smtp_password));
     if (validation) return res.status(400).json({ error: validation });
     const result = await withTimeout(
       testEmailConfig(config, normalizeEmail(req.body.to)),
       30000,
-      'SMTP test timed out after 30 seconds. Check the SMTP host, port, SSL/TLS setting, firewall, or mailbox password.'
+      'Email test timed out after 30 seconds. Check the provider settings, API key, domain verification, or network access.'
     );
     if (result.status !== 'sent') return res.status(400).json({ error: result.error || 'Test email failed' });
     res.json({ success: true, status: result.status, id: result.id || null });

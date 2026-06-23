@@ -1,7 +1,8 @@
 const axios = require('axios');
 const nodemailer = require('nodemailer');
 
-function isEmailConfigured() {
+function isEmailConfigured(client = null) {
+  if (client && (clientSmtpConfigured(client) || clientResendConfigured(client))) return true;
   return Boolean(
     (process.env.RESEND_API_KEY &&
       (process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_FROM_EMAIL)) ||
@@ -50,10 +51,20 @@ function emailBrand(client) {
 function clientSmtpConfigured(client = {}) {
   return Boolean(
     client.email_enabled &&
+    (client.email_provider || 'smtp') !== 'resend' &&
     client.email_smtp_host &&
     client.email_smtp_port &&
     client.email_smtp_username &&
     client.email_smtp_password &&
+    client.email_from_address
+  );
+}
+
+function clientResendConfigured(client = {}) {
+  return Boolean(
+    client.email_enabled &&
+    client.email_provider === 'resend' &&
+    client.email_resend_api_key &&
     client.email_from_address
   );
 }
@@ -121,15 +132,15 @@ async function sendViaSmtp(client, payload) {
   }
 }
 
-async function sendViaResend(payload) {
-  if (!isEmailConfigured()) {
-    return { status: 'failed', error: 'RESEND_API_KEY or EMAIL_FROM_ADDRESS is not configured on the server' };
+async function sendViaResend(payload, apiKey = process.env.RESEND_API_KEY) {
+  if (!apiKey) {
+    return { status: 'failed', error: 'Resend API key is not configured' };
   }
 
   try {
     const response = await axios.post('https://api.resend.com/emails', payload, {
       headers: {
-        Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
       },
       timeout: 20000,
@@ -144,16 +155,29 @@ async function sendViaResend(payload) {
 }
 
 async function sendEmail(client, payload) {
+  if (clientResendConfigured(client)) {
+    return sendViaResend(payload, client.email_resend_api_key);
+  }
   if (clientSmtpConfigured(client) || serverSmtpConfigured()) {
     return sendViaSmtp(client, payload);
   }
-  return sendViaResend(payload);
+  return sendViaResend(payload, process.env.RESEND_API_KEY);
 }
 
 async function testEmailConfig(config, recipient) {
   const company = config.email_from_name || 'Nexa';
   const address = config.email_from_address;
   const replyTo = config.email_reply_to || address;
+  if (config.email_provider === 'resend') {
+    return sendViaResend({
+      from: `${company} <${address}>`,
+      to: [recipient],
+      reply_to: replyTo,
+      subject: 'Nexa email configuration test',
+      text: 'Your Nexa Resend email configuration is working.',
+      html: '<div style="font-family:Arial,sans-serif;color:#172033"><h2>Nexa Resend email configuration test</h2><p>Your Resend email configuration is working.</p></div>',
+    }, config.email_resend_api_key);
+  }
   return sendViaSmtp(config, {
     from: `${company} <${address}>`,
     to: [recipient],
@@ -200,7 +224,7 @@ async function sendInstallationConfirmedEmail(client, details) {
 
 async function sendHighPriorityTicketEmail(client, ticket) {
   if (!client.contact_email) return { status: 'skipped', error: 'Client contact email is not set' };
-  if (!isEmailConfigured()) return { status: 'skipped', error: 'Email provider is not configured on the server' };
+  if (!isEmailConfigured(client)) return { status: 'skipped', error: 'Email provider is not configured' };
 
   const { company, replyTo, from } = emailBrand(client);
   const link = String(process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
@@ -237,7 +261,7 @@ async function sendHighPriorityTicketEmail(client, ticket) {
 
 async function sendWorkflowEmployeeEmail(client, employee, details) {
   if (!employee?.email) return { status: 'skipped', error: 'Assigned employee has no email address' };
-  if (!isEmailConfigured()) return { status: 'skipped', error: 'Email provider is not configured on the server' };
+  if (!isEmailConfigured(client)) return { status: 'skipped', error: 'Email provider is not configured' };
 
   const { company, replyTo, from } = emailBrand(client);
   const subject = details.subject || `New workflow alert - ${company}`;

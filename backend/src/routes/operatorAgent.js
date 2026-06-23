@@ -54,6 +54,14 @@ function validateOperatorEmailConfig(config, hasSavedPassword) {
   return null;
 }
 
+function withTimeout(promise, ms, message) {
+  let timeout;
+  const timer = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
+}
+
 function webhookUrl(req, secret) {
   const publicBase = String(process.env.PUBLIC_BACKEND_URL || process.env.FRONTEND_URL || `${req.protocol}://${req.get('host')}`).replace(/\/$/, '');
   return `${publicBase}/webhook/evolution/nexa?token=${encodeURIComponent(secret)}`;
@@ -151,7 +159,11 @@ router.post('/email-test', [
     config.email_smtp_password = config.email_smtp_password || current.email_smtp_password;
     const validation = validateOperatorEmailConfig(config, Boolean(config.email_smtp_password));
     if (validation) return res.status(400).json({ error: validation });
-    const result = await testEmailConfig(config, normalizeEmail(req.body.to));
+    const result = await withTimeout(
+      testEmailConfig(config, normalizeEmail(req.body.to)),
+      30000,
+      'SMTP test timed out after 30 seconds. Check the SMTP host, port, SSL/TLS setting, firewall, or mailbox password.'
+    );
     if (result.status !== 'sent') return res.status(400).json({ error: result.error || 'Test email failed' });
     res.json({ success: true, status: result.status, id: result.id || null });
   } catch (err) {

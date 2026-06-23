@@ -8,6 +8,7 @@ const { notifyClientAdmins } = require('../services/pushNotifications');
 const { sendSMS } = require('../services/sms');
 const { sendWorkflowEmployeeEmail } = require('../services/email');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
@@ -19,6 +20,7 @@ const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha',
 const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
 const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
 const INSTALL_RE = /\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/i;
+const INVOICE_RE = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 
 function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
@@ -454,6 +456,23 @@ router.post('/client/:clientId', async (req, res) => {
         }));
         return;
       }
+    }
+
+    if (!incoming.isImage && INVOICE_RE.test(userText)) {
+      try {
+        const result = await invoiceRoutes.createAndSendCustomerInvoice({
+          client,
+          customerPhone: incoming.phone,
+          customerName: conversation.customer_name,
+          messageText: userText,
+          req,
+        });
+        await reply(client, conversation.id, incoming.phone, result.reply, replyAsVoice);
+      } catch (err) {
+        console.error(`[evo client ${client.id}] Invoice auto-generation failed for ${incoming.phone}:`, safeError(err));
+        await reply(client, conversation.id, incoming.phone, 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.', replyAsVoice);
+      }
+      return;
     }
 
     if (!incoming.isImage) {

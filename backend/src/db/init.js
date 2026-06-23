@@ -177,6 +177,8 @@ const schema = `
     client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
     company_name VARCHAR(180),
     logo_url TEXT,
+    logo_mime_type VARCHAR(100),
+    logo_data BYTEA,
     phone VARCHAR(80),
     email VARCHAR(180),
     address TEXT,
@@ -188,9 +190,15 @@ const schema = `
     signature_name VARCHAR(160),
     signature_title VARCHAR(120),
     signature_image_url TEXT,
+    signature_mime_type VARCHAR(100),
+    signature_data BYTEA,
     terms TEXT,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
+  ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS logo_mime_type VARCHAR(100);
+  ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS logo_data BYTEA;
+  ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS signature_mime_type VARCHAR(100);
+  ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS signature_data BYTEA;
 
   CREATE TABLE IF NOT EXISTS invoice_products (
     id SERIAL PRIMARY KEY,

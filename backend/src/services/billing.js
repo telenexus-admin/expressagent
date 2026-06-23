@@ -342,6 +342,61 @@ function paymentReply(data) {
   return `Payment status: ${status}.\nAmount: ${amount}.\nMethod: ${method}.\nPaid at: ${paidAt}.${recharge}`;
 }
 
+function invoiceCustomerFromStatus(data, fallback = {}) {
+  if (!data) return null;
+  const plan = data.plan || data.service || fallback.plan || '';
+  const price = Number(data.price || data.amount || data.package_price || data.plan_price || fallback.price || 0);
+  return {
+    name: data.fullname || data.name || data.customer_name || data.username || fallback.name || '',
+    phone: compactPhone(data.phone || fallback.phone),
+    email: data.email || '',
+    address: [data.address, data.area, data.location].filter(Boolean).join(', '),
+    account: data.account || data.username || '',
+    plan,
+    price: Number.isFinite(price) && price > 0 ? Math.round(price * 100) / 100 : 0,
+    expiry: data.expiration || data.expiry || data.expire_date || '',
+    status: data.status || '',
+    raw: data,
+  };
+}
+
+async function lookupInvoiceCustomer({ clientId, query, customerPhone }) {
+  const config = await loadClientBillingConfig(clientId);
+  if (!canUseConfig(config)) return { success: false, reason: 'not_configured', error: 'Billing API is not configured' };
+
+  const text = String(query || '').trim();
+  const keys = extractLookupKeys({ customerPhone, messageText: text });
+  const attempts = [];
+  const phone = compactPhone(text) || keys.phone || compactPhone(customerPhone);
+  if (phone) attempts.push({ phone });
+  if (keys.account) attempts.push({ account: keys.account });
+  if (keys.username) attempts.push({ username: keys.username });
+  if (text && !phone && !keys.account && !keys.username) {
+    attempts.push({ username: text }, { account: text }, { name: text }, { query: text });
+  }
+
+  const seen = new Set();
+  for (const params of attempts) {
+    const key = JSON.stringify(params);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const status = await get('v1/clients/status', params, config);
+    if (status.success && status.data) {
+      const customer = invoiceCustomerFromStatus(status.data, { name: text, phone });
+      if (customer?.plan && !customer.price) {
+        const plan = await get('v1/plans', { name: customer.plan }, config);
+        const plans = Array.isArray(plan.data?.plans) ? plan.data.plans : [];
+        const planData = plans[0] || plan.data?.plan || plan.data;
+        const amount = Number(planData?.price);
+        if (plan.success && Number.isFinite(amount) && amount > 0) customer.price = Math.round(amount * 100) / 100;
+      }
+      return { success: true, customer };
+    }
+  }
+
+  return { success: false, reason: 'not_found', error: 'Customer was not found in the billing system' };
+}
+
 function rechargeReply(data, meta = {}) {
   const status = data?.status || 'active';
   const plan = data?.plan_name || 'your package';
@@ -552,6 +607,7 @@ module.exports = {
   canUseBilling,
   canUseConfig,
   loadClientBillingConfig,
+  lookupInvoiceCustomer,
   lookupPaymentAccount,
   looksLikeBillingQuestion,
   testBillingConnection,

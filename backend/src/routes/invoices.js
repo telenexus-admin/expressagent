@@ -4,6 +4,8 @@ const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
+const { sendClientText } = require('../services/clientEvolution');
+const { lookupInvoiceCustomer } = require('../services/billing');
 
 const router = express.Router();
 
@@ -25,6 +27,22 @@ function cleanText(value, max = 500) {
   return String(value || '').trim().slice(0, max);
 }
 
+function cleanDataUri(value, allowed = /^image\/(png|jpe?g|webp)$/i) {
+  const raw = String(value || '').trim();
+  if (!raw) return { data: null, mime: null };
+  const match = raw.match(/^data:([^;,]+);base64,(.+)$/);
+  if (!match || !allowed.test(match[1])) return { data: null, mime: null };
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > 2 * 1024 * 1024) throw new Error('Uploaded image must be 2 MB or smaller');
+  return { data: buffer, mime: match[1].toLowerCase() };
+}
+
+function dataUrl(data, mimeType) {
+  if (!data || !mimeType) return '';
+  const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+  return `data:${mimeType};base64,${buffer.toString('base64')}`;
+}
+
 function resolveTargetClient(req, res) {
   if (req.scope.clientId) return req.scope.clientId;
   res.status(400).json({ error: 'Select a client before managing invoices' });
@@ -39,6 +57,8 @@ async function ensureInvoiceSchema() {
           client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
           company_name VARCHAR(180),
           logo_url TEXT,
+          logo_mime_type VARCHAR(100),
+          logo_data BYTEA,
           phone VARCHAR(80),
           email VARCHAR(180),
           address TEXT,
@@ -50,6 +70,8 @@ async function ensureInvoiceSchema() {
           signature_name VARCHAR(160),
           signature_title VARCHAR(120),
           signature_image_url TEXT,
+          signature_mime_type VARCHAR(100),
+          signature_data BYTEA,
           terms TEXT,
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         );
@@ -105,6 +127,10 @@ async function ensureInvoiceSchema() {
         CREATE INDEX IF NOT EXISTS idx_invoices_client_due ON invoices(client_id, status, due_date DESC);
         CREATE INDEX IF NOT EXISTS idx_invoice_items_invoice ON invoice_items(invoice_id);
       `);
+      await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS logo_mime_type VARCHAR(100)`);
+      await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS logo_data BYTEA`);
+      await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS signature_mime_type VARCHAR(100)`);
+      await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS signature_data BYTEA`);
     })().catch((err) => {
       schemaReady = null;
       throw err;
@@ -151,7 +177,8 @@ function calculateItems(items = [], discountAmount = 0) {
 
 async function loadInvoice(clientId, invoiceId) {
   const invoice = await db.query(
-    `SELECT i.*, c.business_name, c.name AS client_name, c.meta_phone_number_id, c.meta_access_token
+    `SELECT i.*, c.business_name, c.name AS client_name, c.meta_phone_number_id, c.meta_access_token,
+            c.evolution_instance_name
      FROM invoices i
      JOIN clients c ON c.id = i.client_id
      WHERE i.client_id = $1 AND i.id = $2`,
@@ -180,6 +207,34 @@ function invoiceMessage(invoice, url) {
     `View invoice: ${url}`,
     'Thank you.',
   ].filter(Boolean).join('\n');
+}
+
+async function sendInvoiceNotice(client, phone, message) {
+  if (client.evolution_instance_name) {
+    await sendClientText(client, phone, message);
+    return;
+  }
+  if (!client.meta_phone_number_id || !client.meta_access_token) {
+    throw new Error('WhatsApp credentials are not configured for this client');
+  }
+  await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phone, message);
+}
+
+function invoiceProfileResponse(row = {}) {
+  const { logo_data, signature_data, ...safe } = row;
+  return {
+    ...safe,
+    logo_data_url: dataUrl(logo_data, row.logo_mime_type),
+    signature_data_url: dataUrl(signature_data, row.signature_mime_type),
+  };
+}
+
+function invoiceProfileForRender(row = {}) {
+  return {
+    ...row,
+    logo_url: dataUrl(row.logo_data, row.logo_mime_type) || row.logo_url || '',
+    signature_image_url: dataUrl(row.signature_data, row.signature_mime_type) || row.signature_image_url || '',
+  };
 }
 
 function esc(value) {
@@ -219,7 +274,7 @@ router.get('/profile', async (req, res) => {
   try {
     await ensureInvoiceSchema();
     const result = await db.query(`SELECT * FROM invoice_profiles WHERE client_id = $1`, [clientId]);
-    res.json(result.rows[0] || {});
+    res.json(invoiceProfileResponse(result.rows[0] || {}));
   } catch (err) {
     console.error('GET /invoices/profile error:', err.message);
     res.status(500).json({ error: 'Server error' });
@@ -231,21 +286,49 @@ router.put('/profile', async (req, res) => {
   if (!clientId) return;
   try {
     await ensureInvoiceSchema();
-    const fields = ['company_name', 'logo_url', 'phone', 'email', 'address', 'website', 'payment_method', 'account_name', 'account_number', 'branch_name', 'signature_name', 'signature_title', 'signature_image_url', 'terms'];
+    const logo = cleanDataUri(req.body.logo_data_url);
+    const signature = cleanDataUri(req.body.signature_data_url);
+    const fields = ['company_name', 'phone', 'email', 'address', 'website', 'payment_method', 'account_name', 'account_number', 'branch_name', 'signature_name', 'signature_title', 'terms'];
     const values = fields.map((field) => cleanText(req.body[field], field.includes('url') ? 1000 : 500));
+    const logoSql = logo.data ? ', logo_data = $14, logo_mime_type = $15' : '';
+    const signatureSql = signature.data ? ', signature_data = $16, signature_mime_type = $17' : '';
+    const insertFields = ['client_id', ...fields, 'logo_data', 'logo_mime_type', 'signature_data', 'signature_mime_type'];
+    const insertValues = [
+      clientId,
+      ...values,
+      logo.data || null,
+      logo.mime || null,
+      signature.data || null,
+      signature.mime || null,
+    ];
     const result = await db.query(
-      `INSERT INTO invoice_profiles (${['client_id', ...fields].join(', ')})
-       VALUES ($1, ${fields.map((_, index) => `$${index + 2}`).join(', ')})
+      `INSERT INTO invoice_profiles (${insertFields.join(', ')})
+       VALUES (${insertFields.map((_, index) => `$${index + 1}`).join(', ')})
        ON CONFLICT (client_id) DO UPDATE SET
-         ${fields.map((field, index) => `${field} = $${index + 2}`).join(', ')},
+         ${fields.map((field, index) => `${field} = $${index + 2}`).join(', ')}
+         ${logoSql}
+         ${signatureSql},
          updated_at = NOW()
        RETURNING *`,
-      [clientId, ...values]
+      insertValues
     );
-    res.json(result.rows[0]);
+    res.json(invoiceProfileResponse(result.rows[0]));
   } catch (err) {
     console.error('PUT /invoices/profile error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/lookup-customer', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const result = await lookupInvoiceCustomer({ clientId, query: req.query.q });
+    if (!result.success) return res.status(404).json({ error: result.error || 'Customer not found' });
+    res.json(result.customer);
+  } catch (err) {
+    console.error('GET /invoices/lookup-customer error:', err.message);
+    res.status(500).json({ error: 'Customer lookup failed' });
   }
 });
 
@@ -384,6 +467,90 @@ router.post('/', [
   }
 });
 
+async function createInvoiceFromBillingCustomer({ clientId, customer, status = 'draft' }) {
+  const calculated = calculateItems([{
+    description: customer.plan ? `${customer.plan} internet package` : 'Internet service package',
+    quantity: 1,
+    unit_price: customer.price || 0,
+    tax_rate: 0,
+  }], 0);
+  if (!calculated.items.length || calculated.total <= 0) {
+    throw new Error('Could not create invoice because billing did not return a package price');
+  }
+  const invoiceNumber = await nextInvoiceNumber(clientId);
+  const dueDate = customer.expiry ? String(customer.expiry).slice(0, 10) : null;
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const invoice = await client.query(
+      `INSERT INTO invoices (
+         client_id, invoice_number, customer_name, customer_phone, customer_email, customer_address,
+         issue_date, due_date, status, subtotal, discount_amount, tax_amount, total_amount, notes, public_token
+       ) VALUES ($1,$2,$3,$4,$5,$6,CURRENT_DATE,$7::date,$8,$9,$10,$11,$12,$13,$14)
+       RETURNING *`,
+      [
+        clientId,
+        invoiceNumber,
+        cleanText(customer.name || customer.account || 'Customer', 180),
+        cleanPhone(customer.phone),
+        cleanText(customer.email, 180),
+        cleanText(customer.address, 500),
+        dueDate,
+        status,
+        calculated.subtotal,
+        calculated.discount,
+        calculated.taxAmount,
+        calculated.total,
+        cleanText(`Autogenerated from billing system. Account: ${customer.account || '-'}. Expiry: ${customer.expiry || '-'}.`, 1000),
+        crypto.randomBytes(24).toString('hex'),
+      ]
+    );
+    for (const item of calculated.items) {
+      await client.query(
+        `INSERT INTO invoice_items (invoice_id, product_id, description, quantity, unit_price, tax_rate, line_total)
+         VALUES ($1,$2,$3,$4,$5,$6,$7)`,
+        [invoice.rows[0].id, item.product_id, item.description, item.quantity, item.unit_price, item.tax_rate, item.line_total]
+      );
+    }
+    await client.query('COMMIT');
+    return loadInvoice(clientId, invoice.rows[0].id);
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+router.post('/autofill', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    await ensureInvoiceSchema();
+    const lookup = await lookupInvoiceCustomer({ clientId, query: req.body.query || req.body.customer_name || req.body.phone });
+    if (!lookup.success) return res.status(404).json({ error: lookup.error || 'Customer not found' });
+    const customer = lookup.customer;
+    res.json({
+      customer_name: customer.name,
+      customer_phone: customer.phone,
+      customer_email: customer.email,
+      customer_address: customer.address,
+      due_date: customer.expiry ? String(customer.expiry).slice(0, 10) : '',
+      notes: `Autofilled from billing. Account: ${customer.account || '-'}, status: ${customer.status || '-'}.`,
+      items: [{
+        description: customer.plan ? `${customer.plan} internet package` : 'Internet service package',
+        quantity: 1,
+        unit_price: customer.price || 0,
+        tax_rate: 0,
+      }],
+      billing_customer: customer,
+    });
+  } catch (err) {
+    console.error('POST /invoices/autofill error:', err.message);
+    res.status(500).json({ error: 'Could not autofill invoice from billing' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
@@ -407,11 +574,8 @@ router.post('/:id/send', async (req, res) => {
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
     const phone = cleanPhone(req.body.phone || invoice.customer_phone);
     if (!/^[0-9]{9,15}$/.test(phone)) return res.status(400).json({ error: 'A valid WhatsApp number is required' });
-    if (!invoice.meta_phone_number_id || !invoice.meta_access_token) {
-      return res.status(400).json({ error: 'WhatsApp credentials are not configured for this client' });
-    }
     const url = invoiceUrl(invoice.public_token, req);
-    await sendWhatsAppMessage(invoice.meta_phone_number_id, invoice.meta_access_token, phone, invoiceMessage(invoice, url));
+    await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url));
     await db.query(`UPDATE invoices SET status = CASE WHEN status = 'draft' THEN 'sent' ELSE status END, sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
     res.json({ success: true, sent_to: phone, public_url: url });
   } catch (err) {
@@ -427,6 +591,7 @@ router.post('/send-due/bulk', async (req, res) => {
     await ensureInvoiceSchema();
     const due = await db.query(
       `SELECT i.*, c.meta_phone_number_id, c.meta_access_token
+              , c.evolution_instance_name
        FROM invoices i JOIN clients c ON c.id = i.client_id
        WHERE i.client_id = $1 AND i.status IN ('draft', 'sent', 'overdue') AND i.due_date <= CURRENT_DATE
        ORDER BY i.due_date ASC LIMIT 50`,
@@ -441,7 +606,7 @@ router.post('/send-due/bulk', async (req, res) => {
       }
       try {
         const url = invoiceUrl(invoice.public_token, req);
-        await sendWhatsAppMessage(invoice.meta_phone_number_id, invoice.meta_access_token, phone, invoiceMessage(invoice, url));
+        await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url));
         await db.query(`UPDATE invoices SET status = 'overdue', sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
         results.push({ id: invoice.id, status: 'sent', phone });
       } catch (err) {
@@ -469,11 +634,39 @@ router.publicInvoiceHandler = async (req, res) => {
     const items = await db.query(`SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY id ASC`, [invoice.id]);
     const profile = await db.query(`SELECT * FROM invoice_profiles WHERE client_id = $1`, [invoice.client_id]);
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(renderPublicInvoice({ invoice: { ...invoice, items: items.rows }, profile: profile.rows[0] || {} }));
+    res.send(renderPublicInvoice({ invoice: { ...invoice, items: items.rows }, profile: invoiceProfileForRender(profile.rows[0] || {}) }));
   } catch (err) {
     console.error('GET /public/invoices/:token error:', err.message);
     res.status(500).send('Invoice unavailable');
   }
+};
+
+router.createAndSendCustomerInvoice = async function createAndSendCustomerInvoice({ client, customerPhone, customerName, messageText, req = null }) {
+  await ensureInvoiceSchema();
+  const lookup = await lookupInvoiceCustomer({
+    clientId: client.id,
+    query: messageText || customerPhone || customerName,
+    customerPhone,
+  });
+  if (!lookup.success) {
+    return {
+      success: false,
+      reply: 'I could not find your billing account yet. Please send your registered phone number, account number, or username so I can generate the invoice.',
+    };
+  }
+  const invoice = await createInvoiceFromBillingCustomer({ clientId: client.id, customer: lookup.customer, status: 'sent' });
+  const url = invoiceUrl(invoice.public_token, req);
+  const phone = cleanPhone(customerPhone || lookup.customer.phone);
+  if (!/^[0-9]{9,15}$/.test(phone)) {
+    return { success: false, reply: 'I found the account, but I need a valid WhatsApp number before sending the invoice.' };
+  }
+  await sendInvoiceNotice({ ...client, ...invoice }, phone, invoiceMessage(invoice, url));
+  return {
+    success: true,
+    invoice,
+    public_url: url,
+    reply: `I have generated invoice ${invoice.invoice_number} and sent it here. You can also view it here: ${url}`,
+  };
 };
 
 module.exports = router;

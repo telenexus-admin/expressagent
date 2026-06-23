@@ -16,6 +16,7 @@ const { sendClientText } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
@@ -370,6 +371,7 @@ const INSTALL_REGEX = new RegExp(
   ].join('|'),
   'i'
 );
+const INVOICE_REGEX = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 
 const WELCOME_MENU_ROWS = [
   {
@@ -793,6 +795,26 @@ router.post('/', async (req, res) => {
         }));
         return;
       }
+    }
+
+    if (!inboundIsImage && INVOICE_REGEX.test(normalized)) {
+      try {
+        const result = await invoiceRoutes.createAndSendCustomerInvoice({
+          client,
+          customerPhone: phoneNumber,
+          customerName: conversation.customer_name,
+          messageText,
+          req,
+        });
+        await deliverReply(client, phoneNumber, result.reply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, result.reply);
+      } catch (err) {
+        console.error(`[client ${client.id}] Invoice auto-generation failed for ${phoneNumber}:`, formatErr(err));
+        const reply = 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.';
+        await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, reply);
+      }
+      return;
     }
 
     if (!inboundIsImage && installationState !== 'collecting') {

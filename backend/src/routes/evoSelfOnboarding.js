@@ -44,6 +44,8 @@ function publicView(row) {
     otp_required: !row.phone_verified_at,
     otp_sent_at: row.phone_otp_sent_at,
     otp_expires_at: row.phone_otp_expires_at,
+    request_type: row.request_type || 'new_client',
+    agent_label: row.agent_label || null,
   };
 }
 
@@ -107,6 +109,9 @@ router.post(
     body('email').isEmail().normalizeEmail().withMessage('Enter a valid email address'),
     body('location').optional().trim().isLength({ max: 255 }),
     body('service_interest').optional().isIn(['customer_support', 'isp_support', 'sales_support', 'full_automation']),
+    body('request_type').optional().isIn(['new_client', 'additional_agent']),
+    body('parent_client_id').optional({ checkFalsy: true }).isInt({ min: 1 }),
+    body('agent_label').optional({ checkFalsy: true }).trim().isLength({ max: 80 }),
     body('consent_accepted').equals('true').withMessage('You must agree before connecting WhatsApp'),
   ],
   async (req, res) => {
@@ -119,11 +124,18 @@ router.post(
       await ensureEvoOnboardingTable();
       const sessionToken = makeSessionToken();
       const instanceName = makeInstanceName(req.body.business_name);
+      const requestType = req.body.request_type === 'additional_agent' && req.body.parent_client_id ? 'additional_agent' : 'new_client';
+      const parentClientId = requestType === 'additional_agent' ? Number(req.body.parent_client_id) : null;
+      if (parentClientId) {
+        const parent = await db.query(`SELECT id FROM clients WHERE id = $1 AND status = 'active' LIMIT 1`, [parentClientId]);
+        if (!parent.rows[0]) return res.status(400).json({ error: 'The selected dashboard could not be linked to this agent request.' });
+      }
       const insert = await db.query(
         `INSERT INTO evo_client_onboardings
           (business_name, owner_name, phone, email, location, service_interest, consent_accepted,
-           session_token, instance_name, status, connection_method, connection_state)
-         VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8, 'provisioning', 'qr', 'otp_pending')
+           session_token, instance_name, status, connection_method, connection_state,
+           request_type, parent_client_id, agent_label)
+         VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8, 'provisioning', 'qr', 'otp_pending', $9, $10, $11)
          RETURNING *`,
         [
           req.body.business_name.trim(),
@@ -134,6 +146,9 @@ router.post(
           req.body.service_interest || 'customer_support',
           sessionToken,
           instanceName,
+          requestType,
+          parentClientId,
+          String(req.body.agent_label || '').trim() || null,
         ]
       );
       const row = insert.rows[0];

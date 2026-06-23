@@ -89,6 +89,36 @@ function VoiceOrb({ voiceId }) {
   );
 }
 
+const AGENT_STATUS_COPY = {
+  configured: ['Configured', 'border-slate-200 bg-slate-50 text-slate-600'],
+  provisioning: ['OTP pending', 'border-amber-100 bg-amber-50 text-amber-700'],
+  pending_qr: ['Waiting for WhatsApp link', 'border-blue-100 bg-blue-50 text-blue-700'],
+  connected: ['Connected, awaiting review', 'border-indigo-100 bg-indigo-50 text-indigo-700'],
+  reviewed: ['Reviewed by onboarding team', 'border-purple-100 bg-purple-50 text-purple-700'],
+  active: ['Active', 'border-emerald-100 bg-emerald-50 text-emerald-700'],
+  failed: ['Needs attention', 'border-red-100 bg-red-50 text-red-700'],
+};
+
+function AgentStatusCard({ agent }) {
+  const [label, className] = AGENT_STATUS_COPY[agent.status] || [agent.status || 'Pending', 'border-slate-200 bg-slate-50 text-slate-600'];
+  return (
+    <div className="rounded-2xl border border-[#e7e9f2] bg-[#fbfcff] p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-black text-[#171733]">{agent.label || agent.agent_name}</div>
+          <div className="mt-1 text-xs font-bold text-[#7d829b]">{agent.phone || 'WhatsApp number pending'}</div>
+        </div>
+        <span className={`rounded-full border px-3 py-1 text-[10px] font-black uppercase ${className}`}>{label}</span>
+      </div>
+      <div className="mt-3 grid gap-2 text-xs font-semibold text-[#7d829b] sm:grid-cols-2">
+        <div>Instance: <span className="font-mono text-[#4f35f5]">{agent.instance_name || 'not assigned'}</span></div>
+        <div>Stage: <span className="text-[#171733]">{agent.connection_state || 'workspace'}</span></div>
+      </div>
+      {agent.provider_error && <div className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">{agent.provider_error}</div>}
+    </div>
+  );
+}
+
 export default function Agent() {
   const { admin } = useAuth();
   const [searchParams] = useSearchParams();
@@ -100,6 +130,8 @@ export default function Agent() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [supportNumber, setSupportNumber] = useState('');
   const [welcomeMenu, setWelcomeMenu] = useState(DEFAULT_WELCOME_MENU);
+  const [agentsInfo, setAgentsInfo] = useState({ agents: [], onboarding_path: '/self-onboarding' });
+  const [agentsLoading, setAgentsLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState(null);
@@ -112,6 +144,22 @@ export default function Agent() {
   }, [admin, clientIdParam, navigate]);
 
   const settingsQuery = clientIdParam ? `?clientId=${clientIdParam}` : '';
+
+  const fetchAgents = async () => {
+    setAgentsLoading(true);
+    try {
+      const { data } = await api.get(`/settings/agents${settingsQuery}`);
+      setAgentsInfo({
+        agents: Array.isArray(data.agents) ? data.agents : [],
+        onboarding_path: data.onboarding_path || '/self-onboarding',
+        onboarding_url: data.onboarding_url || '',
+      });
+    } catch (err) {
+      console.error('Failed to fetch agents:', err.message);
+    } finally {
+      setAgentsLoading(false);
+    }
+  };
 
   const fetchSettings = async () => {
     setLoading(true);
@@ -150,6 +198,7 @@ export default function Agent() {
 
   useEffect(() => {
     fetchSettings();
+    fetchAgents();
     if (clientIdParam) fetchClientName(clientIdParam);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clientIdParam]);
@@ -160,6 +209,9 @@ export default function Agent() {
   );
 
   const displayName = agentName.trim() || 'Agent';
+  const openAddAgent = () => {
+    window.location.href = agentsInfo.onboarding_path || '/self-onboarding';
+  };
 
   const isValidSupportNumber = (value) => {
     const trimmed = value.trim();
@@ -329,6 +381,33 @@ export default function Agent() {
 
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
           <main className="space-y-5">
+            <SettingsCard
+              icon={<AgentIcon className="h-5 w-5" />}
+              title="WhatsApp Agents"
+              description="Add another WhatsApp number through Evolution onboarding and track each stage from here."
+            >
+              <div className="mb-4 flex flex-col gap-3 rounded-2xl border border-[#e7e9f2] bg-[#fbfcff] p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <div className="text-sm font-black text-[#171733]">Agent panels</div>
+                  <div className="mt-1 text-xs font-semibold text-[#858aa2]">Agent One is your current dashboard agent. Additional agents appear here after onboarding.</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={openAddAgent}
+                  className="h-11 rounded-xl bg-[#4f35f5] px-5 text-sm font-black text-white shadow-[0_10px_22px_rgba(79,53,245,0.2)]"
+                >
+                  Add Agent
+                </button>
+              </div>
+              {agentsLoading ? (
+                <div className="rounded-2xl border border-dashed border-[#d7dbea] bg-white px-4 py-6 text-center text-sm font-bold text-[#858aa2]">Loading agent status...</div>
+              ) : (
+                <div className="grid gap-3">
+                  {agentsInfo.agents.map((agent) => <AgentStatusCard key={`${agent.kind}-${agent.id}`} agent={agent} />)}
+                </div>
+              )}
+            </SettingsCard>
+
             <SettingsCard
               icon={<AgentIcon className="h-5 w-5" />}
               title="Agent Name"

@@ -30,6 +30,9 @@ async function ensureEvoOnboardingTable() {
       phone_otp_expires_at TIMESTAMP WITH TIME ZONE,
       phone_otp_sent_at TIMESTAMP WITH TIME ZONE,
       phone_verified_at TIMESTAMP WITH TIME ZONE,
+      request_type VARCHAR(40) NOT NULL DEFAULT 'new_client',
+      parent_client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+      agent_label VARCHAR(80),
       connected_at TIMESTAMP WITH TIME ZONE,
       reviewed_at TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -42,6 +45,11 @@ async function ensureEvoOnboardingTable() {
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_expires_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_sent_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS request_type VARCHAR(40) NOT NULL DEFAULT 'new_client';
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS parent_client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS agent_label VARCHAR(80);
+    ALTER TABLE evo_client_onboardings DROP CONSTRAINT IF EXISTS evo_client_onboardings_request_type_check;
+    ALTER TABLE evo_client_onboardings ADD CONSTRAINT evo_client_onboardings_request_type_check CHECK (request_type IN ('new_client', 'additional_agent'));
     ALTER TABLE evo_client_onboardings DROP CONSTRAINT IF EXISTS evo_client_onboardings_connection_method_check;
     ALTER TABLE evo_client_onboardings ADD CONSTRAINT evo_client_onboardings_connection_method_check CHECK (connection_method IN ('qr', 'pairing_code'));
     CREATE INDEX IF NOT EXISTS idx_evo_onboarding_status ON evo_client_onboardings(status, created_at DESC);

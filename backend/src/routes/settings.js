@@ -309,6 +309,73 @@ router.get('/', async (req, res) => {
 });
 
 // GET /api/settings/billing — returns safe billing integration config
+router.get('/agents', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureAgentSettingsColumns();
+    const { ensureEvoOnboardingTable } = require('../services/evoSelfOnboarding');
+    await ensureEvoOnboardingTable();
+    const clientResult = await db.query(
+      `SELECT id, name, business_name, contact_email, connection_provider, evolution_instance_name,
+              agent_name, support_number, status, created_at
+       FROM clients WHERE id = $1 LIMIT 1`,
+      [targetClient]
+    );
+    const client = clientResult.rows[0];
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+
+    const extraResult = await db.query(
+      `SELECT id, business_name, owner_name, phone, email, instance_name, status, connection_state,
+              connected_at, reviewed_at, provider_error, agent_label, created_at, updated_at
+       FROM evo_client_onboardings
+       WHERE parent_client_id = $1 AND request_type = 'additional_agent' AND status != 'archived'
+       ORDER BY created_at ASC`,
+      [targetClient]
+    );
+
+    const origin = String(process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
+    const linkPath = `/self-onboarding?additionalAgent=1&clientId=${encodeURIComponent(targetClient)}&business=${encodeURIComponent(client.business_name || client.name || '')}&email=${encodeURIComponent(client.contact_email || '')}`;
+    res.json({
+      agents: [
+        {
+          id: `primary-${client.id}`,
+          kind: 'primary',
+          label: 'Agent One',
+          agent_name: client.agent_name || 'Agent One',
+          phone: client.support_number || '',
+          instance_name: client.evolution_instance_name || '',
+          status: client.connection_provider === 'evolution' && client.evolution_instance_name ? 'active' : 'configured',
+          connection_state: client.connection_provider === 'evolution' ? 'workspace_active' : 'primary_workspace',
+          created_at: client.created_at,
+        },
+        ...extraResult.rows.map((row, index) => ({
+          id: row.id,
+          kind: 'additional',
+          label: row.agent_label || `Agent ${index + 2}`,
+          agent_name: row.agent_label || `Agent ${index + 2}`,
+          phone: row.phone,
+          email: row.email,
+          instance_name: row.instance_name,
+          status: row.status,
+          connection_state: row.connection_state,
+          connected_at: row.connected_at,
+          reviewed_at: row.reviewed_at,
+          provider_error: row.provider_error,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        })),
+      ],
+      onboarding_url: `${origin}${linkPath}`,
+      onboarding_path: linkPath,
+    });
+  } catch (err) {
+    console.error('GET /settings/agents error:', err.message);
+    res.status(500).json({ error: 'Failed to load agent onboarding status' });
+  }
+});
+
 router.get('/billing', async (req, res) => {
   const targetClient = resolveTargetClient(req, res);
   if (!targetClient) return;

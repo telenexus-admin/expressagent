@@ -17,10 +17,13 @@ router.get('/', async (_req, res) => {
       `SELECT e.id, e.business_name, e.owner_name, e.phone, e.email, e.location, e.service_interest,
               e.instance_name, e.status, e.connection_method, e.connection_state, e.connected_number,
               e.connected_at, e.provider_error, e.created_at, e.updated_at, e.reviewed_at,
+              e.request_type, e.parent_client_id, e.agent_label,
               c.id AS workspace_client_id, c.agent_name AS workspace_agent_name,
-              c.support_number AS workspace_support_number, a.email AS dashboard_admin_email
+              c.support_number AS workspace_support_number, a.email AS dashboard_admin_email,
+              pc.business_name AS parent_business_name
        FROM evo_client_onboardings e
        LEFT JOIN clients c ON c.connection_provider = 'evolution' AND c.evolution_instance_name = e.instance_name
+       LEFT JOIN clients pc ON pc.id = e.parent_client_id
        LEFT JOIN LATERAL (
          SELECT email FROM admins WHERE client_id = c.id AND role = 'admin' ORDER BY created_at ASC LIMIT 1
        ) a ON TRUE

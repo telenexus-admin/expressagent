@@ -120,6 +120,7 @@ export default function ClientDashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [expandedGroups, setExpandedGroups] = useState({ operations: true });
   const menuRef = useRef(null);
   const expressnet = Number(admin?.client_id) === 1;
 
@@ -162,28 +163,36 @@ export default function ClientDashboard() {
     return () => { window.removeEventListener('keydown', keydown); window.removeEventListener('mousedown', outside); };
   }, []);
 
+  const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
+
   const navSections = [
     {
-      label: 'Overview',
+      key: 'operations',
+      label: 'Operations',
+      icon: HomeIcon,
       items: [
         ['/dashboard/statistics', 'Dashboard', HomeIcon, 'statistics'],
-      ],
-    },
-    {
-      label: 'Inbox',
-      items: [
-          ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
-          ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
-          ['/dashboard/invoices', 'Invoice Management', ChartIcon, 'invoices'],
-          ['/dashboard/inventory', 'Inventory', WrenchIcon, 'inventory'],
-          ['/dashboard/billing', 'Billing', ChartIcon, 'billing'],
+        ['/dashboard/conversations', 'Conversations', ChatIcon, 'conversations', badges.conversations],
+        ['/dashboard/tickets', 'Tickets', TicketIcon, 'tickets', badges.tickets],
         ['/dashboard/escalations', 'Human Handover', LifebuoyIcon, 'escalations', badges.escalations],
         ['/dashboard/installations', 'Installations', WrenchIcon, 'installations', badges.installations],
         ['/dashboard/complaints', 'Complaints', WarningIcon, 'complaints', badges.complaints],
       ],
     },
     {
-      label: 'Agent',
+      key: 'sales',
+      label: 'Sales & Billing',
+      icon: ChartIcon,
+      items: [
+        ['/dashboard/invoices', 'Invoice Management', ChartIcon, 'invoices'],
+        ['/dashboard/inventory', 'Inventory', WrenchIcon, 'inventory'],
+        ['/dashboard/billing', 'Billing', ChartIcon, 'billing'],
+      ],
+    },
+    {
+      key: 'agent',
+      label: 'AI Agent',
+      icon: AgentIcon,
       items: [
         ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
         ['/dashboard/sms-settings', 'SMS Provider', AgentIcon, 'agent'],
@@ -194,18 +203,29 @@ export default function ClientDashboard() {
       ],
     },
     {
-      label: 'Team',
+      key: 'communication',
+      label: 'Communication',
+      icon: ChatIcon,
+      items: [
+        ['/dashboard/communication', 'Communication', ChatIcon, 'communication'],
+      ],
+    },
+    {
+      key: 'administration',
+      label: 'Administration',
+      icon: UsersIcon,
       items: [
         ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
         ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
         ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
-        ['/dashboard/communication', 'Communication', ChatIcon, 'communication'],
-        ['/dashboard/settings', 'Settings', CogIcon, 'settings'],
       ],
     },
     {
-      label: 'Support',
+      key: 'system',
+      label: 'System',
+      icon: CogIcon,
       items: [
+        ['/dashboard/settings', 'Settings', CogIcon, 'settings'],
         ['/dashboard/documentation', 'Documentation', QuestionIcon, 'documentation'],
       ],
     },
@@ -215,28 +235,48 @@ export default function ClientDashboard() {
   })).filter((section) => section.items.length > 0);
   const nav = navSections.flatMap((section) => section.items);
 
-  const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
+  useEffect(() => {
+    const activeSection = navSections.find((section) => section.items.some((item) => active(item[0])));
+    if (activeSection) {
+      setExpandedGroups((current) => ({ ...current, [activeSection.key]: true }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [location.pathname, navSections.length]);
+
   const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
   const showConversationSearch = location.pathname.startsWith('/dashboard/conversations');
   const signOut = () => { logout(); navigate('/login'); };
+  const toggleGroup = (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] }));
 
   const itemButton = (item, mobile = false) => {
     const [path, label, Icon, , badge] = item;
     const selected = active(path);
     return (
-      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`dashboard-nav-item group relative w-full flex items-center gap-3 px-3 py-2 text-sm transition-all ${selected ? 'dashboard-nav-active text-white font-black' : 'text-[#20284d] hover:bg-[#f4f1ff]'}`}>
-        <span className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-white/16 text-white' : 'bg-[#f2f4fb] text-[#273459]'}`}><Icon className="w-4 h-4" /></span>
+      <button key={path} onClick={() => { navigate(path); setDrawerOpen(false); }} className={`dashboard-nav-item group relative w-full flex items-center gap-3 rounded-2xl px-3 py-2 text-sm transition-all ${selected ? 'dashboard-nav-active text-white font-black' : 'text-[#20284d] hover:bg-[#f4f1ff]'}`}>
+        <span className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${selected ? 'bg-white/16 text-white' : 'bg-[#f2f4fb] text-[#273459]'}`}><Icon className="w-4 h-4" /></span>
         <span className="flex-1 text-left truncate">{label}</span>
         {badge > 0 && <span className={`text-[10px] font-black rounded-full min-w-[24px] h-6 flex items-center justify-center px-2 ${selected ? 'bg-white/20 text-white' : 'bg-[#7c35ff] text-white'}`}>{badge > 99 ? '99+' : badge}</span>}
       </button>
     );
   };
   const navList = (mobile = false) => navSections.map((section) => (
-    <div key={section.label} className="space-y-0.5">
-      <div className="px-3 pt-2.5 pb-1.5 text-[10px] font-black uppercase tracking-[0.15em] text-[#98a0bd] dashboard-section-label">
-        {section.label}
-      </div>
-      {section.items.map((item) => itemButton(item, mobile))}
+    <div key={section.key} className="space-y-1">
+      <button
+        type="button"
+        onClick={() => toggleGroup(section.key)}
+        className="flex w-full items-center gap-3 rounded-2xl px-3 py-2 text-sm font-black text-[#20284d] transition hover:bg-[#f4f1ff]"
+      >
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[#eef2fb] text-[#273459]">
+          <section.icon className="h-4 w-4" />
+        </span>
+        <span className="flex-1 text-left">{section.label}</span>
+        <ChevronDownIcon className={`h-4 w-4 text-[#8a93ad] transition ${expandedGroups[section.key] ? 'rotate-180' : ''}`} />
+      </button>
+      {expandedGroups[section.key] && (
+        <div className="ml-4 space-y-1 border-l border-[#e5eaf5] pl-3">
+          {section.items.map((item) => itemButton(item, mobile))}
+        </div>
+      )}
     </div>
   ));
 

@@ -80,6 +80,18 @@ const schema = `
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_instance_name VARCHAR(120);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_webhook_secret VARCHAR(96);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_basic_auth TEXT;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_channel_id INTEGER;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_provider VARCHAR(30) NOT NULL DEFAULT 'm-pesa';
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_callback_secret VARCHAR(96);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS payment_prompt_provider VARCHAR(30) NOT NULL DEFAULT 'payhero';
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_consumer_key TEXT;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_consumer_secret TEXT;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_shortcode VARCHAR(30);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_passkey TEXT;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_environment VARCHAR(20) NOT NULL DEFAULT 'production';
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_transaction_type VARCHAR(40) NOT NULL DEFAULT 'CustomerPayBillOnline';
   ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_connection_provider_check;
   ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution', 'website'));
   CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_evolution_instance_unique ON clients(evolution_instance_name) WHERE evolution_instance_name IS NOT NULL;

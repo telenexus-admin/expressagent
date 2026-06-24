@@ -4,6 +4,8 @@ const db = require('../db');
 const { canUseConfig, loadClientBillingConfig, lookupPaymentAccount } = require('./billing');
 
 const PAYHERO_URL = 'https://backend.payhero.co.ke/api/v2';
+const DARAJA_PRODUCTION_URL = 'https://api.safaricom.co.ke';
+const DARAJA_SANDBOX_URL = 'https://sandbox.safaricom.co.ke';
 const EXPLICIT_PAYMENT_RE = /(?:^\s*(?:pay|prompt|lipa|renew|recharge)\b|\b(?:send|give|initiate|start|request|need|want|make|please)\b.{0,45}\b(?:stk|mpesa|m-pesa|prompt|pay|payment|lipa|renew|recharge)\b|\b(?:stk|mpesa|m-pesa)\s+prompt\b)/i;
 let schemaPromise;
 
@@ -15,6 +17,13 @@ async function ensurePayHeroSchema() {
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_channel_id INTEGER`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_provider VARCHAR(30) NOT NULL DEFAULT 'm-pesa'`);
       await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_callback_secret VARCHAR(96)`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS payment_prompt_provider VARCHAR(30) NOT NULL DEFAULT 'payhero'`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_consumer_key TEXT`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_consumer_secret TEXT`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_shortcode VARCHAR(30)`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_passkey TEXT`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_environment VARCHAR(20) NOT NULL DEFAULT 'production'`);
+      await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS mpesa_transaction_type VARCHAR(40) NOT NULL DEFAULT 'CustomerPayBillOnline'`);
       await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS payhero_state JSONB`);
       await db.query(`
         CREATE TABLE IF NOT EXISTS payhero_payment_requests (
@@ -175,6 +184,10 @@ async function sendStoredPaymentPrompt({ client, conversationId, customerName, s
   return `M-Pesa prompt sent to +${state.phone} for KES ${formatMoney(amount)}. Complete it using your M-Pesa PIN.`;
 }
 
+function darajaBaseUrl(environment) {
+  return String(environment || '').toLowerCase() === 'sandbox' ? DARAJA_SANDBOX_URL : DARAJA_PRODUCTION_URL;
+}
+
 async function startInvoicePaymentPrompt({ conversationId, amount, invoiceNumber, customerName }) {
   const invoiceAmount = Number.parseInt(amount, 10);
   if (!Number.isInteger(invoiceAmount) || invoiceAmount < 10 || invoiceAmount > 500000) {
@@ -267,17 +280,28 @@ async function prepareAccountPayment({ client, conversationId, phone }) {
 async function loadPayHeroConfig(clientId) {
   await ensurePayHeroSchema();
   const result = await db.query(
-    `SELECT payhero_enabled, payhero_basic_auth, payhero_channel_id, payhero_provider, payhero_callback_secret
+    `SELECT payhero_enabled, payhero_basic_auth, payhero_channel_id, payhero_provider, payhero_callback_secret,
+            payment_prompt_provider, mpesa_consumer_key, mpesa_consumer_secret, mpesa_shortcode,
+            mpesa_passkey, mpesa_environment, mpesa_transaction_type
      FROM clients WHERE id = $1`,
     [clientId]
   );
   const row = result.rows[0] || {};
   return {
     enabled: row.payhero_enabled === true,
+    paymentProvider: String(row.payment_prompt_provider || 'payhero').trim().toLowerCase(),
     basicAuth: getPayHeroBasicAuth(row.payhero_basic_auth),
     channelId: Number(row.payhero_channel_id) || null,
     provider: String(row.payhero_provider || 'm-pesa').trim(),
     callbackSecret: String(row.payhero_callback_secret || '').trim(),
+    mpesa: {
+      consumerKey: String(row.mpesa_consumer_key || '').trim(),
+      consumerSecret: String(row.mpesa_consumer_secret || '').trim(),
+      shortcode: String(row.mpesa_shortcode || '').trim(),
+      passkey: String(row.mpesa_passkey || '').trim(),
+      environment: String(row.mpesa_environment || 'production').trim().toLowerCase(),
+      transactionType: String(row.mpesa_transaction_type || 'CustomerPayBillOnline').trim(),
+    },
   };
 }
 
@@ -287,6 +311,9 @@ function publicBackendUrl() {
 
 async function initiatePayHeroPayment({ client, conversationId, customerPhone, customerName, amount }) {
   const config = await loadPayHeroConfig(client.id);
+  if (config.paymentProvider === 'daraja') {
+    return initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, config });
+  }
   if (!config.enabled || !config.basicAuth || !config.channelId) {
     console.warn(
       `[client ${client.id}] PayHero prompt unavailable: enabled=${config.enabled}, has_basic_auth=${Boolean(config.basicAuth)}, channel_id=${config.channelId || 'none'}.`
@@ -356,6 +383,85 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
       [String(message), JSON.stringify(err.response?.data || {}), externalReference]
     );
     console.error(`[client ${client.id}] PayHero prompt failed for +${phone}: ${message}`);
+    return { success: false, error: String(message) };
+  }
+}
+
+async function getDarajaAccessToken(config) {
+  const credentials = Buffer.from(`${config.mpesa.consumerKey}:${config.mpesa.consumerSecret}`).toString('base64');
+  const response = await axios.get(`${darajaBaseUrl(config.mpesa.environment)}/oauth/v1/generate`, {
+    params: { grant_type: 'client_credentials' },
+    headers: { Authorization: `Basic ${credentials}` },
+    timeout: 20000,
+  });
+  const token = response.data?.access_token;
+  if (!token) throw new Error('Daraja did not return an access token.');
+  return token;
+}
+
+function darajaTimestamp(date = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0');
+  return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+}
+
+async function initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, config }) {
+  if (!config.enabled) return { success: false, error: 'M-Pesa prompts are not enabled for this client.' };
+  if (!config.mpesa.consumerKey || !config.mpesa.consumerSecret || !config.mpesa.shortcode || !config.mpesa.passkey) {
+    return { success: false, error: 'Client M-Pesa credentials are incomplete.' };
+  }
+  const phone = cleanPhone(customerPhone);
+  if (!/^254[17]\d{8}$/.test(phone)) return { success: false, error: 'Please send a valid Safaricom M-Pesa phone number.' };
+  if (!Number.isInteger(amount) || amount < 10 || amount > 500000) {
+    return { success: false, error: 'Please provide an amount between KES 10 and KES 500,000.' };
+  }
+  const base = publicBackendUrl();
+  if (!base || !config.callbackSecret) return { success: false, error: 'Payment callback URL is not configured. Set PUBLIC_BACKEND_URL and save payment settings again.' };
+  const timestamp = darajaTimestamp();
+  const shortcode = config.mpesa.shortcode;
+  const externalReference = `DARAJA-${client.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
+  const password = Buffer.from(`${shortcode}${config.mpesa.passkey}${timestamp}`).toString('base64');
+  const callback = `${base}/api/public/payhero/daraja-callback/${client.id}?token=${encodeURIComponent(config.callbackSecret)}`;
+  await db.query(
+    `INSERT INTO payhero_payment_requests
+       (client_id, conversation_id, customer_phone, customer_name, amount, external_reference)
+     VALUES ($1, $2, $3, $4, $5, $6)`,
+    [client.id, conversationId || null, phone, customerName || null, amount, externalReference]
+  );
+  try {
+    const accessToken = await getDarajaAccessToken(config);
+    const payload = {
+      BusinessShortCode: shortcode,
+      Password: password,
+      Timestamp: timestamp,
+      TransactionType: config.mpesa.transactionType || 'CustomerPayBillOnline',
+      Amount: amount,
+      PartyA: phone,
+      PartyB: shortcode,
+      PhoneNumber: phone,
+      CallBackURL: callback,
+      AccountReference: externalReference.slice(0, 40),
+      TransactionDesc: `Invoice payment ${customerName || ''}`.slice(0, 100),
+    };
+    const response = await axios.post(`${darajaBaseUrl(config.mpesa.environment)}/mpesa/stkpush/v1/processrequest`, payload, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+      timeout: 30000,
+    });
+    const data = response.data || {};
+    await db.query(
+      `UPDATE payhero_payment_requests
+       SET checkout_request_id = $1, payhero_reference = $2, status = $3, raw_response = $4::jsonb, updated_at = NOW()
+       WHERE external_reference = $5`,
+      [data.CheckoutRequestID || null, data.MerchantRequestID || null, String(data.ResponseCode) === '0' ? 'queued' : 'failed', JSON.stringify(data), externalReference]
+    );
+    if (String(data.ResponseCode) !== '0') return { success: false, error: data.ResponseDescription || 'Daraja rejected the STK request.' };
+    return { success: true, externalReference, status: 'QUEUED' };
+  } catch (err) {
+    const message = apiErrorMessage(err);
+    await db.query(
+      `UPDATE payhero_payment_requests SET status = 'failed', result_description = $1, raw_response = $2::jsonb, updated_at = NOW()
+       WHERE external_reference = $3`,
+      [String(message), JSON.stringify(err.response?.data || {}), externalReference]
+    );
     return { success: false, error: String(message) };
   }
 }

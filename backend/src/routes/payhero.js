@@ -122,4 +122,55 @@ router.post('/callback/:clientId', async (req, res) => {
   }
 });
 
+router.post('/daraja-callback/:clientId', async (req, res) => {
+  res.status(200).json({ received: true });
+  try {
+    await ensurePayHeroSchema();
+    const clientResult = await db.query(
+      `SELECT * FROM clients WHERE id = $1 AND payhero_callback_secret = $2 LIMIT 1`,
+      [req.params.clientId, String(req.query.token || '')]
+    );
+    const client = clientResult.rows[0];
+    if (!client) return;
+    const callback = req.body?.Body?.stkCallback || req.body?.stkCallback || {};
+    const checkoutRequestId = String(callback.CheckoutRequestID || '');
+    if (!checkoutRequestId) return;
+    const metadata = Array.isArray(callback.CallbackMetadata?.Item) ? callback.CallbackMetadata.Item : [];
+    const receipt = metadata.find((item) => item.Name === 'MpesaReceiptNumber')?.Value || null;
+    const successful = Number(callback.ResultCode) === 0;
+    const status = successful ? 'paid' : 'failed';
+    const updated = await db.query(
+      `UPDATE payhero_payment_requests
+       SET status = $1, result_description = $2, mpesa_receipt_number = $3,
+           raw_response = $4::jsonb, updated_at = NOW()
+       WHERE client_id = $5 AND checkout_request_id = $6 AND status <> 'paid'
+       RETURNING *`,
+      [
+        status,
+        callback.ResultDesc || null,
+        receipt,
+        JSON.stringify(req.body || {}),
+        client.id,
+        checkoutRequestId,
+      ]
+    );
+    const payment = updated.rows[0];
+    if (!payment) return;
+    const text = successful
+      ? `Payment received successfully. KES ${payment.amount}${payment.mpesa_receipt_number ? `, receipt ${payment.mpesa_receipt_number}` : ''}. Thank you.`
+      : `The M-Pesa payment was not completed. ${payment.result_description || 'You can request another prompt when ready.'}`;
+    if (client.connection_provider === 'evolution') await sendClientText(client, payment.customer_phone, text);
+    else await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, payment.customer_phone, text);
+    if (payment.conversation_id) {
+      await db.query(
+        `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
+        [payment.conversation_id, text]
+      );
+    }
+    if (successful) await notifyBillingWorkflowBySms({ client, payment });
+  } catch (err) {
+    console.error('Daraja callback processing failed:', err.response?.data || err.message);
+  }
+});
+
 module.exports = router;

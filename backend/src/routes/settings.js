@@ -140,9 +140,16 @@ function safeEmailConfig(row) {
 function safePayHeroConfig(row) {
   return {
     enabled: row.payhero_enabled === true,
+    payment_provider: row.payment_prompt_provider || 'payhero',
     channel_id: row.payhero_channel_id || '',
     provider: row.payhero_provider || 'm-pesa',
     has_basic_auth: Boolean(getPayHeroBasicAuth(row.payhero_basic_auth)),
+    mpesa_shortcode: row.mpesa_shortcode || '',
+    mpesa_environment: row.mpesa_environment || 'production',
+    mpesa_transaction_type: row.mpesa_transaction_type || 'CustomerPayBillOnline',
+    has_mpesa_consumer_key: Boolean(row.mpesa_consumer_key),
+    has_mpesa_consumer_secret: Boolean(row.mpesa_consumer_secret),
+    has_mpesa_passkey: Boolean(row.mpesa_passkey),
   };
 }
 
@@ -497,7 +504,10 @@ router.get('/payhero', async (req, res) => {
   try {
     await ensurePayHeroSchema();
     const result = await db.query(
-      `SELECT payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth FROM clients WHERE id = $1`,
+      `SELECT payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth,
+              payment_prompt_provider, mpesa_shortcode, mpesa_environment, mpesa_transaction_type,
+              mpesa_consumer_key, mpesa_consumer_secret, mpesa_passkey
+       FROM clients WHERE id = $1`,
       [targetClient]
     );
     if (!result.rows[0]) return res.status(404).json({ error: 'Client not found' });
@@ -785,21 +795,57 @@ router.put('/payhero', async (req, res) => {
   const targetClient = resolveTargetClient(req, res);
   if (!targetClient) return;
   const enabled = req.body.enabled === true;
+  const paymentProvider = String(req.body.payment_provider || 'payhero').trim().toLowerCase();
   const channelId = Number.parseInt(req.body.channel_id, 10);
   const provider = String(req.body.provider || 'm-pesa').trim();
-  if (enabled && (!Number.isInteger(channelId) || channelId <= 0)) return res.status(400).json({ error: 'A valid PayHero channel ID is required' });
+  const mpesaConsumerKey = String(req.body.mpesa_consumer_key || '').trim();
+  const mpesaConsumerSecret = String(req.body.mpesa_consumer_secret || '').trim();
+  const mpesaShortcode = String(req.body.mpesa_shortcode || '').trim();
+  const mpesaPasskey = String(req.body.mpesa_passkey || '').trim();
+  const mpesaEnvironment = String(req.body.mpesa_environment || 'production').trim().toLowerCase() === 'sandbox' ? 'sandbox' : 'production';
+  const mpesaTransactionType = String(req.body.mpesa_transaction_type || 'CustomerPayBillOnline').trim();
+  if (!['payhero', 'daraja'].includes(paymentProvider)) return res.status(400).json({ error: 'Unsupported payment provider' });
+  if (enabled && paymentProvider === 'payhero' && (!Number.isInteger(channelId) || channelId <= 0)) return res.status(400).json({ error: 'A valid PayHero channel ID is required' });
+  if (enabled && paymentProvider === 'daraja' && !mpesaShortcode) return res.status(400).json({ error: 'M-Pesa shortcode is required' });
   try {
     await ensurePayHeroSchema();
-    const existing = await db.query(`SELECT payhero_basic_auth, payhero_callback_secret FROM clients WHERE id = $1`, [targetClient]);
+    const existing = await db.query(`SELECT payhero_basic_auth, payhero_callback_secret, mpesa_consumer_key, mpesa_consumer_secret, mpesa_passkey FROM clients WHERE id = $1`, [targetClient]);
     if (!existing.rows[0]) return res.status(404).json({ error: 'Client not found' });
-    if (enabled && !getPayHeroBasicAuth(existing.rows[0].payhero_basic_auth)) return res.status(400).json({ error: 'PAYHERO_BASIC_AUTH is required before enabling PayHero' });
+    if (enabled && paymentProvider === 'payhero' && !getPayHeroBasicAuth(existing.rows[0].payhero_basic_auth)) return res.status(400).json({ error: 'PAYHERO_BASIC_AUTH is required before enabling PayHero' });
+    if (enabled && paymentProvider === 'daraja') {
+      const hasKey = Boolean(mpesaConsumerKey || existing.rows[0].mpesa_consumer_key);
+      const hasSecret = Boolean(mpesaConsumerSecret || existing.rows[0].mpesa_consumer_secret);
+      const hasPasskey = Boolean(mpesaPasskey || existing.rows[0].mpesa_passkey);
+      if (!hasKey || !hasSecret || !hasPasskey) return res.status(400).json({ error: 'M-Pesa consumer key, consumer secret and passkey are required' });
+    }
     const callbackSecret = existing.rows[0].payhero_callback_secret || crypto.randomBytes(32).toString('hex');
     const result = await db.query(
       `UPDATE clients SET payhero_enabled = $1, payhero_channel_id = $2, payhero_provider = $3,
-         payhero_callback_secret = $4
-       WHERE id = $5
-       RETURNING payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth`,
-      [enabled, Number.isInteger(channelId) ? channelId : null, provider, callbackSecret, targetClient]
+         payhero_callback_secret = $4, payment_prompt_provider = $5,
+         mpesa_consumer_key = COALESCE(NULLIF($6, ''), mpesa_consumer_key),
+         mpesa_consumer_secret = COALESCE(NULLIF($7, ''), mpesa_consumer_secret),
+         mpesa_shortcode = $8,
+         mpesa_passkey = COALESCE(NULLIF($9, ''), mpesa_passkey),
+         mpesa_environment = $10,
+         mpesa_transaction_type = $11
+       WHERE id = $12
+       RETURNING payhero_enabled, payhero_channel_id, payhero_provider, payhero_basic_auth,
+                 payment_prompt_provider, mpesa_shortcode, mpesa_environment, mpesa_transaction_type,
+                 mpesa_consumer_key, mpesa_consumer_secret, mpesa_passkey`,
+      [
+        enabled,
+        Number.isInteger(channelId) ? channelId : null,
+        provider,
+        callbackSecret,
+        paymentProvider,
+        mpesaConsumerKey,
+        mpesaConsumerSecret,
+        mpesaShortcode,
+        mpesaPasskey,
+        mpesaEnvironment,
+        mpesaTransactionType,
+        targetClient,
+      ]
     );
     res.json({ success: true, ...safePayHeroConfig(result.rows[0]) });
   } catch (err) {

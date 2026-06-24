@@ -99,6 +99,7 @@ export default function ExpressnetDashboard() {
       label: 'Sales & Billing',
       icon: ChartIcon,
       items: [
+        ['/dashboard/invoices', 'Invoice Management', ChartIcon, 'invoices'],
         ['/dashboard/inventory', 'Inventory', WrenchIcon, 'inventory'],
         ['/dashboard/billing', 'Billing', ChartIcon, 'billing'],
       ],

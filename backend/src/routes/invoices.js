@@ -3,9 +3,10 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { sendWhatsAppMediaMessage } = require('../services/whatsapp');
-const { sendClientMedia } = require('../services/clientEvolution');
+const { sendWhatsAppButtons, sendWhatsAppMediaMessage } = require('../services/whatsapp');
+const { sendClientButtons, sendClientMedia } = require('../services/clientEvolution');
 const { lookupInvoiceCustomer } = require('../services/billing');
+const { startInvoicePaymentPrompt } = require('../services/payhero');
 
 const router = express.Router();
 
@@ -325,6 +326,25 @@ async function sendInvoiceNotice(client, phone, message, invoice = null) {
     throw new Error('WhatsApp credentials are not configured for this client');
   }
   if (media) await sendWhatsAppMediaMessage(client.meta_phone_number_id, client.meta_access_token, phone, { ...media, description: message });
+}
+
+async function sendInvoicePaymentButtons(client, phone, invoice) {
+  try {
+    const title = 'Invoice payment';
+    const description = `Invoice ${invoice.invoice_number}: choose what you want to do next.`;
+    const buttons = [
+      { id: 'invoice_pay_now', title: 'Pay Now' },
+      { id: 'invoice_pay_later', title: 'Pay Later' },
+    ];
+    if (client.evolution_instance_name) {
+      await sendClientButtons(client, phone, { title, description, footer: '', buttons });
+      return;
+    }
+    if (!client.meta_phone_number_id || !client.meta_access_token) return;
+    await sendWhatsAppButtons(client.meta_phone_number_id, client.meta_access_token, phone, description, buttons, '');
+  } catch (err) {
+    console.error(`Invoice payment buttons failed for invoice ${invoice.invoice_number}:`, err.response?.data || err.message);
+  }
 }
 
 function invoiceProfileResponse(row = {}) {
@@ -683,6 +703,7 @@ router.post('/:id/send', async (req, res) => {
     if (!/^[0-9]{9,15}$/.test(phone)) return res.status(400).json({ error: 'A valid WhatsApp number is required' });
     const url = invoiceUrl(invoice.public_token, req);
     await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
+    await sendInvoicePaymentButtons(invoice, phone, invoice);
     await db.query(`UPDATE invoices SET status = CASE WHEN status = 'draft' THEN 'sent' ELSE status END, sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
     res.json({ success: true, sent_to: phone, public_url: url });
   } catch (err) {
@@ -714,6 +735,7 @@ router.post('/send-due/bulk', async (req, res) => {
       try {
         const url = invoiceUrl(invoice.public_token, req);
         await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
+        await sendInvoicePaymentButtons(invoice, phone, invoice);
         await db.query(`UPDATE invoices SET status = 'overdue', sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
         results.push({ id: invoice.id, status: 'sent', phone });
       } catch (err) {
@@ -768,12 +790,33 @@ router.createAndSendCustomerInvoice = async function createAndSendCustomerInvoic
     return { success: false, reply: 'I found the account, but I need a valid WhatsApp number before sending the invoice.' };
   }
   await sendInvoiceNotice({ ...client, ...invoice }, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
+  await sendInvoicePaymentButtons(client, phone, invoice);
   return {
     success: true,
     invoice,
     public_url: url,
-    reply: `I have generated invoice ${invoice.invoice_number} and sent it here. You can also view it here: ${url}`,
+    reply: '',
   };
+};
+
+router.startLatestInvoicePayment = async function startLatestInvoicePayment({ client, conversationId, customerPhone }) {
+  await ensureInvoiceSchema();
+  const phone = cleanPhone(customerPhone);
+  const result = await db.query(
+    `SELECT * FROM invoices
+     WHERE client_id = $1 AND customer_phone = $2 AND status IN ('draft', 'sent', 'overdue')
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [client.id, phone]
+  );
+  const invoice = result.rows[0];
+  if (!invoice) return 'I could not find a recent unpaid invoice for this chat. Please ask for an invoice first.';
+  return startInvoicePaymentPrompt({
+    conversationId,
+    amount: Math.round(Number(invoice.total_amount || 0)),
+    invoiceNumber: invoice.invoice_number,
+    customerName: invoice.customer_name,
+  });
 };
 
 module.exports = router;

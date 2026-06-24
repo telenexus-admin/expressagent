@@ -732,6 +732,24 @@ router.post('/', async (req, res) => {
       }
     }
 
+    if (!inboundIsImage && /^pay now$/i.test(messageText.trim())) {
+      const reply = await invoiceRoutes.startLatestInvoicePayment({
+        client,
+        conversationId: conversation.id,
+        customerPhone: phoneNumber,
+      });
+      await deliverReply(client, phoneNumber, reply, false);
+      await persistOutgoing(conversation.id, reply);
+      return;
+    }
+
+    if (!inboundIsImage && /^pay later$/i.test(messageText.trim())) {
+      const reply = 'No problem. You can pay later using the invoice PDF when ready.';
+      await deliverReply(client, phoneNumber, reply, false);
+      await persistOutgoing(conversation.id, reply);
+      return;
+    }
+
     if (!inboundIsImage) {
       const paymentPromptReply = await answerPayHeroPrompt({
         client,
@@ -821,8 +839,10 @@ router.post('/', async (req, res) => {
           messageText,
           req,
         });
-        await deliverReply(client, phoneNumber, result.reply, replyAsVoice, voiceId);
-        await persistOutgoing(conversation.id, result.reply);
+        if (result.reply) {
+          await deliverReply(client, phoneNumber, result.reply, replyAsVoice, voiceId);
+          await persistOutgoing(conversation.id, result.reply);
+        }
       } catch (err) {
         console.error(`[client ${client.id}] Invoice auto-generation failed for ${phoneNumber}:`, formatErr(err));
         const reply = 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.';

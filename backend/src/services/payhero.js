@@ -175,6 +175,22 @@ async function sendStoredPaymentPrompt({ client, conversationId, customerName, s
   return `M-Pesa prompt sent to +${state.phone} for KES ${formatMoney(amount)}. Complete it using your M-Pesa PIN.`;
 }
 
+async function startInvoicePaymentPrompt({ conversationId, amount, invoiceNumber, customerName }) {
+  const invoiceAmount = Number.parseInt(amount, 10);
+  if (!Number.isInteger(invoiceAmount) || invoiceAmount < 10 || invoiceAmount > 500000) {
+    return 'I cannot start payment for this invoice because the invoice amount is invalid.';
+  }
+  await setPaymentState(conversationId, {
+    step: 'manual_payment_details',
+    startedAt: new Date().toISOString(),
+    phone: null,
+    amount: invoiceAmount,
+    accountName: customerName || null,
+    invoiceNumber: invoiceNumber || null,
+  });
+  return `Which M-Pesa number should I prompt for invoice ${invoiceNumber || ''} amount KES ${formatMoney(invoiceAmount)}?`;
+}
+
 async function prepareManualPayment({ client, conversationId, customerName, messageText = '', previousState = null }) {
   const phone = extractPhone(messageText) || previousState?.phone || null;
   const savedAmount = Number.parseInt(previousState?.amount, 10);
@@ -444,6 +460,7 @@ module.exports = {
   initiatePayHeroPayment,
   loadPayHeroConfig,
   parsePaymentPromptRequest,
+  startInvoicePaymentPrompt,
   getPayHeroBasicAuth,
   testPayHeroConnection,
 };

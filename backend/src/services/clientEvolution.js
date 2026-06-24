@@ -52,6 +52,30 @@ async function sendClientText(client, number, text) {
   );
 }
 
+async function sendClientButtons(client, number, { title, description, footer, buttons }) {
+  const { baseUrl, headers, instance } = clientSettings(client);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp number is required.');
+  const safeButtons = (buttons || []).slice(0, 3).map((button) => ({
+    type: 'reply',
+    title: String(button.title || button.displayText || '').slice(0, 20),
+    displayText: String(button.displayText || button.title || '').slice(0, 20),
+    id: String(button.id || button.buttonId || '').slice(0, 256),
+  })).filter((button) => button.displayText && button.id);
+  if (safeButtons.length === 0) throw new Error('At least one Evolution button is required.');
+  return axios.post(
+    `${baseUrl}/message/sendButtons/${encodeURIComponent(instance)}`,
+    {
+      number: phone,
+      title: title || '',
+      description: description || '',
+      footer: footer || '',
+      buttons: safeButtons,
+    },
+    { headers, timeout: 30000 }
+  );
+}
+
 async function downloadClientMedia(client, messageKey, { convertToMp4 = false } = {}) {
   const { baseUrl, headers, instance } = clientSettings(client);
   if (!messageKey?.id) throw new Error('Incoming media message has no message id.');
@@ -151,4 +175,4 @@ async function downloadClientImage(client, messageKey) {
   return { ...media, mimeType: media.mimeType || 'image/jpeg' };
 }
 
-module.exports = { setClientWebhook, sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };
+module.exports = { setClientWebhook, sendClientText, sendClientButtons, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };

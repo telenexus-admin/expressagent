@@ -180,9 +180,10 @@ router.post('/nexa', async (req, res) => {
       return;
     }
 
-    const incoming = parseEvolutionInbound(req.body);
+    const parseDiagnostics = {};
+    const incoming = parseEvolutionInbound(req.body, parseDiagnostics);
     if (!incoming || !incoming.phone) {
-      console.log(`Nexa Evolution webhook received but no customer message was parsed. Shape: ${payloadShape(req.body)}`);
+      console.log(`Nexa Evolution webhook received but no customer message was parsed. Reason: ${JSON.stringify(parseDiagnostics)} Shape: ${payloadShape(req.body)}`);
       return;
     }
 

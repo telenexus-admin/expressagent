@@ -331,26 +331,54 @@ function looksLikeKeyObject(value) {
   return Boolean(value?.remoteJid || (value?.id && Object.prototype.hasOwnProperty.call(value, 'fromMe')));
 }
 
-function parseEvolutionInbound(payload) {
+function parseEvolutionInbound(payload, diagnostics = null) {
+  const debug = diagnostics && typeof diagnostics === 'object' ? diagnostics : null;
   const event = String(payload?.event || payload?.type || '').toLowerCase();
-  if (event && !event.includes('messages.upsert') && !event.includes('messages_upsert')) return null;
+  if (event && !event.includes('messages.upsert') && !event.includes('messages_upsert')) {
+    if (debug) debug.reason = `ignored_event:${event}`;
+    return null;
+  }
   const root = payload?.data || payload;
   const data = Array.isArray(root?.messages) ? root.messages[0] : Array.isArray(root) ? root[0] : (root?.data || root);
   const key = data?.key || data?.message?.key || findNestedObject(payload, looksLikeKeyObject) || {};
-  if (key.fromMe === true || data?.fromMe === true) return null;
+  if (key.fromMe === true || data?.fromMe === true) {
+    if (debug) {
+      debug.reason = 'from_me';
+      debug.remoteJidSuffix = String(key.remoteJid || data?.remoteJid || '').replace(/^\d+/, 'number');
+      debug.senderType = typeof payload?.sender;
+    }
+    return null;
+  }
   const remoteJid = firstPresent(
     key.remoteJid,
+    key.participant,
     data?.remoteJid,
     data?.jid,
     data?.from,
+    data?.participant,
     data?.chatId,
     ...candidateSenderValues(payload?.sender),
     ...candidateSenderValues(root?.sender),
     ...candidateSenderValues(data?.sender),
-    findNestedString(payload, ['remoteJid', 'jid', 'from', 'sender', 'chatId', 'number', 'phone', 'user'], senderLooksUsable),
+    findNestedString(payload, ['remoteJid', 'participant', 'jid', 'from', 'sender', 'chatId', 'number', 'phone', 'user'], senderLooksUsable),
     ''
   );
-  if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;
+  if (!remoteJid) {
+    if (debug) {
+      debug.reason = 'missing_remote_jid';
+      debug.keyKeys = key && typeof key === 'object' ? Object.keys(key).slice(0, 8) : [];
+      debug.senderType = typeof payload?.sender;
+      debug.senderKeys = payload?.sender && typeof payload.sender === 'object' ? Object.keys(payload.sender).slice(0, 8) : [];
+    }
+    return null;
+  }
+  if (remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) {
+    if (debug) {
+      debug.reason = 'unsupported_jid';
+      debug.remoteJidSuffix = String(remoteJid).replace(/^\d+/, 'number');
+    }
+    return null;
+  }
   const message = unwrapEvolutionMessage(firstPresent(data?.message, data?.messages?.[0]?.message, data?.data?.message, findNestedObject(payload, looksLikeMessageObject), {}));
   const isVoice = Boolean(message.audioMessage || message.voiceMessage || data?.messageType === 'audioMessage');
   const isImage = Boolean(message.imageMessage || data?.messageType === 'imageMessage');
@@ -394,9 +422,24 @@ function parseEvolutionInbound(payload) {
     findNestedString(payload, ['conversation', 'text', 'body', 'caption'], (value) => !/^messages[._-]?upsert$/i.test(value)) ||
     ''
   ).trim();
-  if (!text && !isVoice && !isImage) return null;
+  if (!text && !isVoice && !isImage) {
+    if (debug) {
+      debug.reason = 'empty_content';
+      debug.messageKeys = message && typeof message === 'object' ? Object.keys(message).slice(0, 10) : [];
+      debug.messageType = data?.messageType || null;
+    }
+    return null;
+  }
+  const phone = cleanNumber(remoteJid);
+  if (!phone) {
+    if (debug) {
+      debug.reason = 'empty_phone_after_clean';
+      debug.remoteJidSuffix = String(remoteJid).replace(/^\d+/, 'number');
+    }
+    return null;
+  }
   return {
-    phone: cleanNumber(remoteJid),
+    phone,
     name: data?.pushName || data?.data?.pushName || root?.pushName || payload?.senderName || payload?.pushName || null,
     text,
     isVoice,

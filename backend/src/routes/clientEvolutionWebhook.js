@@ -368,9 +368,10 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
 
-    const incoming = parseEvolutionInbound(req.body);
+    const parseDiagnostics = {};
+    const incoming = parseEvolutionInbound(req.body, parseDiagnostics);
     if (!incoming || !incoming.phone) {
-      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed. Shape: ${payloadShape(req.body)}`);
+      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed. Reason: ${JSON.stringify(parseDiagnostics)} Shape: ${payloadShape(req.body)}`);
       return;
     }
 

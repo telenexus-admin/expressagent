@@ -290,6 +290,27 @@ function findNestedString(value, keyNames, predicate = () => true, depth = 0) {
   return '';
 }
 
+function candidateSenderValues(value) {
+  if (!value) return [];
+  if (typeof value === 'string') return [value];
+  if (typeof value !== 'object') return [];
+  return [
+    value.remoteJid,
+    value.jid,
+    value.id,
+    value.from,
+    value.sender,
+    value.chatId,
+    value.number,
+    value.phone,
+    value.user,
+  ].filter((item) => typeof item === 'string' && item.trim());
+}
+
+function senderLooksUsable(value) {
+  return /(@s\.whatsapp\.net|@lid|^\+?\d{7,})/i.test(String(value || ''));
+}
+
 function looksLikeMessageObject(value) {
   return Boolean(
     value?.conversation ||
@@ -322,9 +343,11 @@ function parseEvolutionInbound(payload) {
     data?.remoteJid,
     data?.jid,
     data?.from,
-    data?.sender,
     data?.chatId,
-    findNestedString(payload, ['remoteJid', 'jid', 'from', 'sender', 'chatId'], (value) => /(@s\.whatsapp\.net|^\+?\d{7,})/i.test(value)),
+    ...candidateSenderValues(payload?.sender),
+    ...candidateSenderValues(root?.sender),
+    ...candidateSenderValues(data?.sender),
+    findNestedString(payload, ['remoteJid', 'jid', 'from', 'sender', 'chatId', 'number', 'phone', 'user'], senderLooksUsable),
     ''
   );
   if (!remoteJid || remoteJid.includes('@g.us') || remoteJid.includes('@broadcast') || remoteJid.includes('@newsletter')) return null;

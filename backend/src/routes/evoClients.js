@@ -5,6 +5,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { ensureEvoOnboardingTable, refreshOnboarding } = require('../services/evoSelfOnboarding');
+const { setClientWebhook } = require('../services/clientEvolution');
 const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 
 const router = express.Router();
@@ -16,7 +17,7 @@ router.get('/', async (_req, res) => {
     const result = await db.query(
       `SELECT e.id, e.business_name, e.owner_name, e.phone, e.email, e.location, e.service_interest,
               e.instance_name, e.status, e.connection_method, e.connection_state, e.connected_number,
-              e.connected_at, e.provider_error, e.created_at, e.updated_at, e.reviewed_at,
+              e.connected_at, e.provider_error, e.routing_active, e.created_at, e.updated_at, e.reviewed_at,
               e.request_type, e.parent_client_id, e.agent_label,
               c.id AS workspace_client_id, c.agent_name AS workspace_agent_name,
               c.support_number AS workspace_support_number, a.email AS dashboard_admin_email,
@@ -75,9 +76,29 @@ router.patch('/:id/status', [body('status').isIn(['reviewed', 'active', 'archive
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
     await ensureEvoOnboardingTable();
+    const currentResult = await db.query(`SELECT * FROM evo_client_onboardings WHERE id = $1 LIMIT 1`, [req.params.id]);
+    const current = currentResult.rows[0];
+    if (!current) return res.status(404).json({ error: 'Evolution client not found' });
+    let webhookSecret = current.webhook_secret;
+    let routingActive = current.routing_active;
+    if (req.body.status === 'active' && current.request_type === 'additional_agent') {
+      if (!current.parent_client_id) return res.status(400).json({ error: 'This additional agent is missing the parent dashboard.' });
+      const parentResult = await db.query(`SELECT * FROM clients WHERE id = $1 AND status = 'active' LIMIT 1`, [current.parent_client_id]);
+      const parent = parentResult.rows[0];
+      if (!parent) return res.status(404).json({ error: 'Parent dashboard client was not found.' });
+      webhookSecret = webhookSecret || crypto.randomBytes(32).toString('hex');
+      await setClientWebhook(parent, {
+        instanceName: current.instance_name,
+        token: webhookSecret,
+        agentId: current.id,
+      });
+      routingActive = true;
+    }
     const result = await db.query(
       `UPDATE evo_client_onboardings
        SET status = $1::varchar,
+           webhook_secret = COALESCE($3, webhook_secret),
+           routing_active = CASE WHEN $4::boolean IS NULL THEN routing_active ELSE $4::boolean END,
            reviewed_at = CASE
              WHEN $1::varchar IN ('reviewed', 'active') THEN COALESCE(reviewed_at, NOW())
              ELSE reviewed_at
@@ -85,13 +106,13 @@ router.patch('/:id/status', [body('status').isIn(['reviewed', 'active', 'archive
            updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
-      [req.body.status, req.params.id]
+      [req.body.status, req.params.id, webhookSecret || null, routingActive]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Evolution client not found' });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('PATCH /evo-clients/:id/status error:', err.message);
-    res.status(500).json({ error: 'Failed to update Evolution client status' });
+    const detail = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    console.error('PATCH /evo-clients/:id/status error:', detail);
+    res.status(500).json({ error: 'Failed to update Evolution client status or connect its webhook.' });
   }
 });
 

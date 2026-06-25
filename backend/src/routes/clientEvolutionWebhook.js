@@ -225,7 +225,32 @@ function imageFilename(mimeType) {
   return `whatsapp-image.${safeSubtype === 'jpeg' ? 'jpg' : safeSubtype}`;
 }
 
-async function loadClient(id, token) {
+async function loadClient(id, token, agentId = null) {
+  if (agentId) {
+    const result = await db.query(
+      `SELECT c.*, e.instance_name AS routed_instance_name, e.agent_label AS routed_agent_label
+       FROM evo_client_onboardings e
+       JOIN clients c ON c.id = e.parent_client_id
+       WHERE c.id = $1
+         AND c.status = 'active'
+         AND e.id = $2
+         AND e.request_type = 'additional_agent'
+         AND e.status = 'active'
+         AND e.webhook_secret = $3
+         AND e.routing_active = TRUE
+       LIMIT 1`,
+      [id, agentId, token]
+    );
+    const client = result.rows[0];
+    if (!client) return null;
+    return {
+      ...client,
+      evolution_instance_name: client.routed_instance_name,
+      agent_name: client.routed_agent_label || client.agent_name,
+      routed_agent_id: agentId,
+    };
+  }
+
   const result = await db.query(
     `SELECT * FROM clients
      WHERE id = $1 AND connection_provider = 'evolution' AND status = 'active'
@@ -236,33 +261,43 @@ async function loadClient(id, token) {
   return result.rows[0] || null;
 }
 
-async function findOrCreateConversation(clientId, phone, name) {
+async function findOrCreateConversation(clientId, phone, name, instanceName = null, options = {}) {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+  await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_instance_name VARCHAR(120)`);
+  const allowUnassignedMatch = options.allowUnassignedMatch !== false;
   const previous = await db.query(
-    `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 LIMIT 1`,
-    [clientId, phone]
+    `SELECT id FROM conversations
+     WHERE client_id = $1 AND customer_phone = $2
+       AND (source_instance_name = $3 OR ($4::boolean = TRUE AND source_instance_name IS NULL))
+     LIMIT 1`,
+    [clientId, phone, instanceName, allowUnassignedMatch]
   );
   const isNewNumber = previous.rows.length === 0;
   const existing = await db.query(
     `SELECT * FROM conversations
      WHERE client_id = $1 AND customer_phone = $2 AND status != 'resolved'
+       AND (source_instance_name = $3 OR ($4::boolean = TRUE AND source_instance_name IS NULL))
      ORDER BY created_at DESC LIMIT 1`,
-    [clientId, phone]
+    [clientId, phone, instanceName, allowUnassignedMatch]
   );
   if (existing.rows[0]) {
-    if (name && name !== existing.rows[0].customer_name) {
+    if ((name && name !== existing.rows[0].customer_name) || (instanceName && !existing.rows[0].source_instance_name)) {
       const updated = await db.query(
-        `UPDATE conversations SET customer_name = $1, updated_at = NOW() WHERE id = $2 RETURNING *`,
-        [name, existing.rows[0].id]
+        `UPDATE conversations
+         SET customer_name = COALESCE($1, customer_name),
+             source_instance_name = COALESCE(source_instance_name, $2),
+             updated_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [name || null, instanceName, existing.rows[0].id]
       );
       return { conversation: updated.rows[0], isNewNumber: false };
     }
     return { conversation: existing.rows[0], isNewNumber: false };
   }
   const inserted = await db.query(
-    `INSERT INTO conversations (customer_phone, customer_name, status, client_id)
-     VALUES ($1, $2, 'active', $3) RETURNING *`,
-    [phone, name || null, clientId]
+    `INSERT INTO conversations (customer_phone, customer_name, status, client_id, source_instance_name)
+     VALUES ($1, $2, 'active', $3, $4) RETURNING *`,
+    [phone, name || null, clientId, instanceName]
   );
   return { conversation: inserted.rows[0], isNewNumber };
 }
@@ -327,7 +362,7 @@ router.post('/client/:clientId', async (req, res) => {
   res.status(200).json({ received: true });
   try {
     const token = String(req.query.token || req.headers['x-webhook-token'] || '');
-    const client = await loadClient(req.params.clientId, token);
+    const client = await loadClient(req.params.clientId, token, req.query.agent || null);
     if (!client) {
       console.warn(`Evolution client webhook ignored for client ${req.params.clientId}: invalid token or routing inactive.`);
       return;
@@ -339,7 +374,13 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
 
-    const { conversation, isNewNumber } = await findOrCreateConversation(client.id, incoming.phone, incoming.name);
+    const { conversation, isNewNumber } = await findOrCreateConversation(
+      client.id,
+      incoming.phone,
+      incoming.name,
+      client.evolution_instance_name,
+      { allowUnassignedMatch: !client.routed_agent_id }
+    );
     if (isNewNumber) {
       await sendWelcomeMedia(client, conversation.id, incoming.phone);
     }

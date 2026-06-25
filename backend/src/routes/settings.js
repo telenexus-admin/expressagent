@@ -339,6 +339,7 @@ router.get('/agents', async (req, res) => {
     const extraResult = await db.query(
       `SELECT id, business_name, owner_name, phone, email, instance_name, status, connection_state,
               connected_number, connected_at, reviewed_at, provider_error, agent_label, created_at, updated_at
+              , routing_active
        FROM evo_client_onboardings
        WHERE parent_client_id = $1 AND request_type = 'additional_agent' AND status != 'archived'
        ORDER BY created_at ASC`,
@@ -371,6 +372,7 @@ router.get('/agents', async (req, res) => {
           connected_number: row.connected_number,
           status: row.status,
           connection_state: row.connection_state,
+          routing_active: row.routing_active,
           workspace_available: ['reviewed', 'active'].includes(row.status),
           workspace_scope: 'same_dashboard',
           connected_at: row.connected_at,

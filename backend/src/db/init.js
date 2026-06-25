@@ -119,6 +119,7 @@ const schema = `
     reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto' CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent')),
     assigned_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
     client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE,
+    source_instance_name VARCHAR(120),
     opted_out_at TIMESTAMP WITH TIME ZONE,
     disclosure_sent_at TIMESTAMP WITH TIME ZONE,
     latest_image_analysis TEXT,
@@ -134,6 +135,7 @@ const schema = `
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS installation_state VARCHAR(20);
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS payhero_state JSONB;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
+  ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_instance_name VARCHAR(120);
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analysis TEXT;
   ALTER TABLE conversations ADD COLUMN IF NOT EXISTS latest_image_analyzed_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS installation_form_config JSONB NOT NULL DEFAULT '{}'::jsonb;

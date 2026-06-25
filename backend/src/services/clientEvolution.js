@@ -20,11 +20,16 @@ function clientSettings(client) {
   return { baseUrl, headers, instance };
 }
 
-async function setClientWebhook(client) {
-  const { baseUrl, headers, instance } = clientSettings(client);
+async function setClientWebhook(client, options = {}) {
+  const { baseUrl, headers } = providerConfig();
+  const instance = String(options.instanceName || client.evolution_instance_name || '').trim();
+  const token = String(options.token || client.evolution_webhook_secret || '').trim();
+  if (!instance) throw new Error('Evolution instance is missing for this client.');
+  if (!token) throw new Error('Evolution webhook token is missing for this client.');
   const publicUrl = String(process.env.PUBLIC_BACKEND_URL || process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
   if (!publicUrl) throw new Error('PUBLIC_BACKEND_URL or FRONTEND_URL is required before activating Evolution routing.');
-  const callback = `${publicUrl}/webhook/evolution/client/${client.id}?token=${encodeURIComponent(client.evolution_webhook_secret)}`;
+  const agentQuery = options.agentId ? `&agent=${encodeURIComponent(options.agentId)}` : '';
+  const callback = `${publicUrl}/webhook/evolution/client/${client.id}?token=${encodeURIComponent(token)}${agentQuery}`;
   await axios.post(
     `${baseUrl}/webhook/set/${encodeURIComponent(instance)}`,
     {

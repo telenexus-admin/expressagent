@@ -26,6 +26,8 @@ async function ensureEvoOnboardingTable() {
       connected_number VARCHAR(80),
       connection_state VARCHAR(40),
       provider_error TEXT,
+      webhook_secret VARCHAR(120),
+      routing_active BOOLEAN NOT NULL DEFAULT FALSE,
       phone_otp_hash TEXT,
       phone_otp_expires_at TIMESTAMP WITH TIME ZONE,
       phone_otp_sent_at TIMESTAMP WITH TIME ZONE,
@@ -45,6 +47,8 @@ async function ensureEvoOnboardingTable() {
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_expires_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_sent_at TIMESTAMP WITH TIME ZONE;
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS webhook_secret VARCHAR(120);
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS routing_active BOOLEAN NOT NULL DEFAULT FALSE;
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS request_type VARCHAR(40) NOT NULL DEFAULT 'new_client';
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS parent_client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL;
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS agent_label VARCHAR(80);

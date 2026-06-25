@@ -19,6 +19,7 @@ const REPLY_MODES = ['auto', 'text', 'voice', 'silent'];
 
 async function ensureConversationReplyModeColumn() {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
+  await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_instance_name VARCHAR(120)`);
   await db.query(`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_reply_mode_check`);
   await db.query(`ALTER TABLE conversations ADD CONSTRAINT conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
 }
@@ -43,6 +44,7 @@ async function ensureClientSmsColumns() {
 }
 
 async function loadConversationWithClient(conversationId, scope) {
+  await ensureConversationReplyModeColumn();
   await ensureClientSmsColumns();
   const result = await db.query(
     `SELECT
@@ -89,13 +91,14 @@ async function loadConversationWithClient(conversationId, scope) {
       client_id: row.client_id,
       installation_state: row.installation_state,
       opted_out_at: row.opted_out_at,
+      source_instance_name: row.source_instance_name,
     },
     client: {
       id: row.cl_id,
       name: row.cl_name,
       business_name: row.cl_business_name,
       connection_provider: row.cl_connection_provider,
-      evolution_instance_name: row.cl_evolution_instance_name,
+      evolution_instance_name: row.source_instance_name || row.cl_evolution_instance_name,
       meta_phone_number_id: row.cl_meta_phone_number_id,
       meta_access_token: row.cl_meta_access_token,
       agent_name: row.cl_agent_name,

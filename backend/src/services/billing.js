@@ -218,6 +218,7 @@ const IMPORT_FIELD_ALIASES = {
   connection_type: ['connectiontype', 'connection', 'type'],
   package_name: ['packagename', 'package', 'plan', 'planname'],
   package_price: ['packageprice', 'price', 'amount', 'cost', 'monthlyfee'],
+  account_balance: ['accountbalance', 'balance', 'walletbalance', 'outstandingbalance', 'arrears', 'amountdue', 'dueamount'],
   validity_period: ['packagevalidity', 'validityperiod', 'validity', 'duration'],
   validity_unit: ['validityunit', 'unit', 'durationunit'],
   expiration_date: ['expirationdate', 'expirydate', 'expiry', 'expiredate', 'expires'],
@@ -276,6 +277,12 @@ function parseImportedDate(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString().slice(0, 10);
 }
 
+function parseImportedTime(value) {
+  const text = String(value || '').trim();
+  const match = text.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
+  return match ? match[1] : '';
+}
+
 function parseImportedNumber(value) {
   const cleaned = String(value || '').replace(/[^0-9.-]/g, '');
   const parsed = Number(cleaned);
@@ -316,9 +323,11 @@ function mapImportedRow(headers, row) {
     connection_type: pick('connection_type'),
     package_name: pick('package_name'),
     package_price: parseImportedNumber(pick('package_price')),
+    account_balance: parseImportedNumber(pick('account_balance')),
     validity_period: parseImportedNumber(pick('validity_period')),
     validity_unit: pick('validity_unit'),
     expiration_date: parseImportedDate(pick('expiration_date')),
+    expiration_time: parseImportedTime(pick('expiration_date')),
     package_status: cleanImportedStatus(pick('package_status')),
     client_status: cleanImportedStatus(pick('client_status')),
     created_date: parseImportedDate(pick('created_date')),
@@ -359,9 +368,11 @@ async function ensureImportedBillingSchema() {
       connection_type VARCHAR(80),
       package_name VARCHAR(180),
       package_price NUMERIC(12,2),
+      account_balance NUMERIC(12,2),
       validity_period INTEGER,
       validity_unit VARCHAR(50),
       expiration_date DATE,
+      expiration_time VARCHAR(20),
       package_status VARCHAR(40),
       client_status VARCHAR(80),
       created_date DATE,
@@ -370,6 +381,8 @@ async function ensureImportedBillingSchema() {
       source_file VARCHAR(255)
     )
   `);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS account_balance NUMERIC(12,2)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS expiration_time VARCHAR(20)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_import_accounts_client_phone ON billing_import_accounts(client_id, phone_normalized)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_import_accounts_client_username ON billing_import_accounts(client_id, lower(username))`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_import_accounts_client_account ON billing_import_accounts(client_id, lower(account_number))`);
@@ -397,10 +410,10 @@ async function importBillingCsv({ clientId, fileName, csvText }) {
       INSERT INTO billing_import_accounts (
         client_id, external_client_id, full_name, username, account_number, login_username, login_password,
         email, phone, phone_normalized, physical_address, service_type, router, radius_profile, connection_type,
-        package_name, package_price, validity_period, validity_unit, expiration_date, package_status,
+        package_name, package_price, account_balance, validity_period, validity_unit, expiration_date, expiration_time, package_status,
         client_status, created_date, raw, source_file
       ) VALUES (
-        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24::jsonb,$25
+        $1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20,$21,$22,$23,$24,$25,$26::jsonb,$27
       )
     `;
     for (const account of accounts) {
@@ -422,9 +435,11 @@ async function importBillingCsv({ clientId, fileName, csvText }) {
         account.connection_type || null,
         account.package_name || null,
         account.package_price,
+        account.account_balance,
         account.validity_period,
         account.validity_unit || null,
         account.expiration_date,
+        account.expiration_time || null,
         account.package_status || null,
         account.client_status || null,
         account.created_date,
@@ -468,6 +483,7 @@ async function billingImportSummary(clientId) {
 function importedAccountToStatus(row) {
   if (!row) return null;
   const price = Number(row.package_price);
+  const balance = Number(row.account_balance);
   const formatDbDate = (value) => {
     if (!value) return '';
     if (value instanceof Date && !Number.isNaN(value.getTime())) return value.toISOString().slice(0, 10);
@@ -489,9 +505,11 @@ function importedAccountToStatus(row) {
     connection_type: row.connection_type,
     price: Number.isFinite(price) ? price : 0,
     package_price: Number.isFinite(price) ? price : 0,
+    account_balance: Number.isFinite(balance) ? balance : null,
     validity: row.validity_period,
     validity_unit: row.validity_unit,
     expiration: formatDbDate(row.expiration_date),
+    expiration_time: row.expiration_time || '',
     last_recharged_on: formatDbDate(row.created_date),
     raw: row.raw,
   };
@@ -665,15 +683,25 @@ function accountNotFoundReply(keys) {
 
 function clientStatusReply(data) {
   const status = data.status ? String(data.status).toLowerCase() : 'unknown';
-  const plan = data.plan || 'not shown';
+  const account = data.account || data.account_number || data.username || 'not shown';
+  const planName = data.plan || data.package_name || data.profile || '';
+  const priceValue = Number(data.price ?? data.package_price ?? data.plan_price ?? data.amount);
+  const planPrice = Number.isFinite(priceValue) && priceValue > 0
+    ? `${planName ? `${planName} - ` : ''}KSh ${priceValue.toLocaleString('en-KE')}`
+    : (planName || 'not shown');
+  const balanceValue = Number(data.account_balance ?? data.balance ?? data.wallet_balance ?? data.outstanding_balance ?? data.arrears);
+  const balance = Number.isFinite(balanceValue)
+    ? `KSh ${balanceValue.toLocaleString('en-KE')}`
+    : 'not shown';
   const expiry = data.expiration ? `${data.expiration}${data.expiration_time ? ` at ${data.expiration_time}` : ''}` : 'not shown';
   const recharge = data.last_recharged_on || 'not shown';
-  const name = data.fullname || data.username || 'your account';
 
   return (
-    `I found ${name}.\n` +
+    `I found:\n` +
     `Status: ${status}.\n` +
-    `Current plan: ${plan}.\n` +
+    `Account number: ${account}.\n` +
+    `Current plan Price: ${planPrice}.\n` +
+    `Account Balance: ${balance}.\n` +
     `Expiry: ${expiry}.\n` +
     `Last recharge: ${recharge}.`
   );

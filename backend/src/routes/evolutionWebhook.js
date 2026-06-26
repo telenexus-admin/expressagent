@@ -1,7 +1,9 @@
 const express = require('express');
+const crypto = require('crypto');
 const db = require('../db');
 const { generateAIResponse, transcribeAudio, synthesizeVoice } = require('../services/openai');
 const { notifyOperatorAdmins } = require('../services/pushNotifications');
+const { setClientWebhook } = require('../services/clientEvolution');
 const {
   getOperatorSettings,
   parseEvolutionInbound,
@@ -30,6 +32,84 @@ function payloadShape(payload) {
     messageKeys: message && typeof message === 'object' ? Object.keys(message).slice(0, 12) : [],
     hasMessagesArray: Array.isArray(data?.messages),
   });
+}
+
+function payloadInstanceName(payload) {
+  return String(
+    payload?.instance ||
+    payload?.instanceName ||
+    payload?.data?.instance ||
+    payload?.data?.instanceName ||
+    payload?.data?.instanceId ||
+    ''
+  ).trim();
+}
+
+async function rerouteClientInstanceIfNeeded(payload, settings) {
+  const instanceName = payloadInstanceName(payload);
+  if (!instanceName || instanceName === String(settings.evolution_instance || '').trim()) return false;
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_routing_active BOOLEAN NOT NULL DEFAULT FALSE`);
+
+  const primary = await db.query(
+    `SELECT * FROM clients
+     WHERE connection_provider = 'evolution'
+       AND status = 'active'
+       AND evolution_instance_name = $1
+     LIMIT 1`,
+    [instanceName]
+  );
+  if (primary.rows[0]) {
+    const client = primary.rows[0];
+    const secret = client.evolution_webhook_secret || crypto.randomBytes(32).toString('hex');
+    await setClientWebhook({ ...client, evolution_webhook_secret: secret });
+    await db.query(
+      `UPDATE clients
+       SET evolution_webhook_secret = $1,
+           evolution_routing_active = TRUE
+       WHERE id = $2`,
+      [secret, client.id]
+    );
+    console.warn(`[evo client ${client.id}] Instance ${instanceName} was hitting the Nexa operator webhook. Reconnected it to the client webhook.`);
+    return true;
+  }
+
+  await db.query(`ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS webhook_secret VARCHAR(120)`);
+  await db.query(`ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS routing_active BOOLEAN NOT NULL DEFAULT FALSE`);
+  const additional = await db.query(
+    `SELECT e.*, c.id AS parent_id, c.evolution_instance_name AS parent_instance, c.evolution_webhook_secret AS parent_secret
+     FROM evo_client_onboardings e
+     JOIN clients c ON c.id = e.parent_client_id
+     WHERE e.request_type = 'additional_agent'
+       AND e.status = 'active'
+       AND e.instance_name = $1
+       AND c.status = 'active'
+     LIMIT 1`,
+    [instanceName]
+  );
+  if (additional.rows[0]) {
+    const row = additional.rows[0];
+    const secret = row.webhook_secret || crypto.randomBytes(32).toString('hex');
+    await setClientWebhook(
+      {
+        id: row.parent_id,
+        evolution_instance_name: row.parent_instance || row.instance_name,
+        evolution_webhook_secret: row.parent_secret || secret,
+      },
+      { instanceName: row.instance_name, token: secret, agentId: row.id }
+    );
+    await db.query(
+      `UPDATE evo_client_onboardings
+       SET webhook_secret = $1,
+           routing_active = TRUE,
+           updated_at = NOW()
+       WHERE id = $2`,
+      [secret, row.id]
+    );
+    console.warn(`[evo client ${row.parent_id}] Additional agent ${row.id} (${instanceName}) was hitting the Nexa operator webhook. Reconnected it to the parent client webhook.`);
+    return true;
+  }
+
+  return false;
 }
 
 function audioFilename(mimeType) {
@@ -173,6 +253,9 @@ router.post('/nexa', async (req, res) => {
     const suppliedToken = String(req.query.token || req.headers['x-webhook-token'] || '');
     if (!settings || suppliedToken !== settings.webhook_secret) {
       console.warn('Nexa Evolution webhook ignored: invalid token.');
+      return;
+    }
+    if (await rerouteClientInstanceIfNeeded(req.body, settings)) {
       return;
     }
     if (!settings.enabled) {

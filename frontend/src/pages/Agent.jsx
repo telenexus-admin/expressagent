@@ -679,7 +679,7 @@ export default function Agent() {
                 className="w-full resize-y rounded-2xl border border-[#e4e7f1] bg-white px-5 py-4 font-mono text-sm leading-relaxed text-[#15162f] outline-none transition focus:border-[#5b35f5] focus:ring-4 focus:ring-[#ede8ff]"
               />
               <p className="mt-3 rounded-2xl border border-[#ded6ff] bg-[#fbfaff] px-4 py-3 text-sm font-bold text-[#686e86]">
-                Use media tags from Settings, for example <span className="font-black text-[#4f35f5]">{'{image1}'}</span>. The customer will not see the tag; the agent sends the linked media.
+                Use media tags from Knowledge Base, for example <span className="font-black text-[#4f35f5]">{'{image1}'}</span>. The customer will not see the tag; the agent sends the linked media.
               </p>
             </SettingsCard>
 

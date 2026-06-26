@@ -110,6 +110,7 @@ export default function ExpressnetDashboard() {
       icon: AgentIcon,
       items: [
         ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
+        ['/dashboard/knowledge-base', 'Knowledge Base', PulseIcon, 'agent'],
         ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
         ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
         ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],

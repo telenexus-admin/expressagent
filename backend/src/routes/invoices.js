@@ -11,6 +11,8 @@ const { startInvoicePaymentPrompt } = require('../services/payhero');
 const router = express.Router();
 
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || process.env.FRONTEND_URL || '';
+const DEFAULT_INVOICE_TEMPLATE = 'classic_red';
+const INVOICE_TEMPLATES = new Set([DEFAULT_INVOICE_TEMPLATE, 'modern_blue_orange']);
 
 let schemaReady;
 
@@ -26,6 +28,11 @@ function cleanPhone(value) {
 
 function cleanText(value, max = 500) {
   return String(value || '').trim().slice(0, max);
+}
+
+function cleanInvoiceTemplate(value) {
+  const key = String(value || '').trim();
+  return INVOICE_TEMPLATES.has(key) ? key : DEFAULT_INVOICE_TEMPLATE;
 }
 
 function cleanDataUri(value, allowed = /^image\/(png|jpe?g|webp)$/i) {
@@ -57,6 +64,7 @@ async function ensureInvoiceSchema() {
         CREATE TABLE IF NOT EXISTS invoice_profiles (
           client_id INTEGER PRIMARY KEY REFERENCES clients(id) ON DELETE CASCADE,
           company_name VARCHAR(180),
+          template_key VARCHAR(40) NOT NULL DEFAULT 'classic_red',
           logo_url TEXT,
           logo_mime_type VARCHAR(100),
           logo_data BYTEA,
@@ -132,6 +140,7 @@ async function ensureInvoiceSchema() {
       await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS logo_data BYTEA`);
       await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS signature_mime_type VARCHAR(100)`);
       await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS signature_data BYTEA`);
+      await db.query(`ALTER TABLE invoice_profiles ADD COLUMN IF NOT EXISTS template_key VARCHAR(40) NOT NULL DEFAULT 'classic_red'`);
     })().catch((err) => {
       schemaReady = null;
       throw err;
@@ -222,7 +231,7 @@ function pdfMoney(value) {
   return `KSh ${Number(value || 0).toLocaleString('en-KE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-function invoicePdfBuffer({ invoice, profile }) {
+function invoicePdfBufferClassic({ invoice, profile }) {
   const company = profile.company_name || invoice.business_name || invoice.client_name || 'Company';
   const lines = [
     { x: 52, y: 745, size: 22, text: company, color: 'white' },
@@ -301,6 +310,102 @@ function invoicePdfBuffer({ invoice, profile }) {
   return Buffer.from(pdf, 'utf8');
 }
 
+function invoicePdfBufferModern({ invoice, profile }) {
+  const company = profile.company_name || invoice.business_name || invoice.client_name || 'Company';
+  const issueDate = new Date(invoice.issue_date).toISOString().slice(0, 10);
+  const dueDate = invoice.due_date ? new Date(invoice.due_date).toISOString().slice(0, 10) : '-';
+  const navy = '0.06 0.13 0.38 rg';
+  const orange = '1 0.60 0.02 rg';
+  const black = '0.04 0.05 0.12 rg';
+  const gray = '0.35 0.39 0.49 rg';
+  const light = '0.93 0.92 0.94 rg';
+  const white = '1 1 1 rg';
+  const lines = [
+    { x: 54, y: 745, size: 42, text: 'INVOICE', color: white },
+    { x: 56, y: 717, size: 18, text: company, color: white },
+    { x: 56, y: 678, size: 10, text: `INVOICE NO: ${invoice.invoice_number}`, color: white },
+    { x: 56, y: 662, size: 10, text: issueDate, color: white },
+    { x: 365, y: 686, size: 11, text: 'Invoice to:', color: black },
+    { x: 365, y: 658, size: 24, text: invoice.customer_name, color: black },
+    { x: 365, y: 638, size: 10, text: invoice.customer_email || invoice.customer_phone || '-', color: black },
+    { x: 365, y: 622, size: 10, text: invoice.customer_address || '-', color: black },
+    { x: 62, y: 255, size: 14, text: 'PAYMENT DETAILS:', color: black },
+    { x: 62, y: 224, size: 11, text: profile.payment_method || 'Payment method', color: black },
+    { x: 62, y: 208, size: 10, text: profile.account_number || '-', color: black },
+    { x: 62, y: 184, size: 11, text: profile.account_name || 'Account name', color: black },
+    { x: 62, y: 168, size: 10, text: profile.branch_name || '-', color: black },
+    { x: 62, y: 116, size: 14, text: 'CONTACT US', color: black },
+    { x: 62, y: 88, size: 10, text: profile.phone || '-', color: black },
+    { x: 62, y: 70, size: 10, text: profile.website || profile.email || '-', color: black },
+    { x: 62, y: 52, size: 10, text: profile.address || '-', color: black },
+    { x: 370, y: 102, size: 26, text: 'Thank You!', color: black },
+    { x: 390, y: 52, size: 10, text: profile.signature_name || 'Administrator', color: black },
+  ];
+  const colorOp = (value) => value;
+  const textOps = lines.map((line) => `BT /F1 ${line.size} Tf ${colorOp(line.color)} ${line.x} ${line.y} Td (${pdfText(line.text).slice(0, 88)}) Tj ET`).join('\n');
+  const rowOps = [];
+  let y = 500;
+  (invoice.items || []).slice(0, 8).forEach((item, index) => {
+    if (index % 2 === 1) rowOps.push(`${light} 32 ${y - 14} 530 36 re f`);
+    rowOps.push(
+      `BT /F1 10 Tf ${black} 62 ${y} Td (${pdfText(item.description).slice(0, 42)}) Tj ET`,
+      `BT /F1 10 Tf ${black} 270 ${y} Td (${Number(item.quantity).toFixed(2)}) Tj ET`,
+      `BT /F1 10 Tf ${black} 350 ${y} Td (${pdfText(pdfMoney(item.unit_price))}) Tj ET`,
+      `BT /F1 10 Tf ${black} 465 ${y} Td (${pdfText(pdfMoney(item.line_total))}) Tj ET`
+    );
+    y -= 36;
+  });
+  const stream = [
+    `${navy} 0 790 595 52 re f`,
+    `${navy} 0 620 335 170 re f`,
+    `${white} 0 620 m 335 620 l 595 718 l 595 790 l 335 790 l h f`,
+    `${orange} 318 690 m 595 750 l 595 720 l 330 660 l h f`,
+    `${orange} 0 640 m 36 632 l 20 724 l 0 720 l h f`,
+    `${navy} 32 526 530 42 re f`,
+    `BT /F1 11 Tf ${white} 62 551 Td (Description) Tj ET`,
+    `BT /F1 11 Tf ${white} 270 551 Td (Qty) Tj ET`,
+    `BT /F1 11 Tf ${white} 350 551 Td (Cost) Tj ET`,
+    `BT /F1 11 Tf ${white} 465 551 Td (Subtotal) Tj ET`,
+    ...rowOps,
+    `BT /F1 11 Tf ${black} 350 250 Td (Subtotal) Tj ET`,
+    `BT /F1 11 Tf ${black} 455 250 Td (${pdfText(pdfMoney(invoice.subtotal))}) Tj ET`,
+    `${light} 332 210 230 36 re f`,
+    `BT /F1 11 Tf ${black} 350 224 Td (Tax) Tj ET`,
+    `BT /F1 11 Tf ${black} 455 224 Td (${pdfText(pdfMoney(invoice.tax_amount))}) Tj ET`,
+    `${navy} 332 170 230 40 re f`,
+    `BT /F1 12 Tf ${white} 350 186 Td (TOTAL) Tj ET`,
+    `BT /F1 12 Tf ${white} 455 186 Td (${pdfText(pdfMoney(invoice.total_amount))}) Tj ET`,
+    `${orange} 360 0 m 595 50 l 595 0 l h f`,
+    `${navy} 410 0 m 595 38 l 595 0 l h f`,
+    textOps,
+  ].join('\n');
+  const objects = [
+    '1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj',
+    '2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj',
+    '3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >> endobj',
+    '4 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >> endobj',
+    `5 0 obj << /Length ${Buffer.byteLength(stream, 'utf8')} >> stream\n${stream}\nendstream endobj`,
+  ];
+  let pdf = '%PDF-1.4\n';
+  const offsets = [0];
+  for (const obj of objects) {
+    offsets.push(Buffer.byteLength(pdf, 'utf8'));
+    pdf += `${obj}\n`;
+  }
+  const xrefOffset = Buffer.byteLength(pdf, 'utf8');
+  pdf += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (let i = 1; i < offsets.length; i += 1) pdf += `${String(offsets[i]).padStart(10, '0')} 00000 n \n`;
+  pdf += `trailer << /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
+  return Buffer.from(pdf, 'utf8');
+}
+
+function invoicePdfBuffer({ invoice, profile }) {
+  if (cleanInvoiceTemplate(profile.template_key) === 'modern_blue_orange') {
+    return invoicePdfBufferModern({ invoice, profile });
+  }
+  return invoicePdfBufferClassic({ invoice, profile });
+}
+
 async function loadInvoiceDocument(invoice) {
   const items = invoice.items || (await db.query(`SELECT * FROM invoice_items WHERE invoice_id = $1 ORDER BY id ASC`, [invoice.id])).rows;
   const profileResult = await db.query(`SELECT * FROM invoice_profiles WHERE client_id = $1`, [invoice.client_id]);
@@ -351,6 +456,7 @@ function invoiceProfileResponse(row = {}) {
   const { logo_data, signature_data, ...safe } = row;
   return {
     ...safe,
+    template_key: cleanInvoiceTemplate(row.template_key),
     logo_data_url: dataUrl(logo_data, row.logo_mime_type),
     signature_data_url: dataUrl(signature_data, row.signature_mime_type),
   };
@@ -359,6 +465,7 @@ function invoiceProfileResponse(row = {}) {
 function invoiceProfileForRender(row = {}) {
   return {
     ...row,
+    template_key: cleanInvoiceTemplate(row.template_key),
     logo_url: dataUrl(row.logo_data, row.logo_mime_type) || row.logo_url || '',
     signature_image_url: dataUrl(row.signature_data, row.signature_mime_type) || row.signature_image_url || '',
   };
@@ -374,7 +481,29 @@ function esc(value) {
   }[char]));
 }
 
+function renderPublicInvoiceModern({ invoice, profile }) {
+  const company = profile.company_name || invoice.business_name || invoice.client_name || 'Company';
+  const items = invoice.items || [];
+  return `<!doctype html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${esc(invoice.invoice_number)} Invoice</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#eef2f8;font-family:Inter,Arial,sans-serif;color:#080b1f}.page{position:relative;max-width:900px;margin:28px auto;background:#fff;box-shadow:0 26px 70px rgba(15,23,42,.16);overflow:hidden}.hero{position:relative;min-height:280px;padding:58px 58px 0}.navy{position:absolute;left:0;top:0;width:60%;height:230px;background:#172b72;clip-path:polygon(0 0,100% 0,86% 100%,7% 100%)}.orange{position:absolute;right:0;top:82px;width:44%;height:44px;background:#ff9f05;transform:skewY(-13deg)}.brand{position:relative;color:#fff}.logo{height:44px;max-width:180px;object-fit:contain;margin-bottom:12px}.invoice-word{font-size:64px;line-height:.9;font-weight:950;letter-spacing:.02em}.company{font-size:22px}.invoice-meta{margin-top:30px;font-size:14px;letter-spacing:.18em}.billto{position:absolute;right:54px;top:165px;width:310px;text-align:center}.billto-label{font-weight:900}.billto-name{font-size:34px;font-weight:950}.billto-small{font-size:14px;line-height:1.55}.main{padding:28px 46px 50px}.table{width:100%;border-collapse:collapse;margin-top:10px}.table th{background:#172b72;color:#fff;text-align:left;padding:18px 22px;font-size:15px}.table th:not(:first-child),.table td:not(:first-child){text-align:center}.table td{padding:16px 22px;font-size:15px}.table tbody tr:nth-child(even){background:#e7e5ea}.lower{display:grid;grid-template-columns:1fr 360px;gap:40px;margin-top:58px}.section-title{font-size:22px;font-weight:950;margin-bottom:24px}.payment strong,.contact strong{display:block;margin-top:18px}.totals{font-size:17px}.totals-row{display:grid;grid-template-columns:1fr 1fr;padding:18px 28px}.totals-row:nth-child(2){background:#e7e5ea}.totals-row.total{background:#172b72;color:#fff;font-weight:950}.thanks{margin-top:48px;text-align:center;font-size:36px;font-weight:950}.signature{margin-top:34px;text-align:center}.signature img{max-height:58px;max-width:220px;object-fit:contain}.sig-text{margin:auto;width:230px;border-top:2px solid #172b72;padding-top:8px}.bottom-navy{position:absolute;right:-20px;bottom:0;width:46%;height:58px;background:#172b72;transform:skewY(-13deg);transform-origin:right bottom}.bottom-orange{position:absolute;left:310px;bottom:10px;width:170px;height:28px;background:#ff9f05;transform:skewY(-13deg)}@media(max-width:760px){.hero{padding:38px 24px 0}.navy{width:100%;height:245px}.orange{top:210px;width:65%}.invoice-word{font-size:46px}.billto{position:relative;right:auto;top:auto;width:auto;margin-top:70px;text-align:left}.main{padding:22px}.lower{grid-template-columns:1fr}.table th,.table td{padding:12px 8px;font-size:12px}}
+</style></head><body>
+<div class="page">
+  <div class="navy"></div><div class="orange"></div>
+  <section class="hero"><div class="brand">${profile.logo_url ? `<img class="logo" src="${esc(profile.logo_url)}">` : ''}<div class="invoice-word">INVOICE</div><div class="company">${esc(company)}</div><div class="invoice-meta">INVOICE NO: ${esc(invoice.invoice_number)}<br>${esc(new Date(invoice.issue_date).toISOString().slice(0,10))}</div></div><div class="billto"><div class="billto-label">Invoice to:</div><div class="billto-name">${esc(invoice.customer_name)}</div><div class="billto-small">${esc(invoice.customer_email || invoice.customer_phone || '-')}<br>${esc(invoice.customer_address || '-')}</div></div></section>
+  <main class="main">
+    <table class="table"><thead><tr><th>Description</th><th>Qty</th><th>Cost</th><th>Subtotal</th></tr></thead><tbody>${items.map((item) => `<tr><td>${esc(item.description)}</td><td>${Number(item.quantity).toFixed(2)}</td><td>${Number(item.unit_price).toFixed(2)}</td><td>${Number(item.line_total).toFixed(2)}</td></tr>`).join('')}</tbody></table>
+    <div class="lower"><section><div class="section-title">PAYMENT DETAILS:</div><div class="payment"><strong>${esc(profile.payment_method || 'Payment method')}</strong>${esc(profile.account_number || '-')}<strong>${esc(profile.account_name || 'Account name')}</strong>${esc(profile.branch_name || '-')}</div><div class="section-title" style="margin-top:54px">CONTACT US</div><div class="contact">${esc(profile.phone || '-')}<br>${esc(profile.website || profile.email || '-')}<br>${esc(profile.address || '-')}</div></section><section><div class="totals"><div class="totals-row"><strong>Subtotal</strong><span>${Number(invoice.subtotal).toFixed(2)}</span></div><div class="totals-row"><strong>Tax</strong><span>${Number(invoice.tax_amount).toFixed(2)}</span></div><div class="totals-row total"><strong>TOTAL</strong><span>${Number(invoice.total_amount).toFixed(2)}</span></div></div><div class="thanks">Thank You!</div><div class="signature">${profile.signature_image_url ? `<img src="${esc(profile.signature_image_url)}">` : ''}<div class="sig-text">${esc(profile.signature_name || 'Administrator')}</div></div></section></div>
+  </main><div class="bottom-orange"></div><div class="bottom-navy"></div>
+</div></body></html>`;
+}
+
 function renderPublicInvoice({ invoice, profile }) {
+  if (cleanInvoiceTemplate(profile.template_key) === 'modern_blue_orange') {
+    return renderPublicInvoiceModern({ invoice, profile });
+  }
   const company = profile.company_name || invoice.business_name || invoice.client_name || 'Company';
   const items = invoice.items || [];
   return `<!doctype html>
@@ -415,10 +544,14 @@ router.put('/profile', async (req, res) => {
     await ensureInvoiceSchema();
     const logo = cleanDataUri(req.body.logo_data_url);
     const signature = cleanDataUri(req.body.signature_data_url);
-    const fields = ['company_name', 'phone', 'email', 'address', 'website', 'payment_method', 'account_name', 'account_number', 'branch_name', 'signature_name', 'signature_title', 'terms'];
-    const values = fields.map((field) => cleanText(req.body[field], field.includes('url') ? 1000 : 500));
-    const logoSql = logo.data ? ', logo_data = $14, logo_mime_type = $15' : '';
-    const signatureSql = signature.data ? ', signature_data = $16, signature_mime_type = $17' : '';
+    const fields = ['company_name', 'template_key', 'phone', 'email', 'address', 'website', 'payment_method', 'account_name', 'account_number', 'branch_name', 'signature_name', 'signature_title', 'terms'];
+    const values = fields.map((field) => (field === 'template_key' ? cleanInvoiceTemplate(req.body[field]) : cleanText(req.body[field], field.includes('url') ? 1000 : 500)));
+    const logoDataParam = fields.length + 2;
+    const logoMimeParam = fields.length + 3;
+    const signatureDataParam = fields.length + 4;
+    const signatureMimeParam = fields.length + 5;
+    const logoSql = logo.data ? `, logo_data = $${logoDataParam}, logo_mime_type = $${logoMimeParam}` : '';
+    const signatureSql = signature.data ? `, signature_data = $${signatureDataParam}, signature_mime_type = $${signatureMimeParam}` : '';
     const insertFields = ['client_id', ...fields, 'logo_data', 'logo_mime_type', 'signature_data', 'signature_mime_type'];
     const insertValues = [
       clientId,

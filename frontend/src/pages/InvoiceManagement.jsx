@@ -4,6 +4,7 @@ import api from '../utils/api';
 const today = new Date().toISOString().slice(0, 10);
 const emptyProfile = {
   company_name: '',
+  template_key: 'classic_red',
   logo_data_url: '',
   phone: '',
   email: '',
@@ -18,6 +19,10 @@ const emptyProfile = {
   signature_data_url: '',
   terms: 'Payment is due by the invoice due date. Please contact us if you have any questions.',
 };
+const invoiceTemplates = [
+  { key: 'classic_red', name: 'Classic Red', description: 'The current red and black business invoice.' },
+  { key: 'modern_blue_orange', name: 'Modern Blue', description: 'Navy header, orange accents, and clean payment blocks.' },
+];
 const emptyDraft = {
   customer_name: '',
   customer_phone: '',
@@ -100,6 +105,60 @@ function UploadBox({ label, image, onChange }) {
 
 function InvoicePreview({ profile, draft }) {
   const calc = totals(draft.items, draft.discount_amount);
+  if (profile.template_key === 'modern_blue_orange') {
+    return (
+      <div className="relative overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-xl">
+        <div className="relative min-h-[190px] px-7 py-8">
+          <div className="absolute left-0 top-0 h-40 w-[62%] bg-[#172b72] [clip-path:polygon(0_0,100%_0,86%_100%,8%_100%)]" />
+          <div className="absolute right-0 top-16 h-8 w-[45%] -skew-y-12 bg-[#ff9f05]" />
+          <div className="relative z-10 text-white">
+            {profile.logo_data_url ? <img src={profile.logo_data_url} alt="" className="mb-2 max-h-9 max-w-[150px] object-contain" /> : null}
+            <div className="text-5xl font-black leading-none">INVOICE</div>
+            <div className="mt-1 text-lg font-semibold">{profile.company_name || 'Company Name'}</div>
+            <div className="mt-5 text-[11px] font-semibold uppercase tracking-[0.28em]">Invoice No: Auto<br />{draft.issue_date || today}</div>
+          </div>
+          <div className="absolute right-7 top-32 w-56 text-center">
+            <div className="text-xs font-black">Invoice to:</div>
+            <div className="text-2xl font-black text-slate-950">{draft.customer_name || 'Customer Name'}</div>
+            <div className="text-xs font-semibold leading-5 text-slate-600">{draft.customer_email || draft.customer_phone || '-'}<br />{draft.customer_address || '-'}</div>
+          </div>
+        </div>
+        <div className="px-7 pb-8">
+          <div className="overflow-hidden border border-slate-100">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-[#172b72] text-white"><tr><th className="p-3">Description</th><th className="p-3 text-center">Qty</th><th className="p-3 text-center">Cost</th><th className="p-3 text-center">Subtotal</th></tr></thead>
+              <tbody>
+                {draft.items.map((item, index) => <tr key={index} className={index % 2 ? 'bg-[#e7e5ea]' : 'bg-white'}><td className="p-3 font-semibold">{item.description || 'Invoice item'}</td><td className="p-3 text-center">{item.quantity || 1}</td><td className="p-3 text-center">{money(item.unit_price)}</td><td className="p-3 text-center">{money(Number(item.quantity || 0) * Number(item.unit_price || 0))}</td></tr>)}
+              </tbody>
+            </table>
+          </div>
+          <div className="mt-8 grid gap-6 md:grid-cols-[1fr_230px]">
+            <div className="text-xs font-semibold leading-5 text-slate-700">
+              <div className="mb-3 text-base font-black text-slate-950">PAYMENT DETAILS:</div>
+              <b>{profile.payment_method || 'Payment method'}</b><br />{profile.account_number || '-'}<br />
+              <b>{profile.account_name || 'Account name'}</b><br />{profile.branch_name || '-'}
+              <div className="mt-7 text-base font-black text-slate-950">CONTACT US</div>
+              <div className="mt-2">{profile.phone || '-'}<br />{profile.website || profile.email || '-'}<br />{profile.address || '-'}</div>
+            </div>
+            <div>
+              <div className="text-sm">
+                <div className="flex justify-between px-4 py-3"><b>Subtotal</b><span>{money(calc.subtotal)}</span></div>
+                <div className="flex justify-between bg-[#e7e5ea] px-4 py-3"><b>Tax</b><span>{money(calc.tax)}</span></div>
+                <div className="flex justify-between bg-[#172b72] px-4 py-3 font-black text-white"><span>TOTAL</span><span>{money(calc.total)}</span></div>
+              </div>
+              <div className="mt-8 text-center text-3xl font-black">Thank You!</div>
+              <div className="mt-5 text-center">
+                {profile.signature_data_url ? <img src={profile.signature_data_url} alt="" className="mx-auto mb-2 max-h-12 max-w-[180px] object-contain" /> : null}
+                <div className="mx-auto w-44 border-t-2 border-[#172b72] pt-2 text-xs font-bold">{profile.signature_name || 'Administrator'}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="absolute bottom-0 right-0 h-10 w-48 -skew-y-12 bg-[#172b72]" />
+        <div className="absolute bottom-3 left-[48%] h-5 w-28 -skew-y-12 bg-[#ff9f05]" />
+      </div>
+    );
+  }
   return (
     <div className="overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-xl">
       <div className="grid grid-cols-[1.1fr_0.9fr]">
@@ -347,6 +406,45 @@ export default function InvoiceManagement() {
         {tab === 'setup' && (
           <div className="grid gap-5 xl:grid-cols-[1fr_520px]">
             <Section title="Invoice Setup" description="Upload the logo and signature, then set payment details that appear on every invoice.">
+              <div className="mb-5">
+                <div className="mb-2 text-[11px] font-black uppercase tracking-wide text-slate-500">Invoice template</div>
+                <div className="grid gap-3 md:grid-cols-2">
+                  {invoiceTemplates.map((template) => {
+                    const selected = (profile.template_key || 'classic_red') === template.key;
+                    return (
+                      <button
+                        key={template.key}
+                        type="button"
+                        onClick={() => setProfile({ ...profile, template_key: template.key })}
+                        className={`rounded-2xl border p-4 text-left transition ${selected ? 'border-[#3535FF] bg-[#f4f3ff] shadow-lg shadow-[#3535FF]/10' : 'border-slate-200 bg-white hover:border-slate-300'}`}
+                      >
+                        <div className="mb-3 flex h-20 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                          {template.key === 'modern_blue_orange' ? (
+                            <>
+                              <div className="flex-1 bg-[#172b72] p-3 text-xs font-black text-white">INVOICE</div>
+                              <div className="w-16 bg-[#ff9f05]" />
+                              <div className="flex-1 p-3"><div className="h-2 rounded bg-slate-200" /><div className="mt-2 h-2 rounded bg-slate-100" /></div>
+                            </>
+                          ) : (
+                            <>
+                              <div className="flex-1 bg-[#171d27] p-3 text-xs font-black text-white">Company</div>
+                              <div className="w-20 bg-[#e5092f]" />
+                              <div className="flex-1 p-3"><div className="h-2 rounded bg-slate-200" /><div className="mt-2 h-2 rounded bg-slate-100" /></div>
+                            </>
+                          )}
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-black text-slate-950">{template.name}</div>
+                            <div className="mt-1 text-xs font-semibold leading-5 text-slate-500">{template.description}</div>
+                          </div>
+                          <span className={`h-4 w-4 rounded-full border ${selected ? 'border-[#3535FF] bg-[#3535FF]' : 'border-slate-300'}`} />
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <div className="grid gap-4 md:grid-cols-2">
                 <UploadBox label="Company logo" image={profile.logo_data_url} onChange={(event) => handleUpload('logo_data_url', event)} />
                 <UploadBox label="Signature image" image={profile.signature_data_url} onChange={(event) => handleUpload('signature_data_url', event)} />

@@ -20,8 +20,20 @@ const REPLY_MODES = ['auto', 'text', 'voice', 'silent'];
 async function ensureConversationReplyModeColumn() {
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS reply_mode VARCHAR(20) NOT NULL DEFAULT 'auto'`);
   await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_instance_name VARCHAR(120)`);
-  await db.query(`ALTER TABLE conversations DROP CONSTRAINT IF EXISTS conversations_reply_mode_check`);
-  await db.query(`ALTER TABLE conversations ADD CONSTRAINT conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
+  await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'conversations_reply_mode_check'
+          AND conrelid = 'conversations'::regclass
+      ) THEN
+        ALTER TABLE conversations
+        ADD CONSTRAINT conversations_reply_mode_check
+        CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'));
+      END IF;
+    END $$;
+  `);
 }
 
 async function ensureClientSmsColumns() {

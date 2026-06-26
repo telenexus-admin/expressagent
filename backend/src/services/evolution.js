@@ -84,8 +84,20 @@ async function ensureOperatorAgentTables() {
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_smtp_password TEXT`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_resend_api_key TEXT`);
   await db.query(`ALTER TABLE operator_agent_settings ADD COLUMN IF NOT EXISTS email_configured_at TIMESTAMP WITH TIME ZONE`);
-  await db.query(`ALTER TABLE operator_conversations DROP CONSTRAINT IF EXISTS operator_conversations_reply_mode_check`);
-  await db.query(`ALTER TABLE operator_conversations ADD CONSTRAINT operator_conversations_reply_mode_check CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'))`);
+  await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'operator_conversations_reply_mode_check'
+          AND conrelid = 'operator_conversations'::regclass
+      ) THEN
+        ALTER TABLE operator_conversations
+        ADD CONSTRAINT operator_conversations_reply_mode_check
+        CHECK (reply_mode IN ('auto', 'text', 'voice', 'silent'));
+      END IF;
+    END $$;
+  `);
   await db.query(`
     CREATE TABLE IF NOT EXISTS operator_messages (
       id SERIAL PRIMARY KEY,

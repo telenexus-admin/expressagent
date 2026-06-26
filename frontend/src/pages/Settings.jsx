@@ -78,6 +78,10 @@ export default function Settings() {
   const [billingTesting, setBillingTesting] = useState(false);
   const [billingEditing, setBillingEditing] = useState(false);
   const [billingStatus, setBillingStatus] = useState(null);
+  const [billingImport, setBillingImport] = useState({ account_count: 0, last_import: null });
+  const [billingImportFile, setBillingImportFile] = useState(null);
+  const [billingImportUploading, setBillingImportUploading] = useState(false);
+  const [billingImportStatus, setBillingImportStatus] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaSaving, setMediaSaving] = useState(false);
@@ -127,6 +131,21 @@ export default function Settings() {
     }
   };
 
+  const loadBillingImport = async () => {
+    try {
+      const { data } = await api.get('/settings/billing/import-summary');
+      setBillingImport({
+        account_count: Number(data.account_count || 0),
+        last_import: data.last_import || null,
+      });
+    } catch (err) {
+      setBillingImportStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to load uploaded billing accounts.',
+      });
+    }
+  };
+
   const loadMedia = async () => {
     setMediaLoading(true);
     try {
@@ -156,6 +175,7 @@ export default function Settings() {
     async function run() {
       if (!cancelled) {
         await loadBilling();
+        await loadBillingImport();
         await loadMedia();
         await loadInstallationForm();
       }
@@ -234,6 +254,37 @@ export default function Settings() {
     setBillingEditing(false);
     setBillingStatus(null);
     await loadBilling({ silent: true });
+  };
+
+  const uploadBillingImport = async () => {
+    if (!billingImportFile) {
+      setBillingImportStatus({ type: 'error', message: 'Choose a billing CSV file first.' });
+      return;
+    }
+    setBillingImportUploading(true);
+    setBillingImportStatus(null);
+    try {
+      const dataUrl = await fileToDataUrl(billingImportFile);
+      const { data } = await api.post('/settings/billing/import-csv', {
+        file_name: billingImportFile.name,
+        data_url: dataUrl,
+      });
+      setBillingImport(data.summary || { account_count: data.imported || 0, last_import: data.batch || null });
+      setBillingImportFile(null);
+      const input = document.getElementById('billing-import-file');
+      if (input) input.value = '';
+      setBillingImportStatus({
+        type: 'success',
+        message: `${Number(data.imported || 0).toLocaleString()} billing accounts imported. The agent and invoices can now use them.`,
+      });
+    } catch (err) {
+      setBillingImportStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to import billing CSV.',
+      });
+    } finally {
+      setBillingImportUploading(false);
+    }
   };
 
   const updateMediaForm = (field, value) => {
@@ -503,6 +554,69 @@ export default function Settings() {
                     {billingStatus.message}
                   </div>
                 )}
+
+                <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <div className="text-sm font-black text-slate-950">Billing CSV accounts</div>
+                      <p className="mt-1 text-xs leading-relaxed text-slate-500">
+                        Upload exported billing clients so the agent can identify customers, answer package and expiry questions, and generate invoices per account.
+                      </p>
+                    </div>
+                    <div className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-600 shadow-sm">
+                      {Number(billingImport.account_count || 0).toLocaleString()} accounts
+                    </div>
+                  </div>
+
+                  {billingImport.last_import && (
+                    <div className="mt-3 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+                      Last import: <span className="text-slate-800">{billingImport.last_import.file_name}</span>
+                      {' '}({Number(billingImport.last_import.row_count || 0).toLocaleString()} rows)
+                      {billingImport.last_import.imported_at ? ` on ${new Date(billingImport.last_import.imported_at).toLocaleString()}` : ''}
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
+                    <label className="flex-1 text-xs font-black uppercase text-slate-400">
+                      CSV file
+                      <input
+                        id="billing-import-file"
+                        type="file"
+                        accept=".csv,text/csv"
+                        onChange={(event) => {
+                          setBillingImportFile(event.target.files?.[0] || null);
+                          setBillingImportStatus(null);
+                        }}
+                        className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700"
+                      />
+                    </label>
+                    <button
+                      type="button"
+                      onClick={uploadBillingImport}
+                      disabled={billingImportUploading || !billingImportFile}
+                      className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
+                    >
+                      {billingImportUploading ? 'Importing...' : 'Upload CSV'}
+                    </button>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 text-[11px] font-semibold text-slate-500 sm:grid-cols-2">
+                    <div>Captures ID, full name, username, account number and password.</div>
+                    <div>Captures phone, email, address, service, router, profile, package, price, expiry and status.</div>
+                  </div>
+
+                  {billingImportStatus && (
+                    <div
+                      className={`mt-3 rounded-xl border px-4 py-3 text-sm font-semibold ${
+                        billingImportStatus.type === 'success'
+                          ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                          : 'border-red-100 bg-red-50 text-red-700'
+                      }`}
+                    >
+                      {billingImportStatus.message}
+                    </div>
+                  )}
+                </div>
               </div>
             )}
           </SettingsCard>

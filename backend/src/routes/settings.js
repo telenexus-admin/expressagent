@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { testBillingConnection } = require('../services/billing');
+const { billingImportSummary, importBillingCsv, testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
 const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
@@ -119,6 +119,14 @@ function safeCommunicationConfig(row) {
     has_api_key: Boolean(row.sms_api_key),
     configured_at: row.sms_configured_at || null,
   };
+}
+
+function decodeCsvPayload(body = {}) {
+  if (typeof body.csv_text === 'string' && body.csv_text.trim()) return body.csv_text;
+  const dataUrl = String(body.data_url || body.data || '');
+  const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
+  if (!match) return '';
+  return Buffer.from(match[1], 'base64').toString('utf8');
 }
 
 function safeEmailConfig(row) {
@@ -453,6 +461,42 @@ router.get('/billing', async (req, res) => {
   } catch (err) {
     console.error('GET /settings/billing error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/billing/import-summary', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    const summary = await billingImportSummary(targetClient);
+    res.json(summary);
+  } catch (err) {
+    console.error('GET /settings/billing/import-summary error:', err.message);
+    res.status(500).json({ error: 'Failed to load billing import summary' });
+  }
+});
+
+router.post('/billing/import-csv', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  const fileName = String(req.body.file_name || req.body.filename || 'billing-import.csv').trim();
+  const csvText = decodeCsvPayload(req.body);
+  if (!csvText || csvText.length < 10) {
+    return res.status(400).json({ error: 'Upload a valid CSV file from your billing system' });
+  }
+  if (csvText.length > 8 * 1024 * 1024) {
+    return res.status(400).json({ error: 'CSV file is too large. Keep it below 8MB.' });
+  }
+
+  try {
+    const result = await importBillingCsv({ clientId: targetClient, fileName, csvText });
+    const summary = await billingImportSummary(targetClient);
+    res.json({ ...result, summary });
+  } catch (err) {
+    console.error('POST /settings/billing/import-csv error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to import billing CSV' });
   }
 });
 

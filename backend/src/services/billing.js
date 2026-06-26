@@ -163,7 +163,7 @@ async function testBillingConnection({ provider: selectedProvider, baseUrl: sele
 
 function looksLikeBillingQuestion(text) {
   const value = String(text || '').toLowerCase();
-  return /\b(active|expired|expiry|expire|status|account|username|password|credential|credentials|login|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
+  return /\b(active|expired|expiry|expire|status|account|client id|clientid|username|password|credential|credentials|login|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
 }
 
 function wantsPlans(text) {
@@ -184,7 +184,7 @@ function wantsReconnect(text) {
 }
 
 function wantsClientStatus(text) {
-  return /\b(active|expired|expiry|expire|status|account|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
+  return /\b(active|expired|expiry|expire|status|account|client id|clientid|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
 }
 
 function wantsImportedAccountDetails(text) {
@@ -194,6 +194,16 @@ function wantsImportedAccountDetails(text) {
   if (/\baccount\s*(?:number|no\.?|details?|login)\b/i.test(value) && !/\b(status|active|expired|expiry|expire)\b/i.test(value)) return true;
   if (/\bmy\s+account\b/i.test(value) && !/\b(status|active|expired|expiry|expire|balance|plan|package)\b/i.test(value)) return true;
   return false;
+}
+
+function looksLikeImportedLookupText(text) {
+  const value = String(text || '').trim();
+  if (!value) return false;
+  if (/^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|yes|no)$/i.test(value)) return false;
+  if (/(?:\+?254|0)\d[\d\s-]{7,15}/.test(value)) return true;
+  if (/\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|clientid|username|user\s*name)\b/i.test(value)) return true;
+  if (/^\d{3,14}$/.test(value)) return true;
+  return /^[A-Za-z][A-Za-z .'-]{2,80}$/.test(value);
 }
 
 function hasStandalonePhone(text) {
@@ -534,15 +544,30 @@ async function findImportedAccount({ clientId, customerPhone, messageText }) {
   await ensureImportedBillingSchema();
   const text = String(messageText || '').trim();
   const keys = extractLookupKeys({ customerPhone, messageText: text });
-  const phone = compactPhone(text) || keys.explicitPhone || keys.phone || compactPhone(customerPhone);
+  const explicitPhone = compactPhone(text) || keys.explicitPhone;
+  const fallbackPhone = keys.phone || compactPhone(customerPhone);
   const attempts = [];
-  if (phone) attempts.push({ clause: 'phone_normalized = $2', values: [phone] });
-  if (keys.account) attempts.push({ clause: 'lower(account_number) = lower($2) OR lower(external_client_id) = lower($2)', values: [keys.account] });
-  if (keys.username) attempts.push({ clause: 'lower(username) = lower($2) OR lower(login_username) = lower($2)', values: [keys.username] });
-  if (text && !phone && !keys.account && !keys.username) {
-    attempts.push({ clause: 'lower(username) = lower($2) OR lower(account_number) = lower($2) OR lower(full_name) = lower($2)', values: [text] });
+  if (explicitPhone) attempts.push({ clause: 'phone_normalized = $2', values: [explicitPhone] });
+  if (keys.account) {
+    attempts.push({
+      clause: 'lower(account_number) = lower($2) OR lower(external_client_id) = lower($2) OR ltrim(account_number, $3) = ltrim($2, $3) OR ltrim(external_client_id, $3) = ltrim($2, $3)',
+      values: [keys.account, '0'],
+    });
+  }
+  if (keys.username) {
+    attempts.push({
+      clause: 'lower(username) = lower($2) OR lower(login_username) = lower($2) OR ltrim(username, $3) = ltrim($2, $3) OR ltrim(login_username, $3) = ltrim($2, $3)',
+      values: [keys.username, '0'],
+    });
+  }
+  if (text && !explicitPhone && !keys.account && !keys.username) {
+    attempts.push({
+      clause: 'lower(username) = lower($2) OR lower(account_number) = lower($2) OR lower(external_client_id) = lower($2) OR lower(full_name) = lower($2) OR ltrim(username, $3) = ltrim($2, $3) OR ltrim(account_number, $3) = ltrim($2, $3) OR ltrim(external_client_id, $3) = ltrim($2, $3)',
+      values: [text, '0'],
+    });
     attempts.push({ clause: 'full_name ILIKE $2', values: [`%${text}%`] });
   }
+  if (fallbackPhone && fallbackPhone !== explicitPhone) attempts.push({ clause: 'phone_normalized = $2', values: [fallbackPhone] });
 
   for (const attempt of attempts) {
     const result = await db.query(
@@ -864,7 +889,8 @@ async function reconnectFromPaidPayment({ config, keys, paymentData, messageText
 
 async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   const config = await loadClientBillingConfig(clientId);
-  if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText)) return null;
+  const canBeImportedLookup = looksLikeImportedLookupText(messageText);
+  if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText) && !canBeImportedLookup) return null;
 
   const keys = extractLookupKeys({ customerPhone, messageText });
   const accountDetailsWanted = wantsImportedAccountDetails(messageText);
@@ -872,6 +898,11 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   const paymentWanted = wantsPayment(messageText);
   const reconnectWanted = wantsReconnect(messageText);
   const plansWanted = wantsPlans(messageText);
+
+  if (!looksLikeBillingQuestion(messageText) && canBeImportedLookup) {
+    const imported = await findImportedAccount({ clientId, customerPhone, messageText });
+    return imported ? clientStatusReply(imported) : null;
+  }
 
   if (accountDetailsWanted) {
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });

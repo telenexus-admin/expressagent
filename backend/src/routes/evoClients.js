@@ -4,7 +4,7 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
-const { ensureEvoOnboardingTable, refreshOnboarding } = require('../services/evoSelfOnboarding');
+const { ensureEvoOnboardingTable, refreshOnboarding, makeSessionToken, makeInstanceName, createPairingInstance, cleanProviderError } = require('../services/evoSelfOnboarding');
 const { setClientWebhook } = require('../services/clientEvolution');
 const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 
@@ -57,6 +57,63 @@ router.get('/summary', async (_req, res) => {
     res.status(500).json({ error: 'Failed to load Evolution client summary' });
   }
 });
+
+router.post(
+  '/auto-onboard',
+  [
+    body('business_name').trim().isLength({ min: 2, max: 255 }).withMessage('Business name is required'),
+    body('owner_name').trim().isLength({ min: 2, max: 255 }).withMessage('Owner/admin name is required'),
+    body('phone').trim().matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter the WhatsApp number with country code'),
+    body('email').isEmail().normalizeEmail().withMessage('A valid email is required'),
+    body('location').optional({ checkFalsy: true }).trim().isLength({ max: 255 }),
+    body('service_interest').optional({ checkFalsy: true }).trim().isLength({ max: 80 }),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      await ensureEvoOnboardingTable();
+      const businessName = req.body.business_name.trim();
+      const ownerName = req.body.owner_name.trim();
+      const phone = String(req.body.phone || '').trim();
+      const email = req.body.email;
+      const location = String(req.body.location || '').trim();
+      const serviceInterest = String(req.body.service_interest || 'customer_support').trim() || 'customer_support';
+      const instanceName = makeInstanceName(businessName);
+      const paired = await createPairingInstance(instanceName, phone);
+      const result = await db.query(
+        `INSERT INTO evo_client_onboardings (
+          business_name, owner_name, phone, email, location, service_interest,
+          consent_accepted, session_token, instance_name, status, pairing_code,
+          pairing_number, connection_method, connection_state, phone_verified_at, request_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8, 'pending_qr', $9, $10, 'pairing_code', 'waiting_pairing_code', NOW(), 'new_client')
+        RETURNING *`,
+        [
+          businessName,
+          ownerName,
+          phone,
+          email,
+          location || null,
+          serviceInterest,
+          makeSessionToken(),
+          instanceName,
+          paired.pairingCode,
+          paired.number,
+        ]
+      );
+      res.status(201).json({
+        ...result.rows[0],
+        pairing_code: paired.pairingCode,
+        pairing_number: paired.number,
+        message: 'Pairing code generated. Send it to the client so they can link their WhatsApp number.',
+      });
+    } catch (err) {
+      const detail = cleanProviderError(err);
+      console.error('POST /evo-clients/auto-onboard error:', detail);
+      res.status(502).json({ error: `Could not create pairing code onboarding: ${detail}` });
+    }
+  }
+);
 
 router.post('/:id/refresh', async (req, res) => {
   try {

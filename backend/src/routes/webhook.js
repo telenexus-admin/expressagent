@@ -59,7 +59,7 @@ function runAfterReply(label, task) {
 
 async function isPendingInvoiceContinuation(conversationId, text) {
   const value = String(text || '').trim();
-  if (CASUAL_REPLY_REGEX.test(value)) return false;
+  if (CASUAL_REPLY_REGEX.test(value) || CASUAL_REPLY_LINE_REGEX.test(value)) return false;
   const looksLikeLookup =
     /(?:\+?254|0)\d[\d\s-]{7,15}/.test(value) ||
     /\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|username|user\s*name)\s*(?:is|#|:|-)?\s*[A-Za-z0-9][A-Za-z0-9_.-]{2,39}\b/i.test(value) ||
@@ -77,6 +77,13 @@ async function isPendingInvoiceContinuation(conversationId, text) {
     message.role === 'assistant' &&
     /\bgenerate the invoice\b|\bbilling account\b|\bregistered phone number\b/i.test(String(message.content || ''))
   );
+}
+
+function shouldAutoGenerateInvoice(conversationId, text) {
+  const value = String(text || '').trim();
+  if (!value || CASUAL_REPLY_REGEX.test(value) || CASUAL_REPLY_LINE_REGEX.test(value)) return Promise.resolve(false);
+  if (INVOICE_REGEX.test(value)) return Promise.resolve(true);
+  return isPendingInvoiceContinuation(conversationId, value);
 }
 
 async function notifySupport(client, supportNumber, message) {
@@ -395,6 +402,7 @@ const INSTALL_REGEX = new RegExp(
 );
 const INVOICE_REGEX = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 const CASUAL_REPLY_REGEX = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
+const CASUAL_REPLY_LINE_REGEX = /(?:^|\n|\r)\s*(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*(?:$|\n|\r)/i;
 
 const WELCOME_MENU_ROWS = [
   {
@@ -838,7 +846,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    if (!inboundIsImage && !CASUAL_REPLY_REGEX.test(messageText) && (INVOICE_REGEX.test(normalized) || await isPendingInvoiceContinuation(conversation.id, messageText))) {
+    if (!inboundIsImage && await shouldAutoGenerateInvoice(conversation.id, messageText)) {
       try {
         const result = await invoiceRoutes.createAndSendCustomerInvoice({
           client,

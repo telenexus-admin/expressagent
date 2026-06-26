@@ -22,6 +22,7 @@ const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|ms
 const INSTALL_RE = /\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/i;
 const INVOICE_RE = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 const CASUAL_REPLY_RE = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
+const CASUAL_REPLY_LINE_RE = /(?:^|\n|\r)\s*(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*(?:$|\n|\r)/i;
 
 function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
@@ -55,7 +56,7 @@ function runAfterReply(label, task) {
 
 async function isPendingInvoiceContinuation(conversationId, text) {
   const value = String(text || '').trim();
-  if (CASUAL_REPLY_RE.test(value)) return false;
+  if (CASUAL_REPLY_RE.test(value) || CASUAL_REPLY_LINE_RE.test(value)) return false;
   const looksLikeLookup =
     /(?:\+?254|0)\d[\d\s-]{7,15}/.test(value) ||
     /\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|username|user\s*name)\s*(?:is|#|:|-)?\s*[A-Za-z0-9][A-Za-z0-9_.-]{2,39}\b/i.test(value) ||
@@ -73,6 +74,13 @@ async function isPendingInvoiceContinuation(conversationId, text) {
     message.role === 'assistant' &&
     /\bgenerate the invoice\b|\bbilling account\b|\bregistered phone number\b/i.test(String(message.content || ''))
   );
+}
+
+function shouldAutoGenerateInvoice(conversationId, text) {
+  const value = String(text || '').trim();
+  if (!value || CASUAL_REPLY_RE.test(value) || CASUAL_REPLY_LINE_RE.test(value)) return Promise.resolve(false);
+  if (INVOICE_RE.test(value)) return Promise.resolve(true);
+  return isPendingInvoiceContinuation(conversationId, value);
 }
 
 function audioFilename(mimeType) {
@@ -538,7 +546,7 @@ router.post('/client/:clientId', async (req, res) => {
       }
     }
 
-    if (!incoming.isImage && !CASUAL_REPLY_RE.test(userText) && (INVOICE_RE.test(userText) || await isPendingInvoiceContinuation(conversation.id, userText))) {
+    if (!incoming.isImage && await shouldAutoGenerateInvoice(conversation.id, userText)) {
       try {
         const result = await invoiceRoutes.createAndSendCustomerInvoice({
           client,

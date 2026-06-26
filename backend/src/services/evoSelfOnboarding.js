@@ -141,6 +141,17 @@ async function requestPairingCode(instanceName, phoneNumber) {
   return createPairingInstance(instanceName, phoneNumber);
 }
 
+async function requestQrReconnect(instanceName) {
+  try {
+    const qr = await fetchQr(instanceName);
+    if (qr) return qr;
+  } catch (err) {
+    console.warn(`Could not fetch reconnect QR for ${instanceName}, recreating instance:`, err.response?.status || err.message);
+  }
+  await removeInstance(instanceName);
+  return createInstance(instanceName);
+}
+
 async function getInstanceState(instanceName) {
   const { baseUrl, headers } = providerConfig();
   const result = await axios.get(`${baseUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`, { headers, timeout: 30000 });
@@ -190,7 +201,9 @@ module.exports = {
   createInstance,
   createPairingInstance,
   requestPairingCode,
+  requestQrReconnect,
   removeInstance,
   refreshOnboarding,
+  getInstanceState,
   cleanProviderError,
 };

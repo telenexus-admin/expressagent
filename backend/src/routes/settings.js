@@ -8,6 +8,7 @@ const { sendSMS } = require('../services/sms');
 const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
 const { listBlockedNumbers, addBlockedNumber, removeBlockedNumber } = require('../services/blockedNumbers');
+const { setClientWebhook } = require('../services/clientEvolution');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -346,8 +347,8 @@ router.get('/agents', async (req, res) => {
 
     const extraResult = await db.query(
       `SELECT id, business_name, owner_name, phone, email, instance_name, status, connection_state,
-              connected_number, connected_at, reviewed_at, provider_error, agent_label, created_at, updated_at
-              , routing_active
+              connected_number, connected_at, reviewed_at, provider_error, agent_label, created_at, updated_at,
+              routing_active, qr_code, pairing_code, pairing_number, connection_method
        FROM evo_client_onboardings
        WHERE parent_client_id = $1 AND request_type = 'additional_agent' AND status != 'archived'
        ORDER BY created_at ASC`,
@@ -386,6 +387,10 @@ router.get('/agents', async (req, res) => {
           connected_at: row.connected_at,
           reviewed_at: row.reviewed_at,
           provider_error: row.provider_error,
+          qr_code: row.qr_code,
+          pairing_code: row.pairing_code,
+          pairing_number: row.pairing_number,
+          connection_method: row.connection_method,
           created_at: row.created_at,
           updated_at: row.updated_at,
         })),
@@ -396,6 +401,138 @@ router.get('/agents', async (req, res) => {
   } catch (err) {
     console.error('GET /settings/agents error:', err.message);
     res.status(500).json({ error: 'Failed to load agent onboarding status' });
+  }
+});
+
+router.post('/agents/:agentId/reconnect', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  const method = String(req.body.method || 'qr').trim();
+  if (!['qr', 'pairing_code'].includes(method)) {
+    return res.status(400).json({ error: 'Choose QR scan or pairing code reconnect.' });
+  }
+
+  try {
+    const {
+      ensureEvoOnboardingTable,
+      requestPairingCode,
+      requestQrReconnect,
+      getInstanceState,
+      cleanProviderError,
+    } = require('../services/evoSelfOnboarding');
+    await ensureEvoOnboardingTable();
+
+    const parentResult = await db.query(`SELECT * FROM clients WHERE id = $1 LIMIT 1`, [targetClient]);
+    const parent = parentResult.rows[0];
+    if (!parent) return res.status(404).json({ error: 'Client dashboard not found.' });
+
+    const agentId = String(req.params.agentId || '');
+    const isPrimary = agentId === `primary-${targetClient}` || agentId === 'primary';
+    let instanceName = '';
+    let webhookToken = '';
+    let webhookAgentId = null;
+    let row = null;
+
+    if (isPrimary) {
+      if (parent.connection_provider !== 'evolution' || !parent.evolution_instance_name) {
+        return res.status(400).json({ error: 'The primary agent is not linked to an Evolution instance.' });
+      }
+      instanceName = parent.evolution_instance_name;
+      webhookToken = parent.evolution_webhook_secret || crypto.randomBytes(32).toString('hex');
+      if (!parent.evolution_webhook_secret) {
+        await db.query(`UPDATE clients SET evolution_webhook_secret = $1 WHERE id = $2`, [webhookToken, targetClient]);
+        parent.evolution_webhook_secret = webhookToken;
+      }
+    } else {
+      const rowResult = await db.query(
+        `SELECT * FROM evo_client_onboardings
+         WHERE id = $1 AND parent_client_id = $2 AND request_type = 'additional_agent' AND status != 'archived'
+         LIMIT 1`,
+        [agentId, targetClient]
+      );
+      row = rowResult.rows[0];
+      if (!row) return res.status(404).json({ error: 'Additional agent was not found for this dashboard.' });
+      instanceName = row.instance_name;
+      webhookToken = row.webhook_secret || crypto.randomBytes(32).toString('hex');
+      webhookAgentId = row.id;
+    }
+
+    if (!instanceName) return res.status(400).json({ error: 'This agent does not have an Evolution instance assigned.' });
+
+    let currentState = '';
+    try {
+      const stateResult = await getInstanceState(instanceName);
+      currentState = stateResult.state || '';
+      if (['open', 'connected'].includes(currentState)) {
+        await setClientWebhook(parent, { instanceName, token: webhookToken, agentId: webhookAgentId });
+        if (row) {
+          await db.query(
+            `UPDATE evo_client_onboardings
+             SET webhook_secret = $1, routing_active = TRUE, connection_state = $2,
+                 qr_code = NULL, pairing_code = NULL, provider_error = NULL, updated_at = NOW()
+             WHERE id = $3`,
+            [webhookToken, currentState, row.id]
+          );
+        }
+        return res.json({
+          status: 'connected',
+          connection_state: currentState,
+          message: 'This WhatsApp number is already connected. The webhook has been refreshed.',
+        });
+      }
+    } catch (err) {
+      currentState = '';
+    }
+
+    if (method === 'pairing_code') {
+      const phone = String(req.body.phone || '').trim();
+      const paired = await requestPairingCode(instanceName, phone);
+      await setClientWebhook(parent, { instanceName, token: webhookToken, agentId: webhookAgentId });
+      if (row) {
+        const updated = await db.query(
+          `UPDATE evo_client_onboardings
+           SET webhook_secret = $1, routing_active = TRUE, pairing_code = $2, pairing_number = $3,
+               connection_method = 'pairing_code', connection_state = 'waiting_pairing_code',
+               qr_code = NULL, provider_error = NULL, updated_at = NOW()
+           WHERE id = $4 RETURNING *`,
+          [webhookToken, paired.pairingCode, paired.number, row.id]
+        );
+        row = updated.rows[0];
+      }
+      return res.json({
+        status: 'pending_pairing_code',
+        connection_state: 'waiting_pairing_code',
+        pairing_code: paired.pairingCode,
+        pairing_number: paired.number,
+        message: 'Pairing code generated. Open WhatsApp linked devices and enter this code.',
+      });
+    }
+
+    const qrCode = await requestQrReconnect(instanceName);
+    if (!qrCode) throw new Error('Evolution did not return a QR code.');
+    await setClientWebhook(parent, { instanceName, token: webhookToken, agentId: webhookAgentId });
+    if (row) {
+      const updated = await db.query(
+        `UPDATE evo_client_onboardings
+         SET webhook_secret = $1, routing_active = TRUE, qr_code = $2, pairing_code = NULL, pairing_number = NULL,
+             connection_method = 'qr', connection_state = 'waiting_qr', provider_error = NULL, updated_at = NOW()
+         WHERE id = $3 RETURNING *`,
+        [webhookToken, qrCode, row.id]
+      );
+      row = updated.rows[0];
+    }
+    return res.json({
+      status: 'pending_qr',
+      connection_state: 'waiting_qr',
+      qr_code: qrCode,
+      message: 'Scan this QR code from WhatsApp linked devices to reconnect the number.',
+    });
+  } catch (err) {
+    const { cleanProviderError } = require('../services/evoSelfOnboarding');
+    const detail = cleanProviderError(err);
+    console.error('POST /settings/agents/:agentId/reconnect error:', detail);
+    res.status(502).json({ error: `Could not start reconnect: ${detail}` });
   }
 });
 

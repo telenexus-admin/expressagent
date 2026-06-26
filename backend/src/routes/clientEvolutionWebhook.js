@@ -53,7 +53,13 @@ function runAfterReply(label, task) {
 }
 
 async function isPendingInvoiceContinuation(conversationId, text) {
-  if (!/(?:\+?254|0)\d[\d\s-]{7,15}|\b[A-Za-z0-9_.-]{3,40}\b/.test(String(text || '').trim())) return false;
+  const value = String(text || '').trim();
+  const looksLikeLookup =
+    /(?:\+?254|0)\d[\d\s-]{7,15}/.test(value) ||
+    /\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|username|user\s*name)\s*(?:is|#|:|-)?\s*[A-Za-z0-9][A-Za-z0-9_.-]{2,39}\b/i.test(value) ||
+    /^\d{5,14}$/.test(value) ||
+    /^ACC[A-Za-z0-9_-]{3,30}$/i.test(value);
+  if (!looksLikeLookup) return false;
   const recent = await db.query(
     `SELECT role, content FROM messages
      WHERE conversation_id = $1

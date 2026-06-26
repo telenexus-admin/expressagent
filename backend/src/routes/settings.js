@@ -334,7 +334,7 @@ router.get('/agents', async (req, res) => {
 
   try {
     await ensureAgentSettingsColumns();
-    const { ensureEvoOnboardingTable } = require('../services/evoSelfOnboarding');
+    const { ensureEvoOnboardingTable, getInstanceState, cleanProviderError } = require('../services/evoSelfOnboarding');
     await ensureEvoOnboardingTable();
     const clientResult = await db.query(
       `SELECT id, name, business_name, contact_email, connection_provider, evolution_instance_name,
@@ -355,6 +355,24 @@ router.get('/agents', async (req, res) => {
       [targetClient]
     );
 
+    const liveStateFor = async (instanceName) => {
+      if (!instanceName) return { state: '', error: '' };
+      try {
+        const stateResult = await getInstanceState(instanceName);
+        return { state: stateResult.state || 'unknown', error: '' };
+      } catch (err) {
+        return { state: 'unknown', error: cleanProviderError(err) };
+      }
+    };
+    const livePrimary = client.connection_provider === 'evolution'
+      ? await liveStateFor(client.evolution_instance_name)
+      : { state: '', error: '' };
+    const primaryConnected = ['open', 'connected'].includes(livePrimary.state);
+    const liveExtras = new Map();
+    for (const row of extraResult.rows) {
+      liveExtras.set(row.id, await liveStateFor(row.instance_name));
+    }
+
     const origin = String(process.env.PUBLIC_FRONTEND_URL || process.env.FRONTEND_URL || '').replace(/\/$/, '');
     const linkPath = `/self-onboarding?additionalAgent=1&clientId=${encodeURIComponent(targetClient)}&business=${encodeURIComponent(client.business_name || client.name || '')}&email=${encodeURIComponent(client.contact_email || '')}`;
     res.json({
@@ -366,34 +384,45 @@ router.get('/agents', async (req, res) => {
           agent_name: client.agent_name || 'Agent One',
           phone: client.support_number || '',
           instance_name: client.evolution_instance_name || '',
-          status: client.connection_provider === 'evolution' && client.evolution_instance_name ? 'active' : 'configured',
-          connection_state: client.connection_provider === 'evolution' ? 'workspace_active' : 'primary_workspace',
+          status: client.connection_provider === 'evolution' && client.evolution_instance_name
+            ? (primaryConnected ? 'active' : 'disconnected')
+            : 'configured',
+          connection_state: client.connection_provider === 'evolution' ? (livePrimary.state || 'unknown') : 'primary_workspace',
+          provider_error: livePrimary.error,
+          live_state: livePrimary.state,
           created_at: client.created_at,
         },
-        ...extraResult.rows.map((row, index) => ({
-          id: row.id,
-          kind: 'additional',
-          label: row.agent_label || `Agent ${index + 2}`,
-          agent_name: row.agent_label || `Agent ${index + 2}`,
-          phone: row.phone,
-          email: row.email,
-          instance_name: row.instance_name,
-          connected_number: row.connected_number,
-          status: row.status,
-          connection_state: row.connection_state,
-          routing_active: row.routing_active,
-          workspace_available: ['reviewed', 'active'].includes(row.status),
-          workspace_scope: 'same_dashboard',
-          connected_at: row.connected_at,
-          reviewed_at: row.reviewed_at,
-          provider_error: row.provider_error,
-          qr_code: row.qr_code,
-          pairing_code: row.pairing_code,
-          pairing_number: row.pairing_number,
-          connection_method: row.connection_method,
-          created_at: row.created_at,
-          updated_at: row.updated_at,
-        })),
+        ...extraResult.rows.map((row, index) => {
+          const live = liveExtras.get(row.id) || { state: row.connection_state || '', error: '' };
+          const connected = ['open', 'connected'].includes(live.state);
+          const visibleStatus = ['reviewed', 'active'].includes(row.status) && !connected ? 'disconnected' : row.status;
+          return {
+            id: row.id,
+            kind: 'additional',
+            label: row.agent_label || `Agent ${index + 2}`,
+            agent_name: row.agent_label || `Agent ${index + 2}`,
+            phone: row.phone,
+            email: row.email,
+            instance_name: row.instance_name,
+            connected_number: row.connected_number,
+            status: visibleStatus,
+            stored_status: row.status,
+            connection_state: live.state || row.connection_state,
+            live_state: live.state,
+            routing_active: row.routing_active,
+            workspace_available: ['reviewed', 'active'].includes(row.status),
+            workspace_scope: 'same_dashboard',
+            connected_at: row.connected_at,
+            reviewed_at: row.reviewed_at,
+            provider_error: live.error || row.provider_error,
+            qr_code: row.qr_code,
+            pairing_code: row.pairing_code,
+            pairing_number: row.pairing_number,
+            connection_method: row.connection_method,
+            created_at: row.created_at,
+            updated_at: row.updated_at,
+          };
+        }),
       ],
       onboarding_url: `${origin}${linkPath}`,
       onboarding_path: linkPath,

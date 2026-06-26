@@ -96,6 +96,7 @@ const AGENT_STATUS_COPY = {
   connected: ['Connected, awaiting review', 'border-indigo-100 bg-indigo-50 text-indigo-700'],
   reviewed: ['Reviewed by onboarding team', 'border-purple-100 bg-purple-50 text-purple-700'],
   active: ['Active', 'border-emerald-100 bg-emerald-50 text-emerald-700'],
+  disconnected: ['Disconnected', 'border-red-100 bg-red-50 text-red-700'],
   failed: ['Needs attention', 'border-red-100 bg-red-50 text-red-700'],
 };
 
@@ -118,6 +119,11 @@ function AgentStatusCard({ agent, selected = false, onOpen, onReconnect, reconne
         <div className="min-w-0">Instance: <span className="break-all font-mono text-[#4f35f5]">{agent.instance_name || 'not assigned'}</span></div>
         <div>Stage: <span className="text-[#171733]">{agent.connection_state || 'workspace'}</span></div>
       </div>
+      {agent.status === 'disconnected' && (
+        <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
+          Evolution reports this WhatsApp instance is disconnected. Use Scan QR or Pairing Code to reconnect it.
+        </div>
+      )}
       {agent.provider_error && <div className="mt-3 break-words rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">{agent.provider_error}</div>}
       {(qrCode || pairingCode || reconnectMessage) && (
         <div className="mt-4 rounded-2xl border border-[#dcd7ff] bg-white p-4">

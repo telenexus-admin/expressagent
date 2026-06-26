@@ -21,6 +21,7 @@ const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
 const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
 const INSTALL_RE = /\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/i;
 const INVOICE_RE = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
+const CASUAL_REPLY_RE = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
 
 function safeError(err) {
   return typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message || 'unknown error');
@@ -54,6 +55,7 @@ function runAfterReply(label, task) {
 
 async function isPendingInvoiceContinuation(conversationId, text) {
   const value = String(text || '').trim();
+  if (CASUAL_REPLY_RE.test(value)) return false;
   const looksLikeLookup =
     /(?:\+?254|0)\d[\d\s-]{7,15}/.test(value) ||
     /\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|username|user\s*name)\s*(?:is|#|:|-)?\s*[A-Za-z0-9][A-Za-z0-9_.-]{2,39}\b/i.test(value) ||
@@ -536,7 +538,7 @@ router.post('/client/:clientId', async (req, res) => {
       }
     }
 
-    if (!incoming.isImage && (INVOICE_RE.test(userText) || await isPendingInvoiceContinuation(conversation.id, userText))) {
+    if (!incoming.isImage && !CASUAL_REPLY_RE.test(userText) && (INVOICE_RE.test(userText) || await isPendingInvoiceContinuation(conversation.id, userText))) {
       try {
         const result = await invoiceRoutes.createAndSendCustomerInvoice({
           client,

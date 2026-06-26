@@ -59,6 +59,7 @@ function runAfterReply(label, task) {
 
 async function isPendingInvoiceContinuation(conversationId, text) {
   const value = String(text || '').trim();
+  if (CASUAL_REPLY_REGEX.test(value)) return false;
   const looksLikeLookup =
     /(?:\+?254|0)\d[\d\s-]{7,15}/.test(value) ||
     /\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|username|user\s*name)\s*(?:is|#|:|-)?\s*[A-Za-z0-9][A-Za-z0-9_.-]{2,39}\b/i.test(value) ||
@@ -393,6 +394,7 @@ const INSTALL_REGEX = new RegExp(
   'i'
 );
 const INVOICE_REGEX = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
+const CASUAL_REPLY_REGEX = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
 
 const WELCOME_MENU_ROWS = [
   {
@@ -836,7 +838,7 @@ router.post('/', async (req, res) => {
       }
     }
 
-    if (!inboundIsImage && (INVOICE_REGEX.test(normalized) || await isPendingInvoiceContinuation(conversation.id, messageText))) {
+    if (!inboundIsImage && !CASUAL_REPLY_REGEX.test(messageText) && (INVOICE_REGEX.test(normalized) || await isPendingInvoiceContinuation(conversation.id, messageText))) {
       try {
         const result = await invoiceRoutes.createAndSendCustomerInvoice({
           client,

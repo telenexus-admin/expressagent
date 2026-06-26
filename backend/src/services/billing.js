@@ -163,7 +163,7 @@ async function testBillingConnection({ provider: selectedProvider, baseUrl: sele
 
 function looksLikeBillingQuestion(text) {
   const value = String(text || '').toLowerCase();
-  return /\b(active|expired|expiry|expire|status|account|username|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
+  return /\b(active|expired|expiry|expire|status|account|username|password|credential|credentials|login|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
 }
 
 function wantsPlans(text) {
@@ -185,6 +185,15 @@ function wantsReconnect(text) {
 
 function wantsClientStatus(text) {
   return /\b(active|expired|expiry|expire|status|account|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
+}
+
+function wantsImportedAccountDetails(text) {
+  const value = String(text || '');
+  if (/\b(password|credentials?|login\s*(?:details?|password|username)?)\b/i.test(value)) return true;
+  if (/\b(user\s*name|username)\b/i.test(value) && !/\b(status|active|expired|expiry|expire)\b/i.test(value)) return true;
+  if (/\baccount\s*(?:number|no\.?|details?|login)\b/i.test(value) && !/\b(status|active|expired|expiry|expire)\b/i.test(value)) return true;
+  if (/\bmy\s+account\b/i.test(value) && !/\b(status|active|expired|expiry|expire|balance|plan|package)\b/i.test(value)) return true;
+  return false;
 }
 
 function hasStandalonePhone(text) {
@@ -493,7 +502,12 @@ function importedAccountToStatus(row) {
     fullname: row.full_name,
     name: row.full_name,
     username: row.username || row.login_username,
+    login_username: row.login_username || row.username,
+    login_password: row.login_password,
+    password: row.login_password,
     account: row.account_number || row.external_client_id,
+    account_number: row.account_number,
+    external_client_id: row.external_client_id,
     phone: row.phone_normalized || row.phone,
     email: row.email,
     address: row.physical_address,
@@ -707,6 +721,23 @@ function clientStatusReply(data) {
   );
 }
 
+function importedAccountDetailsReply(data) {
+  if (!data) return null;
+  const account = data.account || data.account_number || data.external_client_id || 'not shown';
+  const username = data.username || data.login_username || 'not shown';
+  const password = data.login_password || data.password || 'not shown';
+  const phone = data.phone || 'not shown';
+  const plan = data.plan || data.package_name || data.profile || 'not shown';
+  return (
+    `I found your account details:\n` +
+    `Account number: ${account}.\n` +
+    `Username: ${username}.\n` +
+    `Password: ${password}.\n` +
+    `Phone: ${phone}.\n` +
+    `Current plan: ${plan}.`
+  );
+}
+
 function paymentReply(data) {
   const status = data.status || 'unknown';
   const amount = data.amount ? `KSh ${Number(data.amount).toLocaleString('en-KE')}` : 'amount not shown';
@@ -836,17 +867,16 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText)) return null;
 
   const keys = extractLookupKeys({ customerPhone, messageText });
+  const accountDetailsWanted = wantsImportedAccountDetails(messageText);
   const statusWanted = wantsClientStatus(messageText) || hasStandalonePhone(messageText);
   const paymentWanted = wantsPayment(messageText);
   const reconnectWanted = wantsReconnect(messageText);
   const plansWanted = wantsPlans(messageText);
 
-  if (statusWanted || paymentWanted) {
+  if (accountDetailsWanted) {
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });
-    if (imported && statusWanted && !reconnectWanted) return clientStatusReply(imported);
-    if (imported && paymentWanted && !canUseConfig(config)) {
-      return `I found ${imported.fullname || imported.username || 'your account'}.\nCurrent plan: ${imported.plan || 'not shown'}.\nAmount: KSh ${Number(imported.price || 0).toLocaleString('en-KE')}.\nExpiry: ${imported.expiration || 'not shown'}.`;
-    }
+    if (imported) return importedAccountDetailsReply(imported);
+    return accountNotFoundReply(keys);
   }
 
   if (plansWanted && !canUseConfig(config)) {
@@ -856,10 +886,18 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   }
 
   if (!canUseConfig(config)) {
+    if (statusWanted || paymentWanted) {
+      const imported = await findImportedAccount({ clientId, customerPhone, messageText });
+      if (imported && statusWanted && !reconnectWanted) return clientStatusReply(imported);
+      if (imported && paymentWanted) {
+        return `I found ${imported.fullname || imported.username || 'your account'}.\nCurrent plan: ${imported.plan || 'not shown'}.\nAmount: KSh ${Number(imported.price || 0).toLocaleString('en-KE')}.\nExpiry: ${imported.expiration || 'not shown'}.`;
+      }
+    }
     if (statusWanted || paymentWanted) return accountNotFoundReply(keys);
     return null;
   }
 
+  let liveStatusNotFound = false;
   if (statusWanted || paymentWanted) {
     const params = clientLookupParams(keys);
     if (params) {
@@ -868,7 +906,7 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
         return clientStatusReply(status.data);
       }
       if (status.status === 404 && statusWanted && !paymentWanted) {
-        return accountNotFoundReply(keys);
+        liveStatusNotFound = true;
       }
     }
   }
@@ -885,9 +923,19 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
         return paymentReply(payment.data);
       }
       if (payment.status === 404) {
+        const imported = await findImportedAccount({ clientId, customerPhone, messageText });
+        if (imported) {
+          return `I found ${imported.fullname || imported.username || 'your account'}.\nCurrent plan: ${imported.plan || 'not shown'}.\nAmount: KSh ${Number(imported.price || 0).toLocaleString('en-KE')}.\nExpiry: ${imported.expiration || 'not shown'}.`;
+        }
         return `I could not find that payment. Please send the M-Pesa transaction code or the registered payment phone number.`;
       }
     }
+  }
+
+  if ((statusWanted && liveStatusNotFound) || (statusWanted && !paymentWanted)) {
+    const imported = await findImportedAccount({ clientId, customerPhone, messageText });
+    if (imported && !reconnectWanted) return clientStatusReply(imported);
+    if (liveStatusNotFound) return accountNotFoundReply(keys);
   }
 
   if (plansWanted) {
@@ -967,9 +1015,19 @@ async function buildBillingContext({ clientId, customerPhone, messageText }) {
   const sections = [];
   const keys = extractLookupKeys({ customerPhone, messageText });
   const imported = await findImportedAccount({ clientId, customerPhone, messageText });
+  const accountDetailsWanted = wantsImportedAccountDetails(messageText);
 
-  if (imported && (wantsClientStatus(messageText) || wantsPayment(messageText))) {
+  if (imported && !canUseConfig(config) && (wantsClientStatus(messageText) || wantsPayment(messageText))) {
     sections.push(`IMPORTED BILLING ACCOUNT\n${summarizeClientStatus(imported)}`);
+  }
+
+  if (imported && accountDetailsWanted) {
+    sections.push(
+      `IMPORTED ACCOUNT DETAILS\n` +
+      `Account: ${imported.account || 'not shown'}\n` +
+      `Username: ${imported.username || 'not shown'}\n` +
+      `Password: ${imported.login_password || 'not shown'}`
+    );
   }
 
   if (wantsPlans(messageText)) {
@@ -987,9 +1045,10 @@ async function buildBillingContext({ clientId, customerPhone, messageText }) {
       `- You DO have read-only access to these uploaded billing facts when this context appears.\n` +
       `- Do not say you have no access to account details.\n` +
       `- Answer directly using the status, plan, expiry, package and contact facts above.\n` +
+      `- If imported account details include a password and the customer asked for it, you may provide it briefly.\n` +
       `- If no account was found for the WhatsApp number, ask for their registered phone, account number, or username.\n` +
       `- Keep the reply short and customer-friendly.\n` +
-      `- Do not expose passwords or raw internal data unless the admin explicitly asks in the dashboard.`
+      `- Do not expose raw internal data. Only provide a password when the customer explicitly asks for their own login details and the imported CSV matched their WhatsApp/account.`
     );
   }
 

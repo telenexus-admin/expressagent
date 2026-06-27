@@ -55,6 +55,33 @@ async function ensureClientSmsColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_password TEXT`);
 }
 
+async function resolveAgentWorkspaceFilter(req) {
+  const workspaceId = String(req.get('x-agent-workspace-id') || req.query.agentWorkspaceId || '').trim();
+  if (!workspaceId || !req.scope.clientId) return null;
+
+  if (workspaceId.startsWith('primary-')) {
+    const clientId = Number(workspaceId.replace('primary-', ''));
+    if (clientId !== Number(req.scope.clientId)) return null;
+    const result = await db.query(`SELECT evolution_instance_name FROM clients WHERE id = $1`, [req.scope.clientId]);
+    return { kind: 'primary', instanceName: result.rows[0]?.evolution_instance_name || '' };
+  }
+
+  const agentId = Number(workspaceId);
+  if (!Number.isFinite(agentId)) return null;
+  const result = await db.query(
+    `SELECT instance_name
+     FROM evo_client_onboardings
+     WHERE id = $1
+       AND parent_client_id = $2
+       AND request_type = 'additional_agent'
+       AND status != 'archived'
+     LIMIT 1`,
+    [agentId, req.scope.clientId]
+  );
+  const instanceName = result.rows[0]?.instance_name || '';
+  return instanceName ? { kind: 'additional', instanceName } : null;
+}
+
 async function loadConversationWithClient(conversationId, scope) {
   await ensureConversationReplyModeColumn();
   await ensureClientSmsColumns();
@@ -138,12 +165,21 @@ router.get('/', async (req, res) => {
   try {
     await ensureConversationReplyModeColumn();
     const { status, search } = req.query;
+    const workspace = await resolveAgentWorkspaceFilter(req);
     const params = [];
     let where = 'WHERE 1=1';
 
     if (!req.scope.isSuperadmin || req.scope.clientId) {
       params.push(req.scope.clientId);
       where += ` AND c.client_id = $${params.length}`;
+    }
+
+    if (workspace?.kind === 'additional') {
+      params.push(workspace.instanceName);
+      where += ` AND c.source_instance_name = $${params.length}`;
+    } else if (workspace?.kind === 'primary' && workspace.instanceName) {
+      params.push(workspace.instanceName);
+      where += ` AND (c.source_instance_name IS NULL OR c.source_instance_name = $${params.length})`;
     }
 
     if (status) {

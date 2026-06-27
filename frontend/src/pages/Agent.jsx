@@ -315,6 +315,8 @@ export default function Agent() {
   };
   const openAgentWorkspace = (agent) => {
     setSelectedAgentId(agent.id);
+    localStorage.setItem('active_agent_workspace_id', String(agent.id));
+    window.dispatchEvent(new CustomEvent('agent-workspace-changed', { detail: { id: String(agent.id) } }));
   };
 
   const reconnectAgent = async (agent, method) => {

@@ -27,6 +27,7 @@ import DashboardHelpBot from '../components/DashboardHelpBot';
 import expressnetLogo from '../assets/expressnetLogo';
 import aiBotArtwork from '../assets/aiBotArtwork';
 import nexaLogo from '../assets/nexa-logo.png';
+import agentSwitcherAvatar from '../assets/agent-switcher-avatar.jpg';
 
 const NexaMark = () => (
   <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#13c8ff] via-[#3455ff] to-[#812fff] shadow-[0_8px_18px_rgba(53,53,255,0.18)]">
@@ -120,8 +121,13 @@ export default function ClientDashboard() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [agentWorkspaces, setAgentWorkspaces] = useState([]);
+  const [activeAgentWorkspaceId, setActiveAgentWorkspaceId] = useState(() => localStorage.getItem('active_agent_workspace_id') || '');
+  const [workspaceVersion, setWorkspaceVersion] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState({ operations: true });
   const menuRef = useRef(null);
+  const agentMenuRef = useRef(null);
   const expressnet = Number(admin?.client_id) === 1;
 
   useEffect(() => {
@@ -149,18 +155,53 @@ export default function ClientDashboard() {
     loadBadges();
     const timer = setInterval(loadBadges, 15000);
     return () => { stopped = true; clearInterval(timer); };
+  }, [activeAgentWorkspaceId]);
+
+  useEffect(() => {
+    let stopped = false;
+    async function loadAgentWorkspaces() {
+      try {
+        const { data } = await api.get('/settings/agents');
+        if (stopped) return;
+        const available = (Array.isArray(data.agents) ? data.agents : [])
+          .filter((agent) => agent.kind === 'primary' || agent.workspace_available);
+        setAgentWorkspaces(available);
+        const stored = localStorage.getItem('active_agent_workspace_id');
+        const stillValid = stored && available.some((agent) => String(agent.id) === String(stored));
+        const next = stillValid ? stored : (available[0]?.id || '');
+        setActiveAgentWorkspaceId(next);
+        if (next) localStorage.setItem('active_agent_workspace_id', String(next));
+        else localStorage.removeItem('active_agent_workspace_id');
+      } catch (error) {
+        if (error.response?.status !== 401) console.error('Failed to load agent workspaces:', error.message);
+      }
+    }
+    loadAgentWorkspaces();
+    const timer = setInterval(loadAgentWorkspaces, 30000);
+    return () => { stopped = true; clearInterval(timer); };
   }, []);
 
   useEffect(() => {
     const keydown = (event) => {
-      if (event.key === 'Escape') { setDrawerOpen(false); setMenuOpen(false); }
+      if (event.key === 'Escape') { setDrawerOpen(false); setMenuOpen(false); setAgentMenuOpen(false); }
     };
     const outside = (event) => {
       if (menuRef.current && !menuRef.current.contains(event.target)) setMenuOpen(false);
+      if (agentMenuRef.current && !agentMenuRef.current.contains(event.target)) setAgentMenuOpen(false);
+    };
+    const workspaceChanged = (event) => {
+      const id = String(event.detail?.id || localStorage.getItem('active_agent_workspace_id') || '');
+      setActiveAgentWorkspaceId(id);
+      setWorkspaceVersion((value) => value + 1);
     };
     window.addEventListener('keydown', keydown);
     window.addEventListener('mousedown', outside);
-    return () => { window.removeEventListener('keydown', keydown); window.removeEventListener('mousedown', outside); };
+    window.addEventListener('agent-workspace-changed', workspaceChanged);
+    return () => {
+      window.removeEventListener('keydown', keydown);
+      window.removeEventListener('mousedown', outside);
+      window.removeEventListener('agent-workspace-changed', workspaceChanged);
+    };
   }, []);
 
   const active = (path) => (path === '/dashboard/statistics' && location.pathname === '/dashboard') || location.pathname === path || location.pathname.startsWith(`${path}/`);
@@ -248,6 +289,16 @@ export default function ClientDashboard() {
   const showConversationSearch = location.pathname.startsWith('/dashboard/conversations');
   const signOut = () => { logout(); navigate('/login'); };
   const toggleGroup = (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] }));
+  const activeAgentWorkspace = agentWorkspaces.find((agent) => String(agent.id) === String(activeAgentWorkspaceId)) || agentWorkspaces[0] || null;
+  const switchAgentWorkspace = (agent) => {
+    const id = String(agent.id);
+    localStorage.setItem('active_agent_workspace_id', id);
+    setActiveAgentWorkspaceId(id);
+    setWorkspaceVersion((value) => value + 1);
+    setAgentMenuOpen(false);
+    window.dispatchEvent(new CustomEvent('agent-workspace-changed', { detail: { id } }));
+    navigate(location.pathname);
+  };
 
   const itemButton = (item, mobile = false) => {
     const [path, label, Icon, , badge] = item;
@@ -309,6 +360,54 @@ export default function ClientDashboard() {
                 <BellIcon />
                 {badges.conversations > 0 && <span className="absolute right-2 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5b22f5] px-1 text-[10px] font-black text-white">{badges.conversations > 99 ? '99+' : badges.conversations}</span>}
               </button>
+              {agentWorkspaces.length > 1 && (
+                <div className="relative" ref={agentMenuRef}>
+                  <button
+                    type="button"
+                    onClick={() => setAgentMenuOpen((value) => !value)}
+                    className="flex h-12 items-center gap-2 rounded-2xl border border-[#dfe6f3] bg-white px-2 pr-3 shadow-sm transition hover:border-[#bdafff]"
+                    title="Switch agent workspace"
+                  >
+                    <span className="relative flex h-9 w-9 shrink-0 overflow-hidden rounded-full border border-[#b9dfff] bg-[#eef8ff]">
+                      <img src={agentSwitcherAvatar} alt="" className="h-full w-full object-cover object-top" />
+                      <span className="absolute bottom-0 right-0 h-2.5 w-2.5 rounded-full border-2 border-white bg-emerald-500" />
+                    </span>
+                    <span className="hidden max-w-[120px] truncate text-xs font-black text-[#0d1438] xl:block">{activeAgentWorkspace?.label || activeAgentWorkspace?.agent_name || 'Agent'}</span>
+                    <ChevronDownIcon className="hidden h-4 w-4 text-[#7b84a8] xl:block" />
+                  </button>
+                  {agentMenuOpen && (
+                    <div className="absolute right-0 top-14 z-40 w-80 rounded-[24px] border border-slate-100 bg-white p-2 shadow-2xl">
+                      <div className="px-4 py-3">
+                        <div className="text-xs font-black uppercase tracking-[0.14em] text-[#6d35ff]">Agent workspaces</div>
+                        <div className="mt-1 text-xs font-semibold text-[#7b84a8]">Switch dashboard data for each onboarded WhatsApp agent.</div>
+                      </div>
+                      <div className="space-y-1">
+                        {agentWorkspaces.map((agent) => {
+                          const selected = String(agent.id) === String(activeAgentWorkspaceId);
+                          return (
+                            <button
+                              key={agent.id}
+                              type="button"
+                              onClick={() => switchAgentWorkspace(agent)}
+                              className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition ${selected ? 'bg-[#f0ebff]' : 'hover:bg-[#f7f8fc]'}`}
+                            >
+                              <span className="relative flex h-11 w-11 shrink-0 overflow-hidden rounded-full border border-[#b9dfff] bg-[#eef8ff]">
+                                <img src={agentSwitcherAvatar} alt="" className="h-full w-full object-cover object-top" />
+                                <span className={`absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white ${agent.status === 'active' ? 'bg-emerald-500' : 'bg-amber-400'}`} />
+                              </span>
+                              <span className="min-w-0 flex-1">
+                                <span className="block truncate text-sm font-black text-[#0d1438]">{agent.label || agent.agent_name}</span>
+                                <span className="mt-0.5 block truncate text-xs font-semibold text-[#7b84a8]">{agent.connected_number || agent.phone || agent.instance_name || 'Workspace'}</span>
+                              </span>
+                              {selected && <span className="rounded-full bg-[#6d35ff] px-2.5 py-1 text-[10px] font-black uppercase text-white">Open</span>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <div className="hidden items-center gap-3 lg:flex">
                 <span className="relative flex h-12 w-12 items-center justify-center rounded-full border border-[#80d9ff] bg-[#f0f8ff] text-sm font-extrabold text-[#0d1438]">
                   {(admin?.name || 'Nexa Admin').split(/\s+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'NA'}
@@ -322,7 +421,7 @@ export default function ClientDashboard() {
               <div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm flex items-center justify-center text-[#667092]"><span className="hidden lg:block"><ChevronDownIcon className="h-5 w-5" /></span><span className="lg:hidden"><DotsVerticalIcon className="w-5 h-5" /></span></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div>
             </div>
           </header>
-          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-10 pb-7 overflow-hidden"><div className="dashboard-content h-full min-h-0 overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_14px_34px_rgba(31,41,80,0.06)] flex flex-col"><Outlet /></div></main>
+          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-10 pb-7 overflow-hidden"><div className="dashboard-content h-full min-h-0 overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_14px_34px_rgba(31,41,80,0.06)] flex flex-col"><Outlet key={`${activeAgentWorkspaceId || 'primary'}-${workspaceVersion}`} /></div></main>
           <DashboardHelpBot />
         </section>
       </div>

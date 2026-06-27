@@ -9,6 +9,10 @@ api.interceptors.request.use((config) => {
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }
+  const activeAgentWorkspace = localStorage.getItem('active_agent_workspace_id');
+  if (activeAgentWorkspace) {
+    config.headers['X-Agent-Workspace-Id'] = activeAgentWorkspace;
+  }
   return config;
 });
 

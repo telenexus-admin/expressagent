@@ -1,21 +1,70 @@
 import React, { useEffect, useState } from 'react';
 import api from '../utils/api';
-import { AgentIcon, CreditCardIcon, PulseIcon } from '../components/Icons';
+import knowledgeRobot from '../assets/knowledge-robot.jpg';
+import { CreditCardIcon, PulseIcon, ShareIosIcon } from '../components/Icons';
 
 function KnowledgeCard({ icon: Icon, title, description, children }) {
   return (
-    <section className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm">
+    <section className="rounded-[22px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
       <div className="flex items-start gap-4">
-        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#efe9ff] text-[#4B16B5]">
+        <div className="flex h-[54px] w-[54px] shrink-0 items-center justify-center rounded-2xl bg-[#f0e8ff] text-[#6c2cff]">
           <Icon className="h-5 w-5" />
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-base font-black text-slate-950">{title}</h2>
-          <p className="mt-1 text-sm leading-relaxed text-slate-500">{description}</p>
-          <div className="mt-4">{children}</div>
+          <h2 className="text-[18px] font-black text-[#08103f]">{title}</h2>
+          <p className="mt-1 max-w-[680px] text-[13px] font-semibold leading-6 text-[#637098]">{description}</p>
+          <div className="mt-5">{children}</div>
         </div>
       </div>
     </section>
+  );
+}
+
+function HeaderIcon({ className = 'h-7 w-7' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 10.5 12 15l5-4.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M12 4v10.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M5.5 8H5a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8a2 2 0 0 0-2-2h-.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      <path d="M8.2 4.5h7.6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function DatabaseIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" strokeWidth="2" />
+      <path d="M5 6v6c0 1.66 3.13 3 7 3s7-1.34 7-3V6" stroke="currentColor" strokeWidth="2" />
+      <path d="M5 12v6c0 1.66 3.13 3 7 3s7-1.34 7-3v-6" stroke="currentColor" strokeWidth="2" />
+    </svg>
+  );
+}
+
+function FileIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M7 3h7l4 4v14H7V3Z" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M14 3v5h5" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" />
+      <path d="M9.5 13h5M9.5 17h5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M4 7h16M10 11v6M14 11v6M6 7l1 14h10l1-14M9 7V4h6v3" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function InfoIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" fill="currentColor" opacity=".12" />
+      <path d="M12 10v7M12 7h.01" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
   );
 }
 
@@ -211,15 +260,23 @@ export default function KnowledgeBase() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8fafc] p-5 sm:p-8">
-      <div className="mx-auto max-w-5xl">
-        <div className="mb-6 flex items-center gap-4">
-          <div className="flex h-14 w-14 items-center justify-center rounded-2xl border border-[#dedbff] bg-white text-[#4f35f5] shadow-sm">
-            <AgentIcon className="h-6 w-6" />
+    <div className="flex-1 overflow-y-auto bg-[#f6f8ff] p-4 sm:p-6">
+      <div className="mx-auto max-w-6xl">
+        <div className="relative mb-5 overflow-hidden rounded-[24px] border border-[#dfe5f5] bg-white px-7 py-6 shadow-[0_18px_45px_rgba(30,41,59,0.05)]">
+          <div className="flex items-center gap-5">
+            <div className="flex h-[68px] w-[68px] shrink-0 items-center justify-center rounded-2xl bg-white text-[#6d2cff] shadow-[0_12px_30px_rgba(87,38,236,0.18)] ring-1 ring-[#e2dcff]">
+              <HeaderIcon className="h-8 w-8" />
+            </div>
+            <div className="relative z-10 min-w-0">
+              <h1 className="text-[28px] font-black leading-tight text-[#07103d]">Knowledge Base</h1>
+              <p className="mt-2 text-[14px] font-semibold text-[#67739a]">Upload the account data and media the AI agent should use when helping customers.</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-2xl font-black text-slate-950">Knowledge Base</h1>
-            <p className="mt-1 text-sm text-slate-500">Upload the account data and media the AI agent should use when helping customers.</p>
+          <div className="pointer-events-none absolute right-10 top-0 hidden h-full w-[260px] items-center justify-end lg:flex">
+            <div className="absolute right-8 top-8 h-24 w-44 rounded-full border border-[#d9defb] opacity-70" />
+            <div className="absolute right-14 top-12 h-2 w-2 rounded-full bg-[#8f4dff]" />
+            <div className="absolute right-2 top-20 h-2 w-2 rounded-full bg-[#b9f0ff]" />
+            <img src={knowledgeRobot} alt="" className="relative z-10 h-[112px] w-[150px] object-cover object-top mix-blend-multiply" />
           </div>
         </div>
 
@@ -229,37 +286,48 @@ export default function KnowledgeBase() {
             title="Billing Accounts"
             description="Choose the billing system, then upload exported clients so the agent can identify customers, answer package and expiry questions, and generate invoices per account."
           >
-            <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+            <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-5 shadow-[0_14px_34px_rgba(30,41,59,0.04)]">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                <div>
-                  <div className="text-sm font-black text-slate-950">Imported account snapshot</div>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-500">A new upload replaces the previous account snapshot for this dashboard account.</p>
+                <div className="flex items-start gap-4">
+                  <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#f1eaff] text-[#6c2cff]">
+                    <DatabaseIcon className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="text-[15px] font-black text-[#07103d]">Imported account snapshot</div>
+                    <p className="mt-1 text-[12px] font-semibold leading-relaxed text-[#7b86aa]">A new upload replaces the previous account snapshot for this dashboard account.</p>
+                  </div>
                 </div>
-                <div className="rounded-full bg-white px-3 py-1.5 text-xs font-black text-slate-600 shadow-sm">
+                <div className="rounded-full bg-[#f4eaff] px-6 py-2 text-[13px] font-black text-[#7b25ff]">
                   {Number(billingImport.account_count || 0).toLocaleString()} accounts
                 </div>
               </div>
 
               {billingImport.last_import && (
-                <div className="mt-3 flex flex-col gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs font-semibold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-                  <div>
-                    Current file: <span className="text-slate-800">{billingImport.last_import.file_name}</span>
-                    {' '}({Number(billingImport.last_import.row_count || 0).toLocaleString()} rows)
+                <div className="mt-5 flex flex-col gap-3 rounded-xl border border-[#e3e8f5] bg-white px-4 py-3 text-[12px] font-semibold text-[#647092] shadow-[0_10px_25px_rgba(30,41,59,0.06)] sm:flex-row sm:items-center sm:justify-between">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <FileIcon className="h-5 w-5 shrink-0 text-[#7a86a8]" />
+                    <div className="min-w-0 truncate">
+                      Current file: <span className="font-black text-[#07103d]">{billingImport.last_import.file_name}</span>
+                    </div>
+                  </div>
+                  <div className="text-[#6c789d]">
+                    ({Number(billingImport.last_import.row_count || 0).toLocaleString()} rows)
                     {billingImport.last_import.imported_at ? ` on ${new Date(billingImport.last_import.imported_at).toLocaleString()}` : ''}
                   </div>
                   <button
                     type="button"
                     onClick={deleteBillingImport}
                     disabled={billingImportDeleting || billingImportUploading}
-                    className="self-start rounded-lg border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100 disabled:opacity-50 sm:self-auto"
+                    className="inline-flex h-10 items-center justify-center gap-2 self-start rounded-lg border border-red-200 bg-red-50 px-5 text-[13px] font-black text-red-600 hover:bg-red-100 disabled:opacity-50 sm:self-auto"
                   >
+                    <TrashIcon className="h-4 w-4" />
                     {billingImportDeleting ? 'Deleting...' : 'Delete file'}
                   </button>
                 </div>
               )}
 
-              <div className="mt-3 grid gap-3 lg:grid-cols-[260px_1fr_auto] lg:items-end">
-                <label className="text-xs font-black uppercase text-slate-400">
+              <div className="mt-5 grid gap-5 lg:grid-cols-[320px_1fr_auto] lg:items-end">
+                <label className="text-[12px] font-black text-[#667198]">
                   Billing system
                   <select
                     value={billingImportSystem}
@@ -267,40 +335,61 @@ export default function KnowledgeBase() {
                       setBillingImportSystem(event.target.value);
                       setBillingImportStatus(null);
                     }}
-                    className="mt-1 block h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700"
+                    className="mt-2 block h-12 w-full rounded-xl border border-[#dfe5f5] bg-white px-4 text-[14px] font-semibold normal-case text-[#101942] outline-none focus:border-[#7b25ff]"
                   >
                     {BILLING_IMPORT_SYSTEMS.map((system) => <option key={system.value} value={system.value}>{system.label}</option>)}
                   </select>
                 </label>
-                <label className="text-xs font-black uppercase text-slate-400">
+                <label className="text-[12px] font-black text-[#667198]">
                   CSV or Excel file
-                  <input
-                    id="knowledge-billing-import-file"
-                    type="file"
-                    accept=".csv,text/csv,.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
-                    onChange={(event) => {
-                      setBillingImportFile(event.target.files?.[0] || null);
-                      setBillingImportStatus(null);
-                    }}
-                    className="mt-1 block w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700"
-                  />
+                  <div className="mt-2 flex h-12 items-center rounded-xl border border-[#dfe5f5] bg-white px-2">
+                    <input
+                      id="knowledge-billing-import-file"
+                      type="file"
+                      accept=".csv,text/csv,.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
+                      onChange={(event) => {
+                        setBillingImportFile(event.target.files?.[0] || null);
+                        setBillingImportStatus(null);
+                      }}
+                      className="sr-only"
+                    />
+                    <span
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => document.getElementById('knowledge-billing-import-file')?.click()}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' || event.key === ' ') document.getElementById('knowledge-billing-import-file')?.click();
+                      }}
+                      className="inline-flex h-9 shrink-0 cursor-pointer items-center justify-center gap-2 rounded-lg border border-[#dfe5f5] bg-[#f8faff] px-4 text-[13px] font-black text-[#4c5b84]"
+                    >
+                      <ShareIosIcon className="h-4 w-4" />
+                      Choose File
+                    </span>
+                    <span className="min-w-0 truncate px-3 text-[13px] font-semibold text-[#6c789d]">
+                      {billingImportFile?.name || 'No file chosen'}
+                    </span>
+                  </div>
                 </label>
                 <button
                   type="button"
                   onClick={uploadBillingImport}
                   disabled={billingImportUploading || !billingImportFile}
-                  className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-xl bg-[#6d2cff] px-7 text-[14px] font-black text-white shadow-[0_12px_25px_rgba(109,44,255,0.28)] hover:bg-[#5421df] disabled:opacity-50"
                 >
+                  <ShareIosIcon className="h-4 w-4" />
                   {billingImportUploading ? 'Importing...' : billingImport.last_import ? 'Update File' : 'Upload Accounts'}
                 </button>
               </div>
 
-              <div className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500">
-                {BILLING_IMPORT_SYSTEMS.find((system) => system.value === billingImportSystem)?.helper}
-                {billingImport.last_import ? ' Updating uploads replaces the current imported file for this account.' : ''}
+              <div className="mt-5 flex items-start gap-3 rounded-xl bg-[#f7faff] px-4 py-3 text-[12px] font-semibold leading-relaxed text-[#7280a5]">
+                <InfoIcon className="mt-0.5 h-4 w-4 shrink-0 text-[#6d9dff]" />
+                <span>
+                  {BILLING_IMPORT_SYSTEMS.find((system) => system.value === billingImportSystem)?.helper}
+                  {billingImport.last_import ? ' Updating uploads replaces the current imported file for this account.' : ''}
+                </span>
               </div>
 
-              <div className="mt-3 grid gap-2 text-[11px] font-semibold text-slate-500 sm:grid-cols-2">
+              <div className="mt-3 grid gap-2 text-[11px] font-semibold text-[#7d88a9] sm:grid-cols-2">
                 <div>Captures ID, full name, username, account number and password.</div>
                 <div>Captures phone, email, address, service, router, profile, package, price, expiry and status.</div>
               </div>

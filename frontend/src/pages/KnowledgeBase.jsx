@@ -90,7 +90,13 @@ const BILLING_IMPORT_SYSTEMS = [
   { value: 'billnasi', label: 'Billnasi CSV / Excel', helper: 'Username, Names, Phone, Activity, Status, Expiry, Package and Location.' },
 ];
 
+function possessiveName(name) {
+  const trimmed = String(name || '').trim() || 'Agent';
+  return `${trimmed}${trimmed.toLowerCase().endsWith('s') ? "'" : "'s"}`;
+}
+
 export default function KnowledgeBase() {
+  const [agentName, setAgentName] = useState('Agent');
   const [billingImport, setBillingImport] = useState({ account_count: 0, last_import: null });
   const [billingImportFile, setBillingImportFile] = useState(null);
   const [billingImportSystem, setBillingImportSystem] = useState('wispman');
@@ -134,10 +140,23 @@ export default function KnowledgeBase() {
     }
   };
 
+  const loadAgentName = async () => {
+    try {
+      const { data } = await api.get('/settings');
+      const name = String(data.agent_name || '').trim();
+      if (name) setAgentName(name);
+    } catch (err) {
+      setAgentName('Agent');
+    }
+  };
+
   useEffect(() => {
+    loadAgentName();
     loadBillingImport();
     loadMedia();
   }, []);
+
+  const agentBrainTitle = `${possessiveName(agentName)} Brain`;
 
   const uploadBillingImport = async () => {
     if (!billingImportFile) {
@@ -268,8 +287,8 @@ export default function KnowledgeBase() {
               <HeaderIcon className="h-8 w-8" />
             </div>
             <div className="relative z-10 min-w-0">
-              <h1 className="text-[28px] font-black leading-tight text-[#07103d]">Knowledge Base</h1>
-              <p className="mt-2 text-[14px] font-semibold text-[#67739a]">Upload the account data and media the AI agent should use when helping customers.</p>
+              <h1 className="text-[28px] font-black leading-tight text-[#07103d]">{agentBrainTitle}</h1>
+              <p className="mt-2 text-[14px] font-semibold text-[#67739a]">Upload the account data and media {agentName} should use when helping customers.</p>
             </div>
           </div>
           <div className="pointer-events-none absolute right-10 top-0 hidden h-full w-[260px] items-center justify-end lg:flex">

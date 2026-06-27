@@ -669,6 +669,24 @@ async function billingImportSummary(clientId) {
   };
 }
 
+async function deleteBillingImport(clientId) {
+  if (!clientId) throw new Error('Client is required');
+  await ensureImportedBillingSchema();
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const accounts = await client.query(`DELETE FROM billing_import_accounts WHERE client_id = $1`, [clientId]);
+    await client.query(`DELETE FROM billing_import_batches WHERE client_id = $1`, [clientId]);
+    await client.query('COMMIT');
+    return { success: true, deleted: accounts.rowCount || 0 };
+  } catch (err) {
+    await client.query('ROLLBACK');
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 function importedAccountToStatus(row) {
   if (!row) return null;
   const price = Number(row.package_price);
@@ -1311,6 +1329,7 @@ module.exports = {
   buildBillingContext,
   canUseBilling,
   canUseConfig,
+  deleteBillingImport,
   importBillingCsv,
   loadClientBillingConfig,
   lookupInvoiceCustomer,

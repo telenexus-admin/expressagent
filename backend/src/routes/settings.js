@@ -3,7 +3,7 @@ const crypto = require('crypto');
 const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { billingImportSummary, importBillingCsv, testBillingConnection } = require('../services/billing');
+const { billingImportSummary, deleteBillingImport, importBillingCsv, testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
 const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
@@ -672,6 +672,20 @@ router.post('/billing/import-csv', async (req, res) => {
   } catch (err) {
     console.error('POST /settings/billing/import-csv error:', err.message);
     res.status(400).json({ error: err.message || 'Failed to import billing CSV' });
+  }
+});
+
+router.delete('/billing/import-csv', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    const result = await deleteBillingImport(targetClient);
+    const summary = await billingImportSummary(targetClient);
+    res.json({ ...result, summary });
+  } catch (err) {
+    console.error('DELETE /settings/billing/import-csv error:', err.message);
+    res.status(500).json({ error: 'Failed to delete imported billing file' });
   }
 });
 

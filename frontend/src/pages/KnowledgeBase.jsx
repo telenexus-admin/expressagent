@@ -46,6 +46,7 @@ export default function KnowledgeBase() {
   const [billingImportFile, setBillingImportFile] = useState(null);
   const [billingImportSystem, setBillingImportSystem] = useState('wispman');
   const [billingImportUploading, setBillingImportUploading] = useState(false);
+  const [billingImportDeleting, setBillingImportDeleting] = useState(false);
   const [billingImportStatus, setBillingImportStatus] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(true);
@@ -91,7 +92,7 @@ export default function KnowledgeBase() {
 
   const uploadBillingImport = async () => {
     if (!billingImportFile) {
-      setBillingImportStatus({ type: 'error', message: 'Choose a billing CSV file first.' });
+      setBillingImportStatus({ type: 'error', message: 'Choose a billing CSV or Excel file first.' });
       return;
     }
     setBillingImportUploading(true);
@@ -112,6 +113,28 @@ export default function KnowledgeBase() {
       setBillingImportStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to import billing CSV.') });
     } finally {
       setBillingImportUploading(false);
+    }
+  };
+
+  const deleteBillingImport = async () => {
+    if (!Number(billingImport.account_count || 0)) {
+      setBillingImportStatus({ type: 'error', message: 'There is no imported billing file to delete.' });
+      return;
+    }
+    if (!window.confirm('Delete the imported billing accounts for this dashboard account? The agent will stop using this uploaded file until you upload another one.')) return;
+    setBillingImportDeleting(true);
+    setBillingImportStatus(null);
+    try {
+      const { data } = await api.delete('/settings/billing/import-csv');
+      setBillingImport(data.summary || { account_count: 0, last_import: null });
+      setBillingImportFile(null);
+      const input = document.getElementById('knowledge-billing-import-file');
+      if (input) input.value = '';
+      setBillingImportStatus({ type: 'success', message: `${Number(data.deleted || 0).toLocaleString()} imported billing accounts deleted.` });
+    } catch (err) {
+      setBillingImportStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to delete imported billing file.') });
+    } finally {
+      setBillingImportDeleting(false);
     }
   };
 
@@ -218,10 +241,20 @@ export default function KnowledgeBase() {
               </div>
 
               {billingImport.last_import && (
-                <div className="mt-3 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs font-semibold text-slate-500">
-                  Last import: <span className="text-slate-800">{billingImport.last_import.file_name}</span>
-                  {' '}({Number(billingImport.last_import.row_count || 0).toLocaleString()} rows)
-                  {billingImport.last_import.imported_at ? ` on ${new Date(billingImport.last_import.imported_at).toLocaleString()}` : ''}
+                <div className="mt-3 flex flex-col gap-3 rounded-xl border border-slate-100 bg-white px-3 py-2 text-xs font-semibold text-slate-500 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    Current file: <span className="text-slate-800">{billingImport.last_import.file_name}</span>
+                    {' '}({Number(billingImport.last_import.row_count || 0).toLocaleString()} rows)
+                    {billingImport.last_import.imported_at ? ` on ${new Date(billingImport.last_import.imported_at).toLocaleString()}` : ''}
+                  </div>
+                  <button
+                    type="button"
+                    onClick={deleteBillingImport}
+                    disabled={billingImportDeleting || billingImportUploading}
+                    className="self-start rounded-lg border border-red-100 bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100 disabled:opacity-50 sm:self-auto"
+                  >
+                    {billingImportDeleting ? 'Deleting...' : 'Delete file'}
+                  </button>
                 </div>
               )}
 
@@ -258,12 +291,13 @@ export default function KnowledgeBase() {
                   disabled={billingImportUploading || !billingImportFile}
                   className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
                 >
-                  {billingImportUploading ? 'Importing...' : 'Upload Accounts'}
+                  {billingImportUploading ? 'Importing...' : billingImport.last_import ? 'Update File' : 'Upload Accounts'}
                 </button>
               </div>
 
               <div className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500">
                 {BILLING_IMPORT_SYSTEMS.find((system) => system.value === billingImportSystem)?.helper}
+                {billingImport.last_import ? ' Updating uploads replaces the current imported file for this account.' : ''}
               </div>
 
               <div className="mt-3 grid gap-2 text-[11px] font-semibold text-slate-500 sm:grid-cols-2">

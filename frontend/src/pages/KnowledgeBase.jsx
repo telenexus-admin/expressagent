@@ -26,6 +26,16 @@ const fileToDataUrl = (file) => new Promise((resolve, reject) => {
   reader.readAsDataURL(file);
 });
 
+function apiErrorMessage(err, fallback) {
+  if (err.response?.data?.error) return err.response.data.error;
+  if (typeof err.response?.data === 'string') {
+    const text = err.response.data.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+    if (text) return `${fallback} ${text.slice(0, 160)}`;
+  }
+  if (err.response?.status) return `${fallback} Server returned ${err.response.status}${err.response.statusText ? ` ${err.response.statusText}` : ''}.`;
+  return err.message ? `${fallback} ${err.message}` : fallback;
+}
+
 export default function KnowledgeBase() {
   const [billingImport, setBillingImport] = useState({ account_count: 0, last_import: null });
   const [billingImportFile, setBillingImportFile] = useState(null);
@@ -92,7 +102,7 @@ export default function KnowledgeBase() {
       if (input) input.value = '';
       setBillingImportStatus({ type: 'success', message: `${Number(data.imported || 0).toLocaleString()} billing accounts imported. The agent and invoices can now use them.` });
     } catch (err) {
-      setBillingImportStatus({ type: 'error', message: err.response?.data?.error || 'Failed to import billing CSV.' });
+      setBillingImportStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to import billing CSV.') });
     } finally {
       setBillingImportUploading(false);
     }

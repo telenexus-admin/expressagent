@@ -124,8 +124,9 @@ function safeCommunicationConfig(row) {
 
 function decodeCsvPayload(body = {}) {
   if (typeof body.csv_text === 'string' && body.csv_text.trim()) return body.csv_text;
+  if (typeof body.base64 === 'string' && body.base64.trim()) return Buffer.from(body.base64, 'base64').toString('utf8');
   const dataUrl = String(body.data_url || body.data || '');
-  const match = dataUrl.match(/^data:[^;]+;base64,(.+)$/);
+  const match = dataUrl.match(/^data:[^,]*;base64,(.+)$/);
   if (!match) return '';
   return Buffer.from(match[1], 'base64').toString('utf8');
 }

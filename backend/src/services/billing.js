@@ -400,8 +400,33 @@ async function ensureImportedBillingSchema() {
       source_file VARCHAR(255)
     )
   `);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS external_client_id VARCHAR(120)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS full_name VARCHAR(255)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS username VARCHAR(180)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS account_number VARCHAR(180)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS login_username VARCHAR(180)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS login_password TEXT`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS email VARCHAR(255)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS phone VARCHAR(80)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS phone_normalized VARCHAR(40)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS physical_address TEXT`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS service_type VARCHAR(120)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS router VARCHAR(180)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS radius_profile VARCHAR(180)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS connection_type VARCHAR(80)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS package_name VARCHAR(180)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS package_price NUMERIC(12,2)`);
   await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS account_balance NUMERIC(12,2)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS validity_period INTEGER`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS validity_unit VARCHAR(50)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS expiration_date DATE`);
   await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS expiration_time VARCHAR(20)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS package_status VARCHAR(40)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS client_status VARCHAR(80)`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS created_date DATE`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS raw JSONB NOT NULL DEFAULT '{}'::jsonb`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS imported_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()`);
+  await db.query(`ALTER TABLE billing_import_accounts ADD COLUMN IF NOT EXISTS source_file VARCHAR(255)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_import_accounts_client_phone ON billing_import_accounts(client_id, phone_normalized)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_import_accounts_client_username ON billing_import_accounts(client_id, lower(username))`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_import_accounts_client_account ON billing_import_accounts(client_id, lower(account_number))`);

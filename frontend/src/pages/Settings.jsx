@@ -278,7 +278,7 @@ export default function Settings() {
     } catch (err) {
       setBillingImportStatus({
         type: 'error',
-        message: err.response?.data?.error || 'Failed to import billing CSV.',
+        message: apiErrorMessage(err, 'Failed to import billing CSV.'),
       });
     } finally {
       setBillingImportUploading(false);
@@ -306,6 +306,16 @@ export default function Settings() {
     reader.onerror = () => reject(new Error('Could not read file'));
     reader.readAsDataURL(file);
   });
+
+  const apiErrorMessage = (err, fallback) => {
+    if (err.response?.data?.error) return err.response.data.error;
+    if (typeof err.response?.data === 'string') {
+      const text = err.response.data.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      if (text) return `${fallback} ${text.slice(0, 160)}`;
+    }
+    if (err.response?.status) return `${fallback} Server returned ${err.response.status}${err.response.statusText ? ` ${err.response.statusText}` : ''}.`;
+    return err.message ? `${fallback} ${err.message}` : fallback;
+  };
 
   const uploadMedia = async () => {
     if (!mediaForm.file) {

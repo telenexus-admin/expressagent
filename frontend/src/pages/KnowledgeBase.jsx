@@ -36,9 +36,15 @@ function apiErrorMessage(err, fallback) {
   return err.message ? `${fallback} ${err.message}` : fallback;
 }
 
+const BILLING_IMPORT_SYSTEMS = [
+  { value: 'wispman', label: 'Wispman CSV', helper: 'CLIENT_ID, USERNAME, PASSWORD, FULLNAME and package columns.' },
+  { value: 'billnasi', label: 'Billnasi CSV / Excel', helper: 'Username, Names, Phone, Activity, Status, Expiry, Package and Location.' },
+];
+
 export default function KnowledgeBase() {
   const [billingImport, setBillingImport] = useState({ account_count: 0, last_import: null });
   const [billingImportFile, setBillingImportFile] = useState(null);
+  const [billingImportSystem, setBillingImportSystem] = useState('wispman');
   const [billingImportUploading, setBillingImportUploading] = useState(false);
   const [billingImportStatus, setBillingImportStatus] = useState(null);
   const [mediaItems, setMediaItems] = useState([]);
@@ -94,6 +100,7 @@ export default function KnowledgeBase() {
       const dataUrl = await fileToDataUrl(billingImportFile);
       const { data } = await api.post('/settings/billing/import-csv', {
         file_name: billingImportFile.name,
+        billing_system: billingImportSystem,
         data_url: dataUrl,
       });
       setBillingImport(data.summary || { account_count: data.imported || 0, last_import: data.batch || null });
@@ -196,8 +203,8 @@ export default function KnowledgeBase() {
         <div className="grid gap-4">
           <KnowledgeCard
             icon={CreditCardIcon}
-            title="Billing CSV Accounts"
-            description="Upload exported billing clients so the agent can identify customers, answer package and expiry questions, and generate invoices per account."
+            title="Billing Accounts"
+            description="Choose the billing system, then upload exported clients so the agent can identify customers, answer package and expiry questions, and generate invoices per account."
           >
             <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -218,13 +225,26 @@ export default function KnowledgeBase() {
                 </div>
               )}
 
-              <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-end">
-                <label className="flex-1 text-xs font-black uppercase text-slate-400">
-                  CSV file
+              <div className="mt-3 grid gap-3 lg:grid-cols-[260px_1fr_auto] lg:items-end">
+                <label className="text-xs font-black uppercase text-slate-400">
+                  Billing system
+                  <select
+                    value={billingImportSystem}
+                    onChange={(event) => {
+                      setBillingImportSystem(event.target.value);
+                      setBillingImportStatus(null);
+                    }}
+                    className="mt-1 block h-[42px] w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700"
+                  >
+                    {BILLING_IMPORT_SYSTEMS.map((system) => <option key={system.value} value={system.value}>{system.label}</option>)}
+                  </select>
+                </label>
+                <label className="text-xs font-black uppercase text-slate-400">
+                  CSV or Excel file
                   <input
                     id="knowledge-billing-import-file"
                     type="file"
-                    accept=".csv,text/csv"
+                    accept=".csv,text/csv,.xlsx,.xlsm,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12"
                     onChange={(event) => {
                       setBillingImportFile(event.target.files?.[0] || null);
                       setBillingImportStatus(null);
@@ -238,8 +258,12 @@ export default function KnowledgeBase() {
                   disabled={billingImportUploading || !billingImportFile}
                   className="rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-black text-white hover:bg-slate-800 disabled:opacity-50"
                 >
-                  {billingImportUploading ? 'Importing...' : 'Upload CSV'}
+                  {billingImportUploading ? 'Importing...' : 'Upload Accounts'}
                 </button>
+              </div>
+
+              <div className="mt-2 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-slate-500">
+                {BILLING_IMPORT_SYSTEMS.find((system) => system.value === billingImportSystem)?.helper}
               </div>
 
               <div className="mt-3 grid gap-2 text-[11px] font-semibold text-slate-500 sm:grid-cols-2">

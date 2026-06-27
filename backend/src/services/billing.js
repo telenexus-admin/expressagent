@@ -1,4 +1,5 @@
 const axios = require('axios');
+const zlib = require('zlib');
 const db = require('../db');
 
 const DEFAULT_BASE_URL = 'https://riseli.wispman.net/index.php?_route=api';
@@ -223,7 +224,7 @@ function normalizeHeader(value) {
 
 const IMPORT_FIELD_ALIASES = {
   external_client_id: ['clientid', 'customerid', 'subscriberid', 'id'],
-  full_name: ['fullname', 'fullnames', 'clientname', 'customername', 'name'],
+  full_name: ['fullname', 'fullnames', 'clientname', 'customername', 'name', 'names'],
   username: ['username', 'user', 'pppoeusername', 'login'],
   account_number: ['accountnumber', 'accountno', 'account', 'accno'],
   login_username: ['loginusername', 'username', 'user'],
@@ -234,17 +235,128 @@ const IMPORT_FIELD_ALIASES = {
   service_type: ['servicetype', 'service'],
   router: ['router', 'nas', 'device', 'mikrotik'],
   radius_profile: ['profile', 'radiusprofile', 'mikrotikprofile', 'pppoeprofile'],
-  connection_type: ['connectiontype', 'connection', 'type'],
+  connection_type: ['connectiontype', 'connection', 'type', 'activity'],
   package_name: ['packagename', 'package', 'plan', 'planname'],
   package_price: ['packageprice', 'price', 'amount', 'cost', 'monthlyfee'],
   account_balance: ['accountbalance', 'balance', 'walletbalance', 'outstandingbalance', 'arrears', 'amountdue', 'dueamount'],
   validity_period: ['packagevalidity', 'validityperiod', 'validity', 'duration'],
   validity_unit: ['validityunit', 'unit', 'durationunit'],
   expiration_date: ['expirationdate', 'expirydate', 'expiry', 'expiredate', 'expires'],
-  package_status: ['packagestatus', 'subscriptionstatus', 'packageactive'],
+  package_status: ['packagestatus', 'subscriptionstatus', 'packageactive', 'status'],
   client_status: ['clientstatus', 'customerstatus', 'accountstatus'],
   created_date: ['datecreated', 'createddate', 'created', 'registrationdate'],
 };
+
+function columnIndex(cellRef = '') {
+  const letters = String(cellRef).replace(/[^A-Z]/gi, '').toUpperCase();
+  let index = 0;
+  for (const letter of letters) index = index * 26 + (letter.charCodeAt(0) - 64);
+  return Math.max(0, index - 1);
+}
+
+function xmlDecode(value) {
+  return String(value || '')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'")
+    .replace(/&amp;/g, '&');
+}
+
+function zipEntries(buffer) {
+  const entries = new Map();
+  const eocdSig = 0x06054b50;
+  let eocd = -1;
+  for (let i = buffer.length - 22; i >= Math.max(0, buffer.length - 66000); i -= 1) {
+    if (buffer.readUInt32LE(i) === eocdSig) {
+      eocd = i;
+      break;
+    }
+  }
+  if (eocd < 0) throw new Error('XLSX file could not be read. Please export a valid Excel workbook or CSV.');
+  const total = buffer.readUInt16LE(eocd + 10);
+  const centralOffset = buffer.readUInt32LE(eocd + 16);
+  let offset = centralOffset;
+  for (let i = 0; i < total; i += 1) {
+    if (buffer.readUInt32LE(offset) !== 0x02014b50) break;
+    const method = buffer.readUInt16LE(offset + 10);
+    const compressedSize = buffer.readUInt32LE(offset + 20);
+    const fileNameLength = buffer.readUInt16LE(offset + 28);
+    const extraLength = buffer.readUInt16LE(offset + 30);
+    const commentLength = buffer.readUInt16LE(offset + 32);
+    const localOffset = buffer.readUInt32LE(offset + 42);
+    const name = buffer.slice(offset + 46, offset + 46 + fileNameLength).toString('utf8');
+    const localNameLength = buffer.readUInt16LE(localOffset + 26);
+    const localExtraLength = buffer.readUInt16LE(localOffset + 28);
+    const dataStart = localOffset + 30 + localNameLength + localExtraLength;
+    const compressed = buffer.slice(dataStart, dataStart + compressedSize);
+    let data;
+    if (method === 0) data = compressed;
+    else if (method === 8) data = zlib.inflateRawSync(compressed);
+    else throw new Error(`Unsupported XLSX compression method ${method}`);
+    entries.set(name, data);
+    offset += 46 + fileNameLength + extraLength + commentLength;
+  }
+  return entries;
+}
+
+function parseXmlAttributes(value) {
+  const attrs = {};
+  String(value || '').replace(/([A-Za-z_:][\w:.-]*)="([^"]*)"/g, (_, key, val) => {
+    attrs[key] = xmlDecode(val);
+    return '';
+  });
+  return attrs;
+}
+
+function parseSharedStrings(xml) {
+  const strings = [];
+  const siMatches = String(xml || '').match(/<si\b[\s\S]*?<\/si>/g) || [];
+  for (const si of siMatches) {
+    const parts = [];
+    si.replace(/<t\b[^>]*>([\s\S]*?)<\/t>/g, (_, text) => {
+      parts.push(xmlDecode(text));
+      return '';
+    });
+    strings.push(parts.join(''));
+  }
+  return strings;
+}
+
+function parseXlsxRows(buffer) {
+  const entries = zipEntries(buffer);
+  const sheetName = [...entries.keys()].find((name) => /^xl\/worksheets\/sheet\d+\.xml$/i.test(name));
+  if (!sheetName) throw new Error('XLSX file does not contain a worksheet.');
+  const shared = entries.has('xl/sharedStrings.xml') ? parseSharedStrings(entries.get('xl/sharedStrings.xml').toString('utf8')) : [];
+  const sheet = entries.get(sheetName).toString('utf8');
+  const rows = [];
+  const rowMatches = sheet.match(/<row\b[\s\S]*?<\/row>/g) || [];
+  for (const rowXml of rowMatches) {
+    const row = [];
+    const cellMatches = rowXml.match(/<c\b[\s\S]*?<\/c>/g) || [];
+    for (const cellXml of cellMatches) {
+      const open = cellXml.match(/^<c\b([^>]*)>/);
+      const attrs = parseXmlAttributes(open?.[1] || '');
+      const index = columnIndex(attrs.r || '');
+      let value = '';
+      if (attrs.t === 'inlineStr') {
+        const texts = [];
+        cellXml.replace(/<t\b[^>]*>([\s\S]*?)<\/t>/g, (_, text) => {
+          texts.push(xmlDecode(text));
+          return '';
+        });
+        value = texts.join('');
+      } else {
+        const v = cellXml.match(/<v\b[^>]*>([\s\S]*?)<\/v>/);
+        value = v ? xmlDecode(v[1]) : '';
+        if (attrs.t === 's') value = shared[Number(value)] || '';
+      }
+      row[index] = value;
+    }
+    if (row.some((value) => String(value || '').trim() !== '')) rows.push(row.map((value) => value || ''));
+  }
+  return rows;
+}
 
 function parseCsv(text) {
   const rows = [];
@@ -298,14 +410,28 @@ function parseImportedDate(value) {
 
 function parseImportedTime(value) {
   const text = String(value || '').trim();
-  const match = text.match(/\b(\d{1,2}:\d{2}(?::\d{2})?)\b/);
-  return match ? match[1] : '';
+  const match = text.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(am|pm)?\b/i);
+  if (!match) return '';
+  let hour = Number(match[1]);
+  const suffix = String(match[4] || '').toLowerCase();
+  if (suffix === 'pm' && hour < 12) hour += 12;
+  if (suffix === 'am' && hour === 12) hour = 0;
+  const seconds = match[3] ? `:${match[3]}` : '';
+  return `${String(hour).padStart(2, '0')}:${match[2]}${seconds}`;
 }
 
 function parseImportedNumber(value) {
   const cleaned = String(value || '').replace(/[^0-9.-]/g, '');
+  if (!cleaned) return null;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function priceFromPackageName(value) {
+  const text = String(value || '');
+  const match = text.match(/@\s*([0-9]+(?:[,.][0-9]+)?)/) || text.match(/\b([0-9]+(?:[,.][0-9]+)?)\s*(?:ksh|kshs|kes)\b/i);
+  if (!match) return null;
+  return parseImportedNumber(match[1]);
 }
 
 function cleanImportedStatus(value) {
@@ -315,7 +441,7 @@ function cleanImportedStatus(value) {
     .trim();
 }
 
-function mapImportedRow(headers, row) {
+function mapImportedRow(headers, row, billingSystem = 'wispman') {
   const byHeader = new Map();
   headers.forEach((header, index) => byHeader.set(normalizeHeader(header), String(row[index] || '').trim()));
   const pick = (field) => {
@@ -352,6 +478,14 @@ function mapImportedRow(headers, row) {
     created_date: parseImportedDate(pick('created_date')),
     raw: Object.fromEntries(headers.map((header, index) => [header, row[index] || ''])),
   };
+
+  if (String(billingSystem || '').toLowerCase() === 'billnasi') {
+    imported.account_number = imported.account_number || imported.username || imported.external_client_id;
+    imported.login_username = imported.login_username || imported.username;
+    imported.package_price = imported.package_price ?? priceFromPackageName(imported.package_name);
+    imported.client_status = imported.client_status || imported.connection_type;
+    imported.service_type = imported.service_type || 'Billnasi';
+  }
 
   return imported;
 }
@@ -433,14 +567,25 @@ async function ensureImportedBillingSchema() {
   importedBillingSchemaReady = true;
 }
 
-async function importBillingCsv({ clientId, fileName, csvText }) {
+function importRowsForUpload({ fileName, csvText, fileBuffer }) {
+  const name = String(fileName || '').toLowerCase();
+  if (name.endsWith('.xlsx') || name.endsWith('.xlsm')) {
+    if (!fileBuffer || !fileBuffer.length) throw new Error('Excel upload was empty. Please choose a valid Billnasi XLSX file.');
+    return parseXlsxRows(fileBuffer);
+  }
+  return parseCsv(csvText);
+}
+
+async function importBillingCsv({ clientId, fileName, csvText, fileBuffer, billingSystem = 'wispman' }) {
   if (!clientId) throw new Error('Client is required');
-  const rows = parseCsv(csvText);
+  const system = String(billingSystem || 'wispman').trim().toLowerCase();
+  if (!['wispman', 'billnasi'].includes(system)) throw new Error('Choose a supported billing system before uploading.');
+  const rows = importRowsForUpload({ fileName, csvText, fileBuffer });
   if (rows.length < 2) throw new Error('CSV must include a header row and at least one account row');
   const headers = rows[0].map((header) => String(header || '').trim());
   const accounts = rows
     .slice(1)
-    .map((row) => mapImportedRow(headers, row))
+    .map((row) => mapImportedRow(headers, row, system))
     .filter((account) => account.full_name || account.username || account.account_number || account.phone_normalized);
 
   if (accounts.length === 0) throw new Error('No usable client accounts were found in the CSV');

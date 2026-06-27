@@ -265,6 +265,7 @@ export default function Settings() {
       const dataUrl = await fileToDataUrl(billingImportFile);
       const { data } = await api.post('/settings/billing/import-csv', {
         file_name: billingImportFile.name,
+        billing_system: billing.provider || 'wispman',
         data_url: dataUrl,
       });
       setBillingImport(data.summary || { account_count: data.imported || 0, last_import: data.batch || null });

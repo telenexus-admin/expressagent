@@ -123,12 +123,19 @@ function safeCommunicationConfig(row) {
 }
 
 function decodeCsvPayload(body = {}) {
-  if (typeof body.csv_text === 'string' && body.csv_text.trim()) return body.csv_text;
-  if (typeof body.base64 === 'string' && body.base64.trim()) return Buffer.from(body.base64, 'base64').toString('utf8');
+  if (typeof body.csv_text === 'string' && body.csv_text.trim()) {
+    const buffer = Buffer.from(body.csv_text, 'utf8');
+    return { text: body.csv_text, buffer };
+  }
+  if (typeof body.base64 === 'string' && body.base64.trim()) {
+    const buffer = Buffer.from(body.base64, 'base64');
+    return { text: buffer.toString('utf8'), buffer };
+  }
   const dataUrl = String(body.data_url || body.data || '');
   const match = dataUrl.match(/^data:[^,]*;base64,(.+)$/);
-  if (!match) return '';
-  return Buffer.from(match[1], 'base64').toString('utf8');
+  if (!match) return { text: '', buffer: Buffer.alloc(0) };
+  const buffer = Buffer.from(match[1], 'base64');
+  return { text: buffer.toString('utf8'), buffer };
 }
 
 function safeEmailConfig(row) {
@@ -649,16 +656,17 @@ router.post('/billing/import-csv', async (req, res) => {
   if (!targetClient) return;
 
   const fileName = String(req.body.file_name || req.body.filename || 'billing-import.csv').trim();
-  const csvText = decodeCsvPayload(req.body);
-  if (!csvText || csvText.length < 10) {
-    return res.status(400).json({ error: 'Upload a valid CSV file from your billing system' });
+  const billingSystem = String(req.body.billing_system || req.body.system || 'wispman').trim().toLowerCase();
+  const upload = decodeCsvPayload(req.body);
+  if (!upload.buffer.length || upload.buffer.length < 10) {
+    return res.status(400).json({ error: 'Upload a valid CSV or XLSX file from your billing system' });
   }
-  if (csvText.length > 8 * 1024 * 1024) {
-    return res.status(400).json({ error: 'CSV file is too large. Keep it below 8MB.' });
+  if (upload.buffer.length > 8 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Billing upload is too large. Keep the CSV or XLSX below 8MB.' });
   }
 
   try {
-    const result = await importBillingCsv({ clientId: targetClient, fileName, csvText });
+    const result = await importBillingCsv({ clientId: targetClient, fileName, csvText: upload.text, fileBuffer: upload.buffer, billingSystem });
     const summary = await billingImportSummary(targetClient);
     res.json({ ...result, summary });
   } catch (err) {

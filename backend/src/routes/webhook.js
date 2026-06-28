@@ -16,6 +16,7 @@ const { sendClientText } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
@@ -933,6 +934,8 @@ router.post('/', async (req, res) => {
     }
 
     if (!inboundIsImage) {
+      const websiteContext = await buildWebsiteKnowledgeContext(client.id);
+      if (websiteContext) systemPrompt += websiteContext;
       console.log(`[client ${client.id}] Building billing context for ${phoneNumber}.`);
       const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: phoneNumber, messageText });
       if (billingContext) systemPrompt += billingContext;

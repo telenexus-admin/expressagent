@@ -3,6 +3,7 @@ const express = require('express');
 const db = require('../db');
 const { generateAIResponse, openAIModelSummary } = require('../services/openai');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 
 const router = express.Router();
@@ -146,6 +147,8 @@ router.post('/:clientId/message', async (req, res) => {
       `If they need account-specific help, ask for their registered phone number. ` +
       `If they ask for installation, coverage, packages, payment or technical support, guide them naturally and ask only for the next needed detail. ` +
       `Do not claim you have called, visited, reconnected, or changed an account unless the system context confirms it.`;
+    const websiteContext = await buildWebsiteKnowledgeContext(clientId);
+    if (websiteContext) systemPrompt += websiteContext;
     const billingContext = await buildBillingContext({ clientId, customerPhone: syntheticPhone, messageText });
     if (billingContext) systemPrompt += billingContext;
 

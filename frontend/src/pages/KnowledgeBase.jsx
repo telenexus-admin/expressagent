@@ -68,6 +68,15 @@ function InfoIcon({ className = 'h-4 w-4' }) {
   );
 }
 
+function GlobeIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2" />
+      <path d="M3 12h18M12 3c2.4 2.5 3.6 5.5 3.6 9s-1.2 6.5-3.6 9M12 3c-2.4 2.5-3.6 5.5-3.6 9s1.2 6.5 3.6 9" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 const fileToDataUrl = (file) => new Promise((resolve, reject) => {
   const reader = new FileReader();
   reader.onload = () => resolve(reader.result);
@@ -103,6 +112,12 @@ export default function KnowledgeBase() {
   const [billingImportUploading, setBillingImportUploading] = useState(false);
   const [billingImportDeleting, setBillingImportDeleting] = useState(false);
   const [billingImportStatus, setBillingImportStatus] = useState(null);
+  const [websiteItems, setWebsiteItems] = useState([]);
+  const [websiteLoading, setWebsiteLoading] = useState(true);
+  const [websiteSaving, setWebsiteSaving] = useState(false);
+  const [websiteBusyId, setWebsiteBusyId] = useState('');
+  const [websiteStatus, setWebsiteStatus] = useState(null);
+  const [websiteForm, setWebsiteForm] = useState({ url: '', title: '', summary: '' });
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaSaving, setMediaSaving] = useState(false);
@@ -140,6 +155,18 @@ export default function KnowledgeBase() {
     }
   };
 
+  const loadWebsiteKnowledge = async () => {
+    setWebsiteLoading(true);
+    try {
+      const { data } = await api.get('/website-knowledge');
+      setWebsiteItems(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setWebsiteStatus({ type: 'error', message: err.response?.data?.error || 'Failed to load website knowledge.' });
+    } finally {
+      setWebsiteLoading(false);
+    }
+  };
+
   const loadAgentName = async () => {
     try {
       const { data } = await api.get('/settings');
@@ -153,6 +180,7 @@ export default function KnowledgeBase() {
   useEffect(() => {
     loadAgentName();
     loadBillingImport();
+    loadWebsiteKnowledge();
     loadMedia();
   }, []);
 
@@ -203,6 +231,69 @@ export default function KnowledgeBase() {
       setBillingImportStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to delete imported billing file.') });
     } finally {
       setBillingImportDeleting(false);
+    }
+  };
+
+  const updateWebsiteForm = (field, value) => {
+    setWebsiteForm((current) => ({ ...current, [field]: value }));
+    setWebsiteStatus(null);
+  };
+
+  const addWebsiteKnowledge = async () => {
+    if (!websiteForm.url.trim()) {
+      setWebsiteStatus({ type: 'error', message: 'Enter a website link first.' });
+      return;
+    }
+    setWebsiteSaving(true);
+    setWebsiteStatus(null);
+    try {
+      const { data } = await api.post('/website-knowledge', websiteForm);
+      setWebsiteItems((current) => [data, ...current]);
+      setWebsiteForm({ url: '', title: '', summary: '' });
+      setWebsiteStatus({ type: 'success', message: `${agentName} can now use knowledge from ${data.title}.` });
+    } catch (err) {
+      setWebsiteStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to add website knowledge.') });
+    } finally {
+      setWebsiteSaving(false);
+    }
+  };
+
+  const refreshWebsiteKnowledge = async (item) => {
+    setWebsiteBusyId(`refresh-${item.id}`);
+    setWebsiteStatus(null);
+    try {
+      const { data } = await api.post(`/website-knowledge/${item.id}/refresh`);
+      setWebsiteItems((current) => current.map((row) => (row.id === item.id ? data : row)));
+      setWebsiteStatus({ type: 'success', message: `${data.title} refreshed from the website.` });
+    } catch (err) {
+      setWebsiteStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to refresh website knowledge.') });
+    } finally {
+      setWebsiteBusyId('');
+    }
+  };
+
+  const toggleWebsiteKnowledge = async (item) => {
+    setWebsiteBusyId(`toggle-${item.id}`);
+    try {
+      const { data } = await api.patch(`/website-knowledge/${item.id}`, { is_active: !item.is_active });
+      setWebsiteItems((current) => current.map((row) => (row.id === item.id ? data : row)));
+    } catch (err) {
+      setWebsiteStatus({ type: 'error', message: err.response?.data?.error || 'Failed to update website knowledge.' });
+    } finally {
+      setWebsiteBusyId('');
+    }
+  };
+
+  const deleteWebsiteKnowledge = async (id) => {
+    if (!window.confirm('Delete this website knowledge from the agent brain?')) return;
+    setWebsiteBusyId(`delete-${id}`);
+    try {
+      await api.delete(`/website-knowledge/${id}`);
+      setWebsiteItems((current) => current.filter((row) => row.id !== id));
+    } catch (err) {
+      setWebsiteStatus({ type: 'error', message: err.response?.data?.error || 'Failed to delete website knowledge.' });
+    } finally {
+      setWebsiteBusyId('');
     }
   };
 
@@ -419,6 +510,75 @@ export default function KnowledgeBase() {
                 {billingImportStatus.message}
               </div>
             )}
+          </KnowledgeCard>
+
+          <KnowledgeCard
+            icon={GlobeIcon}
+            title="Website Knowledge"
+            description={`Give ${agentName} a public website link to read and use when answering customer questions about packages, policies, coverage, setup guides or company information.`}
+          >
+            <div className="space-y-4">
+              <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4">
+                <div className="grid gap-3 lg:grid-cols-[1fr_220px]">
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Website link
+                    <input value={websiteForm.url} onChange={(event) => updateWebsiteForm('url', event.target.value)} placeholder="https://example.com/packages" className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]" />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                    Display title
+                    <input value={websiteForm.title} onChange={(event) => updateWebsiteForm('title', event.target.value)} placeholder="Packages page" className="h-11 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]" />
+                  </label>
+                </div>
+                <label className="mt-3 flex flex-col gap-1 text-xs font-black uppercase text-slate-400">
+                  Admin note
+                  <textarea rows={2} value={websiteForm.summary} onChange={(event) => updateWebsiteForm('summary', event.target.value)} placeholder="Tell the agent what this website is useful for, e.g. package prices, router setup, coverage areas." className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]" />
+                </label>
+                <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-xs font-semibold leading-5 text-slate-500">
+                    Nexa will visit the page once, extract readable text, and save it in this account's knowledge base.
+                  </p>
+                  <button type="button" onClick={addWebsiteKnowledge} disabled={websiteSaving} className="rounded-xl bg-[#3535FF] px-4 py-2.5 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50">
+                    {websiteSaving ? 'Surfing...' : 'Add Website'}
+                  </button>
+                </div>
+              </div>
+
+              {websiteStatus && (
+                <div className={`rounded-xl border px-4 py-3 text-sm font-semibold ${websiteStatus.type === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>
+                  {websiteStatus.message}
+                </div>
+              )}
+
+              {websiteLoading ? (
+                <div className="text-sm font-semibold text-slate-400">Loading websites...</div>
+              ) : websiteItems.length === 0 ? (
+                <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-6 text-center text-sm font-semibold text-slate-400">No website knowledge added yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {websiteItems.map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-slate-100 bg-white p-4">
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                        <div className="min-w-0">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
+                            <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${item.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{item.is_active ? 'Active' : 'Paused'}</span>
+                          </div>
+                          <a href={item.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs font-bold text-[#3535FF]">{item.url}</a>
+                          {item.summary && <p className="mt-2 text-sm font-semibold text-slate-600">{item.summary}</p>}
+                          <p className="mt-2 max-h-10 overflow-hidden text-xs leading-5 text-slate-500">{item.content_preview}</p>
+                          <p className="mt-2 text-[11px] font-semibold text-slate-400">{item.fetched_at ? `Last surfed: ${new Date(item.fetched_at).toLocaleString()}` : ''}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => refreshWebsiteKnowledge(item)} disabled={websiteBusyId === `refresh-${item.id}`} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">{websiteBusyId === `refresh-${item.id}` ? 'Refreshing...' : 'Refresh'}</button>
+                          <button type="button" onClick={() => toggleWebsiteKnowledge(item)} disabled={websiteBusyId === `toggle-${item.id}`} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">{item.is_active ? 'Pause' : 'Activate'}</button>
+                          <button type="button" onClick={() => deleteWebsiteKnowledge(item.id)} disabled={websiteBusyId === `delete-${item.id}`} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 disabled:opacity-50">Delete</button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </KnowledgeCard>
 
           <KnowledgeCard

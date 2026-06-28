@@ -8,6 +8,7 @@ const { notifyClientAdmins } = require('../services/pushNotifications');
 const { sendSMS } = require('../services/sms');
 const { sendWorkflowEmployeeEmail } = require('../services/email');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
@@ -633,6 +634,8 @@ router.post('/client/:clientId', async (req, res) => {
       prompt += `\n\nFor new installation requests, send this intake form link: ${intakeUrl}. It collects ID scan, location and contact details.`;
     }
     if (!incoming.isImage) {
+      const websiteContext = await buildWebsiteKnowledgeContext(client.id);
+      if (websiteContext) prompt += websiteContext;
       console.log(`[evo client ${client.id}] Building billing context for ${incoming.phone}.`);
       const billingContext = await buildBillingContext({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
       if (billingContext) prompt += billingContext;

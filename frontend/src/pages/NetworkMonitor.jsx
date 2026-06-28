@@ -26,6 +26,16 @@ const emptyForm = {
   features: emptyFeatures,
 };
 
+const ROUTEROS_API_COMMANDS = `/ip service enable api
+/ip service set api port=8728 address=YOUR_NEXA_SERVER_IP/32
+/user group add name=nexa-readonly policy=read,test
+/user add name=nexa group=nexa-readonly password="STRONG_PASSWORD"`;
+
+const ROUTEROS_API_SSL_COMMANDS = `/ip service enable api-ssl
+/ip service set api-ssl port=8729 address=YOUR_NEXA_SERVER_IP/32
+/user group add name=nexa-readonly policy=read,test
+/user add name=nexa group=nexa-readonly password="STRONG_PASSWORD"`;
+
 function statusClass(status) {
   if (status === 'online') return 'border-emerald-100 bg-emerald-50 text-emerald-700';
   if (status === 'error') return 'border-red-100 bg-red-50 text-red-700';
@@ -73,6 +83,39 @@ function StatCard({ icon: Icon, label, value, helper, tone = 'purple' }) {
           <Icon className="h-5 w-5" />
         </span>
       </div>
+    </div>
+  );
+}
+
+function CommandBox({ title, helper, commands }) {
+  const [copied, setCopied] = useState(false);
+
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(commands);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2500);
+    } catch (err) {
+      setCopied(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#dfe5f2] bg-[#fbfcff] p-4">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <h3 className="text-sm font-black text-[#101633]">{title}</h3>
+          <p className="mt-1 text-xs font-semibold leading-5 text-[#6d7697]">{helper}</p>
+        </div>
+        <button
+          type="button"
+          onClick={copy}
+          className="h-9 rounded-xl bg-[#4f35f5] px-4 text-xs font-black text-white shadow-[0_10px_22px_rgba(79,53,245,0.18)]"
+        >
+          {copied ? 'Copied' : 'Copy Commands'}
+        </button>
+      </div>
+      <pre className="mt-3 overflow-x-auto rounded-xl bg-[#101633] p-4 text-xs font-semibold leading-6 text-white"><code>{commands}</code></pre>
     </div>
   );
 }
@@ -246,6 +289,39 @@ export default function NetworkMonitor() {
             {status.message}
           </div>
         )}
+
+        <section className="mb-5 rounded-[24px] border border-[#dfe5f2] bg-white p-5 shadow-sm">
+          <div className="mb-4 flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#efe9ff] text-[#4f35f5]">
+              <WrenchIcon className="h-5 w-5" />
+            </span>
+            <div>
+              <h2 className="text-base font-black text-[#101633]">How to Link MikroTik</h2>
+              <p className="mt-1 text-xs font-semibold leading-5 text-[#6d7697]">
+                Copy one command block into MikroTik Terminal or Winbox Terminal, then replace
+                <span className="mx-1 font-mono font-black text-[#4f35f5]">YOUR_NEXA_SERVER_IP</span>
+                and
+                <span className="mx-1 font-mono font-black text-[#4f35f5]">STRONG_PASSWORD</span>
+                before running it. Use the same host, port, username and password in the form below.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4 xl:grid-cols-2">
+            <CommandBox
+              title="Standard RouterOS API"
+              helper="Use this for normal API access on port 8728. Restrict access to the Nexa server public IP."
+              commands={ROUTEROS_API_COMMANDS}
+            />
+            <CommandBox
+              title="RouterOS API-SSL"
+              helper="Use this when API-SSL is configured on the router. The dashboard uses port 8729 for this option."
+              commands={ROUTEROS_API_SSL_COMMANDS}
+            />
+          </div>
+          <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
+            For production, do not expose API to the whole internet. Keep the user read-only, use a strong password, and limit the API service to the Nexa backend server IP.
+          </div>
+        </section>
 
         <div className="grid gap-5 xl:grid-cols-[420px_minmax(0,1fr)]">
           <section className="rounded-[24px] border border-[#dfe5f2] bg-white p-5 shadow-sm">

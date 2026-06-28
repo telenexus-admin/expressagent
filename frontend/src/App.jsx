@@ -28,6 +28,7 @@ import Employees from './pages/Employees';
 import Workflow from './pages/Workflow';
 import Agent from './pages/Agent';
 import KnowledgeBase from './pages/KnowledgeBase';
+import NetworkMonitor from './pages/NetworkMonitor';
 import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
@@ -185,6 +186,7 @@ export default function App() {
             <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />
             <Route path="agent" element={<PermissionRoute permission="agent"><Agent /></PermissionRoute>} />
             <Route path="knowledge-base" element={<PermissionRoute permission="agent"><KnowledgeBase /></PermissionRoute>} />
+            <Route path="network-monitor" element={<PermissionRoute permission="agent"><NetworkMonitor /></PermissionRoute>} />
             <Route path="logs" element={<PermissionRoute permission="logs"><Logs /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
           </Route>

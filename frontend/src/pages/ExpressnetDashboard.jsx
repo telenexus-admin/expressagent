@@ -111,6 +111,7 @@ export default function ExpressnetDashboard() {
       items: [
         ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
         ['/dashboard/knowledge-base', 'Knowledge Base', PulseIcon, 'agent'],
+        ['/dashboard/network-monitor', 'Network Monitor', WrenchIcon, 'agent'],
         ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
         ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
         ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],

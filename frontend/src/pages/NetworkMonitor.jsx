@@ -32,11 +32,20 @@ function routerOsQuote(value) {
   return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
 }
 
-function buildRouterOsCommands(mode, password) {
+function normalizeAllowedApiAddresses(extraAddresses) {
+  const addresses = String(extraAddresses || '')
+    .split(/[,\s]+/)
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .map((value) => (value.includes('/') ? value : `${value}/32`));
+  return [`${NEXA_SERVER_IP}/32`, ...addresses].join(',');
+}
+
+function buildRouterOsCommands(mode, password, extraAddresses = '') {
   const service = mode === 'api-ssl' ? 'api-ssl' : 'api';
   const port = mode === 'api-ssl' ? 8729 : 8728;
   return `/ip service enable ${service}
-/ip service set ${service} port=${port} address=${NEXA_SERVER_IP}/32
+/ip service set ${service} port=${port} address=${normalizeAllowedApiAddresses(extraAddresses)}
 /user group add name=nexa-readonly policy=read,test
 /user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"`;
 }
@@ -96,6 +105,7 @@ function CommandGenerator() {
   const [mode, setMode] = useState('api');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [existingApiIps, setExistingApiIps] = useState('');
   const [copied, setCopied] = useState(false);
   const passwordReady = password.length >= 8 && password === confirmPassword;
   const error = !password
@@ -106,8 +116,8 @@ function CommandGenerator() {
         ? 'Password confirmation does not match.'
         : '';
   const commands = passwordReady
-    ? buildRouterOsCommands(mode, password)
-    : buildRouterOsCommands(mode, 'ENTER_PASSWORD_ABOVE');
+    ? buildRouterOsCommands(mode, password, existingApiIps)
+    : buildRouterOsCommands(mode, 'ENTER_PASSWORD_ABOVE', existingApiIps);
 
   async function copy() {
     if (!passwordReady) return;
@@ -157,6 +167,22 @@ function CommandGenerator() {
               />
             </label>
             <label className="block">
+              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Existing billing/API server IPs</span>
+              <input
+                type="text"
+                value={existingApiIps}
+                onChange={(event) => {
+                  setExistingApiIps(event.target.value);
+                  setCopied(false);
+                }}
+                placeholder="Optional, e.g. 10.133.0.1"
+                className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none transition focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+              />
+              <span className="mt-1.5 block text-[11px] font-semibold leading-5 text-[#7a849f]">
+                Add any billing system IP already using MikroTik API so Nexa does not block it. Separate multiple IPs with commas.
+              </span>
+            </label>
+            <label className="block">
               <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Confirm password</span>
               <input
                 type="password"
@@ -181,7 +207,9 @@ function CommandGenerator() {
           <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h3 className="text-sm font-black text-[#101633]">Final command script</h3>
-              <p className="mt-1 text-xs font-semibold text-[#6d7697]">Nexa server IP is already set to {NEXA_SERVER_IP}/32.</p>
+              <p className="mt-1 text-xs font-semibold text-[#6d7697]">
+                Nexa server IP is already set to {NEXA_SERVER_IP}/32. Existing API server IPs are preserved when entered.
+              </p>
             </div>
             <button
               type="button"

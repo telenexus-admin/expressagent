@@ -145,15 +145,25 @@ class RouterOsApi {
     this.socket.write(payload);
   }
 
+  async waitForBuffer(count, timeoutMs = 15000) {
+    const startedAt = Date.now();
+    while (this.buffer.length < count) {
+      if (Date.now() - startedAt > timeoutMs) {
+        throw new Error('MikroTik API response timed out');
+      }
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+  }
+
   async readByte() {
-    while (this.buffer.length < 1) await new Promise((resolve) => setTimeout(resolve, 5));
+    await this.waitForBuffer(1);
     const byte = this.buffer[0];
     this.buffer = this.buffer.slice(1);
     return byte;
   }
 
   async readBytes(count) {
-    while (this.buffer.length < count) await new Promise((resolve) => setTimeout(resolve, 5));
+    await this.waitForBuffer(count);
     const chunk = this.buffer.slice(0, count);
     this.buffer = this.buffer.slice(count);
     return chunk;

@@ -314,7 +314,7 @@ export default function NetworkMonitor() {
   async function testRouter(router = null) {
     setTesting(!router);
     setBusyId(router ? `test-${router.id}` : '');
-    setStatus(null);
+    setStatus({ type: 'info', message: `Testing ${router?.name || form.name || 'MikroTik router'} connection. This can take up to 15 seconds...` });
     try {
       const payload = router ? { id: router.id } : { ...form, port: Number(form.port || 0) };
       const { data } = await api.post('/mikrotik/test', payload);

@@ -235,6 +235,7 @@ export default function NetworkMonitor() {
   const [saving, setSaving] = useState(false);
   const [testing, setTesting] = useState(false);
   const [busyId, setBusyId] = useState('');
+  const [routerTestStatus, setRouterTestStatus] = useState({});
 
   async function loadRouters() {
     setLoading(true);
@@ -314,17 +315,36 @@ export default function NetworkMonitor() {
   async function testRouter(router = null) {
     setTesting(!router);
     setBusyId(router ? `test-${router.id}` : '');
-    setStatus({ type: 'info', message: `Testing ${router?.name || form.name || 'MikroTik router'} connection. This can take up to 15 seconds...` });
+    const targetName = router?.name || form.name || 'MikroTik router';
+    const testingMessage = `Testing ${targetName} connection. This can take up to 20 seconds...`;
+    setStatus({ type: 'info', message: testingMessage });
+    if (router) {
+      setRouterTestStatus((current) => ({
+        ...current,
+        [router.id]: { type: 'info', message: testingMessage },
+      }));
+    }
     try {
       const payload = router ? { id: router.id } : { ...form, port: Number(form.port || 0) };
-      const { data } = await api.post('/mikrotik/test', payload);
-      setStatus({
+      const { data } = await api.post('/mikrotik/test', payload, { timeout: 30000 });
+      const successStatus = {
         type: 'success',
         message: `Connected to ${data.identity || 'router'}${data.version ? ` on RouterOS ${data.version}` : ''}.`,
-      });
+      };
+      setStatus(successStatus);
+      if (router) {
+        setRouterTestStatus((current) => ({ ...current, [router.id]: successStatus }));
+      }
       await loadRouters();
     } catch (err) {
-      setStatus({ type: 'error', message: err.response?.data?.error || 'MikroTik connection failed.' });
+      const message = err.code === 'ECONNABORTED'
+        ? 'MikroTik test request timed out. Confirm the router public IP/host and API port are reachable from the Nexa server.'
+        : err.response?.data?.error || 'MikroTik connection failed.';
+      const errorStatus = { type: 'error', message };
+      setStatus(errorStatus);
+      if (router) {
+        setRouterTestStatus((current) => ({ ...current, [router.id]: errorStatus }));
+      }
       if (router) await loadRouters();
     } finally {
       setTesting(false);
@@ -538,6 +558,17 @@ export default function NetworkMonitor() {
                         {router.last_error && (
                           <div className="mt-3 rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-xs font-bold text-red-700">
                             {router.last_error}
+                          </div>
+                        )}
+                        {routerTestStatus[router.id] && (
+                          <div className={`mt-3 rounded-xl border px-3 py-2 text-xs font-bold ${
+                            routerTestStatus[router.id].type === 'success'
+                              ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                              : routerTestStatus[router.id].type === 'info'
+                                ? 'border-blue-100 bg-blue-50 text-blue-700'
+                                : 'border-red-100 bg-red-50 text-red-700'
+                          }`}>
+                            {routerTestStatus[router.id].message}
                           </div>
                         )}
                         <div className="mt-3 text-[11px] font-semibold text-[#8a92ad]">

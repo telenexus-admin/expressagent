@@ -99,6 +99,8 @@ const BILLING_IMPORT_SYSTEMS = [
   { value: 'billnasi', label: 'Billnasi CSV / Excel', helper: 'Username, Names, Phone, Activity, Status, Expiry, Package and Location.' },
 ];
 
+const WEBSITE_REFRESH_INTERVALS = [5, 10, 30];
+
 function possessiveName(name) {
   const trimmed = String(name || '').trim() || 'Agent';
   return `${trimmed}${trimmed.toLowerCase().endsWith('s') ? "'" : "'s"}`;
@@ -117,7 +119,7 @@ export default function KnowledgeBase() {
   const [websiteSaving, setWebsiteSaving] = useState(false);
   const [websiteBusyId, setWebsiteBusyId] = useState('');
   const [websiteStatus, setWebsiteStatus] = useState(null);
-  const [websiteForm, setWebsiteForm] = useState({ url: '', title: '', summary: '' });
+  const [websiteForm, setWebsiteForm] = useState({ url: '', title: '', summary: '', auto_refresh_enabled: true, refresh_interval_minutes: 30 });
   const [mediaItems, setMediaItems] = useState([]);
   const [mediaLoading, setMediaLoading] = useState(true);
   const [mediaSaving, setMediaSaving] = useState(false);
@@ -249,7 +251,7 @@ export default function KnowledgeBase() {
     try {
       const { data } = await api.post('/website-knowledge', websiteForm);
       setWebsiteItems((current) => [data, ...current]);
-      setWebsiteForm({ url: '', title: '', summary: '' });
+      setWebsiteForm({ url: '', title: '', summary: '', auto_refresh_enabled: true, refresh_interval_minutes: 30 });
       setWebsiteStatus({ type: 'success', message: `${agentName} can now use knowledge from ${data.title}.` });
     } catch (err) {
       setWebsiteStatus({ type: 'error', message: apiErrorMessage(err, 'Failed to add website knowledge.') });
@@ -279,6 +281,18 @@ export default function KnowledgeBase() {
       setWebsiteItems((current) => current.map((row) => (row.id === item.id ? data : row)));
     } catch (err) {
       setWebsiteStatus({ type: 'error', message: err.response?.data?.error || 'Failed to update website knowledge.' });
+    } finally {
+      setWebsiteBusyId('');
+    }
+  };
+
+  const updateWebsiteRefresh = async (item, updates) => {
+    setWebsiteBusyId(`refresh-settings-${item.id}`);
+    try {
+      const { data } = await api.patch(`/website-knowledge/${item.id}`, updates);
+      setWebsiteItems((current) => current.map((row) => (row.id === item.id ? data : row)));
+    } catch (err) {
+      setWebsiteStatus({ type: 'error', message: err.response?.data?.error || 'Failed to update website auto-refresh.' });
     } finally {
       setWebsiteBusyId('');
     }
@@ -533,9 +547,26 @@ export default function KnowledgeBase() {
                   Admin note
                   <textarea rows={2} value={websiteForm.summary} onChange={(event) => updateWebsiteForm('summary', event.target.value)} placeholder="Tell the agent what this website is useful for, e.g. package prices, router setup, coverage areas." className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]" />
                 </label>
+                <div className="mt-3 flex flex-col gap-3 rounded-2xl bg-white p-3 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="flex items-center gap-2 text-sm font-bold text-slate-700">
+                    <input type="checkbox" checked={websiteForm.auto_refresh_enabled} onChange={(event) => updateWebsiteForm('auto_refresh_enabled', event.target.checked)} className="h-4 w-4 accent-[#3535FF]" />
+                    Auto-sync website changes
+                  </label>
+                  <label className="flex items-center gap-2 text-xs font-black uppercase text-slate-400">
+                    Check every
+                    <select
+                      value={websiteForm.refresh_interval_minutes}
+                      onChange={(event) => updateWebsiteForm('refresh_interval_minutes', Number(event.target.value))}
+                      disabled={!websiteForm.auto_refresh_enabled}
+                      className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-black normal-case text-slate-700 disabled:opacity-50"
+                    >
+                      {WEBSITE_REFRESH_INTERVALS.map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
+                    </select>
+                  </label>
+                </div>
                 <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <p className="text-xs font-semibold leading-5 text-slate-500">
-                    Nexa will visit the page once, extract readable text, and save it in this account's knowledge base.
+                    Nexa will extract readable text now, then keep it updated using the selected polling interval.
                   </p>
                   <button type="button" onClick={addWebsiteKnowledge} disabled={websiteSaving} className="rounded-xl bg-[#3535FF] px-4 py-2.5 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50">
                     {websiteSaving ? 'Surfing...' : 'Add Website'}
@@ -562,13 +593,24 @@ export default function KnowledgeBase() {
                           <div className="flex flex-wrap items-center gap-2">
                             <h3 className="text-sm font-black text-slate-950">{item.title}</h3>
                             <span className={`rounded-full px-2 py-0.5 text-[10px] font-black uppercase ${item.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>{item.is_active ? 'Active' : 'Paused'}</span>
+                            {item.auto_refresh_enabled && <span className="rounded-full bg-[#f3f2ff] px-2 py-0.5 text-[10px] font-black uppercase text-[#3535FF]">Auto {item.refresh_interval_minutes}m</span>}
                           </div>
                           <a href={item.url} target="_blank" rel="noreferrer" className="mt-1 block truncate text-xs font-bold text-[#3535FF]">{item.url}</a>
                           {item.summary && <p className="mt-2 text-sm font-semibold text-slate-600">{item.summary}</p>}
                           <p className="mt-2 max-h-10 overflow-hidden text-xs leading-5 text-slate-500">{item.content_preview}</p>
                           <p className="mt-2 text-[11px] font-semibold text-slate-400">{item.fetched_at ? `Last surfed: ${new Date(item.fetched_at).toLocaleString()}` : ''}</p>
+                          {item.last_refresh_error && <p className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs font-bold text-red-600">Auto-sync failed: {item.last_refresh_error}</p>}
                         </div>
                         <div className="flex flex-wrap gap-2">
+                          <button type="button" onClick={() => updateWebsiteRefresh(item, { auto_refresh_enabled: !item.auto_refresh_enabled })} disabled={websiteBusyId === `refresh-settings-${item.id}`} className={`rounded-xl px-3 py-2 text-xs font-black disabled:opacity-50 ${item.auto_refresh_enabled ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>{item.auto_refresh_enabled ? 'Auto on' : 'Auto off'}</button>
+                          <select
+                            value={item.refresh_interval_minutes || 30}
+                            onChange={(event) => updateWebsiteRefresh(item, { refresh_interval_minutes: Number(event.target.value), auto_refresh_enabled: true })}
+                            disabled={websiteBusyId === `refresh-settings-${item.id}`}
+                            className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50"
+                          >
+                            {WEBSITE_REFRESH_INTERVALS.map((minutes) => <option key={minutes} value={minutes}>{minutes} min</option>)}
+                          </select>
                           <button type="button" onClick={() => refreshWebsiteKnowledge(item)} disabled={websiteBusyId === `refresh-${item.id}`} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">{websiteBusyId === `refresh-${item.id}` ? 'Refreshing...' : 'Refresh'}</button>
                           <button type="button" onClick={() => toggleWebsiteKnowledge(item)} disabled={websiteBusyId === `toggle-${item.id}`} className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-black text-slate-600 disabled:opacity-50">{item.is_active ? 'Pause' : 'Activate'}</button>
                           <button type="button" onClick={() => deleteWebsiteKnowledge(item.id)} disabled={websiteBusyId === `delete-${item.id}`} className="rounded-xl bg-red-50 px-3 py-2 text-xs font-black text-red-600 disabled:opacity-50">Delete</button>

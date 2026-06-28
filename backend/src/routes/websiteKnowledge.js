@@ -38,6 +38,8 @@ router.post('/', async (req, res) => {
       url: req.body.url,
       title: req.body.title,
       summary: req.body.summary,
+      auto_refresh_enabled: req.body.auto_refresh_enabled,
+      refresh_interval_minutes: req.body.refresh_interval_minutes,
     });
     res.status(201).json(item);
   } catch (err) {
@@ -54,6 +56,8 @@ router.patch('/:id', async (req, res) => {
       title: req.body.title,
       summary: req.body.summary,
       is_active: req.body.is_active,
+      auto_refresh_enabled: req.body.auto_refresh_enabled,
+      refresh_interval_minutes: req.body.refresh_interval_minutes,
     });
     if (!item) return res.status(404).json({ error: 'Website knowledge not found' });
     res.json(item);

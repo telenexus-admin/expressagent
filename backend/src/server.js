@@ -39,6 +39,7 @@ const clientEvolutionWebhookRoutes = require('./routes/clientEvolutionWebhook');
 const { startDailyReportScheduler } = require('./services/dailyReports');
 const { startOperatorFollowUpScheduler } = require('./services/evolution');
 const { startHumanTakeoverRecoveryScheduler } = require('./services/humanTakeoverRecovery');
+const { startWebsiteKnowledgeScheduler } = require('./services/websiteKnowledge');
 const { openAIModelSummary } = require('./services/openai');
 
 const app = express();
@@ -134,4 +135,5 @@ app.listen(PORT, () => {
   startDailyReportScheduler();
   startOperatorFollowUpScheduler();
   startHumanTakeoverRecoveryScheduler();
+  startWebsiteKnowledgeScheduler();
 });

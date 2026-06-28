@@ -3,6 +3,9 @@ const db = require('../db');
 
 const MAX_PAGE_BYTES = 900 * 1024;
 const MAX_CONTEXT_CHARS = 6000;
+const AUTO_REFRESH_INTERVALS = [5, 10, 30];
+let websiteKnowledgeSchedulerStarted = false;
+let websiteKnowledgeRefreshRunning = false;
 
 async function ensureWebsiteKnowledgeTable() {
   await db.query(`
@@ -14,12 +17,25 @@ async function ensureWebsiteKnowledgeTable() {
       summary TEXT,
       content TEXT NOT NULL,
       is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      auto_refresh_enabled BOOLEAN NOT NULL DEFAULT FALSE,
+      refresh_interval_minutes INTEGER NOT NULL DEFAULT 30,
+      last_refresh_error TEXT,
       fetched_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
       created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
       updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW()
     )
   `);
+  await db.query(`ALTER TABLE website_knowledge ADD COLUMN IF NOT EXISTS auto_refresh_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await db.query(`ALTER TABLE website_knowledge ADD COLUMN IF NOT EXISTS refresh_interval_minutes INTEGER NOT NULL DEFAULT 30`);
+  await db.query(`ALTER TABLE website_knowledge ADD COLUMN IF NOT EXISTS last_refresh_error TEXT`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_website_knowledge_client_active ON website_knowledge(client_id, is_active, fetched_at DESC)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_website_knowledge_auto_refresh ON website_knowledge(is_active, auto_refresh_enabled, fetched_at)`);
+}
+
+function normalizeRefreshInterval(value) {
+  const parsed = Number(value);
+  if (!AUTO_REFRESH_INTERVALS.includes(parsed)) return 30;
+  return parsed;
 }
 
 function normalizeUrl(value) {
@@ -95,6 +111,9 @@ function rowSummary(row) {
     url: row.url,
     summary: row.summary || '',
     is_active: row.is_active !== false,
+    auto_refresh_enabled: row.auto_refresh_enabled === true,
+    refresh_interval_minutes: normalizeRefreshInterval(row.refresh_interval_minutes),
+    last_refresh_error: row.last_refresh_error || '',
     fetched_at: row.fetched_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
@@ -105,7 +124,8 @@ function rowSummary(row) {
 async function listWebsiteKnowledge(clientId) {
   await ensureWebsiteKnowledgeTable();
   const result = await db.query(
-    `SELECT id, title, url, summary, content, is_active, fetched_at, created_at, updated_at
+    `SELECT id, title, url, summary, content, is_active, auto_refresh_enabled,
+            refresh_interval_minutes, last_refresh_error, fetched_at, created_at, updated_at
      FROM website_knowledge
      WHERE client_id = $1
      ORDER BY fetched_at DESC, id DESC`,
@@ -114,20 +134,24 @@ async function listWebsiteKnowledge(clientId) {
   return result.rows.map(rowSummary);
 }
 
-async function createWebsiteKnowledge(clientId, { url, title = '', summary = '' }) {
+async function createWebsiteKnowledge(clientId, { url, title = '', summary = '', auto_refresh_enabled = false, refresh_interval_minutes = 30 }) {
   if (!clientId) throw new Error('Client is required');
   const fetched = await fetchWebsiteText(url);
   await ensureWebsiteKnowledgeTable();
   const result = await db.query(
-    `INSERT INTO website_knowledge (client_id, title, url, summary, content, is_active)
-     VALUES ($1, $2, $3, $4, $5, TRUE)
-     RETURNING id, title, url, summary, content, is_active, fetched_at, created_at, updated_at`,
+    `INSERT INTO website_knowledge
+       (client_id, title, url, summary, content, is_active, auto_refresh_enabled, refresh_interval_minutes)
+     VALUES ($1, $2, $3, $4, $5, TRUE, $6, $7)
+     RETURNING id, title, url, summary, content, is_active, auto_refresh_enabled,
+               refresh_interval_minutes, last_refresh_error, fetched_at, created_at, updated_at`,
     [
       clientId,
       String(title || fetched.title).trim().slice(0, 180),
       fetched.url,
       String(summary || '').trim().slice(0, 1000) || null,
       fetched.content,
+      auto_refresh_enabled === true,
+      normalizeRefreshInterval(refresh_interval_minutes),
     ]
   );
   return rowSummary(result.rows[0]);
@@ -140,9 +164,10 @@ async function refreshWebsiteKnowledge(clientId, id) {
   const fetched = await fetchWebsiteText(current.rows[0].url);
   const result = await db.query(
     `UPDATE website_knowledge
-     SET title = $1, content = $2, fetched_at = NOW(), updated_at = NOW()
+     SET title = $1, content = $2, fetched_at = NOW(), updated_at = NOW(), last_refresh_error = NULL
      WHERE client_id = $3 AND id = $4
-     RETURNING id, title, url, summary, content, is_active, fetched_at, created_at, updated_at`,
+     RETURNING id, title, url, summary, content, is_active, auto_refresh_enabled,
+               refresh_interval_minutes, last_refresh_error, fetched_at, created_at, updated_at`,
     [current.rows[0].title || fetched.title, fetched.content, clientId, id]
   );
   return rowSummary(result.rows[0]);
@@ -150,26 +175,87 @@ async function refreshWebsiteKnowledge(clientId, id) {
 
 async function updateWebsiteKnowledge(clientId, id, fields = {}) {
   await ensureWebsiteKnowledgeTable();
+  const nextTitle = fields.title !== undefined ? String(fields.title || '').trim().slice(0, 180) : '';
   const result = await db.query(
     `UPDATE website_knowledge
      SET title = CASE WHEN $1::boolean THEN $2 ELSE title END,
          summary = CASE WHEN $3::boolean THEN $4 ELSE summary END,
          is_active = CASE WHEN $5::boolean THEN $6 ELSE is_active END,
+         auto_refresh_enabled = CASE WHEN $7::boolean THEN $8 ELSE auto_refresh_enabled END,
+         refresh_interval_minutes = CASE WHEN $9::boolean THEN $10 ELSE refresh_interval_minutes END,
          updated_at = NOW()
-     WHERE client_id = $7 AND id = $8
-     RETURNING id, title, url, summary, content, is_active, fetched_at, created_at, updated_at`,
+     WHERE client_id = $11 AND id = $12
+     RETURNING id, title, url, summary, content, is_active, auto_refresh_enabled,
+               refresh_interval_minutes, last_refresh_error, fetched_at, created_at, updated_at`,
     [
-      fields.title !== undefined,
-      fields.title !== undefined ? String(fields.title || '').trim().slice(0, 180) || null : null,
+      Boolean(nextTitle),
+      nextTitle || null,
       fields.summary !== undefined,
       fields.summary !== undefined ? String(fields.summary || '').trim().slice(0, 1000) || null : null,
       fields.is_active !== undefined,
       fields.is_active === true,
+      fields.auto_refresh_enabled !== undefined,
+      fields.auto_refresh_enabled === true,
+      fields.refresh_interval_minutes !== undefined,
+      normalizeRefreshInterval(fields.refresh_interval_minutes),
       clientId,
       id,
     ]
   );
   return result.rows[0] ? rowSummary(result.rows[0]) : null;
+}
+
+async function refreshWebsiteKnowledgeRow(row) {
+  const fetched = await fetchWebsiteText(row.url);
+  await db.query(
+    `UPDATE website_knowledge
+     SET title = COALESCE(NULLIF(title, ''), $1),
+         content = $2,
+         fetched_at = NOW(),
+         updated_at = NOW(),
+         last_refresh_error = NULL
+     WHERE id = $3`,
+    [fetched.title, fetched.content, row.id]
+  );
+}
+
+async function runDueWebsiteKnowledgeRefreshes() {
+  if (websiteKnowledgeRefreshRunning) return;
+  websiteKnowledgeRefreshRunning = true;
+  try {
+    await ensureWebsiteKnowledgeTable();
+    const result = await db.query(
+      `SELECT id, client_id, title, url, refresh_interval_minutes
+       FROM website_knowledge
+       WHERE is_active = TRUE
+         AND auto_refresh_enabled = TRUE
+         AND fetched_at <= NOW() - (refresh_interval_minutes || ' minutes')::interval
+       ORDER BY fetched_at ASC
+       LIMIT 10`
+    );
+    for (const row of result.rows) {
+      try {
+        await refreshWebsiteKnowledgeRow(row);
+        console.log(`Website knowledge refreshed for client ${row.client_id}: ${row.url}`);
+      } catch (err) {
+        const message = String(err.message || 'Refresh failed').slice(0, 1000);
+        await db.query(`UPDATE website_knowledge SET last_refresh_error = $1, updated_at = NOW() WHERE id = $2`, [message, row.id]);
+        console.error(`Website knowledge refresh failed for ${row.url}:`, message);
+      }
+    }
+  } catch (err) {
+    console.error('Website knowledge scheduler error:', err.message);
+  } finally {
+    websiteKnowledgeRefreshRunning = false;
+  }
+}
+
+function startWebsiteKnowledgeScheduler() {
+  if (websiteKnowledgeSchedulerStarted) return;
+  websiteKnowledgeSchedulerStarted = true;
+  runDueWebsiteKnowledgeRefreshes();
+  setInterval(runDueWebsiteKnowledgeRefreshes, 60 * 1000);
+  console.log('Website knowledge polling scheduler ready for 5/10/30 minute refreshes.');
 }
 
 async function deleteWebsiteKnowledge(clientId, id) {
@@ -212,5 +298,7 @@ module.exports = {
   ensureWebsiteKnowledgeTable,
   listWebsiteKnowledge,
   refreshWebsiteKnowledge,
+  runDueWebsiteKnowledgeRefreshes,
+  startWebsiteKnowledgeScheduler,
   updateWebsiteKnowledge,
 };

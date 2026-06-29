@@ -565,7 +565,12 @@ router.post('/client/:clientId', async (req, res) => {
 
     if (!incoming.isImage) {
       console.log(`[evo client ${client.id}] Billing direct check for ${incoming.phone}.`);
-      let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: incoming.phone, messageText: userText });
+      let billingReply = await answerBillingQuestion({
+        clientId: client.id,
+        customerPhone: incoming.phone,
+        customerName: conversation.customer_name,
+        messageText: userText,
+      });
       if (billingReply) {
         const mediaText = `${userText}\n${billingReply}`;
         billingReply = stripMediaTags(billingReply) || 'Here is the media I found for you.';

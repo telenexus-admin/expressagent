@@ -912,7 +912,13 @@ function accountNotFoundReply(keys) {
   return `I could not find an account for ${lookedUp}. Please send your registered phone number, account number, or username.`;
 }
 
-function clientStatusReply(data) {
+function customerDisplayName(name) {
+  const value = String(name || '').trim();
+  if (!value || /^\+?\d+$/.test(value)) return 'there';
+  return value.split(/\s+/).slice(0, 2).join(' ');
+}
+
+function clientStatusReply(data, options = {}) {
   const status = data.status ? String(data.status).toLowerCase() : 'unknown';
   const account = data.account || data.account_number || data.username || 'not shown';
   const planName = data.plan || data.package_name || data.profile || '';
@@ -926,8 +932,21 @@ function clientStatusReply(data) {
     : 'not shown';
   const expiry = data.expiration ? `${data.expiration}${data.expiration_time ? ` at ${data.expiration_time}` : ''}` : 'not shown';
   const recharge = data.last_recharged_on || 'not shown';
+
+  if (data.source === 'mikrotik') {
+    const name = customerDisplayName(options.customerName || data.fullname);
+    const service = data.service || 'internet';
+    const connectionState = status === 'active' || status === 'seen' ? 'working fine' : `currently ${status}`;
+    const lastSeen = data.last_seen || (status === 'active' ? 'online now' : 'not shown');
+    return (
+      `Good news ${name} 👋 Your internet is ${connectionState}.\n\n` +
+      `Your ${service} account ${account} is currently ${status}.\n` +
+      `You're on the ${planPrice} package, expiring on ${expiry}.\n\n` +
+      `Connection details: IP ${data.ip_address || 'not shown'}, uptime ${data.uptime || 'not shown'}, and you are ${lastSeen} ✅`
+    );
+  }
+
   const extraLines = [
-    data.source === 'mikrotik' ? `Source: MikroTik live router.` : null,
     data.router ? `Router: ${data.router}.` : null,
     data.service ? `Service: ${data.service}.` : null,
     data.ip_address ? `IP address: ${data.ip_address}.` : null,
@@ -1088,7 +1107,7 @@ async function reconnectFromPaidPayment({ config, keys, paymentData, messageText
   return `Payment is confirmed, but automatic reconnect failed: ${result.error?.message || 'billing system unavailable'}. I have enough details for support to follow up.`;
 }
 
-async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
+async function answerBillingQuestion({ clientId, customerPhone, customerName, messageText }) {
   const config = await loadClientBillingConfig(clientId);
   const canBeImportedLookup = looksLikeImportedLookupText(messageText);
   if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText) && !canBeImportedLookup) return null;
@@ -1102,7 +1121,7 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
 
   if (!looksLikeBillingQuestion(messageText) && canBeImportedLookup) {
     const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
-    if (mikrotik) return clientStatusReply(mikrotik);
+    if (mikrotik) return clientStatusReply(mikrotik, { customerName });
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });
     return imported ? clientStatusReply(imported) : null;
   }
@@ -1114,7 +1133,7 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
       return accountNotFoundReply(keys);
     }
     const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
-    if (mikrotik) return clientStatusReply(mikrotik);
+    if (mikrotik) return clientStatusReply(mikrotik, { customerName });
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });
     if (imported) return importedAccountDetailsReply(imported);
     return accountNotFoundReply(keys);
@@ -1129,7 +1148,7 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   if (!canUseConfig(config)) {
     if (statusWanted || paymentWanted) {
       const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
-      if (mikrotik && statusWanted && !reconnectWanted) return clientStatusReply(mikrotik);
+      if (mikrotik && statusWanted && !reconnectWanted) return clientStatusReply(mikrotik, { customerName });
       const imported = await findImportedAccount({ clientId, customerPhone, messageText });
       if (imported && statusWanted && !reconnectWanted) return clientStatusReply(imported);
       if (imported && paymentWanted) {
@@ -1143,7 +1162,7 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   let liveStatusNotFound = false;
   if (statusWanted || paymentWanted) {
     const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
-    if (mikrotik && statusWanted && !reconnectWanted) return clientStatusReply(mikrotik);
+    if (mikrotik && statusWanted && !reconnectWanted) return clientStatusReply(mikrotik, { customerName });
     const params = clientLookupParams(keys);
     if (params) {
       const status = await get('v1/clients/status', params, config);

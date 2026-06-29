@@ -870,7 +870,12 @@ router.post('/', async (req, res) => {
 
     if (!inboundIsImage && installationState !== 'collecting') {
       console.log(`[client ${client.id}] Billing direct check for ${phoneNumber}.`);
-      let billingReply = await answerBillingQuestion({ clientId: client.id, customerPhone: phoneNumber, messageText });
+      let billingReply = await answerBillingQuestion({
+        clientId: client.id,
+        customerPhone: phoneNumber,
+        customerName: conversation.customer_name,
+        messageText,
+      });
       if (billingReply) {
         const taggedMedia = await mediaByTags(client.id, `${messageText}\n${billingReply}`);
         billingReply = stripMediaTags(billingReply) || 'Here is the media I found for you.';

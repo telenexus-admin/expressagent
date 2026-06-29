@@ -317,9 +317,9 @@ async function updateRouterStatus(clientId, id, status) {
   const result = await db.query(
     `UPDATE mikrotik_routers
      SET last_status = $1, last_error = $2, last_identity = $3, last_version = $4,
-         last_uptime = $5, last_seen_at = CASE WHEN $1 = 'online' THEN NOW() ELSE last_seen_at END,
+         last_uptime = $5, last_seen_at = COALESCE($6::timestamptz, last_seen_at),
          updated_at = NOW()
-     WHERE client_id = $6 AND id = $7
+     WHERE client_id = $7 AND id = $8
      RETURNING *`,
     [
       status.ok ? 'online' : 'error',
@@ -327,6 +327,7 @@ async function updateRouterStatus(clientId, id, status) {
       status.identity || null,
       status.version || null,
       status.uptime || null,
+      status.ok ? new Date() : null,
       clientId,
       id,
     ]

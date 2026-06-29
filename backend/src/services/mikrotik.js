@@ -222,22 +222,20 @@ function extractMikrotikLookupCandidates({ customerPhone, messageText }) {
 }
 
 function rowMatchesCandidates(row, candidates) {
-  const fields = [
-    row.name,
-    row.user,
-    row.comment,
-    row['caller-id'],
-    row['last-caller-id'],
-    row.address,
-    row['remote-address'],
-    row['mac-address'],
-    row['host-name'],
-    row['active-address'],
-  ].filter(Boolean);
+  const fields = Object.values(row || {}).filter((value) => value != null && value !== '');
   return fields.some((field) => {
     const raw = String(field || '').toLowerCase();
     const phone = compactPhone(raw);
-    return candidates.some((candidate) => raw === candidate || raw.includes(candidate) || (phone && phone === candidate));
+    const compactRaw = raw.replace(/[^a-z0-9]/gi, '').toLowerCase();
+    return candidates.some((candidate) => {
+      const compactCandidate = String(candidate || '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+      return (
+        raw === candidate ||
+        raw.includes(candidate) ||
+        compactRaw.includes(compactCandidate) ||
+        (phone && (phone === candidate || phone === compactCandidate))
+      );
+    });
   });
 }
 

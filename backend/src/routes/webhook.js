@@ -69,14 +69,13 @@ async function isPendingInvoiceContinuation(conversationId, text) {
   if (!looksLikeLookup) return false;
   const recent = await db.query(
     `SELECT role, content FROM messages
-     WHERE conversation_id = $1
+     WHERE conversation_id = $1 AND role = 'assistant'
      ORDER BY timestamp DESC
-     LIMIT 6`,
+     LIMIT 1`,
     [conversationId]
   );
   return recent.rows.some((message) =>
-    message.role === 'assistant' &&
-    /\bgenerate the invoice\b|\bbilling account\b|\bregistered phone number\b/i.test(String(message.content || ''))
+    /\bgenerate the invoice\b|\binvoice\b/i.test(String(message.content || ''))
   );
 }
 

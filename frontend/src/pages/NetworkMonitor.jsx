@@ -46,8 +46,10 @@ function buildRouterOsCommands(mode, password, extraAddresses = '') {
   const port = mode === 'api-ssl' ? 8729 : 8728;
   return `/ip service enable ${service}
 /ip service set ${service} port=${port} address=${normalizeAllowedApiAddresses(extraAddresses)}
-/user group add name=nexa-readonly policy=read,test
-/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"`;
+/user group add name=nexa-readonly policy=read,test,api
+/user group set [find name="nexa-readonly"] policy=read,test,api
+/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"
+/user set [find name="nexa"] group=nexa-readonly password="${routerOsQuote(password)}"`;
 }
 
 function statusClass(status) {

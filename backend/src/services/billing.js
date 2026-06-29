@@ -1,6 +1,7 @@
 const axios = require('axios');
 const zlib = require('zlib');
 const db = require('../db');
+const { findMikrotikAccount } = require('./mikrotik');
 
 const DEFAULT_BASE_URL = 'https://riseli.wispman.net/index.php?_route=api';
 const SUPPORTED_PROVIDERS = ['wispman'];
@@ -851,6 +852,9 @@ function summarizeClientStatus(data) {
     data.plan ? `Plan: ${data.plan}` : null,
     data.service ? `Service: ${data.service}` : null,
     data.router ? `Router: ${data.router}` : null,
+    data.ip_address ? `IP: ${data.ip_address}` : null,
+    data.uptime ? `Uptime: ${data.uptime}` : null,
+    data.last_seen ? `Last seen: ${data.last_seen}` : null,
     data.expiration ? `Expires: ${data.expiration}${data.expiration_time ? ` ${data.expiration_time}` : ''}` : null,
     data.last_recharged_on ? `Last recharge: ${data.last_recharged_on}` : null,
     data.method ? `Last method: ${data.method}` : null,
@@ -922,6 +926,14 @@ function clientStatusReply(data) {
     : 'not shown';
   const expiry = data.expiration ? `${data.expiration}${data.expiration_time ? ` at ${data.expiration_time}` : ''}` : 'not shown';
   const recharge = data.last_recharged_on || 'not shown';
+  const extraLines = [
+    data.source === 'mikrotik' ? `Source: MikroTik live router.` : null,
+    data.router ? `Router: ${data.router}.` : null,
+    data.service ? `Service: ${data.service}.` : null,
+    data.ip_address ? `IP address: ${data.ip_address}.` : null,
+    data.uptime ? `Uptime: ${data.uptime}.` : null,
+    data.last_seen ? `Last seen: ${data.last_seen}.` : null,
+  ].filter(Boolean);
 
   return (
     `I found:\n` +
@@ -930,7 +942,8 @@ function clientStatusReply(data) {
     `Current plan Price: ${planPrice}.\n` +
     `Account Balance: ${balance}.\n` +
     `Expiry: ${expiry}.\n` +
-    `Last recharge: ${recharge}.`
+    `Last recharge: ${recharge}.` +
+    (extraLines.length ? `\n${extraLines.join('\n')}` : '')
   );
 }
 
@@ -1088,11 +1101,20 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
   const plansWanted = wantsPlans(messageText);
 
   if (!looksLikeBillingQuestion(messageText) && canBeImportedLookup) {
+    const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
+    if (mikrotik) return clientStatusReply(mikrotik);
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });
     return imported ? clientStatusReply(imported) : null;
   }
 
   if (accountDetailsWanted) {
+    if (/\b(password|credentials?|login)\b/i.test(String(messageText || ''))) {
+      const imported = await findImportedAccount({ clientId, customerPhone, messageText });
+      if (imported) return importedAccountDetailsReply(imported);
+      return accountNotFoundReply(keys);
+    }
+    const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
+    if (mikrotik) return clientStatusReply(mikrotik);
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });
     if (imported) return importedAccountDetailsReply(imported);
     return accountNotFoundReply(keys);
@@ -1106,6 +1128,8 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
 
   if (!canUseConfig(config)) {
     if (statusWanted || paymentWanted) {
+      const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
+      if (mikrotik && statusWanted && !reconnectWanted) return clientStatusReply(mikrotik);
       const imported = await findImportedAccount({ clientId, customerPhone, messageText });
       if (imported && statusWanted && !reconnectWanted) return clientStatusReply(imported);
       if (imported && paymentWanted) {
@@ -1118,6 +1142,8 @@ async function answerBillingQuestion({ clientId, customerPhone, messageText }) {
 
   let liveStatusNotFound = false;
   if (statusWanted || paymentWanted) {
+    const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
+    if (mikrotik && statusWanted && !reconnectWanted) return clientStatusReply(mikrotik);
     const params = clientLookupParams(keys);
     if (params) {
       const status = await get('v1/clients/status', params, config);

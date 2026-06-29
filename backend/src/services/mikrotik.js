@@ -185,6 +185,156 @@ function cleanTunnelIp(value) {
   return ip;
 }
 
+function compactPhone(value) {
+  const digits = String(value || '').replace(/[^0-9]/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('254') && digits.length >= 12) return digits.slice(0, 12);
+  if (digits.startsWith('0') && digits.length === 10) return `254${digits.slice(1)}`;
+  if (digits.length === 9 && /^[17]/.test(digits)) return `254${digits}`;
+  return digits;
+}
+
+function extractMikrotikLookupCandidates({ customerPhone, messageText }) {
+  const text = String(messageText || '');
+  const values = new Set();
+  const add = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return;
+    values.add(raw.toLowerCase());
+    const phone = compactPhone(raw);
+    if (phone) {
+      values.add(phone);
+      if (phone.startsWith('254')) values.add(`0${phone.slice(3)}`);
+    }
+  };
+  add(customerPhone);
+  const phoneMatches = text.match(/(?:\+?254|0)\d[\d\s-]{7,15}/g) || [];
+  phoneMatches.forEach(add);
+  const labelled = [
+    ...text.matchAll(/\b(?:username|user\s*name|login|account\s*(?:number|no\.?)?|client\s*id)\s*(?:is|:|-)?\s*([A-Za-z0-9_.-]{2,50})\b/gi),
+  ];
+  labelled.forEach((match) => add(match[1]));
+  if (!labelled.length && !phoneMatches.length) {
+    const simple = text.trim();
+    if (/^[A-Za-z0-9_.@-]{3,50}$/.test(simple) && !/^(hello|thanks|thank|status|expiry|expire|account|details)$/i.test(simple)) add(simple);
+  }
+  return Array.from(values);
+}
+
+function rowMatchesCandidates(row, candidates) {
+  const fields = [
+    row.name,
+    row.user,
+    row.comment,
+    row['caller-id'],
+    row['last-caller-id'],
+    row.address,
+    row['remote-address'],
+    row['mac-address'],
+    row['host-name'],
+    row['active-address'],
+  ].filter(Boolean);
+  return fields.some((field) => {
+    const raw = String(field || '').toLowerCase();
+    const phone = compactPhone(raw);
+    return candidates.some((candidate) => raw === candidate || raw.includes(candidate) || (phone && phone === candidate));
+  });
+}
+
+function parsePossibleExpiry(...values) {
+  const text = values.filter(Boolean).join(' ');
+  const iso = text.match(/\b(20\d{2}[-/]\d{1,2}[-/]\d{1,2})(?:[ T,]+(\d{1,2}:\d{2}(?::\d{2})?))?/);
+  if (iso) return { expiration: iso[1].replace(/\//g, '-'), expiration_time: iso[2] || '' };
+  const labelled = text.match(/\b(?:expir(?:y|es?|ation)|valid\s*until)\s*[:=-]?\s*([A-Za-z0-9 ,:/-]{6,30})/i);
+  if (labelled) return { expiration: labelled[1].trim(), expiration_time: '' };
+  return { expiration: '', expiration_time: '' };
+}
+
+function mikrotikStatusFromRows({ router, service, profile, secret, active, lease }) {
+  const source = active || secret || lease || {};
+  const expiry = parsePossibleExpiry(secret?.comment, active?.comment, lease?.comment);
+  const disabled = String(secret?.disabled || '').toLowerCase() === 'true';
+  const status = active ? 'active' : disabled ? 'inactive' : secret ? 'offline' : lease ? 'seen' : 'unknown';
+  return {
+    source: 'mikrotik',
+    fullname: source.comment || source.name || source.user || '',
+    phone: compactPhone(source.comment || source.name || source.user || ''),
+    account: source.name || source.user || '',
+    username: source.name || source.user || '',
+    status,
+    plan: profile || source.profile || '',
+    service,
+    router: router.name,
+    ip_address: active?.address || active?.['remote-address'] || lease?.['active-address'] || lease?.address || '',
+    mac_address: active?.['caller-id'] || lease?.['mac-address'] || '',
+    uptime: active?.uptime || lease?.['last-seen'] || '',
+    last_seen: active ? 'online now' : secret?.['last-logged-out'] || lease?.['last-seen'] || '',
+    expiration: expiry.expiration,
+    expiration_time: expiry.expiration_time,
+    raw: { secret, active, lease },
+  };
+}
+
+async function activeRouterConfigs(clientId) {
+  await ensureMikrotikTables();
+  const result = await db.query(
+    `SELECT * FROM mikrotik_routers WHERE client_id = $1 AND is_active = TRUE ORDER BY last_seen_at DESC NULLS LAST, created_at DESC`,
+    [clientId]
+  );
+  return result.rows.map((row) => ({ ...row, password: decryptSecret(row.password_encrypted) }));
+}
+
+async function findMikrotikAccount({ clientId, customerPhone, messageText }) {
+  const candidates = extractMikrotikLookupCandidates({ customerPhone, messageText });
+  if (!clientId || candidates.length === 0) return null;
+  const routers = await activeRouterConfigs(clientId);
+  for (const router of routers) {
+    let client = null;
+    try {
+      client = await connectRouter(router);
+      const pppSecrets = await client.command('/ppp/secret/print').catch(() => []);
+      const pppActive = await client.command('/ppp/active/print').catch(() => []);
+      const hotspotUsers = await client.command('/ip/hotspot/user/print').catch(() => []);
+      const hotspotActive = await client.command('/ip/hotspot/active/print').catch(() => []);
+      const leases = await client.command('/ip/dhcp-server/lease/print').catch(() => []);
+
+      const pppSecret = pppSecrets.find((row) => rowMatchesCandidates(row, candidates));
+      const pppLive = pppActive.find((row) => rowMatchesCandidates(row, candidates) || (pppSecret?.name && row.name === pppSecret.name));
+      if (pppSecret || pppLive) {
+        return mikrotikStatusFromRows({
+          router,
+          service: 'PPPoE',
+          profile: pppSecret?.profile || pppLive?.service || '',
+          secret: pppSecret,
+          active: pppLive,
+        });
+      }
+
+      const hotspotUser = hotspotUsers.find((row) => rowMatchesCandidates(row, candidates));
+      const hotspotLive = hotspotActive.find((row) => rowMatchesCandidates(row, candidates) || (hotspotUser?.name && row.user === hotspotUser.name));
+      if (hotspotUser || hotspotLive) {
+        return mikrotikStatusFromRows({
+          router,
+          service: 'Hotspot',
+          profile: hotspotUser?.profile || '',
+          secret: hotspotUser,
+          active: hotspotLive,
+        });
+      }
+
+      const lease = leases.find((row) => rowMatchesCandidates(row, candidates));
+      if (lease) {
+        return mikrotikStatusFromRows({ router, service: 'DHCP lease', lease });
+      }
+    } catch (err) {
+      console.error(`MikroTik account lookup failed for router ${router.id}:`, err.message);
+    } finally {
+      if (client) client.close();
+    }
+  }
+  return null;
+}
+
 async function activateWireguardPeer(payload = {}) {
   const publicKey = cleanWireguardPublicKey(payload.public_key || payload.wireguard_mikrotik_public_key);
   const tunnelIp = cleanTunnelIp(payload.tunnel_ip || payload.wireguard_tunnel_ip);
@@ -522,6 +672,7 @@ module.exports = {
   getRouter,
   listRouters,
   activateWireguardPeer,
+  findMikrotikAccount,
   prepareWireguardOnboarding,
   saveRouter,
   testRouterConfig,

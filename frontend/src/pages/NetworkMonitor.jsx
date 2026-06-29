@@ -24,6 +24,11 @@ const emptyForm = {
   password: '',
   is_active: true,
   features: emptyFeatures,
+  connection_method: 'wireguard',
+  wireguard_tunnel_ip: '',
+  wireguard_interface: '',
+  wireguard_mikrotik_public_key: '',
+  wireguard_billing_api_ips: '',
 };
 
 const NEXA_SERVER_IP = '64.227.156.219';
@@ -229,6 +234,160 @@ function CommandGenerator() {
   );
 }
 
+function WireGuardWizard({ form, update, onPrepared }) {
+  const [password, setPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [billingIps, setBillingIps] = useState(form.wireguard_billing_api_ips || '10.133.0.1');
+  const [plan, setPlan] = useState(null);
+  const [status, setStatus] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [copied, setCopied] = useState('');
+  const passwordReady = password.length >= 8 && password === confirmPassword;
+
+  async function copy(label, text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(label);
+      setTimeout(() => setCopied(''), 2500);
+    } catch (err) {
+      setCopied('');
+    }
+  }
+
+  async function prepare() {
+    if (!form.name.trim()) {
+      setStatus({ type: 'error', message: 'Enter the router name first.' });
+      return;
+    }
+    if (!passwordReady) {
+      setStatus({ type: 'error', message: 'Enter and confirm a MikroTik API password with at least 8 characters.' });
+      return;
+    }
+    setLoading(true);
+    setStatus(null);
+    try {
+      const { data } = await api.post('/mikrotik/wireguard/prepare', {
+        name: form.name,
+        password,
+        wireguard_billing_api_ips: billingIps,
+        wireguard_tunnel_ip: form.wireguard_tunnel_ip,
+      });
+      setPlan(data);
+      update('connection_method', 'wireguard');
+      update('host', data.api_host);
+      update('port', data.api_port);
+      update('connection_type', data.api_connection_type);
+      update('username', data.username);
+      update('password', password);
+      update('wireguard_tunnel_ip', data.tunnel_ip);
+      update('wireguard_interface', data.interfaceName);
+      update('wireguard_billing_api_ips', billingIps);
+      onPrepared?.(data);
+      setStatus({ type: 'success', message: `Tunnel IP ${data.tunnel_ip} allocated. Paste the MikroTik script, then add the MikroTik public key to Nexa server.` });
+    } catch (err) {
+      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to prepare WireGuard onboarding.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <div className="rounded-2xl border border-[#dfe5f2] bg-[#fbfcff] p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h3 className="text-sm font-black text-[#101633]">WireGuard Onboarding Wizard</h3>
+          <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-[#6d7697]">
+            Recommended for production. Nexa allocates a private tunnel IP for each MikroTik, then the router connects outbound to the Nexa server.
+          </p>
+        </div>
+        <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase text-emerald-700">Recommended</span>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">MikroTik API password</span>
+          <input
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Strong password for nexa user"
+            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Confirm password</span>
+          <input
+            type="password"
+            value={confirmPassword}
+            onChange={(event) => setConfirmPassword(event.target.value)}
+            placeholder="Confirm password"
+            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+          />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Billing/API IPs to preserve</span>
+          <input
+            value={billingIps}
+            onChange={(event) => setBillingIps(event.target.value)}
+            placeholder="10.133.0.1"
+            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+          />
+        </label>
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          onClick={prepare}
+          disabled={loading}
+          className="h-11 rounded-xl bg-[#4f35f5] px-5 text-sm font-black text-white shadow-[0_10px_24px_rgba(79,53,245,0.2)] disabled:opacity-50"
+        >
+          {loading ? 'Preparing...' : 'Generate WireGuard Script'}
+        </button>
+        {plan && <span className="text-xs font-bold text-[#657194]">Assigned tunnel host: <span className="font-mono text-[#101633]">{plan.tunnel_ip}</span></span>}
+      </div>
+
+      {status && (
+        <div className={`mt-4 rounded-xl border px-3 py-2 text-xs font-bold ${status.type === 'success' ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-red-100 bg-red-50 text-red-700'}`}>
+          {status.message}
+        </div>
+      )}
+
+      {plan && (
+        <div className="mt-4 grid gap-4 xl:grid-cols-2">
+          <div className="rounded-2xl border border-[#dfe5f2] bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-black text-[#101633]">1. Paste in MikroTik Terminal</h4>
+                <p className="mt-1 text-xs font-semibold text-[#6d7697]">After running it, copy the MikroTik public key shown at the bottom.</p>
+              </div>
+              <button type="button" onClick={() => copy('mikrotik', plan.mikrotikScript)} className="h-9 rounded-xl bg-[#4f35f5] px-4 text-xs font-black text-white">
+                {copied === 'mikrotik' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-[#101633] p-4 text-xs font-semibold leading-6 text-white"><code>{plan.mikrotikScript}</code></pre>
+          </div>
+          <div className="rounded-2xl border border-[#dfe5f2] bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h4 className="text-sm font-black text-[#101633]">2. Add peer on Nexa server</h4>
+                <p className="mt-1 text-xs font-semibold text-[#6d7697]">Replace the placeholder with the MikroTik public key, then run on Nexa server.</p>
+              </div>
+              <button type="button" onClick={() => copy('server', plan.serverPeerCommand)} className="h-9 rounded-xl bg-[#171733] px-4 text-xs font-black text-white">
+                {copied === 'server' ? 'Copied' : 'Copy'}
+              </button>
+            </div>
+            <pre className="mt-3 overflow-auto rounded-xl bg-[#101633] p-4 text-xs font-semibold leading-6 text-white"><code>{plan.serverPeerCommand}</code></pre>
+            <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-700">
+              After the peer is added, save this router. Nexa will test API at {plan.tunnel_ip}:8728.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function NetworkMonitor() {
   const [routers, setRouters] = useState([]);
   const [form, setForm] = useState(emptyForm);
@@ -291,6 +450,11 @@ export default function NetworkMonitor() {
       password: '',
       is_active: router.is_active !== false,
       features: { ...emptyFeatures, ...(router.features || {}) },
+      connection_method: router.connection_method || 'public_api',
+      wireguard_tunnel_ip: router.wireguard_tunnel_ip || '',
+      wireguard_interface: router.wireguard_interface || '',
+      wireguard_mikrotik_public_key: router.wireguard_mikrotik_public_key || '',
+      wireguard_billing_api_ips: router.wireguard_billing_api_ips || '',
     });
     setStatus({ type: 'info', message: 'Editing saved router. Leave password blank to keep the current password.' });
   }
@@ -388,7 +552,7 @@ export default function NetworkMonitor() {
           <div>
             <h1 className="text-2xl font-black tracking-normal text-[#101633]">Network Monitor</h1>
             <p className="mt-1 max-w-3xl text-sm font-medium leading-6 text-[#657194]">
-              Link the AI agent to MikroTik RouterOS API so it can read router health, PPPoE or Hotspot activity, and prepare diagnostics before support acts.
+              Link the AI agent to MikroTik RouterOS API through a private WireGuard tunnel so each account can monitor many routers without exposing API to the internet.
             </p>
           </div>
           <button
@@ -427,13 +591,23 @@ export default function NetworkMonitor() {
             <div>
               <h2 className="text-base font-black text-[#101633]">How to Link MikroTik</h2>
               <p className="mt-1 text-xs font-semibold leading-5 text-[#6d7697]">
-                Generate the command script, paste it into MikroTik Terminal or Winbox Terminal, then use the same username and password in the router form below.
+                Use WireGuard for production. Each MikroTik gets its own private tunnel IP, while existing billing systems such as Wispman stay allowed on the API service.
               </p>
             </div>
           </div>
-          <CommandGenerator />
+          <WireGuardWizard
+            form={form}
+            update={update}
+            onPrepared={() => setStatus({ type: 'success', message: 'WireGuard details filled in the router form. Run both scripts, then save and test the router.' })}
+          />
+          <details className="mt-4 rounded-2xl border border-[#dfe5f2] bg-white p-4">
+            <summary className="cursor-pointer text-sm font-black text-[#101633]">Advanced public API setup</summary>
+            <div className="mt-4">
+              <CommandGenerator />
+            </div>
+          </details>
           <div className="mt-4 rounded-2xl border border-amber-100 bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
-            For production, do not expose API to the whole internet. Keep the user read-only, use a strong password, and limit the API service to the Nexa backend server IP.
+            WireGuard is read-only for Nexa diagnostics. The script preserves billing/API IPs entered above and does not change PPPoE, Hotspot, queues, routes, or connected users.
           </div>
         </section>
 
@@ -446,7 +620,7 @@ export default function NetworkMonitor() {
               <div>
                 <h2 className="text-base font-black text-[#101633]">{form.id ? 'Edit Router Link' : 'Add MikroTik Router'}</h2>
                 <p className="mt-1 text-xs font-semibold leading-5 text-[#6d7697]">
-                  Use a RouterOS API user with read and test permissions. Restrict API access to the Nexa server IP on the router.
+                  Generate the WireGuard script above first. It fills the tunnel host, API port, username, and password automatically.
                 </p>
               </div>
             </div>
@@ -479,6 +653,12 @@ export default function NetworkMonitor() {
               <Field label={form.id ? 'Password (leave blank to keep current)' : 'Password'}>
                 <TextInput type="password" value={form.password} onChange={(value) => update('password', value)} autoComplete="new-password" />
               </Field>
+              {form.connection_method === 'wireguard' && form.wireguard_tunnel_ip && (
+                <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-bold leading-5 text-blue-700">
+                  WireGuard tunnel ready: API host <span className="font-mono">{form.wireguard_tunnel_ip}:8728</span>
+                  {form.wireguard_interface ? <span> via interface <span className="font-mono">{form.wireguard_interface}</span>.</span> : '.'}
+                </div>
+              )}
 
               <div className="rounded-2xl border border-[#edf1f7] bg-[#fbfcff] p-4">
                 <div className="mb-3 text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Agent can read</div>
@@ -552,6 +732,8 @@ export default function NetworkMonitor() {
                         <div className="mt-2 grid gap-2 text-xs font-semibold text-[#6d7697] sm:grid-cols-2">
                           <div className="truncate">Host: <span className="font-mono text-[#101633]">{router.host}:{router.port}</span></div>
                           <div>Mode: <span className="font-black text-[#101633]">{router.connection_type === 'api-ssl' ? 'API-SSL' : 'API'}</span></div>
+                          <div>Link: <span className="font-black text-[#101633]">{router.connection_method === 'wireguard' ? 'WireGuard' : 'Public API'}</span></div>
+                          {router.wireguard_tunnel_ip && <div>Tunnel: <span className="font-mono text-[#101633]">{router.wireguard_tunnel_ip}</span></div>}
                           <div>User: <span className="font-black text-[#101633]">{router.username}</span></div>
                           <div>Identity: <span className="font-black text-[#101633]">{router.last_identity || '-'}</span></div>
                           <div>RouterOS: <span className="font-black text-[#101633]">{router.last_version || '-'}</span></div>

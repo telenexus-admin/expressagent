@@ -13,6 +13,12 @@ const DEFAULT_FEATURES = {
   ping: true,
 };
 
+const WIREGUARD_SERVER_IP = process.env.MIKROTIK_WG_SERVER_IP || '10.77.0.1';
+const WIREGUARD_SUBNET_PREFIX = process.env.MIKROTIK_WG_SUBNET_PREFIX || '10.77.0';
+const WIREGUARD_SERVER_PUBLIC_KEY = process.env.MIKROTIK_WG_PUBLIC_KEY || 'zCy0rX2el4g0TLBDG8xSZCY2PqxgtyjJDsKqmBgVE08=';
+const WIREGUARD_ENDPOINT = process.env.MIKROTIK_WG_ENDPOINT || '64.227.156.219';
+const WIREGUARD_ENDPOINT_PORT = Number(process.env.MIKROTIK_WG_ENDPOINT_PORT || 51820);
+
 function encryptionKey() {
   return crypto
     .createHash('sha256')
@@ -63,6 +69,12 @@ async function ensureMikrotikTables() {
     )
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_mikrotik_routers_client ON mikrotik_routers(client_id, is_active)`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS connection_method VARCHAR(40) NOT NULL DEFAULT 'public_api'`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_tunnel_ip VARCHAR(45)`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_interface VARCHAR(80)`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_mikrotik_public_key TEXT`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_billing_api_ips TEXT`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mikrotik_routers_wg_ip ON mikrotik_routers(wireguard_tunnel_ip) WHERE wireguard_tunnel_ip IS NOT NULL`);
 }
 
 function cleanFeatures(features) {
@@ -79,6 +91,11 @@ function safeRouter(row) {
     port: row.port,
     connection_type: row.connection_type || 'api',
     username: row.username,
+    connection_method: row.connection_method || 'public_api',
+    wireguard_tunnel_ip: row.wireguard_tunnel_ip || '',
+    wireguard_interface: row.wireguard_interface || '',
+    wireguard_mikrotik_public_key: row.wireguard_mikrotik_public_key || '',
+    wireguard_billing_api_ips: row.wireguard_billing_api_ips || '',
     password_configured: Boolean(row.password_encrypted),
     features,
     is_active: row.is_active !== false,
@@ -90,6 +107,79 @@ function safeRouter(row) {
     last_seen_at: row.last_seen_at,
     created_at: row.created_at,
     updated_at: row.updated_at,
+  };
+}
+
+function routerOsQuote(value) {
+  return String(value || '').replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+}
+
+function normalizeApiAllowedIps(value) {
+  const extras = String(value || '')
+    .split(/[,\s]+/)
+    .map((item) => item.trim())
+    .filter(Boolean)
+    .map((item) => (item.includes('/') ? item : `${item}/32`));
+  return [`${WIREGUARD_SERVER_IP}/32`, ...extras].join(',');
+}
+
+async function allocateWireguardTunnelIp(preferredIp = '') {
+  await ensureMikrotikTables();
+  const preferred = String(preferredIp || '').trim();
+  if (preferred) {
+    const taken = await db.query(`SELECT id FROM mikrotik_routers WHERE wireguard_tunnel_ip = $1 LIMIT 1`, [preferred]);
+    if (!taken.rows[0]) return preferred;
+  }
+  const result = await db.query(`SELECT wireguard_tunnel_ip FROM mikrotik_routers WHERE wireguard_tunnel_ip IS NOT NULL`);
+  const used = new Set(result.rows.map((row) => row.wireguard_tunnel_ip));
+  for (let octet = 2; octet <= 254; octet += 1) {
+    const ip = `${WIREGUARD_SUBNET_PREFIX}.${octet}`;
+    if (!used.has(ip)) return ip;
+  }
+  throw new Error('No available WireGuard tunnel IPs remain in the Nexa pool');
+}
+
+function buildWireguardScripts({ tunnelIp, routerName, apiPassword, billingApiIps }) {
+  const lastOctet = String(tunnelIp || '').split('.').pop() || '2';
+  const interfaceName = `wg-nexa-${lastOctet}`;
+  const password = apiPassword || 'ENTER_PASSWORD_HERE';
+  const allowedApiIps = normalizeApiAllowedIps(billingApiIps);
+  const mikrotikScript = `/interface/wireguard add name=${interfaceName} mtu=1420
+/ip address add address=${tunnelIp}/24 interface=${interfaceName} comment="Nexa WireGuard tunnel - ${routerOsQuote(routerName || 'MikroTik')}"
+/interface/wireguard/peers add interface=${interfaceName} public-key="${WIREGUARD_SERVER_PUBLIC_KEY}" endpoint-address=${WIREGUARD_ENDPOINT} endpoint-port=${WIREGUARD_ENDPOINT_PORT} allowed-address=${WIREGUARD_SERVER_IP}/32 persistent-keepalive=25s
+/ip firewall filter add chain=input in-interface=${interfaceName} protocol=tcp dst-port=8728 src-address=${WIREGUARD_SERVER_IP} action=accept comment="Allow Nexa API via WireGuard"
+/ip firewall filter move [find comment="Allow Nexa API via WireGuard"] 0
+/user group add name=nexa-readonly policy=read,test,api
+/user group set [find name="nexa-readonly"] policy=read,test,api
+/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"
+/user set [find name="nexa"] group=nexa-readonly password="${routerOsQuote(password)}"
+/ip service enable api
+/ip service set api port=8728 address=${allowedApiIps}
+/interface/wireguard print detail where name="${interfaceName}"`;
+
+  const serverPeerCommand = `wg set wg-nexa peer PASTE_MIKROTIK_PUBLIC_KEY_HERE allowed-ips ${tunnelIp}/32 && wg-quick save wg-nexa`;
+  return { interfaceName, mikrotikScript, serverPeerCommand };
+}
+
+async function prepareWireguardOnboarding(clientId, payload = {}) {
+  const tunnelIp = await allocateWireguardTunnelIp(payload.wireguard_tunnel_ip);
+  const scripts = buildWireguardScripts({
+    tunnelIp,
+    routerName: payload.name,
+    apiPassword: payload.password,
+    billingApiIps: payload.wireguard_billing_api_ips,
+  });
+  return {
+    server_ip: WIREGUARD_SERVER_IP,
+    server_public_key: WIREGUARD_SERVER_PUBLIC_KEY,
+    endpoint: WIREGUARD_ENDPOINT,
+    endpoint_port: WIREGUARD_ENDPOINT_PORT,
+    tunnel_ip: tunnelIp,
+    api_host: tunnelIp,
+    api_port: 8728,
+    api_connection_type: 'api',
+    username: 'nexa',
+    ...scripts,
   };
 }
 
@@ -274,6 +364,11 @@ async function saveRouter(clientId, payload = {}) {
   const port = Number(payload.port || (payload.connection_type === 'api-ssl' ? 8729 : 8728));
   const connectionType = payload.connection_type === 'api-ssl' ? 'api-ssl' : 'api';
   const username = String(payload.username || '').trim().slice(0, 120);
+  const connectionMethod = payload.connection_method === 'wireguard' ? 'wireguard' : 'public_api';
+  const wireguardTunnelIp = String(payload.wireguard_tunnel_ip || '').trim() || null;
+  const wireguardInterface = String(payload.wireguard_interface || '').trim() || null;
+  const wireguardMikrotikPublicKey = String(payload.wireguard_mikrotik_public_key || '').trim() || null;
+  const wireguardBillingApiIps = String(payload.wireguard_billing_api_ips || '').trim() || null;
   const features = cleanFeatures(payload.features);
   if (!name) throw new Error('Router name is required');
   if (!host) throw new Error('Router host/IP is required');
@@ -283,16 +378,36 @@ async function saveRouter(clientId, payload = {}) {
   if (id) {
     const current = await getRouter(clientId, id, { includePassword: false });
     if (!current) return null;
-    const passwordSql = payload.password ? ', password_encrypted = $8' : '';
-    const params = [name, host, port, connectionType, username, JSON.stringify(features), payload.is_active !== false, clientId, id];
-    if (payload.password) params.splice(7, 0, encryptSecret(payload.password));
+    const params = [
+      name,
+      host,
+      port,
+      connectionType,
+      username,
+      JSON.stringify(features),
+      payload.is_active !== false,
+      connectionMethod,
+      wireguardTunnelIp,
+      wireguardInterface,
+      wireguardMikrotikPublicKey,
+      wireguardBillingApiIps,
+      clientId,
+      id,
+    ];
+    const passwordSql = payload.password ? ', password_encrypted = $13' : '';
+    const queryParams = payload.password
+      ? [...params.slice(0, 12), encryptSecret(payload.password), clientId, id]
+      : params;
     const result = await db.query(
       `UPDATE mikrotik_routers
        SET name = $1, host = $2, port = $3, connection_type = $4, username = $5,
-           features = $6::jsonb, is_active = $7, updated_at = NOW()${passwordSql}
-       WHERE client_id = $${params.length - 1} AND id = $${params.length}
+           features = $6::jsonb, is_active = $7, connection_method = $8,
+           wireguard_tunnel_ip = $9, wireguard_interface = $10,
+           wireguard_mikrotik_public_key = $11, wireguard_billing_api_ips = $12,
+           updated_at = NOW()${passwordSql}
+       WHERE client_id = $${queryParams.length - 1} AND id = $${queryParams.length}
        RETURNING *`,
-      params
+      queryParams
     );
     return safeRouter(result.rows[0]);
   }
@@ -300,10 +415,26 @@ async function saveRouter(clientId, payload = {}) {
   if (!payload.password) throw new Error('MikroTik password is required');
   const result = await db.query(
     `INSERT INTO mikrotik_routers
-       (client_id, name, host, port, connection_type, username, password_encrypted, features, is_active)
-     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9)
+       (client_id, name, host, port, connection_type, username, password_encrypted, features, is_active,
+        connection_method, wireguard_tunnel_ip, wireguard_interface, wireguard_mikrotik_public_key, wireguard_billing_api_ips)
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8::jsonb,$9,$10,$11,$12,$13,$14)
      RETURNING *`,
-    [clientId, name, host, port, connectionType, username, encryptSecret(payload.password), JSON.stringify(features), payload.is_active !== false]
+    [
+      clientId,
+      name,
+      host,
+      port,
+      connectionType,
+      username,
+      encryptSecret(payload.password),
+      JSON.stringify(features),
+      payload.is_active !== false,
+      connectionMethod,
+      wireguardTunnelIp,
+      wireguardInterface,
+      wireguardMikrotikPublicKey,
+      wireguardBillingApiIps,
+    ]
   );
   return safeRouter(result.rows[0]);
 }
@@ -347,6 +478,7 @@ module.exports = {
   ensureMikrotikTables,
   getRouter,
   listRouters,
+  prepareWireguardOnboarding,
   saveRouter,
   testRouterConfig,
   updateRouterStatus,

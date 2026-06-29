@@ -4,6 +4,7 @@ const {
   deleteRouter,
   getRouter,
   listRouters,
+  prepareWireguardOnboarding,
   saveRouter,
   testRouterConfig,
   updateRouterStatus,
@@ -42,6 +43,18 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('GET /mikrotik error:', err.message);
     res.status(500).json({ error: 'Failed to load MikroTik routers' });
+  }
+});
+
+router.post('/wireguard/prepare', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const plan = await prepareWireguardOnboarding(clientId, req.body || {});
+    res.json(plan);
+  } catch (err) {
+    console.error('POST /mikrotik/wireguard/prepare error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to prepare WireGuard onboarding' });
   }
 });
 

@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const {
+  activateWireguardPeer,
   deleteRouter,
   getRouter,
   listRouters,
@@ -55,6 +56,18 @@ router.post('/wireguard/prepare', async (req, res) => {
   } catch (err) {
     console.error('POST /mikrotik/wireguard/prepare error:', err.message);
     res.status(400).json({ error: err.message || 'Failed to prepare WireGuard onboarding' });
+  }
+});
+
+router.post('/wireguard/activate', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const result = await activateWireguardPeer(req.body || {});
+    res.json(result);
+  } catch (err) {
+    console.error('POST /mikrotik/wireguard/activate error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to activate WireGuard peer' });
   }
 });
 

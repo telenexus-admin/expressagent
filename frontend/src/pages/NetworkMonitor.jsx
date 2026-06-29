@@ -239,9 +239,11 @@ function WireGuardWizard({ form, update, onPrepared }) {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [billingIps, setBillingIps] = useState(form.wireguard_billing_api_ips || '10.133.0.1');
+  const [publicKey, setPublicKey] = useState(form.wireguard_mikrotik_public_key || '');
   const [plan, setPlan] = useState(null);
   const [status, setStatus] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [activating, setActivating] = useState(false);
   const [copied, setCopied] = useState('');
   const passwordReady = password.length >= 8 && password === confirmPassword;
 
@@ -286,11 +288,36 @@ function WireGuardWizard({ form, update, onPrepared }) {
       update('wireguard_interface', data.interfaceName);
       update('wireguard_billing_api_ips', billingIps);
       onPrepared?.(data);
-      setStatus({ type: 'success', message: `Tunnel IP ${data.tunnel_ip} allocated. Paste the MikroTik script, then add the MikroTik public key to Nexa server.` });
+      setStatus({ type: 'success', message: `Tunnel IP ${data.tunnel_ip} allocated. Paste the MikroTik script, then paste the MikroTik public key here to activate the server peer automatically.` });
     } catch (err) {
       setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to prepare WireGuard onboarding.' });
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function activateTunnel() {
+    if (!plan?.tunnel_ip) {
+      setStatus({ type: 'error', message: 'Generate the WireGuard script first.' });
+      return;
+    }
+    if (!publicKey.trim()) {
+      setStatus({ type: 'error', message: 'Paste the MikroTik public key first.' });
+      return;
+    }
+    setActivating(true);
+    setStatus(null);
+    try {
+      const { data } = await api.post('/mikrotik/wireguard/activate', {
+        public_key: publicKey.trim(),
+        tunnel_ip: plan.tunnel_ip,
+      });
+      update('wireguard_mikrotik_public_key', data.public_key);
+      setStatus({ type: 'success', message: `WireGuard server peer activated for ${data.tunnel_ip}. Save the router, then test connection.` });
+    } catch (err) {
+      setStatus({ type: 'error', message: err.response?.data?.error || 'Failed to activate WireGuard peer on Nexa server.' });
+    } finally {
+      setActivating(false);
     }
   }
 
@@ -380,18 +407,31 @@ function WireGuardWizard({ form, update, onPrepared }) {
             <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-[#101633] p-4 text-xs font-semibold leading-6 text-white"><code>{plan.mikrotikScript}</code></pre>
           </div>
           <div className="rounded-2xl border border-[#dfe5f2] bg-white p-4">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <h4 className="text-sm font-black text-[#101633]">2. Add peer on Nexa server</h4>
-                <p className="mt-1 text-xs font-semibold text-[#6d7697]">Replace the placeholder with the MikroTik public key, then run on Nexa server.</p>
-              </div>
-              <button type="button" onClick={() => copy('server', plan.serverPeerCommand)} className="h-9 rounded-xl bg-[#171733] px-4 text-xs font-black text-white">
-                {copied === 'server' ? 'Copied' : 'Copy'}
-              </button>
+            <div>
+              <h4 className="text-sm font-black text-[#101633]">2. Activate Nexa Server Peer</h4>
+              <p className="mt-1 text-xs font-semibold text-[#6d7697]">
+                Paste the MikroTik public key here. Nexa will run the server-side WireGuard peer setup automatically.
+              </p>
             </div>
-            <pre className="mt-3 overflow-auto rounded-xl bg-[#101633] p-4 text-xs font-semibold leading-6 text-white"><code>{plan.serverPeerCommand}</code></pre>
+            <label className="mt-4 block">
+              <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">MikroTik public key</span>
+              <input
+                value={publicKey}
+                onChange={(event) => setPublicKey(event.target.value)}
+                placeholder="Paste public-key from /interface/wireguard print detail"
+                className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 font-mono text-xs font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={activateTunnel}
+              disabled={activating}
+              className="mt-3 h-10 rounded-xl bg-[#171733] px-4 text-xs font-black text-white disabled:opacity-50"
+            >
+              {activating ? 'Activating...' : 'Activate Tunnel Automatically'}
+            </button>
             <div className="mt-4 rounded-xl border border-blue-100 bg-blue-50 px-3 py-2 text-xs font-bold leading-5 text-blue-700">
-              After the peer is added, save this router. Nexa will test API at {plan.tunnel_ip}:8728.
+              After activation succeeds, save this router. Nexa will test API at {plan.tunnel_ip}:8728.
             </div>
           </div>
         </div>
@@ -610,7 +650,7 @@ export default function NetworkMonitor() {
           <WireGuardWizard
             form={form}
             update={update}
-            onPrepared={() => setStatus({ type: 'success', message: 'WireGuard details filled in the router form. Run both scripts, then save and test the router.' })}
+            onPrepared={() => setStatus({ type: 'success', message: 'WireGuard details filled in the router form. Paste the MikroTik script, activate the tunnel here, then save and test the router.' })}
           />
           <details className="mt-4 rounded-2xl border border-[#dfe5f2] bg-white p-4">
             <summary className="cursor-pointer text-sm font-black text-[#101633]">Advanced public API setup</summary>

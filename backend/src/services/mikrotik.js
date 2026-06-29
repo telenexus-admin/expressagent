@@ -1,7 +1,11 @@
 const net = require('net');
 const tls = require('tls');
 const crypto = require('crypto');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
 const db = require('../db');
+
+const execFileAsync = promisify(execFile);
 
 const DEFAULT_FEATURES = {
   ppp_active: true,
@@ -18,6 +22,7 @@ const WIREGUARD_SUBNET_PREFIX = process.env.MIKROTIK_WG_SUBNET_PREFIX || '10.77.
 const WIREGUARD_SERVER_PUBLIC_KEY = process.env.MIKROTIK_WG_PUBLIC_KEY || 'zCy0rX2el4g0TLBDG8xSZCY2PqxgtyjJDsKqmBgVE08=';
 const WIREGUARD_ENDPOINT = process.env.MIKROTIK_WG_ENDPOINT || '64.227.156.219';
 const WIREGUARD_ENDPOINT_PORT = Number(process.env.MIKROTIK_WG_ENDPOINT_PORT || 51820);
+const WIREGUARD_INTERFACE = process.env.MIKROTIK_WG_INTERFACE || 'wg-nexa';
 
 function encryptionKey() {
   return crypto
@@ -157,8 +162,45 @@ function buildWireguardScripts({ tunnelIp, routerName, apiPassword, billingApiIp
 /ip service set api port=8728 address=${allowedApiIps}
 /interface/wireguard print detail where name="${interfaceName}"`;
 
-  const serverPeerCommand = `wg set wg-nexa peer PASTE_MIKROTIK_PUBLIC_KEY_HERE allowed-ips ${tunnelIp}/32 && wg-quick save wg-nexa`;
-  return { interfaceName, mikrotikScript, serverPeerCommand };
+  return { interfaceName, mikrotikScript };
+}
+
+function cleanWireguardPublicKey(value) {
+  const key = String(value || '').trim();
+  if (!/^[A-Za-z0-9+/]{43}=$/.test(key)) {
+    throw new Error('Enter a valid MikroTik WireGuard public key');
+  }
+  return key;
+}
+
+function cleanTunnelIp(value) {
+  const ip = String(value || '').trim();
+  const escapedPrefix = WIREGUARD_SUBNET_PREFIX.replace(/\./g, '\\.');
+  const match = ip.match(new RegExp(`^${escapedPrefix}\\.(\\d{1,3})$`));
+  if (!match) throw new Error(`Tunnel IP must be inside ${WIREGUARD_SUBNET_PREFIX}.0/24`);
+  const lastOctet = Number(match[1]);
+  if (!Number.isInteger(lastOctet) || lastOctet < 2 || lastOctet > 254) {
+    throw new Error('Enter a valid WireGuard tunnel IP');
+  }
+  return ip;
+}
+
+async function activateWireguardPeer(payload = {}) {
+  const publicKey = cleanWireguardPublicKey(payload.public_key || payload.wireguard_mikrotik_public_key);
+  const tunnelIp = cleanTunnelIp(payload.tunnel_ip || payload.wireguard_tunnel_ip);
+  try {
+    await execFileAsync('wg', ['set', WIREGUARD_INTERFACE, 'peer', publicKey, 'allowed-ips', `${tunnelIp}/32`], { timeout: 15000 });
+    await execFileAsync('wg-quick', ['save', WIREGUARD_INTERFACE], { timeout: 15000 });
+  } catch (err) {
+    const detail = err.stderr || err.stdout || err.message;
+    throw new Error(`Could not activate WireGuard peer on Nexa server: ${detail}`);
+  }
+  return {
+    ok: true,
+    interface: WIREGUARD_INTERFACE,
+    public_key: publicKey,
+    tunnel_ip: tunnelIp,
+  };
 }
 
 async function prepareWireguardOnboarding(clientId, payload = {}) {
@@ -172,9 +214,10 @@ async function prepareWireguardOnboarding(clientId, payload = {}) {
   return {
     server_ip: WIREGUARD_SERVER_IP,
     server_public_key: WIREGUARD_SERVER_PUBLIC_KEY,
-    endpoint: WIREGUARD_ENDPOINT,
-    endpoint_port: WIREGUARD_ENDPOINT_PORT,
-    tunnel_ip: tunnelIp,
+  endpoint: WIREGUARD_ENDPOINT,
+  endpoint_port: WIREGUARD_ENDPOINT_PORT,
+  wireguard_interface: WIREGUARD_INTERFACE,
+  tunnel_ip: tunnelIp,
     api_host: tunnelIp,
     api_port: 8728,
     api_connection_type: 'api',
@@ -478,6 +521,7 @@ module.exports = {
   ensureMikrotikTables,
   getRouter,
   listRouters,
+  activateWireguardPeer,
   prepareWireguardOnboarding,
   saveRouter,
   testRouterConfig,

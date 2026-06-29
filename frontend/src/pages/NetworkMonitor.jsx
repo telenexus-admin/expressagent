@@ -235,6 +235,7 @@ function CommandGenerator() {
 }
 
 function WireGuardWizard({ form, update, onPrepared }) {
+  const [routerName, setRouterName] = useState(form.name || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [billingIps, setBillingIps] = useState(form.wireguard_billing_api_ips || '10.133.0.1');
@@ -255,7 +256,8 @@ function WireGuardWizard({ form, update, onPrepared }) {
   }
 
   async function prepare() {
-    if (!form.name.trim()) {
+    const name = routerName.trim() || form.name.trim();
+    if (!name) {
       setStatus({ type: 'error', message: 'Enter the router name first.' });
       return;
     }
@@ -267,12 +269,13 @@ function WireGuardWizard({ form, update, onPrepared }) {
     setStatus(null);
     try {
       const { data } = await api.post('/mikrotik/wireguard/prepare', {
-        name: form.name,
+        name,
         password,
         wireguard_billing_api_ips: billingIps,
         wireguard_tunnel_ip: form.wireguard_tunnel_ip,
       });
       setPlan(data);
+      update('name', name);
       update('connection_method', 'wireguard');
       update('host', data.api_host);
       update('port', data.api_port);
@@ -303,7 +306,16 @@ function WireGuardWizard({ form, update, onPrepared }) {
         <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase text-emerald-700">Recommended</span>
       </div>
 
-      <div className="mt-4 grid gap-3 lg:grid-cols-3">
+      <div className="mt-4 grid gap-3 lg:grid-cols-4">
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">MikroTik name</span>
+          <input
+            value={routerName}
+            onChange={(event) => setRouterName(event.target.value)}
+            placeholder="HOMELAND"
+            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+          />
+        </label>
         <label className="block">
           <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">MikroTik API password</span>
           <input

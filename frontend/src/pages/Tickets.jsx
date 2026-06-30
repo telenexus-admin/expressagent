@@ -50,10 +50,18 @@ const CATEGORY_LABELS = {
 };
 
 const PRIORITY_STYLES = {
-  urgent: 'bg-red-50 text-red-700 border-red-100',
-  high: 'bg-orange-50 text-orange-700 border-orange-100',
-  normal: 'bg-blue-50 text-blue-700 border-blue-100',
-  low: 'bg-slate-50 text-slate-600 border-slate-100',
+  urgent: 'bg-red-100 text-red-500',
+  high: 'bg-slate-200 text-slate-500',
+  normal: 'bg-slate-200 text-slate-500',
+  low: 'bg-slate-200 text-slate-500',
+};
+
+const STATUS_DOT_STYLES = {
+  open: 'bg-emerald-500 text-emerald-500',
+  in_progress: 'bg-amber-400 text-amber-500',
+  waiting_customer: 'bg-amber-400 text-amber-500',
+  resolved: 'bg-red-400 text-red-500',
+  closed: 'bg-red-400 text-red-500',
 };
 
 const NOTIFY_LABELS = {
@@ -73,8 +81,39 @@ function formatDate(value) {
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
+function formatCreateDate(value) {
+  if (!value) return '';
+  return new Date(value).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function initials(name = '') {
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  return (parts[0]?.[0] || 'C') + (parts[1]?.[0] || '');
+}
+
 function Pill({ children, className = '' }) {
   return <span className={`inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-black ${className}`}>{children}</span>;
+}
+
+function StatusBadge({ status }) {
+  const label = STATUS_LABELS[status] || status || 'Open';
+  const dot = STATUS_DOT_STYLES[status] || STATUS_DOT_STYLES.open;
+  return (
+    <span className={`inline-flex items-center gap-1.5 text-xs font-black ${dot.split(' ').slice(1).join(' ')}`}>
+      <span className={`h-2.5 w-2.5 rounded-full ${dot.split(' ')[0]}`} />
+      {label}
+    </span>
+  );
+}
+
+function PriorityBadge({ priority }) {
+  const value = priority || 'normal';
+  const label = value === 'normal' ? 'Medium' : value.charAt(0).toUpperCase() + value.slice(1);
+  return (
+    <span className={`inline-flex min-w-[64px] justify-center rounded-md px-3 py-1.5 text-xs font-black ${PRIORITY_STYLES[value] || PRIORITY_STYLES.normal}`}>
+      {label}
+    </span>
+  );
 }
 
 function Select({ value, onChange, options, label }) {
@@ -177,89 +216,109 @@ export default function Tickets() {
   const selectedTicket = detail?.ticket || tickets.find((item) => item.id === selectedId);
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-[#f8fafc]">
-      <div className="shrink-0 border-b border-slate-100 bg-white px-5 py-4">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+    <div className="min-h-full overflow-y-auto bg-[#f5f7fb] px-5 py-6 text-[#354052]">
+      <div className="mx-auto max-w-[1400px]">
+        <div className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
           <div>
-            <h2 className="text-2xl font-black text-slate-950">Tickets</h2>
-            <p className="mt-1 text-sm text-slate-500">Track customer issues from WhatsApp, AI classification and admin follow-up.</p>
+            <h2 className="text-xl font-black tracking-normal text-[#394455]">All Support Tickets</h2>
+            <p className="mt-1 text-xs font-semibold text-[#aab6c4]">List of ticket opened by Customer</p>
           </div>
-          <div className="flex flex-wrap items-end gap-3">
-            <Select label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
-            <Select label="Category" value={category} onChange={setCategory} options={CATEGORY_OPTIONS} />
-            <Select label="Priority" value={priority} onChange={setPriority} options={PRIORITY_OPTIONS} />
-            <label className="flex min-w-[220px] flex-col gap-1 text-[11px] font-black uppercase text-slate-400">
-              Search
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="relative">
               <input
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                placeholder="Phone, name, issue..."
-                className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+                placeholder="Search ticket, phone, issue..."
+                className="h-11 w-[260px] rounded-full border border-[#dce5ee] bg-white px-5 text-xs font-black text-[#516072] outline-none placeholder:text-[#b4bfcb] focus:border-[#b9c9d8]"
               />
             </label>
+            <Select label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
+            <Select label="Category" value={category} onChange={setCategory} options={CATEGORY_OPTIONS} />
+            <Select label="Priority" value={priority} onChange={setPriority} options={PRIORITY_OPTIONS} />
           </div>
         </div>
-      </div>
 
-      {error && <div className="mx-5 mt-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
+        {error && <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 overflow-hidden lg:grid-cols-[minmax(320px,440px)_1fr]">
-        <section className="min-h-0 overflow-y-auto border-r border-slate-100 bg-white">
-          {loading && <div className="p-6 text-sm text-slate-400">Loading tickets...</div>}
-          {!loading && tickets.length === 0 && <div className="p-6 text-sm text-slate-400">No tickets match these filters.</div>}
-          {tickets.map((ticket) => {
-            const active = ticket.id === selectedId;
-            return (
-              <button
-                key={ticket.id}
-                onClick={() => setSelectedId(ticket.id)}
-                className={`block w-full border-b border-slate-100 px-5 py-4 text-left transition ${active ? 'bg-[#f3f2ff]' : 'hover:bg-slate-50'}`}
+        <section>
+          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div className="text-sm font-black text-[#394455]">
+              Latest Tickets <span className="text-[#5f6b7c]">(Showing 01 to {String(Math.min(tickets.length, 8)).padStart(2, '0')} of {tickets.length} Tickets)</span>
+            </div>
+            <label className="flex items-center gap-3 text-sm font-black text-[#394455]">
+              Sort By:
+              <select
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+                className="h-11 rounded-full border border-[#d7e1ea] bg-white px-4 text-xs font-black text-[#a1afbf] outline-none"
               >
-                <div className="flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-black text-slate-950">{ticket.title}</div>
-                    <div className="mt-1 truncate text-xs text-slate-500">{ticket.customer_name || `+${ticket.customer_phone}`}</div>
-                  </div>
-                  <Pill className={PRIORITY_STYLES[ticket.priority] || PRIORITY_STYLES.normal}>{ticket.priority}</Pill>
-                </div>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <Pill className="border-purple-100 bg-purple-50 text-purple-700">{CATEGORY_LABELS[ticket.category] || ticket.category}</Pill>
-                  <Pill className="border-slate-100 bg-slate-50 text-slate-600">{STATUS_LABELS[ticket.status] || ticket.status}</Pill>
-                </div>
-                <div className="mt-3 text-[11px] font-black text-slate-500">
-                  Assigned: <span className="text-slate-700">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</span>
-                </div>
-                {ticket.assignment_notify_status && (
-                  <div className="mt-2">
-                    <Pill className={NOTIFY_STYLES[ticket.assignment_notify_status] || NOTIFY_STYLES.skipped}>
-                      Employee: {NOTIFY_LABELS[ticket.assignment_notify_status] || ticket.assignment_notify_status}
-                    </Pill>
-                  </div>
+                <option value="active">Date Created</option>
+                <option value="open">Open</option>
+                <option value="in_progress">In Progress</option>
+                <option value="waiting_customer">Pending</option>
+                <option value="resolved">Resolved</option>
+                <option value="closed">Closed</option>
+                <option value="all">All</option>
+              </select>
+            </label>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[980px] border-separate border-spacing-y-3">
+              <thead>
+                <tr className="text-left text-xs font-black text-[#aab6c4]">
+                  <th className="px-6 pb-2">ID</th>
+                  <th className="px-6 pb-2">Requester Name</th>
+                  <th className="px-6 pb-2">Subjects</th>
+                  <th className="px-6 pb-2">Status</th>
+                  <th className="px-6 pb-2">Priority</th>
+                  <th className="px-6 pb-2">Assignee</th>
+                  <th className="px-6 pb-2">Create Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading && (
+                  <tr><td colSpan="7" className="bg-white px-6 py-8 text-sm font-bold text-slate-400">Loading tickets...</td></tr>
                 )}
-                {(ticket.client_alert_sms_status || ticket.client_alert_email_status) && (
-                  <div className="mt-2 flex flex-wrap gap-2">
-                    {ticket.client_alert_sms_status && (
-                      <Pill className={NOTIFY_STYLES[ticket.client_alert_sms_status] || NOTIFY_STYLES.skipped}>
-                        Client SMS: {NOTIFY_LABELS[ticket.client_alert_sms_status] || ticket.client_alert_sms_status}
-                      </Pill>
-                    )}
-                    {ticket.client_alert_email_status && (
-                      <Pill className={NOTIFY_STYLES[ticket.client_alert_email_status] || NOTIFY_STYLES.skipped}>
-                        Client email: {NOTIFY_LABELS[ticket.client_alert_email_status] || ticket.client_alert_email_status}
-                      </Pill>
-                    )}
-                  </div>
+                {!loading && tickets.length === 0 && (
+                  <tr><td colSpan="7" className="bg-white px-6 py-8 text-sm font-bold text-slate-400">No tickets match these filters.</td></tr>
                 )}
-                <p className="mt-3 line-clamp-2 text-xs leading-relaxed text-slate-500">{ticket.summary || ticket.last_message || 'No summary yet'}</p>
-                <div className="mt-3 text-[11px] font-semibold text-slate-400">Updated {formatDate(ticket.updated_at)}</div>
-              </button>
-            );
-          })}
+                {!loading && tickets.map((ticket) => {
+                  const requester = ticket.customer_name || `+${ticket.customer_phone}`;
+                  const active = ticket.id === selectedId;
+                  return (
+                    <tr
+                      key={ticket.id}
+                      onClick={() => setSelectedId(ticket.id)}
+                      className={`cursor-pointer bg-white text-sm font-black text-[#394455] shadow-sm transition hover:bg-[#fbfcff] ${active ? 'outline outline-2 outline-[#d9ddff]' : ''}`}
+                    >
+                      <td className="px-6 py-5 align-middle">#{ticket.id}</td>
+                      <td className="px-6 py-5 align-middle">
+                        <div className="flex items-center gap-3">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#dbeafe] to-[#f4e8ff] text-xs font-black text-[#394455]">
+                            {initials(requester)}
+                          </div>
+                          <span className="max-w-[180px] truncate">{requester}</span>
+                        </div>
+                      </td>
+                      <td className="max-w-[360px] px-6 py-5 align-middle">
+                        <div className="truncate text-sm font-semibold text-[#394455]">{ticket.title || ticket.summary || ticket.last_message || 'No subject'}</div>
+                      </td>
+                      <td className="px-6 py-5 align-middle"><StatusBadge status={ticket.status} /></td>
+                      <td className="px-6 py-5 align-middle"><PriorityBadge priority={ticket.priority} /></td>
+                      <td className="px-6 py-5 align-middle">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</td>
+                      <td className="px-6 py-5 align-middle">{formatCreateDate(ticket.opened_at || ticket.created_at)}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
         </section>
 
-        <section className="min-h-0 overflow-y-auto p-5">
+        <section className="mt-6 pb-10">
           {!selectedTicket && (
-            <div className="flex h-full items-center justify-center text-sm text-slate-400">Select a ticket to review it.</div>
+            <div className="rounded-2xl bg-white px-6 py-10 text-center text-sm font-bold text-slate-400">Select a ticket to review it.</div>
           )}
           {selectedTicket && (
             <div className="mx-auto max-w-4xl space-y-5">

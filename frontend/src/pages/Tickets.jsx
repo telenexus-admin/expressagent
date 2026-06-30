@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../utils/api';
-import { ActivityIcon, CheckCircleIcon, DotsVerticalIcon, TicketIcon } from '../components/Icons';
+import { ActivityIcon, CheckCircleIcon, TicketIcon } from '../components/Icons';
 
 const STATUS_OPTIONS = [
   ['active', 'Active'],
@@ -163,6 +163,27 @@ function TimerIcon({ className = 'h-5 w-5' }) {
   );
 }
 
+function OpenIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M14 4h6v6" />
+      <path d="M10 14 20 4" />
+      <path d="M20 14v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h4" />
+    </svg>
+  );
+}
+
+function TrashIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M3 6h18" />
+      <path d="M8 6V4h8v2" />
+      <path d="M19 6l-1 14H6L5 6" />
+      <path d="M10 11v5M14 11v5" />
+    </svg>
+  );
+}
+
 function SparkLine({ color = '#6d6cfb' }) {
   return (
     <svg viewBox="0 0 72 24" className="h-7 w-16" fill="none">
@@ -208,7 +229,7 @@ function PriorityBadge({ priority }) {
   return (
     <span className={`inline-flex min-w-[64px] items-center justify-center gap-1 rounded-full px-3 py-1.5 text-xs font-black ${PRIORITY_STYLES[value] || PRIORITY_STYLES.normal}`}>
       {label}
-      {['urgent', 'high'].includes(value) && <span className="text-[10px]">⌃</span>}
+      {['urgent', 'high'].includes(value) && <span className="text-[10px]">^</span>}
     </span>
   );
 }
@@ -230,18 +251,48 @@ function Select({ value, onChange, options, label }) {
 
 function MetricCard({ title, value, subtitle, Icon, iconClass, lineColor }) {
   return (
-    <div className="flex min-h-[104px] items-center justify-between rounded-2xl border border-[#e7edf8] bg-white px-5 shadow-[0_16px_36px_rgba(33,51,88,0.08)]">
+    <div className="flex min-h-[92px] items-center justify-between rounded-2xl border border-[#e7edf8] bg-white px-4 shadow-[0_16px_36px_rgba(33,51,88,0.08)]">
       <div className="flex items-center gap-4">
-        <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
-          <Icon className="h-6 w-6" />
+        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
+          <Icon className="h-5 w-5" />
         </div>
         <div>
           <div className="text-[11px] font-black text-[#64708c]">{title}</div>
-          <div className="mt-1 text-3xl font-black leading-none text-[#17264d]">{value}</div>
+          <div className="mt-1 text-2xl font-black leading-none text-[#17264d]">{value}</div>
           <div className="mt-2 text-[11px] font-bold text-[#9aa7bb]">{subtitle}</div>
         </div>
       </div>
       <SparkLine color={lineColor} />
+    </div>
+  );
+}
+
+function TicketSubjectIcon({ ticket }) {
+  const SubjectIcon = ticket.category === 'human_support' ? HeadsetIcon : MonitorIcon;
+  return (
+    <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${ticket.category === 'human_support' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'}`}>
+      <SubjectIcon className="h-4 w-4" />
+    </span>
+  );
+}
+
+function UserMiniIcon() {
+  return (
+    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f3f6fb] text-[#7c8aa5]">
+      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+    </span>
+  );
+}
+
+function TicketActions({ ticket, onOpen, onDelete }) {
+  return (
+    <div className="flex justify-end gap-2">
+      <button onClick={() => onOpen(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-[#4538ff] shadow-sm hover:bg-[#f6f7ff]" title="Open ticket">
+        <OpenIcon />
+      </button>
+      <button onClick={() => onDelete(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-[#ef4056] shadow-sm hover:bg-red-50" title="Delete ticket">
+        <TrashIcon />
+      </button>
     </div>
   );
 }
@@ -370,6 +421,8 @@ export default function Tickets({ detailMode = false }) {
     }
   };
 
+  const openTicket = (ticket) => navigate(`/dashboard/tickets/${ticket.id}`);
+
   const createInstallation = async () => {
     const payload = {
       ...installationForm,
@@ -482,9 +535,9 @@ export default function Tickets({ detailMode = false }) {
   const resolvedTickets = Number(summary.closed || 0);
 
   return (
-    <div className="min-h-full overflow-y-auto bg-[#f7f9fe] px-4 py-5 text-[#17264d]">
-      <div className="mx-auto max-w-[1500px]">
-        <div className="mb-6 grid gap-4 xl:grid-cols-5">
+    <div className="min-h-full overflow-y-auto overflow-x-hidden bg-[#f7f9fe] px-3 py-4 text-[#17264d]">
+      <div className="mx-auto w-full max-w-full">
+        <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <MetricCard title="Total Tickets" value={totalTickets} subtitle="All time" Icon={TicketIcon} iconClass="bg-[#eef3ff] text-[#315dff]" lineColor="#7890ff" />
           <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" />
           <MetricCard title="In Progress" value={progressTickets} subtitle={pct(progressTickets, totalTickets)} Icon={HourglassIcon} iconClass="bg-[#fff4df] text-[#ffa51e]" lineColor="#ffb43c" />
@@ -492,19 +545,19 @@ export default function Tickets({ detailMode = false }) {
           <MetricCard title="Avg. Resolution Time" value="2.4h" subtitle="This month" Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" />
         </div>
 
-        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+        <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
           <button onClick={() => setShowInstallModal(true)} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
             <span className="text-xl leading-none">+</span>
             Add Installation
           </button>
 
-          <div className="flex flex-1 flex-wrap items-end gap-4 xl:justify-end">
-            <label className="flex min-w-[330px] flex-col gap-1.5 text-[10px] font-black text-[#6d7891]">
+          <div className="flex flex-1 flex-wrap items-end gap-3 xl:justify-end">
+            <label className="flex min-w-[260px] flex-1 flex-col gap-1.5 text-[10px] font-black text-[#6d7891] xl:max-w-[330px]">
               <span className="opacity-0">Search</span>
               <span className="flex h-11 items-center gap-3 rounded-xl border border-[#e1e8f5] bg-white px-4 shadow-[0_10px_25px_rgba(41,57,95,0.06)]">
                 <SearchIcon className="h-4 w-4 text-[#8794ad]" />
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ticket, phone, issue..." className="min-w-0 flex-1 bg-transparent text-xs font-black text-[#17264d] outline-none placeholder:text-[#9aa7bb]" />
-                <span className="rounded-md bg-[#f2f5fb] px-2 py-1 text-[10px] font-black text-[#8c98af]">⌘ K</span>
+                <span className="rounded-md bg-[#f2f5fb] px-2 py-1 text-[10px] font-black text-[#8c98af]">Ctrl K</span>
               </span>
             </label>
             <Select label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
@@ -522,26 +575,37 @@ export default function Tickets({ detailMode = false }) {
 
         {error && <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
-        <section className="rounded-3xl border border-[#e5ecf8] bg-white p-5 shadow-[0_18px_45px_rgba(31,45,78,0.08)]">
-          <div className="mb-5 flex items-center justify-between">
+        <section className="rounded-3xl border border-[#e5ecf8] bg-white p-4 shadow-[0_18px_45px_rgba(31,45,78,0.08)]">
+          <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-black text-[#17264d]">Latest Tickets</h2>
               <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-black text-[#4538ff]">{Math.min(tickets.length, 8)} of {totalTickets || tickets.length}</span>
             </div>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[1120px] border-separate border-spacing-0">
+          {viewMode === 'list' ? (
+          <div className="w-full overflow-hidden">
+            <table className="w-full table-fixed border-separate border-spacing-0">
+              <colgroup>
+                <col className="w-[7%]" />
+                <col className="w-[18%]" />
+                <col className="w-[25%]" />
+                <col className="w-[11%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[9%]" />
+                <col className="w-[8%]" />
+              </colgroup>
               <thead>
                 <tr className="text-left text-[11px] font-black text-[#8fa0bb]">
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">ID <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">Requester <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">Subject <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">Status <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">Priority <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">Assignee <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4">Create Date <SortIcon className="ml-1 inline h-3 w-3" /></th>
-                  <th className="border-b border-[#ecf1f8] px-5 py-4 text-right">Actions</th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">ID <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">Requester <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">Subject <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">Status <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">Priority <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">Assignee <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3">Date <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-2 py-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -549,57 +613,46 @@ export default function Tickets({ detailMode = false }) {
                 {!loading && tickets.length === 0 && <tr><td colSpan="8" className="bg-white px-6 py-8 text-sm font-bold text-slate-400">No tickets match these filters.</td></tr>}
                 {!loading && tickets.map((ticket) => {
                   const requester = ticket.customer_name || `+${ticket.customer_phone}`;
-                  const subjectIcon = ticket.category === 'human_support' ? HeadsetIcon : MonitorIcon;
-                  const SubjectIcon = subjectIcon;
                   return (
                     <tr key={ticket.id} className="group text-sm font-black text-[#17264d] transition hover:bg-[#fbfcff]">
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle text-lg">#{ticket.id}</td>
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
-                        <div className="flex items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f0eaff] text-xs font-black text-[#4538ff]">{initials(requester)}</div>
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle text-base">#{ticket.id}</td>
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f0eaff] text-xs font-black text-[#4538ff]">{initials(requester)}</div>
                           <div className="min-w-0">
-                            <div className="max-w-[190px] truncate text-sm font-black text-[#17264d]">{requester}</div>
+                            <div className="truncate text-sm font-black text-[#17264d]">{requester}</div>
                             <div className="mt-1 text-xs font-bold text-[#9aa7bb]">{ticket.customer_name ? 'Customer' : 'Phone'}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="max-w-[360px] border-b border-[#edf2f8] px-5 py-5 align-middle">
-                        <div className="flex items-center gap-3">
-                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ticket.category === 'human_support' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'}`}>
-                            <SubjectIcon className="h-4 w-4" />
-                          </span>
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle">
+                        <div className="flex items-center gap-2">
+                          <TicketSubjectIcon ticket={ticket} />
                           <div className="min-w-0">
                             <div className="truncate text-sm font-black text-[#17264d]">{ticket.title || ticket.summary || ticket.last_message || 'No subject'}</div>
                             <div className="mt-1 truncate text-xs font-bold text-[#9aa7bb]">{CATEGORY_LABELS[ticket.category] || ticket.category} #{String(ticket.id).padStart(4, '0')}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle"><StatusBadge status={ticket.status} /></td>
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle"><PriorityBadge priority={ticket.priority} /></td>
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle"><StatusBadge status={ticket.status} /></td>
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle"><PriorityBadge priority={ticket.priority} /></td>
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle">
                         <div className="flex items-center gap-2">
-                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f3f6fb] text-[#7c8aa5]">
-                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
-                          </span>
-                          <span className="max-w-[150px] truncate text-xs font-black text-[#52617d]">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</span>
+                          <UserMiniIcon />
+                          <span className="truncate text-xs font-black text-[#52617d]">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</span>
                         </div>
                       </td>
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle">
                         <div className="flex items-center gap-2">
                           <CalendarIcon className="h-4 w-4 text-[#7c8aa5]" />
-                          <div>
+                          <div className="min-w-0">
                             <div className="text-xs font-black text-[#52617d]">{formatCreateDate(ticket.opened_at || ticket.created_at)}</div>
                             <div className="mt-1 text-[11px] font-bold text-[#9aa7bb]">{formatDate(ticket.opened_at || ticket.created_at).split(',').pop()?.trim()}</div>
                           </div>
                         </div>
                       </td>
-                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
-                        <div className="flex justify-end gap-2">
-                          <button onClick={() => navigate(`/dashboard/tickets/${ticket.id}`)} className="rounded-xl border border-[#e4e9f4] bg-white px-4 py-2 text-xs font-black text-[#4538ff] shadow-sm hover:bg-[#f6f7ff]">Open</button>
-                          <button onClick={() => deleteTicket(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-[#91a0b8] shadow-sm hover:bg-red-50 hover:text-red-500" title="Delete ticket">
-                            <DotsVerticalIcon className="h-4 w-4" />
-                          </button>
-                        </div>
+                      <td className="border-b border-[#edf2f8] px-2 py-3 align-middle">
+                        <TicketActions ticket={ticket} onOpen={openTicket} onDelete={deleteTicket} />
                       </td>
                     </tr>
                   );
@@ -607,6 +660,44 @@ export default function Tickets({ detailMode = false }) {
               </tbody>
             </table>
           </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {loading && <div className="rounded-2xl border border-[#edf2f8] bg-white p-5 text-sm font-bold text-slate-400">Loading tickets...</div>}
+              {!loading && tickets.length === 0 && <div className="rounded-2xl border border-[#edf2f8] bg-white p-5 text-sm font-bold text-slate-400">No tickets match these filters.</div>}
+              {!loading && tickets.map((ticket) => {
+                const requester = ticket.customer_name || `+${ticket.customer_phone}`;
+                return (
+                  <article key={ticket.id} className="rounded-2xl border border-[#e8eef8] bg-white p-4 shadow-[0_10px_24px_rgba(31,45,78,0.06)]">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f0eaff] text-xs font-black text-[#4538ff]">{initials(requester)}</div>
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-black text-[#17264d]">{requester}</div>
+                          <div className="text-xs font-bold text-[#9aa7bb]">Ticket #{ticket.id}</div>
+                        </div>
+                      </div>
+                      <TicketActions ticket={ticket} onOpen={openTicket} onDelete={deleteTicket} />
+                    </div>
+                    <div className="mt-4 flex items-center gap-3">
+                      <TicketSubjectIcon ticket={ticket} />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-black text-[#17264d]">{ticket.title || ticket.summary || ticket.last_message || 'No subject'}</div>
+                        <div className="mt-1 text-xs font-bold text-[#9aa7bb]">{CATEGORY_LABELS[ticket.category] || ticket.category}</div>
+                      </div>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-2">
+                      <StatusBadge status={ticket.status} />
+                      <PriorityBadge priority={ticket.priority} />
+                    </div>
+                    <div className="mt-4 grid gap-2 text-xs font-bold text-[#52617d]">
+                      <div className="flex items-center gap-2"><UserMiniIcon /> {ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</div>
+                      <div className="flex items-center gap-2"><CalendarIcon className="h-4 w-4 text-[#7c8aa5]" /> {formatCreateDate(ticket.opened_at || ticket.created_at)}</div>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
+          )}
         </section>
       </div>
 

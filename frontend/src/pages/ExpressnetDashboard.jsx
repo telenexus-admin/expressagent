@@ -200,7 +200,7 @@ export default function ExpressnetDashboard() {
       <div className="flex h-full min-h-0">
         <aside className={`${sidebarOpen ? 'lg:flex' : 'lg:hidden'} client-sidebar hidden w-[286px] shrink-0 bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex-col shadow-2xl shadow-purple-900/25 z-20 overflow-visible`}>
           <div className="px-6 pt-5 pb-5"><ExpressnetBrand /></div>
-          <nav className="sidebar-nav no-visible-scrollbar pl-5 pr-0 flex-1 overflow-y-auto pb-6">{navList()}</nav>
+          <nav className="sidebar-nav flex-1 overflow-y-auto pb-6 pl-5 pr-2">{navList()}</nav>
         </aside>
         <section className="flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden">
           <header className="h-[84px] shrink-0 px-4 sm:px-7 lg:px-9 flex items-center justify-between gap-5">
@@ -218,7 +218,7 @@ export default function ExpressnetDashboard() {
       <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
       <aside className={`fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] bg-gradient-to-b from-[#4b16b5] via-[#3d1198] to-[#2a086f] text-white flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-4 border-b border-white/10 flex items-center justify-between gap-3"><ExpressnetBrand compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center"><CloseIcon className="w-5 h-5" /></button></div>
-        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-3 py-3 pb-6">{navList(true)}</nav>
+        <nav className="flex-1 overflow-y-auto px-3 py-3 pb-6 pr-2">{navList(true)}</nav>
       </aside>
     </div>
   );

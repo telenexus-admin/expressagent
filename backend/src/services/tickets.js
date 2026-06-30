@@ -45,7 +45,7 @@ async function ensureTicketSchema() {
 
     ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_category_check;
     ALTER TABLE tickets ADD CONSTRAINT tickets_category_check
-      CHECK (category IN ('technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general'));
+      CHECK (category IN ('technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general', 'manually_added'));
 
     ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_priority_check;
     ALTER TABLE tickets ADD CONSTRAINT tickets_priority_check
@@ -117,7 +117,7 @@ function clean(value, fallback = '') {
 
 function normalizeCategory(value) {
   const category = clean(value, 'general').toLowerCase();
-  if (['technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general'].includes(category)) {
+  if (['technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general', 'manually_added'].includes(category)) {
     return category;
   }
   return 'general';

@@ -22,6 +22,7 @@ const CATEGORY_OPTIONS = [
   ['human_support', 'Human support'],
   ['feedback', 'Feedback'],
   ['general', 'General'],
+  ['manually_added', 'Manually added'],
 ];
 
 const PRIORITY_OPTIONS = [
@@ -48,6 +49,7 @@ const CATEGORY_LABELS = {
   human_support: 'Human support',
   feedback: 'Feedback',
   general: 'General',
+  manually_added: 'Manually added',
 };
 
 const PRIORITY_STYLES = {
@@ -65,11 +67,12 @@ const STATUS_DOT_STYLES = {
   closed: 'bg-red-400 text-red-500',
 };
 
-const EMPTY_INSTALLATION = {
+const EMPTY_TICKET = {
   customer_name: '',
   customer_phone: '',
-  location: '',
-  assigned_employee_id: '',
+  title: '',
+  summary: '',
+  category: 'manually_added',
   priority: 'normal',
 };
 
@@ -207,6 +210,18 @@ function pct(value, total) {
   return `${((Number(value || 0) / Number(total || 1)) * 100).toFixed(1)}% of total`;
 }
 
+function formatDuration(seconds) {
+  const totalSeconds = Number(seconds || 0);
+  if (!totalSeconds) return '--';
+  const minutes = Math.max(1, Math.round(totalSeconds / 60));
+  if (minutes < 60) return `${minutes}m`;
+  const hours = minutes / 60;
+  if (hours < 24) return `${hours.toFixed(hours < 10 ? 1 : 0)}h`;
+  const days = Math.floor(hours / 24);
+  const remainingHours = Math.round(hours % 24);
+  return remainingHours ? `${days}d ${remainingHours}h` : `${days}d`;
+}
+
 function initials(name = '') {
   const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
   return (parts[0]?.[0] || 'C') + (parts[1]?.[0] || '');
@@ -306,7 +321,6 @@ export default function Tickets({ detailMode = false }) {
   const { id } = useParams();
   const [tickets, setTickets] = useState([]);
   const [detail, setDetail] = useState(null);
-  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('active');
   const [category, setCategory] = useState('all');
@@ -315,10 +329,10 @@ export default function Tickets({ detailMode = false }) {
   const [note, setNote] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [showInstallModal, setShowInstallModal] = useState(false);
-  const [installationForm, setInstallationForm] = useState(EMPTY_INSTALLATION);
+  const [showTicketModal, setShowTicketModal] = useState(false);
+  const [ticketForm, setTicketForm] = useState(EMPTY_TICKET);
   const [formError, setFormError] = useState('');
-  const [summary, setSummary] = useState({ active: 0, open: 0, priority: 0, closed: 0 });
+  const [summary, setSummary] = useState({ active: 0, open: 0, priority: 0, closed: 0, avg_resolution_seconds: 0 });
   const [viewMode, setViewMode] = useState('list');
 
   const params = useMemo(() => {
@@ -355,28 +369,18 @@ export default function Tickets({ detailMode = false }) {
     }
   }, [detailMode, id]);
 
-  const loadEmployees = useCallback(async () => {
-    try {
-      const { data } = await api.get('/employees');
-      setEmployees(data.filter((employee) => employee.role === 'technician' && employee.is_active));
-    } catch (err) {
-      setEmployees([]);
-    }
-  }, []);
-
   const loadSummary = useCallback(async () => {
     if (detailMode) return;
     try {
       const { data } = await api.get('/tickets/summary');
       setSummary(data || {});
     } catch (err) {
-      setSummary({ active: 0, open: 0, priority: 0, closed: 0 });
+      setSummary({ active: 0, open: 0, priority: 0, closed: 0, avg_resolution_seconds: 0 });
     }
   }, [detailMode]);
 
   useEffect(() => { loadTickets(); }, [loadTickets]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
-  useEffect(() => { loadEmployees(); }, [loadEmployees]);
   useEffect(() => { loadSummary(); }, [loadSummary]);
 
   const updateTicket = async (patch) => {
@@ -423,27 +427,28 @@ export default function Tickets({ detailMode = false }) {
 
   const openTicket = (ticket) => navigate(`/dashboard/tickets/${ticket.id}`);
 
-  const createInstallation = async () => {
+  const createTicket = async () => {
     const payload = {
-      ...installationForm,
-      customer_name: installationForm.customer_name.trim(),
-      customer_phone: installationForm.customer_phone.trim(),
-      location: installationForm.location.trim(),
-      assigned_employee_id: Number(installationForm.assigned_employee_id),
+      ...ticketForm,
+      customer_name: ticketForm.customer_name.trim(),
+      customer_phone: ticketForm.customer_phone.trim(),
+      title: ticketForm.title.trim(),
+      summary: ticketForm.summary.trim(),
     };
-    if (!payload.customer_name || !payload.customer_phone || !payload.location || !payload.assigned_employee_id) {
-      setFormError('Client name, phone number, location and technician are required.');
+    if (!payload.customer_phone || !payload.title) {
+      setFormError('Phone number and ticket subject are required.');
       return;
     }
     setSaving(true);
     setFormError('');
     try {
-      const { data } = await api.post('/tickets/installations', payload);
-      setShowInstallModal(false);
-      setInstallationForm(EMPTY_INSTALLATION);
+      const { data } = await api.post('/tickets', payload);
+      setShowTicketModal(false);
+      setTicketForm(EMPTY_TICKET);
+      await loadSummary();
       navigate(`/dashboard/tickets/${data.id}`);
     } catch (err) {
-      setFormError(err.response?.data?.error || 'Failed to create installation request');
+      setFormError(err.response?.data?.error || 'Failed to create ticket');
     } finally {
       setSaving(false);
     }
@@ -533,6 +538,7 @@ export default function Tickets({ detailMode = false }) {
   const openTickets = Number(summary.open || 0);
   const progressTickets = tickets.filter((ticket) => ticket.status === 'in_progress' || ticket.status === 'waiting_customer').length;
   const resolvedTickets = Number(summary.closed || 0);
+  const avgResolutionTime = formatDuration(summary.avg_resolution_seconds);
 
   return (
     <div className="min-h-full overflow-y-auto overflow-x-hidden bg-[#f7f9fe] px-3 py-4 text-[#17264d]">
@@ -542,13 +548,13 @@ export default function Tickets({ detailMode = false }) {
           <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" />
           <MetricCard title="In Progress" value={progressTickets} subtitle={pct(progressTickets, totalTickets)} Icon={HourglassIcon} iconClass="bg-[#fff4df] text-[#ffa51e]" lineColor="#ffb43c" />
           <MetricCard title="Resolved" value={resolvedTickets} subtitle={pct(resolvedTickets, totalTickets)} Icon={CheckCircleIcon} iconClass="bg-[#f4edff] text-[#6f43ff]" lineColor="#8b6cff" />
-          <MetricCard title="Avg. Resolution Time" value="2.4h" subtitle="This month" Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" />
+          <MetricCard title="Avg. Resolution Time" value={avgResolutionTime} subtitle={avgResolutionTime === '--' ? 'No resolved tickets yet' : 'Resolved tickets'} Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" />
         </div>
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <button onClick={() => setShowInstallModal(true)} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
+          <button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
             <span className="text-xl leading-none">+</span>
-            Add Installation
+            Add Ticket
           </button>
 
           <div className="flex flex-1 flex-wrap items-end gap-3 xl:justify-end">
@@ -701,30 +707,36 @@ export default function Tickets({ detailMode = false }) {
         </section>
       </div>
 
-      {showInstallModal && (
+      {showTicketModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
             <div className="border-b border-slate-100 p-6">
-              <h3 className="text-lg font-black text-slate-950">Add installation request</h3>
-              <p className="mt-1 text-sm font-semibold text-slate-400">Assign the request to a technician. Only that technician receives the SMS.</p>
+              <h3 className="text-lg font-black text-slate-950">Add manual ticket</h3>
+              <p className="mt-1 text-sm font-semibold text-slate-400">Create a support ticket from a call, walk-in request, or internal note.</p>
             </div>
             <div className="space-y-4 p-6">
               {formError && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{formError}</div>}
-              <Field label="Name of client" value={installationForm.customer_name} onChange={(value) => setInstallationForm((form) => ({ ...form, customer_name: value }))} placeholder="As registered on the system" />
-              <Field label="Phone number / account number" value={installationForm.customer_phone} onChange={(value) => setInstallationForm((form) => ({ ...form, customer_phone: value }))} placeholder="+254..." />
-              <Field label="Detailed location" value={installationForm.location} onChange={(value) => setInstallationForm((form) => ({ ...form, location: value }))} placeholder="Estate, building, floor, nearest landmark..." />
+              <Field label="Requester name" value={ticketForm.customer_name} onChange={(value) => setTicketForm((form) => ({ ...form, customer_name: value }))} placeholder="Customer or requester name" />
+              <Field label="Phone number / account number" value={ticketForm.customer_phone} onChange={(value) => setTicketForm((form) => ({ ...form, customer_phone: value }))} placeholder="+254..." />
+              <Field label="Ticket subject" value={ticketForm.title} onChange={(value) => setTicketForm((form) => ({ ...form, title: value }))} placeholder="What needs attention?" />
               <label className="block">
-                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">Technician</span>
-                <select value={installationForm.assigned_employee_id} onChange={(event) => setInstallationForm((form) => ({ ...form, assigned_employee_id: event.target.value }))} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
-                  <option value="">Select technician</option>
-                  {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.phone}</option>)}
+                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">Category</span>
+                <select value={ticketForm.category} onChange={(event) => setTicketForm((form) => ({ ...form, category: event.target.value }))} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
+                  {CATEGORY_OPTIONS.filter(([key]) => key !== 'all').map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
               </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">Priority</span>
+                <select value={ticketForm.priority} onChange={(event) => setTicketForm((form) => ({ ...form, priority: event.target.value }))} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
+                  {PRIORITY_OPTIONS.filter(([key]) => key !== 'all').map(([key, label]) => <option key={key} value={key}>{label}</option>)}
+                </select>
+              </label>
+              <TextArea label="Details" value={ticketForm.summary} onChange={(value) => setTicketForm((form) => ({ ...form, summary: value }))} placeholder="Describe the issue, promise made, or next action..." />
             </div>
             <div className="flex gap-3 px-6 pb-6">
-              <button onClick={() => setShowInstallModal(false)} className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button onClick={createInstallation} disabled={saving} className="flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50">
-                {saving ? 'Creating...' : 'Create and notify'}
+              <button onClick={() => setShowTicketModal(false)} className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={createTicket} disabled={saving} className="flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50">
+                {saving ? 'Creating...' : 'Create ticket'}
               </button>
             </div>
           </div>
@@ -739,6 +751,15 @@ function Field({ label, value, onChange, placeholder }) {
     <label className="block">
       <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">{label}</span>
       <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 outline-none placeholder:text-slate-300 focus:border-[#3535FF]" />
+    </label>
+  );
+}
+
+function TextArea({ label, value, onChange, placeholder }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">{label}</span>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} rows={4} className="w-full resize-none rounded-xl border border-slate-200 px-4 py-3 text-sm font-bold text-slate-700 outline-none placeholder:text-slate-300 focus:border-[#3535FF]" />
     </label>
   );
 }

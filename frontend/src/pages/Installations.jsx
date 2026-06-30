@@ -3,6 +3,14 @@ import { useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { WrenchIcon, CheckCircleIcon, ChartIcon } from '../components/Icons';
 
+const EMPTY_INSTALLATION = {
+  customer_name: '',
+  customer_phone: '',
+  location: '',
+  assigned_employee_id: '',
+  priority: 'normal',
+};
+
 const NOTIFY_STYLES = {
   sent: 'bg-emerald-100 text-emerald-700',
   failed: 'bg-red-100 text-red-700',
@@ -81,6 +89,15 @@ function Detail({ label, value }) {
       <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">{label}</div>
       <div className="mt-1 break-words text-sm font-bold text-slate-800">{value || '-'}</div>
     </div>
+  );
+}
+
+function Field({ label, value, onChange, placeholder }) {
+  return (
+    <label className="block">
+      <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 outline-none placeholder:text-slate-300 focus:border-[#3535FF]" />
+    </label>
   );
 }
 
@@ -237,6 +254,11 @@ export default function Installations() {
   const [selected, setSelected] = useState(null);
   const [downloadingId, setDownloadingId] = useState(null);
   const [downloadingSpecial, setDownloadingSpecial] = useState(null);
+  const [employees, setEmployees] = useState([]);
+  const [showInstallModal, setShowInstallModal] = useState(false);
+  const [installationForm, setInstallationForm] = useState(EMPTY_INSTALLATION);
+  const [formError, setFormError] = useState('');
+  const [creatingInstall, setCreatingInstall] = useState(false);
 
   const fetchItems = async (currentFilter) => {
     try {
@@ -268,6 +290,47 @@ export default function Installations() {
     const interval = setInterval(() => fetchItems(filter), 15000);
     return () => clearInterval(interval);
   }, [filter]);
+
+  useEffect(() => {
+    let stopped = false;
+    async function loadEmployees() {
+      try {
+        const { data } = await api.get('/employees');
+        if (!stopped) setEmployees(data.filter((employee) => employee.role === 'technician' && employee.is_active));
+      } catch (err) {
+        if (!stopped) setEmployees([]);
+      }
+    }
+    loadEmployees();
+    return () => { stopped = true; };
+  }, []);
+
+  const createInstallation = async () => {
+    const payload = {
+      ...installationForm,
+      customer_name: installationForm.customer_name.trim(),
+      customer_phone: installationForm.customer_phone.trim(),
+      location: installationForm.location.trim(),
+      assigned_employee_id: Number(installationForm.assigned_employee_id),
+    };
+    if (!payload.customer_name || !payload.customer_phone || !payload.location || !payload.assigned_employee_id) {
+      setFormError('Client name, phone number, location and technician are required.');
+      return;
+    }
+    setCreatingInstall(true);
+    setFormError('');
+    try {
+      const { data } = await api.post('/tickets/installations', payload);
+      setShowInstallModal(false);
+      setInstallationForm(EMPTY_INSTALLATION);
+      await fetchItems(filter);
+      navigate(`/dashboard/tickets/${data.id}`);
+    } catch (err) {
+      setFormError(err.response?.data?.error || 'Failed to create installation request');
+    } finally {
+      setCreatingInstall(false);
+    }
+  };
 
   const confirmInstallation = async (item) => {
     if (!window.confirm(`Confirm installation for ${item.customer_name || 'this customer'} and send confirmation SMS/email?`)) return;
@@ -333,9 +396,10 @@ export default function Installations() {
               CRM view for chat requests and public form submissions, including customer details and ID uploads.
             </p>
           </div>
-          <div className="rounded-2xl bg-white px-4 py-3 text-xs font-bold text-slate-500 shadow-sm">
-            Form submissions appear here automatically.
-          </div>
+          <button onClick={() => { setInstallationForm(EMPTY_INSTALLATION); setFormError(''); setShowInstallModal(true); }} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
+            <span className="text-xl leading-none">+</span>
+            Add Installation
+          </button>
         </div>
 
         {actionError && (
@@ -450,6 +514,36 @@ export default function Installations() {
         downloadingSpecial={downloadingSpecial}
         onSpecialStatus={updateSpecialStatus}
       />
+
+      {showInstallModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
+          <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
+            <div className="border-b border-slate-100 p-6">
+              <h3 className="text-lg font-black text-slate-950">Add installation request</h3>
+              <p className="mt-1 text-sm font-semibold text-slate-400">Assign the request to a technician. Only that technician receives the SMS.</p>
+            </div>
+            <div className="space-y-4 p-6">
+              {formError && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{formError}</div>}
+              <Field label="Name of client" value={installationForm.customer_name} onChange={(value) => setInstallationForm((form) => ({ ...form, customer_name: value }))} placeholder="As registered on the system" />
+              <Field label="Phone number / account number" value={installationForm.customer_phone} onChange={(value) => setInstallationForm((form) => ({ ...form, customer_phone: value }))} placeholder="+254..." />
+              <Field label="Detailed location" value={installationForm.location} onChange={(value) => setInstallationForm((form) => ({ ...form, location: value }))} placeholder="Estate, building, floor, nearest landmark..." />
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">Technician</span>
+                <select value={installationForm.assigned_employee_id} onChange={(event) => setInstallationForm((form) => ({ ...form, assigned_employee_id: event.target.value }))} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
+                  <option value="">Select technician</option>
+                  {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.phone}</option>)}
+                </select>
+              </label>
+            </div>
+            <div className="flex gap-3 px-6 pb-6">
+              <button onClick={() => setShowInstallModal(false)} className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">Cancel</button>
+              <button onClick={createInstallation} disabled={creatingInstall} className="flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50">
+                {creatingInstall ? 'Creating...' : 'Create and notify'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

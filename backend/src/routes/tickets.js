@@ -47,7 +47,13 @@ router.get('/summary', async (req, res) => {
          COUNT(*) FILTER (WHERE status IN ('open', 'in_progress', 'waiting_customer'))::int AS active,
          COUNT(*) FILTER (WHERE status = 'open')::int AS open,
          COUNT(*) FILTER (WHERE priority IN ('high', 'urgent') AND status IN ('open', 'in_progress', 'waiting_customer'))::int AS priority,
-         COUNT(*) FILTER (WHERE status IN ('resolved', 'closed'))::int AS closed
+         COUNT(*) FILTER (WHERE status IN ('resolved', 'closed'))::int AS closed,
+         COALESCE(
+           ROUND(AVG(EXTRACT(EPOCH FROM (COALESCE(resolved_at, updated_at) - opened_at))) FILTER (
+             WHERE status IN ('resolved', 'closed') AND opened_at IS NOT NULL AND COALESCE(resolved_at, updated_at) >= opened_at
+           )),
+           0
+         )::int AS avg_resolution_seconds
        FROM tickets t
        WHERE ${scoped}`,
       params
@@ -146,6 +152,7 @@ router.post('/', async (req, res) => {
       source: 'admin',
       summary: req.body.summary,
       messageText: req.body.summary,
+      forceNew: true,
     });
     if (!ticket) return res.status(400).json({ error: 'customer_phone is required' });
     res.status(201).json(ticket);
@@ -205,7 +212,7 @@ router.patch('/:id', async (req, res) => {
     const allowed = {
       status: ['open', 'in_progress', 'waiting_customer', 'resolved', 'closed'],
       priority: ['low', 'normal', 'high', 'urgent'],
-      category: ['technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general'],
+      category: ['technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general', 'manually_added'],
     };
     const updates = [];
     const params = [];

@@ -124,6 +124,7 @@ export default function ClientDashboard() {
   const [agentMenuOpen, setAgentMenuOpen] = useState(false);
   const [agentWorkspaces, setAgentWorkspaces] = useState([]);
   const [activeAgentWorkspaceId, setActiveAgentWorkspaceId] = useState(() => localStorage.getItem('active_agent_workspace_id') || '');
+  const [seenNotificationCount, setSeenNotificationCount] = useState(0);
   const [workspaceVersion, setWorkspaceVersion] = useState(0);
   const [expandedGroups, setExpandedGroups] = useState({ operations: true });
   const menuRef = useRef(null);
@@ -288,6 +289,7 @@ export default function ClientDashboard() {
 
   const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
   const showConversationSearch = location.pathname.startsWith('/dashboard/conversations');
+  const unreadNotificationCount = Math.max(0, Number(badges.conversations || 0) - Number(seenNotificationCount || 0));
   const signOut = () => { logout(); navigate('/login'); };
   const toggleGroup = (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] }));
   const activeAgentWorkspace = agentWorkspaces.find((agent) => String(agent.id) === String(activeAgentWorkspaceId)) || agentWorkspaces[0] || null;
@@ -340,7 +342,7 @@ export default function ClientDashboard() {
           {expressnet && <div className="px-6 pt-6 pb-5"><Brand expressnet={expressnet} /></div>}
           {!expressnet && <div className="h-4 shrink-0" />}
           <AiSidebarHero />
-          <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-4 pb-4">{navList()}</nav>
+          <nav className="flex-1 overflow-y-auto px-4 pb-4 pr-2">{navList()}</nav>
         </aside>
 
         <section className="dashboard-main flex-1 min-w-0 min-h-0 flex flex-col overflow-hidden rounded-[28px] border border-[#dce3f1] bg-white shadow-[0_18px_46px_rgba(31,41,80,0.08)]">
@@ -354,12 +356,12 @@ export default function ClientDashboard() {
               {showConversationSearch && <GlobalConversationSearch />}
               <button
                 type="button"
-                onClick={() => navigate('/dashboard/conversations')}
-                title={`${badges.conversations || 0} new messages`}
+                onClick={() => { setSeenNotificationCount(Number(badges.conversations || 0)); navigate('/dashboard/conversations'); }}
+                title={`${unreadNotificationCount || 0} new messages`}
                 className="relative hidden h-12 w-12 items-center justify-center rounded-2xl bg-white text-[#263150] sm:flex"
               >
                 <BellIcon />
-                {badges.conversations > 0 && <span className="absolute right-2 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5b22f5] px-1 text-[10px] font-black text-white">{badges.conversations > 99 ? '99+' : badges.conversations}</span>}
+                {unreadNotificationCount > 0 && <span className="absolute right-2 top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#5b22f5] px-1 text-[10px] font-black text-white">{unreadNotificationCount > 99 ? '99+' : unreadNotificationCount}</span>}
               </button>
               {agentWorkspaces.length > 1 && (
                 <div className="relative" ref={agentMenuRef}>
@@ -431,7 +433,7 @@ export default function ClientDashboard() {
       <aside className={`fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] bg-white text-[#0d1438] flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-3 border-b border-[#e2e7f4] flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center text-[#263150]"><CloseIcon className="w-5 h-5" /></button></div>
         <AiSidebarHero compact />
-        <nav className="no-visible-scrollbar flex-1 overflow-y-auto px-4 py-3 pb-6">{navList(true)}</nav>
+        <nav className="flex-1 overflow-y-auto px-4 py-3 pb-6 pr-2">{navList(true)}</nav>
       </aside>
     </div>
   );

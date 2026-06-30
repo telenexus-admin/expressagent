@@ -426,7 +426,7 @@ const schema = `
   );
 
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_category_check;
-  ALTER TABLE tickets ADD CONSTRAINT tickets_category_check CHECK (category IN ('technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general'));
+  ALTER TABLE tickets ADD CONSTRAINT tickets_category_check CHECK (category IN ('technical', 'billing', 'installation', 'complaint', 'human_support', 'feedback', 'general', 'manually_added'));
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_priority_check;
   ALTER TABLE tickets ADD CONSTRAINT tickets_priority_check CHECK (priority IN ('low', 'normal', 'high', 'urgent'));
   ALTER TABLE tickets DROP CONSTRAINT IF EXISTS tickets_status_check;

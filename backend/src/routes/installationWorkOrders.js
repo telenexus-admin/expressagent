@@ -11,7 +11,7 @@ router.get('/:token', async (req, res) => {
   try {
     await ensureInstallationWorkOrderSchema();
     const result = await db.query(
-      `SELECT wo.id, wo.public_token, wo.status, wo.installation_started_at, wo.installation_completed_at,
+      `SELECT wo.id, wo.public_token, wo.status, wo.technician_status, wo.installation_started_at, wo.installation_completed_at,
               wo.installation_time_minutes, wo.power_dcbs, wo.signal_power, wo.equipment_used,
               wo.notes, wo.submitted_at, wo.created_at,
               t.id AS ticket_id, t.title, t.customer_phone, t.customer_name, t.summary,

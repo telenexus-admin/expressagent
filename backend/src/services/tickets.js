@@ -274,26 +274,38 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
   const customer = customerName ? `${customerName} (+${customerPhone})` : `+${customerPhone}`;
   const link = ticketLink(ticket.id);
   let installationFormLine = '';
+  let locationLine = '';
   if (ticket.category === 'installation') {
     const workOrder = await getOrCreateInstallationWorkOrder(ticket, assignment.employeeId);
     const formUrl = buildInstallationWorkOrderUrl(workOrder.public_token);
+    const location = clean(summary).replace(/^Location:\s*/i, '') || 'Not provided';
+    locationLine = `Location: ${location}\n`;
     installationFormLine = formUrl
       ? `\n\nTechnician installation form:\n${formUrl}\n\nRecord equipment used, installation time, power/DCBs and notes after the site visit.`
       : '\n\nTechnician installation form is ready, but PUBLIC_FRONTEND_URL is not configured.';
   }
-  const message =
-    `New ticket assigned to you\n\n` +
-    `Ticket #${ticket.id}: ${ticket.title}\n` +
-    `Priority: ${ticket.priority}\n` +
-    `Customer: ${customer}\n` +
-    `Issue: ${summary || ticket.summary || ticket.last_message || 'No summary yet'}` +
-    (link ? `\n\nOpen ticket: ${link}` : '') +
-    installationFormLine;
+  const message = ticket.category === 'installation'
+    ? `NEW INSTALLATION REQUEST\n` +
+      `Name: ${customerName || ticket.customer_name || 'Customer'}\n` +
+      `Phone Number: ${customerPhone}\n` +
+      locationLine +
+      (link ? `\nTicket: ${link}` : '') +
+      installationFormLine
+    : `New ticket assigned to you\n\n` +
+      `Ticket #${ticket.id}: ${ticket.title}\n` +
+      `Priority: ${ticket.priority}\n` +
+      `Customer: ${customer}\n` +
+      `Issue: ${summary || ticket.summary || ticket.last_message || 'No summary yet'}` +
+      (link ? `\n\nOpen ticket: ${link}` : '');
 
   const client = await loadClientForWorkflowNotify(ticket.client_id);
   if (!client) return { status: 'failed', error: 'Client not found for workflow notification' };
   const channels = normalizeWorkflowChannels(assignment.notificationChannels);
-  if (ticket.category === 'installation' && !channels.includes('whatsapp')) channels.push('whatsapp');
+  if (ticket.category === 'installation' && assignment.smsOnly) {
+    channels.splice(0, channels.length, 'sms');
+  } else if (ticket.category === 'installation' && !channels.includes('whatsapp')) {
+    channels.push('whatsapp');
+  }
   const recipients = Array.isArray(assignment.employees) && assignment.employees.length ? assignment.employees : [assignment];
   const recipientResults = await Promise.all(recipients.map(async (employee) => ({
     employee,
@@ -481,6 +493,10 @@ async function createOrUpdateTicket(signal) {
   const source = clean(signal.source, 'system');
   const summary = clean(signal.summary, body || title);
   const assignment = await findWorkflowAssignment(clientId, category, signal.intent);
+  const forcedAssignment = signal.assignedEmployeeId || signal.assigned_employee_id
+    ? await loadAssignedEmployee(clientId, signal.assignedEmployeeId || signal.assigned_employee_id, signal.smsOnly || signal.sms_only)
+    : null;
+  const selectedAssignment = forcedAssignment || assignment;
 
   const params = [clientId, category];
   let lookup = `client_id = $1::int AND category = $2::text AND status = ANY($${params.length + 1}::text[])`;
@@ -493,10 +509,12 @@ async function createOrUpdateTicket(signal) {
     lookup += ` AND customer_phone = $${params.length}::text`;
   }
 
-  const existing = await db.query(
-    `SELECT * FROM tickets WHERE ${lookup} ORDER BY updated_at DESC LIMIT 1`,
-    params
-  );
+  const existing = signal.forceNew
+    ? { rows: [] }
+    : await db.query(
+      `SELECT * FROM tickets WHERE ${lookup} ORDER BY updated_at DESC LIMIT 1`,
+      params
+    );
 
   if (existing.rows[0]) {
     const ticket = existing.rows[0];
@@ -517,18 +535,18 @@ async function createOrUpdateTicket(signal) {
         nextPriority,
         summary || null,
         body || null,
-        assignment?.employeeId ? Number(assignment.employeeId) : null,
+        selectedAssignment?.employeeId ? Number(selectedAssignment.employeeId) : null,
       ]
     );
     let latestTicket = updated.rows[0];
-    if (assignment?.employeeId && !ticket.assigned_employee_id) {
+    if (selectedAssignment?.employeeId && !ticket.assigned_employee_id) {
       await addTicketEvent(ticket.id, {
         actor_type: 'system',
         event_type: 'assigned',
-        body: `Assigned to ${assignment.employeeName}`,
-        metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
+        body: `Assigned to ${selectedAssignment.employeeName}`,
+        metadata: { employee_id: selectedAssignment.employeeId, intent_key: selectedAssignment.intentKey },
       });
-      latestTicket = await recordAssignmentNotification(latestTicket, assignment, {
+      latestTicket = await recordAssignmentNotification(latestTicket, selectedAssignment, {
         customerPhone,
         customerName: signal.customerName || signal.customer_name || null,
         summary,
@@ -562,7 +580,7 @@ async function createOrUpdateTicket(signal) {
       source,
       summary || null,
       body || null,
-      assignment?.employeeId ? Number(assignment.employeeId) : null,
+      selectedAssignment?.employeeId ? Number(selectedAssignment.employeeId) : null,
     ]
   );
   const ticket = inserted.rows[0];
@@ -572,14 +590,14 @@ async function createOrUpdateTicket(signal) {
     body,
     metadata: { source, category, priority },
   });
-  if (assignment?.employeeId) {
+  if (selectedAssignment?.employeeId) {
     await addTicketEvent(ticket.id, {
       actor_type: 'system',
       event_type: 'assigned',
-      body: `Assigned to ${assignment.employeeName}`,
-      metadata: { employee_id: assignment.employeeId, intent_key: assignment.intentKey },
+      body: `Assigned to ${selectedAssignment.employeeName}`,
+      metadata: { employee_id: selectedAssignment.employeeId, intent_key: selectedAssignment.intentKey },
     });
-    const notified = await recordAssignmentNotification(ticket, assignment, {
+    const notified = await recordAssignmentNotification(ticket, selectedAssignment, {
       customerPhone,
       customerName: signal.customerName || signal.customer_name || null,
       summary,
@@ -587,6 +605,33 @@ async function createOrUpdateTicket(signal) {
     return recordHighPriorityClientAlerts(notified);
   }
   return recordHighPriorityClientAlerts(ticket);
+}
+
+async function loadAssignedEmployee(clientId, employeeId, smsOnly = false) {
+  const result = await db.query(
+    `SELECT id, name, phone, email
+     FROM employees
+     WHERE id = $1 AND client_id = $2 AND is_active = TRUE
+     LIMIT 1`,
+    [employeeId, clientId]
+  );
+  const employee = result.rows[0];
+  if (!employee) return null;
+  return {
+    employeeId: employee.id,
+    employeeName: employee.name,
+    employeePhone: employee.phone,
+    employeeEmail: employee.email,
+    employees: [{
+      employeeId: employee.id,
+      employeeName: employee.name,
+      employeePhone: employee.phone,
+      employeeEmail: employee.email,
+    }],
+    notificationChannels: ['sms'],
+    smsOnly: Boolean(smsOnly),
+    intentKey: 'manual_installation',
+  };
 }
 
 async function ticketFromIntent({ client, conversation, intent, messageText, source }) {

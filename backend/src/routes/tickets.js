@@ -155,6 +155,47 @@ router.post('/', async (req, res) => {
   }
 });
 
+router.post('/installations', async (req, res) => {
+  try {
+    await ensureTicketSchema();
+    const clientId = req.scope.isSuperadmin ? (req.body.client_id || req.scope.clientId) : req.scope.clientId;
+    if (!clientId) return res.status(400).json({ error: 'client_id is required' });
+
+    const customerName = String(req.body.customer_name || '').trim();
+    const customerPhone = String(req.body.customer_phone || '').trim();
+    const location = String(req.body.location || '').trim();
+    const assignedEmployeeId = req.body.assigned_employee_id ? Number(req.body.assigned_employee_id) : null;
+    if (!customerName || !customerPhone || !location || !assignedEmployeeId) {
+      return res.status(400).json({ error: 'Client name, phone number, location and technician are required' });
+    }
+
+    const employee = await db.query(
+      `SELECT id FROM employees WHERE id = $1 AND client_id = $2 AND role = 'technician' AND is_active = TRUE LIMIT 1`,
+      [assignedEmployeeId, clientId]
+    );
+    if (!employee.rows[0]) return res.status(400).json({ error: 'Select an active technician for this account' });
+
+    const ticket = await createOrUpdateTicket({
+      clientId,
+      customerPhone,
+      customerName,
+      title: `New installation request - ${customerName}`,
+      category: 'installation',
+      priority: req.body.priority || 'normal',
+      source: 'admin',
+      summary: `Location: ${location}`,
+      messageText: `Manual installation request for ${customerName}. Location: ${location}`,
+      assignedEmployeeId,
+      smsOnly: true,
+      forceNew: true,
+    });
+    res.status(201).json(ticket);
+  } catch (err) {
+    console.error('POST /tickets/installations error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.patch('/:id', async (req, res) => {
   try {
     await ensureTicketSchema();
@@ -244,6 +285,19 @@ router.post('/:id/events', async (req, res) => {
     res.status(201).json(events.rows);
   } catch (err) {
     console.error('POST /tickets/:id/events error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.delete('/:id', async (req, res) => {
+  try {
+    await ensureTicketSchema();
+    const ticket = await loadScopedTicket(req, req.params.id);
+    if (!ticket) return res.status(404).json({ error: 'Ticket not found' });
+    await db.query(`DELETE FROM tickets WHERE id = $1`, [ticket.id]);
+    res.json({ success: true });
+  } catch (err) {
+    console.error('DELETE /tickets/:id error:', err.message);
     res.status(500).json({ error: 'Server error' });
   }
 });

@@ -1,5 +1,6 @@
 const crypto = require('crypto');
 const db = require('../db');
+const { sendSMS, hasSMSConfig } = require('./sms');
 
 async function ensureInstallationWorkOrderSchema() {
   await db.query(`
@@ -10,6 +11,7 @@ async function ensureInstallationWorkOrderSchema() {
       assigned_employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
       public_token VARCHAR(80) UNIQUE NOT NULL,
       status VARCHAR(20) NOT NULL DEFAULT 'open',
+      technician_status VARCHAR(20) NOT NULL DEFAULT 'pending',
       installation_started_at TIMESTAMP WITH TIME ZONE,
       installation_completed_at TIMESTAMP WITH TIME ZONE,
       installation_time_minutes INTEGER,
@@ -25,6 +27,9 @@ async function ensureInstallationWorkOrderSchema() {
   `);
   await db.query(`ALTER TABLE installation_work_orders DROP CONSTRAINT IF EXISTS installation_work_orders_status_check`);
   await db.query(`ALTER TABLE installation_work_orders ADD CONSTRAINT installation_work_orders_status_check CHECK (status IN ('open', 'submitted', 'closed'))`);
+  await db.query(`ALTER TABLE installation_work_orders ADD COLUMN IF NOT EXISTS technician_status VARCHAR(20) NOT NULL DEFAULT 'pending'`);
+  await db.query(`ALTER TABLE installation_work_orders DROP CONSTRAINT IF EXISTS installation_work_orders_technician_status_check`);
+  await db.query(`ALTER TABLE installation_work_orders ADD CONSTRAINT installation_work_orders_technician_status_check CHECK (technician_status IN ('done', 'pending', 'rescheduled'))`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_installation_work_orders_client ON installation_work_orders(client_id, status, created_at DESC)`);
 }
 
@@ -69,6 +74,42 @@ function normalizeEquipmentItems(value) {
     .slice(0, 80);
 }
 
+function normalizeTechnicianStatus(value) {
+  const status = String(value || '').trim().toLowerCase();
+  return ['done', 'pending', 'rescheduled'].includes(status) ? status : 'pending';
+}
+
+function customerStatusMessage(workOrder, technicianStatus) {
+  const name = workOrder.customer_name || 'Customer';
+  if (technicianStatus === 'done') {
+    return `Hello ${name}, your installation has been marked as done. Thank you for choosing us.`;
+  }
+  if (technicianStatus === 'rescheduled') {
+    return `Hello ${name}, your installation has been rescheduled. Our team will follow up with the next visit details.`;
+  }
+  return `Hello ${name}, your installation request is still pending. Our technician will continue following up.`;
+}
+
+async function notifyCustomerInstallationStatus(workOrder, technicianStatus) {
+  const phone = String(workOrder.customer_phone || '').trim();
+  if (!phone) return { status: 'skipped', error: 'Customer phone missing' };
+
+  const clientRes = await db.query(
+    `SELECT id, sms_provider, sms_api_key, sms_sender_id, sms_partner_id
+     FROM clients WHERE id = $1 LIMIT 1`,
+    [workOrder.client_id]
+  );
+  const client = clientRes.rows[0];
+  if (!client || !hasSMSConfig({ client })) return { status: 'skipped', error: 'SMS provider is not configured' };
+
+  try {
+    await sendSMS(phone, customerStatusMessage(workOrder, technicianStatus), { client });
+    return { status: 'sent', error: null };
+  } catch (err) {
+    return { status: 'failed', error: err.message || 'Failed to send customer installation SMS' };
+  }
+}
+
 async function submitInstallationWorkOrder(token, payload) {
   await ensureInstallationWorkOrderSchema();
   const currentRes = await db.query(
@@ -83,6 +124,7 @@ async function submitInstallationWorkOrder(token, payload) {
   if (!workOrder) return null;
 
   const equipment = normalizeEquipmentItems(payload.equipment_used);
+  const technicianStatus = normalizeTechnicianStatus(payload.technician_status || payload.status);
   const startedAt = payload.installation_started_at ? new Date(payload.installation_started_at) : null;
   const completedAt = payload.installation_completed_at ? new Date(payload.installation_completed_at) : null;
   const minutes = Number(payload.installation_time_minutes || 0);
@@ -94,6 +136,7 @@ async function submitInstallationWorkOrder(token, payload) {
     const updated = await trx.query(
       `UPDATE installation_work_orders
        SET status = 'submitted',
+           technician_status = $9,
            installation_started_at = $1,
            installation_completed_at = $2,
            installation_time_minutes = $3,
@@ -114,6 +157,7 @@ async function submitInstallationWorkOrder(token, payload) {
         JSON.stringify(equipment),
         cleanText(payload.notes, 2000) || null,
         workOrder.id,
+        technicianStatus,
       ]
     );
 
@@ -129,25 +173,33 @@ async function submitInstallationWorkOrder(token, payload) {
 
     await trx.query(
       `UPDATE tickets
-       SET status = 'in_progress',
+       SET status = $3,
            summary = COALESCE(summary, $2),
            updated_at = NOW()
        WHERE id = $1`,
-      [workOrder.ticket_id, `Installation site report submitted with ${equipment.length} equipment line(s).`]
+      [
+        workOrder.ticket_id,
+        `Installation ${technicianStatus}. Site report submitted with ${equipment.length} equipment line(s).`,
+        technicianStatus === 'done' ? 'resolved' : 'in_progress',
+      ]
     );
 
     await trx.query('COMMIT');
+    const smsResult = await notifyCustomerInstallationStatus(workOrder, technicianStatus);
     await db.query(
       `INSERT INTO ticket_events (ticket_id, actor_type, event_type, body, metadata)
        VALUES ($1, 'system', 'note', $2, $3::jsonb)`,
       [
         workOrder.ticket_id,
-        `Technician installation report submitted. Equipment lines: ${equipment.length}.`,
+        `Technician marked installation ${technicianStatus}. Equipment lines: ${equipment.length}. Customer SMS: ${smsResult.status}.`,
         JSON.stringify({
           work_order_id: workOrder.id,
+          technician_status: technicianStatus,
           equipment_used: equipment,
           power_dcbs: cleanText(payload.power_dcbs, 120) || null,
           signal_power: cleanText(payload.signal_power, 120) || null,
+          customer_sms_status: smsResult.status,
+          customer_sms_error: smsResult.error,
         }),
       ]
     );

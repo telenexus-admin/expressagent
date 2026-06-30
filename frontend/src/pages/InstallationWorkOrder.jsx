@@ -26,6 +26,7 @@ export default function InstallationWorkOrder() {
   const [inventory, setInventory] = useState([]);
   const [equipment, setEquipment] = useState([{ ...emptyEquipment }]);
   const [form, setForm] = useState({
+    technician_status: 'pending',
     installation_started_at: '',
     installation_completed_at: '',
     installation_time_minutes: '',
@@ -48,6 +49,7 @@ export default function InstallationWorkOrder() {
         const used = Array.isArray(data.work_order?.equipment_used) ? data.work_order.equipment_used : [];
         if (used.length) setEquipment(used.map((item) => ({ ...emptyEquipment, ...item, inventory_item_id: item.inventory_item_id || '' })));
         setForm({
+          technician_status: data.work_order?.technician_status || 'pending',
           installation_started_at: data.work_order?.installation_started_at ? String(data.work_order.installation_started_at).slice(0, 16) : '',
           installation_completed_at: data.work_order?.installation_completed_at ? String(data.work_order.installation_completed_at).slice(0, 16) : '',
           installation_time_minutes: data.work_order?.installation_time_minutes || '',
@@ -92,7 +94,7 @@ export default function InstallationWorkOrder() {
         quantity: Number(item.quantity || 0),
       }))
       .filter((item) => (item.inventory_item_id || item.name.trim()) && item.quantity > 0);
-    if (cleanEquipment.length === 0) {
+    if (form.technician_status === 'done' && cleanEquipment.length === 0) {
       setStatus({ type: 'error', message: 'Add at least one equipment item used.' });
       return;
     }
@@ -147,6 +149,18 @@ export default function InstallationWorkOrder() {
           <section className="rounded-[28px] bg-white p-5 shadow-xl shadow-indigo-100/50">
             <h2 className="text-sm font-black uppercase tracking-[0.16em] text-slate-500">Installation Details</h2>
             <div className="mt-5 grid gap-4 sm:grid-cols-2">
+              <label className="block sm:col-span-2">
+                <span className="mb-2 block text-[11px] font-black uppercase tracking-wide text-slate-500">Installation status</span>
+                <select
+                  value={form.technician_status}
+                  onChange={(event) => update('technician_status', event.target.value)}
+                  className="w-full rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-900 outline-none focus:border-[#3535FF] focus:ring-4 focus:ring-indigo-50"
+                >
+                  <option value="done">Done</option>
+                  <option value="pending">Pending</option>
+                  <option value="rescheduled">Rescheduled to another day</option>
+                </select>
+              </label>
               <Field label="Started at" type="datetime-local" value={form.installation_started_at} onChange={(value) => update('installation_started_at', value)} />
               <Field label="Completed at" type="datetime-local" value={form.installation_completed_at} onChange={(value) => update('installation_completed_at', value)} />
               <Field label="Time taken minutes" type="number" value={form.installation_time_minutes} onChange={(value) => update('installation_time_minutes', value)} placeholder="90" />

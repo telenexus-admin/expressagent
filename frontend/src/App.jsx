@@ -168,6 +168,7 @@ export default function App() {
               <Route path=":id" element={<ChatView />} />
             </Route>
             <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
+            <Route path="tickets/:id" element={<PermissionRoute permission="tickets"><Tickets detailMode /></PermissionRoute>} />
             <Route path="invoices" element={<PermissionRoute permission="invoices"><InvoiceManagement /></PermissionRoute>} />
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />

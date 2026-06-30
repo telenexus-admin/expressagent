@@ -708,13 +708,13 @@ export default function Tickets({ detailMode = false }) {
       </div>
 
       {showTicketModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
-          <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
-            <div className="border-b border-slate-100 p-6">
+        <div className="fixed inset-0 z-50 flex items-center justify-center overflow-y-auto bg-slate-950/50 p-3 sm:p-4">
+          <div className="flex max-h-[calc(100vh-2rem)] w-full max-w-xl flex-col overflow-hidden rounded-3xl bg-white shadow-2xl">
+            <div className="shrink-0 border-b border-slate-100 p-5 sm:p-6">
               <h3 className="text-lg font-black text-slate-950">Add manual ticket</h3>
               <p className="mt-1 text-sm font-semibold text-slate-400">Create a support ticket from a call, walk-in request, or internal note.</p>
             </div>
-            <div className="space-y-4 p-6">
+            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-5 sm:p-6">
               {formError && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{formError}</div>}
               <Field label="Requester name" value={ticketForm.customer_name} onChange={(value) => setTicketForm((form) => ({ ...form, customer_name: value }))} placeholder="Customer or requester name" />
               <Field label="Phone number / account number" value={ticketForm.customer_phone} onChange={(value) => setTicketForm((form) => ({ ...form, customer_phone: value }))} placeholder="+254..." />
@@ -733,9 +733,9 @@ export default function Tickets({ detailMode = false }) {
               </label>
               <TextArea label="Details" value={ticketForm.summary} onChange={(value) => setTicketForm((form) => ({ ...form, summary: value }))} placeholder="Describe the issue, promise made, or next action..." />
             </div>
-            <div className="flex gap-3 px-6 pb-6">
+            <div className="shrink-0 border-t border-slate-100 bg-white p-5 sm:flex sm:gap-3 sm:px-6 sm:pb-6">
               <button onClick={() => setShowTicketModal(false)} className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">Cancel</button>
-              <button onClick={createTicket} disabled={saving} className="flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50">
+              <button onClick={createTicket} disabled={saving} className="mt-3 flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50 sm:mt-0">
                 {saving ? 'Creating...' : 'Create ticket'}
               </button>
             </div>

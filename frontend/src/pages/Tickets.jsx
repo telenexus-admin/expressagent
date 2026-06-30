@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import api from '../utils/api';
+import { ActivityIcon, CheckCircleIcon, DotsVerticalIcon, TicketIcon } from '../components/Icons';
 
 const STATUS_OPTIONS = [
   ['active', 'Active'],
@@ -78,6 +79,98 @@ const NOTIFY_LABELS = {
   failed: 'Alert failed',
 };
 
+function SearchIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function SortIcon({ className = 'h-3 w-3' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m8 7 4-4 4 4" />
+      <path d="M12 3v18" />
+      <path d="m16 17-4 4-4-4" />
+    </svg>
+  );
+}
+
+function GridIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="4" width="6" height="6" rx="1" />
+      <rect x="14" y="4" width="6" height="6" rx="1" />
+      <rect x="4" y="14" width="6" height="6" rx="1" />
+      <rect x="14" y="14" width="6" height="6" rx="1" />
+    </svg>
+  );
+}
+
+function ListIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M8 6h12M8 12h12M8 18h12" />
+      <path d="M4 6h.01M4 12h.01M4 18h.01" />
+    </svg>
+  );
+}
+
+function CalendarIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M16 3v4M8 3v4M3 10h18" />
+    </svg>
+  );
+}
+
+function MonitorIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="4" y="5" width="16" height="11" rx="2" />
+      <path d="M8 21h8M12 16v5" />
+    </svg>
+  );
+}
+
+function HeadsetIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 13a8 8 0 0 1 16 0" />
+      <path d="M4 13v3a2 2 0 0 0 2 2h1v-7H6a2 2 0 0 0-2 2ZM20 13v3a2 2 0 0 1-2 2h-1v-7h1a2 2 0 0 1 2 2Z" />
+      <path d="M15 20h-3" />
+    </svg>
+  );
+}
+
+function HourglassIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M6 3h12M6 21h12M8 3v4a4 4 0 0 0 2 3.46L12 12l2-1.54A4 4 0 0 0 16 7V3M16 21v-4a4 4 0 0 0-2-3.46L12 12l-2 1.54A4 4 0 0 0 8 17v4" />
+    </svg>
+  );
+}
+
+function TimerIcon({ className = 'h-5 w-5' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="13" r="8" />
+      <path d="M12 9v5l3 2M9 2h6M12 2v3" />
+    </svg>
+  );
+}
+
+function SparkLine({ color = '#6d6cfb' }) {
+  return (
+    <svg viewBox="0 0 72 24" className="h-7 w-16" fill="none">
+      <path d="M2 18c8 0 8-2 15-2s8 5 16 5 9-13 18-13 10 3 19-5" stroke={color} strokeWidth="2" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function formatDate(value) {
   if (!value) return '';
   return new Date(value).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
@@ -86,6 +179,11 @@ function formatDate(value) {
 function formatCreateDate(value) {
   if (!value) return '';
   return new Date(value).toLocaleDateString([], { day: '2-digit', month: 'short', year: 'numeric' });
+}
+
+function pct(value, total) {
+  if (!total) return '0.0% of total';
+  return `${((Number(value || 0) / Number(total || 1)) * 100).toFixed(1)}% of total`;
 }
 
 function initials(name = '') {
@@ -97,8 +195,8 @@ function StatusBadge({ status }) {
   const label = STATUS_LABELS[status] || status || 'Open';
   const dot = STATUS_DOT_STYLES[status] || STATUS_DOT_STYLES.open;
   return (
-    <span className={`inline-flex items-center gap-1.5 text-xs font-black ${dot.split(' ').slice(1).join(' ')}`}>
-      <span className={`h-2.5 w-2.5 rounded-full ${dot.split(' ')[0]}`} />
+    <span className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-black ${dot.split(' ').slice(1).join(' ')} ${status === 'open' ? 'bg-emerald-50' : status === 'resolved' || status === 'closed' ? 'bg-red-50' : 'bg-amber-50'}`}>
+      <span className={`h-2 w-2 rounded-full ${dot.split(' ')[0]}`} />
       {label}
     </span>
   );
@@ -108,24 +206,43 @@ function PriorityBadge({ priority }) {
   const value = priority || 'normal';
   const label = value === 'normal' ? 'Medium' : value.charAt(0).toUpperCase() + value.slice(1);
   return (
-    <span className={`inline-flex min-w-[64px] justify-center rounded-md px-3 py-1.5 text-xs font-black ${PRIORITY_STYLES[value] || PRIORITY_STYLES.normal}`}>
+    <span className={`inline-flex min-w-[64px] items-center justify-center gap-1 rounded-full px-3 py-1.5 text-xs font-black ${PRIORITY_STYLES[value] || PRIORITY_STYLES.normal}`}>
       {label}
+      {['urgent', 'high'].includes(value) && <span className="text-[10px]">⌃</span>}
     </span>
   );
 }
 
 function Select({ value, onChange, options, label }) {
   return (
-    <label className="flex min-w-[150px] flex-col gap-1 text-[11px] font-black uppercase text-slate-400">
+    <label className="flex min-w-[150px] flex-col gap-1.5 text-[10px] font-black text-[#6d7891]">
       {label}
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="h-10 rounded-xl border border-slate-200 bg-white px-3 text-sm font-semibold normal-case text-slate-700 outline-none focus:border-[#3535FF]"
+        className="h-11 rounded-xl border border-[#e1e8f5] bg-white px-3 text-xs font-black normal-case text-[#17264d] shadow-[0_10px_25px_rgba(41,57,95,0.06)] outline-none focus:border-[#5b5bff]"
       >
         {options.map(([key, text]) => <option key={key} value={key}>{text}</option>)}
       </select>
     </label>
+  );
+}
+
+function MetricCard({ title, value, subtitle, Icon, iconClass, lineColor }) {
+  return (
+    <div className="flex min-h-[104px] items-center justify-between rounded-2xl border border-[#e7edf8] bg-white px-5 shadow-[0_16px_36px_rgba(33,51,88,0.08)]">
+      <div className="flex items-center gap-4">
+        <div className={`flex h-14 w-14 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
+          <Icon className="h-6 w-6" />
+        </div>
+        <div>
+          <div className="text-[11px] font-black text-[#64708c]">{title}</div>
+          <div className="mt-1 text-3xl font-black leading-none text-[#17264d]">{value}</div>
+          <div className="mt-2 text-[11px] font-bold text-[#9aa7bb]">{subtitle}</div>
+        </div>
+      </div>
+      <SparkLine color={lineColor} />
+    </div>
   );
 }
 
@@ -150,6 +267,8 @@ export default function Tickets({ detailMode = false }) {
   const [showInstallModal, setShowInstallModal] = useState(false);
   const [installationForm, setInstallationForm] = useState(EMPTY_INSTALLATION);
   const [formError, setFormError] = useState('');
+  const [summary, setSummary] = useState({ active: 0, open: 0, priority: 0, closed: 0 });
+  const [viewMode, setViewMode] = useState('list');
 
   const params = useMemo(() => {
     const query = { status, category, priority };
@@ -194,9 +313,20 @@ export default function Tickets({ detailMode = false }) {
     }
   }, []);
 
+  const loadSummary = useCallback(async () => {
+    if (detailMode) return;
+    try {
+      const { data } = await api.get('/tickets/summary');
+      setSummary(data || {});
+    } catch (err) {
+      setSummary({ active: 0, open: 0, priority: 0, closed: 0 });
+    }
+  }, [detailMode]);
+
   useEffect(() => { loadTickets(); }, [loadTickets]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
   useEffect(() => { loadEmployees(); }, [loadEmployees]);
+  useEffect(() => { loadSummary(); }, [loadSummary]);
 
   const updateTicket = async (patch) => {
     if (!detail?.ticket?.id || saving) return;
@@ -346,59 +476,72 @@ export default function Tickets({ detailMode = false }) {
     );
   }
 
+  const totalTickets = Math.max(Number(summary.active || 0) + Number(summary.closed || 0), tickets.length);
+  const openTickets = Number(summary.open || 0);
+  const progressTickets = tickets.filter((ticket) => ticket.status === 'in_progress' || ticket.status === 'waiting_customer').length;
+  const resolvedTickets = Number(summary.closed || 0);
+
   return (
-    <div className="min-h-full overflow-y-auto bg-[#f5f7fb] px-5 py-6 text-[#354052]">
-      <div className="mx-auto max-w-[1400px]">
-        <div className="mb-7 flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
-          <div>
-            <h2 className="text-xl font-black tracking-normal text-[#394455]">All Support Tickets</h2>
-            <p className="mt-1 text-xs font-semibold text-[#aab6c4]">List of ticket opened by Customer</p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
-            <button onClick={() => setShowInstallModal(true)} className="flex h-11 items-center gap-2 rounded-full bg-[#3535FF] px-5 text-sm font-black text-white shadow-lg shadow-indigo-100 hover:bg-[#2828DD]">
-              <span className="text-xl leading-none">+</span>
-              Add Installation
-            </button>
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ticket, phone, issue..." className="h-11 w-[260px] rounded-full border border-[#dce5ee] bg-white px-5 text-xs font-black text-[#516072] outline-none placeholder:text-[#b4bfcb] focus:border-[#b9c9d8]" />
+    <div className="min-h-full overflow-y-auto bg-[#f7f9fe] px-4 py-5 text-[#17264d]">
+      <div className="mx-auto max-w-[1500px]">
+        <div className="mb-6 grid gap-4 xl:grid-cols-5">
+          <MetricCard title="Total Tickets" value={totalTickets} subtitle="All time" Icon={TicketIcon} iconClass="bg-[#eef3ff] text-[#315dff]" lineColor="#7890ff" />
+          <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" />
+          <MetricCard title="In Progress" value={progressTickets} subtitle={pct(progressTickets, totalTickets)} Icon={HourglassIcon} iconClass="bg-[#fff4df] text-[#ffa51e]" lineColor="#ffb43c" />
+          <MetricCard title="Resolved" value={resolvedTickets} subtitle={pct(resolvedTickets, totalTickets)} Icon={CheckCircleIcon} iconClass="bg-[#f4edff] text-[#6f43ff]" lineColor="#8b6cff" />
+          <MetricCard title="Avg. Resolution Time" value="2.4h" subtitle="This month" Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" />
+        </div>
+
+        <div className="mb-5 flex flex-col gap-4 xl:flex-row xl:items-end xl:justify-between">
+          <button onClick={() => setShowInstallModal(true)} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
+            <span className="text-xl leading-none">+</span>
+            Add Installation
+          </button>
+
+          <div className="flex flex-1 flex-wrap items-end gap-4 xl:justify-end">
+            <label className="flex min-w-[330px] flex-col gap-1.5 text-[10px] font-black text-[#6d7891]">
+              <span className="opacity-0">Search</span>
+              <span className="flex h-11 items-center gap-3 rounded-xl border border-[#e1e8f5] bg-white px-4 shadow-[0_10px_25px_rgba(41,57,95,0.06)]">
+                <SearchIcon className="h-4 w-4 text-[#8794ad]" />
+                <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search ticket, phone, issue..." className="min-w-0 flex-1 bg-transparent text-xs font-black text-[#17264d] outline-none placeholder:text-[#9aa7bb]" />
+                <span className="rounded-md bg-[#f2f5fb] px-2 py-1 text-[10px] font-black text-[#8c98af]">⌘ K</span>
+              </span>
+            </label>
             <Select label="Status" value={status} onChange={setStatus} options={STATUS_OPTIONS} />
             <Select label="Category" value={category} onChange={setCategory} options={CATEGORY_OPTIONS} />
             <Select label="Priority" value={priority} onChange={setPriority} options={PRIORITY_OPTIONS} />
+            <div className="flex flex-col gap-1.5 text-[10px] font-black text-[#6d7891]">
+              View
+              <div className="flex h-11 items-center gap-1 rounded-xl border border-[#e1e8f5] bg-white p-1 shadow-[0_10px_25px_rgba(41,57,95,0.06)]">
+                <button onClick={() => setViewMode('list')} className={`flex h-8 w-10 items-center justify-center rounded-lg ${viewMode === 'list' ? 'bg-[#eef2ff] text-[#4538ff]' : 'text-[#7e8aa2]'}`} title="List view"><ListIcon /></button>
+                <button onClick={() => setViewMode('grid')} className={`flex h-8 w-10 items-center justify-center rounded-lg ${viewMode === 'grid' ? 'bg-[#eef2ff] text-[#4538ff]' : 'text-[#7e8aa2]'}`} title="Grid view"><GridIcon /></button>
+              </div>
+            </div>
           </div>
         </div>
 
         {error && <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div>}
 
-        <section>
-          <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div className="text-sm font-black text-[#394455]">
-              Latest Tickets <span className="text-[#5f6b7c]">(Showing 01 to {String(Math.min(tickets.length, 8)).padStart(2, '0')} of {tickets.length} Tickets)</span>
+        <section className="rounded-3xl border border-[#e5ecf8] bg-white p-5 shadow-[0_18px_45px_rgba(31,45,78,0.08)]">
+          <div className="mb-5 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <h2 className="text-xl font-black text-[#17264d]">Latest Tickets</h2>
+              <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-black text-[#4538ff]">{Math.min(tickets.length, 8)} of {totalTickets || tickets.length}</span>
             </div>
-            <label className="flex items-center gap-3 text-sm font-black text-[#394455]">
-              Open:
-              <select value={status} onChange={(event) => setStatus(event.target.value)} className="h-11 rounded-full border border-[#d7e1ea] bg-white px-4 text-xs font-black text-[#a1afbf] outline-none">
-                <option value="active">Active tickets</option>
-                <option value="open">Open only</option>
-                <option value="in_progress">In progress</option>
-                <option value="waiting_customer">Pending</option>
-                <option value="resolved">Resolved</option>
-                <option value="closed">Closed</option>
-                <option value="all">All</option>
-              </select>
-            </label>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1080px] border-separate border-spacing-y-3">
+            <table className="w-full min-w-[1120px] border-separate border-spacing-0">
               <thead>
-                <tr className="text-left text-xs font-black text-[#aab6c4]">
-                  <th className="px-6 pb-2">ID</th>
-                  <th className="px-6 pb-2">Requester Name</th>
-                  <th className="px-6 pb-2">Subjects</th>
-                  <th className="px-6 pb-2">Status</th>
-                  <th className="px-6 pb-2">Priority</th>
-                  <th className="px-6 pb-2">Assignee</th>
-                  <th className="px-6 pb-2">Create Date</th>
-                  <th className="px-6 pb-2 text-right">Actions</th>
+                <tr className="text-left text-[11px] font-black text-[#8fa0bb]">
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">ID <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">Requester <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">Subject <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">Status <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">Priority <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">Assignee <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4">Create Date <SortIcon className="ml-1 inline h-3 w-3" /></th>
+                  <th className="border-b border-[#ecf1f8] px-5 py-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -406,24 +549,56 @@ export default function Tickets({ detailMode = false }) {
                 {!loading && tickets.length === 0 && <tr><td colSpan="8" className="bg-white px-6 py-8 text-sm font-bold text-slate-400">No tickets match these filters.</td></tr>}
                 {!loading && tickets.map((ticket) => {
                   const requester = ticket.customer_name || `+${ticket.customer_phone}`;
+                  const subjectIcon = ticket.category === 'human_support' ? HeadsetIcon : MonitorIcon;
+                  const SubjectIcon = subjectIcon;
                   return (
-                    <tr key={ticket.id} className="bg-white text-sm font-black text-[#394455] shadow-sm transition hover:bg-[#fbfcff]">
-                      <td className="px-6 py-5 align-middle">#{ticket.id}</td>
-                      <td className="px-6 py-5 align-middle">
+                    <tr key={ticket.id} className="group text-sm font-black text-[#17264d] transition hover:bg-[#fbfcff]">
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle text-lg">#{ticket.id}</td>
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#dbeafe] to-[#f4e8ff] text-xs font-black text-[#394455]">{initials(requester)}</div>
-                          <span className="max-w-[180px] truncate">{requester}</span>
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f0eaff] text-xs font-black text-[#4538ff]">{initials(requester)}</div>
+                          <div className="min-w-0">
+                            <div className="max-w-[190px] truncate text-sm font-black text-[#17264d]">{requester}</div>
+                            <div className="mt-1 text-xs font-bold text-[#9aa7bb]">{ticket.customer_name ? 'Customer' : 'Phone'}</div>
+                          </div>
                         </div>
                       </td>
-                      <td className="max-w-[360px] px-6 py-5 align-middle"><div className="truncate text-sm font-semibold text-[#394455]">{ticket.title || ticket.summary || ticket.last_message || 'No subject'}</div></td>
-                      <td className="px-6 py-5 align-middle"><StatusBadge status={ticket.status} /></td>
-                      <td className="px-6 py-5 align-middle"><PriorityBadge priority={ticket.priority} /></td>
-                      <td className="px-6 py-5 align-middle">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</td>
-                      <td className="px-6 py-5 align-middle">{formatCreateDate(ticket.opened_at || ticket.created_at)}</td>
-                      <td className="px-6 py-5 align-middle">
+                      <td className="max-w-[360px] border-b border-[#edf2f8] px-5 py-5 align-middle">
+                        <div className="flex items-center gap-3">
+                          <span className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-xl ${ticket.category === 'human_support' ? 'bg-emerald-50 text-emerald-500' : 'bg-blue-50 text-blue-500'}`}>
+                            <SubjectIcon className="h-4 w-4" />
+                          </span>
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-black text-[#17264d]">{ticket.title || ticket.summary || ticket.last_message || 'No subject'}</div>
+                            <div className="mt-1 truncate text-xs font-bold text-[#9aa7bb]">{CATEGORY_LABELS[ticket.category] || ticket.category} #{String(ticket.id).padStart(4, '0')}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle"><StatusBadge status={ticket.status} /></td>
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle"><PriorityBadge priority={ticket.priority} /></td>
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
+                        <div className="flex items-center gap-2">
+                          <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#f3f6fb] text-[#7c8aa5]">
+                            <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></svg>
+                          </span>
+                          <span className="max-w-[150px] truncate text-xs font-black text-[#52617d]">{ticket.assigned_employee_name || ticket.assigned_admin_name || 'Unassigned'}</span>
+                        </div>
+                      </td>
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
+                        <div className="flex items-center gap-2">
+                          <CalendarIcon className="h-4 w-4 text-[#7c8aa5]" />
+                          <div>
+                            <div className="text-xs font-black text-[#52617d]">{formatCreateDate(ticket.opened_at || ticket.created_at)}</div>
+                            <div className="mt-1 text-[11px] font-bold text-[#9aa7bb]">{formatDate(ticket.opened_at || ticket.created_at).split(',').pop()?.trim()}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="border-b border-[#edf2f8] px-5 py-5 align-middle">
                         <div className="flex justify-end gap-2">
-                          <button onClick={() => navigate(`/dashboard/tickets/${ticket.id}`)} className="rounded-full bg-indigo-50 px-3 py-1.5 text-xs font-black text-[#3535FF] hover:bg-indigo-100">Open</button>
-                          <button onClick={() => deleteTicket(ticket)} className="rounded-full bg-red-50 px-3 py-1.5 text-xs font-black text-red-600 hover:bg-red-100">Delete</button>
+                          <button onClick={() => navigate(`/dashboard/tickets/${ticket.id}`)} className="rounded-xl border border-[#e4e9f4] bg-white px-4 py-2 text-xs font-black text-[#4538ff] shadow-sm hover:bg-[#f6f7ff]">Open</button>
+                          <button onClick={() => deleteTicket(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-[#91a0b8] shadow-sm hover:bg-red-50 hover:text-red-500" title="Delete ticket">
+                            <DotsVerticalIcon className="h-4 w-4" />
+                          </button>
                         </div>
                       </td>
                     </tr>

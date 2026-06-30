@@ -918,6 +918,34 @@ function customerDisplayName(name) {
   return value.split(/\s+/).slice(0, 2).join(' ');
 }
 
+function parseExpiryDateTime(expiration, expirationTime = '') {
+  const date = String(expiration || '').trim();
+  if (!date || date === 'not shown') return null;
+  const normalizedDate = date.replace(/\//g, '-');
+  if (!/^\d{4}-\d{1,2}-\d{1,2}$/.test(normalizedDate)) return null;
+  const time = String(expirationTime || '').trim();
+  const normalizedTime = /^\d{1,2}:\d{2}(:\d{2})?$/.test(time) ? time : '23:59:59';
+  const withSeconds = normalizedTime.length === 5 ? `${normalizedTime}:00` : normalizedTime;
+  const parsed = new Date(`${normalizedDate}T${withSeconds}+03:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatTimeRemaining(expiration, expirationTime = '') {
+  const expiryDate = parseExpiryDateTime(expiration, expirationTime);
+  if (!expiryDate) return 'not shown';
+  const diffMs = expiryDate.getTime() - Date.now();
+  if (diffMs <= 0) return 'expired';
+  const totalMinutes = Math.ceil(diffMs / 60000);
+  const days = Math.floor(totalMinutes / 1440);
+  const hours = Math.floor((totalMinutes % 1440) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+  if (days) parts.push(`${days} day${days === 1 ? '' : 's'}`);
+  if (hours) parts.push(`${hours} hour${hours === 1 ? '' : 's'}`);
+  if (!days && minutes) parts.push(`${minutes} minute${minutes === 1 ? '' : 's'}`);
+  return parts.slice(0, 2).join(' ') || 'less than 1 minute';
+}
+
 function clientStatusReply(data, options = {}) {
   const status = data.status ? String(data.status).toLowerCase() : 'unknown';
   const account = data.account || data.account_number || data.username || 'not shown';
@@ -932,6 +960,23 @@ function clientStatusReply(data, options = {}) {
     : 'not shown';
   const expiry = data.expiration ? `${data.expiration}${data.expiration_time ? ` at ${data.expiration_time}` : ''}` : 'not shown';
   const recharge = data.last_recharged_on || 'not shown';
+
+  if (data.source === 'mikrotik') {
+    const name = customerDisplayName(options.customerName || data.fullname);
+    const service = data.service || 'internet';
+    const lastSeen = data.last_seen || (status === 'active' ? 'online now' : 'not shown');
+    const online = status === 'active' || /online/i.test(lastSeen);
+    const statusLine = online ? `${status} and currently online` : status;
+    const timeRemaining = formatTimeRemaining(data.expiration, data.expiration_time);
+    return (
+      `Great news ${name} 👋 Your connection is looking good from our side.\n\n` +
+      `Your ${service} account ${account} is ${statusLine} ✅\n` +
+      `You're browsing on the ${planPrice} package, valid until ${expiry}.\n\n` +
+      `You still have ${timeRemaining} left on your plan ⏳\n\n` +
+      `Connection info: IP ${data.ip_address || 'not shown'}, uptime ${data.uptime || 'not shown'}, last seen ${lastSeen}.\n` +
+      `Stay connected and enjoy smooth browsing 🚀`
+    );
+  }
 
   if (data.source === 'mikrotik') {
     const name = customerDisplayName(options.customerName || data.fullname);

@@ -9,6 +9,7 @@ const { sendSMS } = require('../services/sms');
 const { sendWorkflowEmployeeEmail } = require('../services/email');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
+const { buildMikrotikAdminContext } = require('../services/mikrotik');
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
@@ -129,6 +130,51 @@ function normalizeWorkflowEmployeeIds(value, fallback = null) {
   const ids = raw.map((item) => parseInt(item, 10)).filter((item) => Number.isInteger(item) && item > 0);
   if (ids.length === 0 && fallback) ids.push(parseInt(fallback, 10));
   return [...new Set(ids)].filter((item) => Number.isInteger(item) && item > 0);
+}
+
+function normalizeWorkflowPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0') && digits.length >= 10) return `254${digits.slice(1)}`;
+  if (digits.length === 9) return `254${digits}`;
+  return digits;
+}
+
+function normalizeWorkflowPhones(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return [...new Set(raw.map(normalizeWorkflowPhone).filter((item) => item.length >= 9))];
+}
+
+function classifyIntentLocal(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\b(mikrotik|routeros|winbox|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
+    return { intent: 'router_management', confidence: 0.86 };
+  }
+  if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
+    return { intent: 'human_request', confidence: 0.85 };
+  }
+  if (/\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/.test(value)) {
+    return { intent: 'new_installation', confidence: 0.85 };
+  }
+  if (/\b(pay|payment|paid|mpesa|m-pesa|bill|billing|expire|expiry|recharge|refund|overcharge|invoice)\b/.test(value)) {
+    return { intent: 'payment_billing', confidence: 0.85 };
+  }
+  return { intent: 'general_inquiry', confidence: 0.5 };
+}
+
+async function canAnswerRouterManagement(clientId, phoneNumber) {
+  await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS allowed_phone_numbers JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  const result = await db.query(
+    `SELECT allowed_phone_numbers, is_enabled
+     FROM workflow_routes
+     WHERE client_id = $1 AND intent_key = 'router_management'
+     LIMIT 1`,
+    [clientId]
+  );
+  const route = result.rows[0];
+  const allowed = normalizeWorkflowPhones(route?.allowed_phone_numbers);
+  if (!route || route.is_enabled === false || allowed.length === 0) return false;
+  return allowed.includes(normalizeWorkflowPhone(phoneNumber));
 }
 
 async function sendWorkflowNotice({ client, employee, channels, subject, notice }) {
@@ -491,6 +537,39 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
+
+    const preReplyIntent = incoming.isImage ? null : classifyIntentLocal(userText);
+    if (preReplyIntent?.intent === 'router_management') {
+      const allowedRouterAdmin = await canAnswerRouterManagement(client.id, incoming.phone);
+      if (!allowedRouterAdmin) {
+        console.warn(`[evo client ${client.id}] Router admin question ignored from unauthorized number ${incoming.phone}.`);
+        return;
+      }
+
+      const routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: userText });
+      const routerPrompt =
+        `${client.agent_name ? `Your name is ${client.agent_name}. ` : ''}` +
+        `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
+        `Use the ROUTER ADMIN CONTEXT below to answer directly and briefly. If the requested detail is not present, say it is not available from the current read-only check. Do not ask for a router photo. Do not invent router data.\n` +
+        routerAdminContext;
+      const recent = await db.query(
+        `SELECT role, content FROM (
+           SELECT role, content, timestamp FROM messages
+           WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 8
+         ) history ORDER BY timestamp ASC`,
+        [conversation.id]
+      );
+      let routerReply;
+      try {
+        routerReply = await generateAIResponse(routerPrompt, recent.rows);
+      } catch (err) {
+        console.error(`[evo client ${client.id}] Router admin AI reply failed for ${incoming.phone}:`, safeError(err));
+        routerReply = 'I checked the router management context, but I could not prepare the answer right now. Please try again shortly.';
+      }
+      await reply(client, conversation.id, incoming.phone, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
+      console.log(`[evo client ${client.id}] Router admin reply sent to ${incoming.phone}.`);
+      return;
+    }
 
     if (!incoming.isImage && /^pay now$/i.test(userText.trim())) {
       const answer = await invoiceRoutes.startLatestInvoicePayment({

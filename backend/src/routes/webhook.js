@@ -273,7 +273,7 @@ function localDirectReply(client, messageText) {
 
 function classifyIntentLocal(text) {
   const value = String(text || '').toLowerCase();
-  if (/\b(mikrotik|routeros|winbox|router\s+(uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
+  if (/\b(mikrotik|routeros|winbox|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
     return { intent: 'router_management', confidence: 0.86 };
   }
   if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {

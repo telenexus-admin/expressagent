@@ -265,7 +265,19 @@ async function ensureClientSmsColumns() {
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_partner_id VARCHAR(80)`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_name VARCHAR(160)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_from_address VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_reply_to VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_host VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_port INTEGER`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_secure BOOLEAN NOT NULL DEFAULT TRUE`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_username VARCHAR(180)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_smtp_password TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS email_configured_at TIMESTAMP WITH TIME ZONE`);
 }
 
 async function notifyAssignedEmployee({ ticket, assignment, customerPhone, customerName, summary }) {
@@ -446,34 +458,51 @@ async function addTicketEvent(ticketId, event) {
 }
 
 async function recordAssignmentNotification(ticket, assignment, details) {
-  const notification = await notifyAssignedEmployee({ ticket, assignment, ...details });
+  let notification;
+  try {
+    notification = await notifyAssignedEmployee({ ticket, assignment, ...details });
+  } catch (err) {
+    notification = {
+      status: 'failed',
+      error: err.message || 'Failed to send assignment notification',
+    };
+  }
   if (!notification.status) return ticket;
 
-  const updated = await db.query(
-    `UPDATE tickets
-     SET assignment_notify_status = $2,
-         assignment_notify_error = $3,
-         assignment_notified_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE assignment_notified_at END
-     WHERE id = $1
-     RETURNING *`,
-    [ticket.id, notification.status, notification.error]
-  );
+  try {
+    const updated = await db.query(
+      `UPDATE tickets
+       SET assignment_notify_status = $2,
+           assignment_notify_error = $3,
+           assignment_notified_at = CASE WHEN $2 = 'sent' THEN NOW() ELSE assignment_notified_at END
+       WHERE id = $1
+       RETURNING *`,
+      [ticket.id, notification.status, notification.error]
+    );
 
-  await addTicketEvent(ticket.id, {
-    actor_type: 'system',
-    event_type: 'assigned',
-    body:
-      notification.status === 'sent'
-        ? `Assignment alert sent to ${assignment.employees?.length > 1 ? `${assignment.employees.length} employees` : assignment.employeeName}`
-        : `Assignment alert ${notification.status}: ${notification.error}`,
-    metadata: {
-      employee_id: assignment.employeeId,
-      notify_status: notification.status,
-      notify_error: notification.error,
-    },
-  });
+    await addTicketEvent(ticket.id, {
+      actor_type: 'system',
+      event_type: 'assigned',
+      body:
+        notification.status === 'sent'
+          ? `Assignment alert sent to ${assignment.employees?.length > 1 ? `${assignment.employees.length} employees` : assignment.employeeName}`
+          : `Assignment alert ${notification.status}: ${notification.error}`,
+      metadata: {
+        employee_id: assignment.employeeId,
+        notify_status: notification.status,
+        notify_error: notification.error,
+      },
+    });
 
-  return updated.rows[0] || ticket;
+    return updated.rows[0] || ticket;
+  } catch (err) {
+    console.error('Failed to record assignment notification:', err.message);
+    return {
+      ...ticket,
+      assignment_notify_status: notification.status,
+      assignment_notify_error: notification.error,
+    };
+  }
 }
 
 async function createOrUpdateTicket(signal) {

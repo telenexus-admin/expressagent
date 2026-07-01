@@ -515,7 +515,7 @@ export default function ChatView() {
         onScroll={() => {
           shouldStickToBottomRef.current = isNearBottom();
         }}
-        className="flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 bg-[#FAFAFF]"
+        className="chat-message-panel flex-1 overflow-y-auto p-3 sm:p-6 space-y-4 bg-[#FAFAFF]"
       >
         {messages.length === 0 && (
           <p className="text-center text-gray-400 text-sm mt-8">No messages yet</p>

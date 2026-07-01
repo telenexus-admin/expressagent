@@ -51,6 +51,19 @@ function normalizeEmployeeIds(value, fallback = null) {
   return [...new Set(ids)].filter((item) => Number.isInteger(item) && item > 0);
 }
 
+function normalizePhoneDigits(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0') && digits.length >= 10) return `254${digits.slice(1)}`;
+  if (digits.length === 9) return `254${digits}`;
+  return digits;
+}
+
+function normalizeAllowedPhoneNumbers(value) {
+  const source = Array.isArray(value) ? value : String(value || '').split(/[,\n\s]+/);
+  return [...new Set(source.map(normalizePhoneDigits).filter((item) => item.length >= 9))];
+}
+
 export default function Workflow() {
   const [intents, setIntents] = useState([]);
   const [employees, setEmployees] = useState([]);
@@ -90,6 +103,9 @@ export default function Workflow() {
       const nextChannels = patch.notification_channels || normalizeChannels(current.notificationChannels);
       await api.put(`/workflows/${intentKey}`, {
         employee_ids: nextEmployeeIds,
+        allowed_phone_numbers: patch.allowed_phone_numbers !== undefined
+          ? normalizeAllowedPhoneNumbers(patch.allowed_phone_numbers)
+          : normalizeAllowedPhoneNumbers(current.allowedPhoneNumbers),
         is_enabled: true,
         notification_channels: nextChannels,
       });
@@ -100,6 +116,9 @@ export default function Workflow() {
                 ...i,
                 assignedEmployeeId: nextEmployeeIds[0] || null,
                 assignedEmployeeIds: nextEmployeeIds,
+                allowedPhoneNumbers: patch.allowed_phone_numbers !== undefined
+                  ? normalizeAllowedPhoneNumbers(patch.allowed_phone_numbers)
+                  : normalizeAllowedPhoneNumbers(i.allowedPhoneNumbers),
                 notificationChannels: nextChannels,
               }
             : i
@@ -121,6 +140,7 @@ export default function Workflow() {
 
   const assign = (intentKey, employeeIds) => saveRoute(intentKey, { employee_ids: employeeIds });
   const updateChannels = (intentKey, channels) => saveRoute(intentKey, { notification_channels: channels });
+  const updateAllowedNumbers = (intentKey, numbers) => saveRoute(intentKey, { allowed_phone_numbers: numbers });
 
   if (loading) {
     return (
@@ -178,7 +198,7 @@ export default function Workflow() {
           </div>
         )}
 
-        <FlowDiagram intents={intents} employees={employees} onAssign={assign} onChannelsChange={updateChannels} saveState={saveState} editing={editing} />
+        <FlowDiagram intents={intents} employees={employees} onAssign={assign} onChannelsChange={updateChannels} onAllowedNumbersChange={updateAllowedNumbers} saveState={saveState} editing={editing} />
 
         <RecentActivity dispatches={dispatches} />
       </div>
@@ -186,7 +206,7 @@ export default function Workflow() {
   );
 }
 
-function FlowDiagram({ intents, employees, onAssign, onChannelsChange, saveState, editing }) {
+function FlowDiagram({ intents, employees, onAssign, onChannelsChange, onAllowedNumbersChange, saveState, editing }) {
   const containerRef = useRef(null);
   const aiNodeRef = useRef(null);
   const cardRefs = useRef({});
@@ -316,6 +336,7 @@ function FlowDiagram({ intents, employees, onAssign, onChannelsChange, saveState
             employees={employees}
             onAssign={onAssign}
             onChannelsChange={onChannelsChange}
+            onAllowedNumbersChange={onAllowedNumbersChange}
             saveState={saveState[intent.key]}
             editing={editing}
           />
@@ -348,7 +369,7 @@ function TopNode({ icon, title, subtitle, accent, primary = false }) {
 }
 
 const IntentCard = React.forwardRef(function IntentCard(
-  { intent, employees, onAssign, onChannelsChange, saveState, editing },
+  { intent, employees, onAssign, onChannelsChange, onAllowedNumbersChange, saveState, editing },
   ref
 ) {
   const style = INTENT_STYLE[intent.key] || { Icon: QuestionIcon, accent: '#6B7280', bg: 'bg-gray-50' };
@@ -356,6 +377,7 @@ const IntentCard = React.forwardRef(function IntentCard(
   const selectedEmployeeIds = normalizeEmployeeIds(intent.assignedEmployeeIds, intent.assignedEmployeeId);
   const assignedEmployees = employees.filter((e) => selectedEmployeeIds.includes(e.id));
   const isPassthrough = intent.isPassthrough;
+  const isRouterAllowList = intent.key === 'router_management';
   const channels = normalizeChannels(intent.notificationChannels);
   const toggleEmployee = (employeeId) => {
     const id = parseInt(employeeId, 10);
@@ -414,7 +436,14 @@ const IntentCard = React.forwardRef(function IntentCard(
         )}
 
         <div className="pt-2 border-t border-gray-100">
-          {isPassthrough ? (
+          {isRouterAllowList ? (
+            <AuthorizedNumbersEditor
+              numbers={intent.allowedPhoneNumbers || []}
+              editing={editing}
+              saveState={saveState}
+              onSave={(numbers) => onAllowedNumbersChange(intent.key, numbers)}
+            />
+          ) : isPassthrough ? (
             <div className="text-xs text-emerald-700 bg-emerald-50 rounded-lg px-2.5 py-1.5 flex items-center gap-1.5">
               <CheckCircleIcon className="w-3.5 h-3.5" />
               AI answers directly — no employee alert
@@ -517,6 +546,56 @@ function EmployeePicker({ employees, selectedEmployeeIds, editing, onToggle, onC
           Clear all
         </button>
       )}
+    </div>
+  );
+}
+
+function AuthorizedNumbersEditor({ numbers, editing, saveState, onSave }) {
+  const [text, setText] = useState(() => normalizeAllowedPhoneNumbers(numbers).join('\n'));
+
+  useEffect(() => {
+    setText(normalizeAllowedPhoneNumbers(numbers).join('\n'));
+  }, [numbers]);
+
+  const parsed = normalizeAllowedPhoneNumbers(text);
+
+  return (
+    <div className="space-y-2 rounded-xl border border-blue-100 bg-blue-50 p-3">
+      <div>
+        <div className="text-[10px] uppercase tracking-wider text-blue-700 font-black">
+          Authorized WhatsApp numbers
+        </div>
+        <p className="mt-1 text-xs font-semibold leading-5 text-blue-800/80">
+          The agent will answer router uptime, logs, reports and MikroTik admin questions only for these numbers.
+        </p>
+      </div>
+      <textarea
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        disabled={!editing}
+        rows={4}
+        placeholder="2547XXXXXXXX&#10;0722XXXXXX"
+        className="w-full resize-none rounded-xl border border-blue-100 bg-white px-3 py-2 font-mono text-xs font-bold text-[#17264d] outline-none focus:border-[#3535FF] disabled:cursor-not-allowed disabled:opacity-60"
+      />
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <span className="text-[10px] font-bold text-blue-700">
+          {parsed.length ? `${parsed.length} authorized number${parsed.length === 1 ? '' : 's'}` : 'No authorized numbers set'}
+        </span>
+        {editing && (
+          <button
+            type="button"
+            onClick={() => onSave(parsed)}
+            className="rounded-lg bg-[#3535FF] px-3 py-1.5 text-[10px] font-black text-white"
+          >
+            Save allowed numbers
+          </button>
+        )}
+      </div>
+      <div className="h-4 text-[10px]">
+        {saveState === 'saving' && <span className="text-gray-400">Saving...</span>}
+        {saveState === 'saved' && <span className="text-emerald-600">Saved</span>}
+        {saveState === 'error' && <span className="text-red-600">Failed to save</span>}
+      </div>
     </div>
   );
 }

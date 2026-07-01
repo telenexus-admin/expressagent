@@ -368,6 +368,7 @@ const schema = `
     intent_key VARCHAR(50) NOT NULL,
     employee_id INTEGER REFERENCES employees(id) ON DELETE SET NULL,
     employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb,
+    allowed_phone_numbers JSONB NOT NULL DEFAULT '[]'::jsonb,
     is_enabled BOOLEAN NOT NULL DEFAULT TRUE,
     notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -376,6 +377,7 @@ const schema = `
 
   ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb;
   ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS employee_ids JSONB NOT NULL DEFAULT '[]'::jsonb;
+  ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS allowed_phone_numbers JSONB NOT NULL DEFAULT '[]'::jsonb;
   UPDATE workflow_routes SET employee_ids = jsonb_build_array(employee_id) WHERE employee_id IS NOT NULL AND employee_ids = '[]'::jsonb;
   CREATE INDEX IF NOT EXISTS idx_workflow_routes_client ON workflow_routes(client_id);
 

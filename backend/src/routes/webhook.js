@@ -122,6 +122,7 @@ async function notifySupport(client, supportNumber, message) {
 
 async function dispatchToEmployee({ client, conversation, intent, messageText, phoneNumber }) {
   if (!intent || intent === 'general_inquiry') return;
+  if (intent === 'router_management') return;
 
   try {
     await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS notification_channels JSONB NOT NULL DEFAULT '["sms"]'::jsonb`);
@@ -351,6 +352,34 @@ function normalizeWorkflowEmployeeIds(value, fallback = null) {
   const ids = raw.map((item) => parseInt(item, 10)).filter((item) => Number.isInteger(item) && item > 0);
   if (ids.length === 0 && fallback) ids.push(parseInt(fallback, 10));
   return [...new Set(ids)].filter((item) => Number.isInteger(item) && item > 0);
+}
+
+function normalizeWorkflowPhone(value) {
+  const digits = String(value || '').replace(/\D/g, '');
+  if (!digits) return '';
+  if (digits.startsWith('0') && digits.length >= 10) return `254${digits.slice(1)}`;
+  if (digits.length === 9) return `254${digits}`;
+  return digits;
+}
+
+function normalizeWorkflowPhones(value) {
+  const raw = Array.isArray(value) ? value : [];
+  return [...new Set(raw.map(normalizeWorkflowPhone).filter((item) => item.length >= 9))];
+}
+
+async function canAnswerRouterManagement(clientId, phoneNumber) {
+  await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS allowed_phone_numbers JSONB NOT NULL DEFAULT '[]'::jsonb`);
+  const result = await db.query(
+    `SELECT allowed_phone_numbers, is_enabled
+     FROM workflow_routes
+     WHERE client_id = $1 AND intent_key = 'router_management'
+     LIMIT 1`,
+    [clientId]
+  );
+  const route = result.rows[0];
+  const allowed = normalizeWorkflowPhones(route?.allowed_phone_numbers);
+  if (!route || route.is_enabled === false || allowed.length === 0) return false;
+  return allowed.includes(normalizeWorkflowPhone(phoneNumber));
 }
 
 async function sendWorkflowNotice({ client, employee, channels, subject, notice }) {
@@ -950,13 +979,22 @@ router.post('/', async (req, res) => {
       if (billingContext) systemPrompt += billingContext;
     }
 
+    const classificationText = inboundIsImage
+      ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
+      : messageText;
+    const preReplyIntent = inboundIsImage ? null : classifyIntentLocal(classificationText);
+    if (preReplyIntent?.intent === 'router_management') {
+      const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
+      if (!allowedRouterAdmin) {
+        console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
+        return res.sendStatus(200);
+      }
+    }
+
     console.log(`[client ${client.id}] Generating AI reply for ${phoneNumber}. OpenAI config: ${JSON.stringify(openAIModelSummary())}`);
     const aiTask = inboundIsImage
       ? analyzeSupportImage(systemPrompt, historyResult.rows, inboundImageBuffer, inboundImageMimeType, inboundImageCaption)
       : generateAIResponse(systemPrompt, historyResult.rows);
-    const classificationText = inboundIsImage
-      ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
-      : messageText;
     let aiResponse;
     try {
       aiResponse = await aiTask;

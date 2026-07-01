@@ -333,6 +333,117 @@ async function findMikrotikAccount({ clientId, customerPhone, messageText }) {
   return null;
 }
 
+function wantsAny(text, patterns) {
+  const value = String(text || '').toLowerCase();
+  return patterns.some((pattern) => pattern.test(value));
+}
+
+function summarizeRows(rows, fields, limit = 8) {
+  return (rows || []).slice(0, limit).map((row) => {
+    const parts = fields
+      .map(([key, label = key]) => row?.[key] ? `${label}: ${row[key]}` : null)
+      .filter(Boolean);
+    return parts.join(', ');
+  }).filter(Boolean);
+}
+
+async function buildMikrotikAdminContext({ clientId, messageText }) {
+  if (!clientId) return '';
+  const routers = await activeRouterConfigs(clientId);
+  if (!routers.length) {
+    return '\n\nROUTER ADMIN CONTEXT:\nNo active MikroTik routers are linked to this account yet.';
+  }
+
+  const wantsLogs = wantsAny(messageText, [/\blogs?\b/, /error/, /alert/, /attention/, /dhcp/, /warning/]);
+  const wantsInterfaces = wantsAny(messageText, [/\binterfaces?\b/, /\bports?\b/, /ether/, /sfp/, /traffic/]);
+  const wantsUsers = wantsAny(messageText, [/active users?/, /pppoe/, /hotspot/, /online users?/, /sessions?/]);
+  const wantsAccount = extractMikrotikLookupCandidates({ customerPhone: '', messageText }).length > 0;
+  const lines = [
+    '',
+    '',
+    'ROUTER ADMIN CONTEXT:',
+    'This is read-only live MikroTik data. Do not claim to reboot, disable, enable, pause, resume, change packages, modify firewall, or fix the router. Only explain observations and suggest safe next checks.',
+  ];
+
+  if (wantsAccount) {
+    const account = await findMikrotikAccount({ clientId, customerPhone: '', messageText }).catch((err) => {
+      console.error('MikroTik admin account lookup failed:', err.message);
+      return null;
+    });
+    if (account) {
+      lines.push('Matched client/account:');
+      lines.push(`- Router: ${account.router || 'unknown'}`);
+      lines.push(`- Service: ${account.service || 'unknown'}`);
+      lines.push(`- Account: ${account.account || account.username || 'not shown'}`);
+      lines.push(`- Status: ${account.status || 'unknown'}`);
+      if (account.plan) lines.push(`- Plan/profile: ${account.plan}`);
+      if (account.ip_address) lines.push(`- IP address: ${account.ip_address}`);
+      if (account.mac_address) lines.push(`- MAC address: ${account.mac_address}`);
+      if (account.uptime) lines.push(`- Uptime/session: ${account.uptime}`);
+      if (account.last_seen) lines.push(`- Last seen: ${account.last_seen}`);
+      if (account.expiration) lines.push(`- Expiry: ${account.expiration}${account.expiration_time ? ` ${account.expiration_time}` : ''}`);
+    } else {
+      lines.push('Matched client/account: none found in linked MikroTik routers.');
+    }
+  }
+
+  for (const router of routers.slice(0, 5)) {
+    let client = null;
+    try {
+      client = await connectRouter(router);
+      const [identityRows, resourceRows, pppRows, hotspotRows] = await Promise.all([
+        client.command('/system/identity/print').catch(() => []),
+        client.command('/system/resource/print').catch(() => []),
+        router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
+        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+      ]);
+      const identity = identityRows[0] || {};
+      const resource = resourceRows[0] || {};
+      lines.push('');
+      lines.push(`Router ${router.name}: online`);
+      lines.push(`- Identity: ${identity.name || router.last_identity || router.name}`);
+      lines.push(`- RouterOS: ${resource.version || router.last_version || 'not shown'}`);
+      lines.push(`- Uptime: ${resource.uptime || router.last_uptime || 'not shown'}`);
+      if (resource['cpu-load']) lines.push(`- CPU load: ${resource['cpu-load']}%`);
+      if (resource['free-memory']) lines.push(`- Free memory: ${resource['free-memory']}`);
+      lines.push(`- Active PPPoE sessions: ${pppRows.length}`);
+      lines.push(`- Active Hotspot sessions: ${hotspotRows.length}`);
+
+      if (wantsUsers) {
+        const pppSummary = summarizeRows(pppRows, [['name', 'user'], ['address', 'ip'], ['uptime', 'uptime']], 8);
+        const hotspotSummary = summarizeRows(hotspotRows, [['user', 'user'], ['address', 'ip'], ['uptime', 'uptime']], 8);
+        if (pppSummary.length) lines.push(`- PPPoE sample: ${pppSummary.join(' | ')}`);
+        if (hotspotSummary.length) lines.push(`- Hotspot sample: ${hotspotSummary.join(' | ')}`);
+      }
+
+      if (wantsInterfaces && router.features?.interfaces !== false) {
+        const interfaceRows = await client.command('/interface/print').catch(() => []);
+        const interfaceSummary = summarizeRows(interfaceRows, [['name', 'name'], ['type', 'type'], ['running', 'running'], ['disabled', 'disabled']], 12);
+        lines.push(`- Interfaces: ${interfaceSummary.length ? interfaceSummary.join(' | ') : 'not shown'}`);
+      }
+
+      if (wantsLogs && router.features?.logs !== false) {
+        const logRows = await client.command('/log/print').catch(() => []);
+        const recent = (logRows || []).slice(-8).reverse().map((row) => {
+          const time = row.time || row.date || '';
+          const topics = row.topics || '';
+          const message = row.message || '';
+          return [time, topics, message].filter(Boolean).join(' ');
+        }).filter(Boolean);
+        lines.push(`- Recent logs: ${recent.length ? recent.join(' | ') : 'no recent logs returned'}`);
+      }
+    } catch (err) {
+      lines.push('');
+      lines.push(`Router ${router.name}: unavailable`);
+      lines.push(`- Error: ${err.message || 'connection failed'}`);
+    } finally {
+      if (client) client.close();
+    }
+  }
+
+  return lines.join('\n');
+}
+
 async function activateWireguardPeer(payload = {}) {
   const publicKey = cleanWireguardPublicKey(payload.public_key || payload.wireguard_mikrotik_public_key);
   const tunnelIp = cleanTunnelIp(payload.tunnel_ip || payload.wireguard_tunnel_ip);
@@ -670,6 +781,7 @@ module.exports = {
   getRouter,
   listRouters,
   activateWireguardPeer,
+  buildMikrotikAdminContext,
   findMikrotikAccount,
   prepareWireguardOnboarding,
   saveRouter,

@@ -16,6 +16,7 @@ const { sendClientText } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
+const { buildMikrotikAdminContext } = require('../services/mikrotik');
 const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
@@ -971,6 +972,20 @@ router.post('/', async (req, res) => {
       systemPrompt += `\n\nThis customer's installation request has already been submitted. Reassure them that the team will contact them; do not submit it again.`;
     }
 
+    const classificationText = inboundIsImage
+      ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
+      : messageText;
+    const preReplyIntent = inboundIsImage ? null : classifyIntentLocal(classificationText);
+    let routerAdminContext = '';
+    if (preReplyIntent?.intent === 'router_management') {
+      const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
+      if (!allowedRouterAdmin) {
+        console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
+        return res.sendStatus(200);
+      }
+      routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
+    }
+
     if (!inboundIsImage) {
       const websiteContext = await buildWebsiteKnowledgeContext(client.id);
       if (websiteContext) systemPrompt += websiteContext;
@@ -979,16 +994,8 @@ router.post('/', async (req, res) => {
       if (billingContext) systemPrompt += billingContext;
     }
 
-    const classificationText = inboundIsImage
-      ? `Customer sent a router/support image${inboundImageCaption ? ` with caption: ${inboundImageCaption}` : ''}.`
-      : messageText;
-    const preReplyIntent = inboundIsImage ? null : classifyIntentLocal(classificationText);
-    if (preReplyIntent?.intent === 'router_management') {
-      const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
-      if (!allowedRouterAdmin) {
-        console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
-        return res.sendStatus(200);
-      }
+    if (routerAdminContext) {
+      systemPrompt += `\n\nYou are answering an authorized router administrator. Use the ROUTER ADMIN CONTEXT below to answer directly. If the requested detail is not present, say it is not available from the current read-only check. Do not invent router data.${routerAdminContext}`;
     }
 
     console.log(`[client ${client.id}] Generating AI reply for ${phoneNumber}. OpenAI config: ${JSON.stringify(openAIModelSummary())}`);

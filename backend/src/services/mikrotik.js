@@ -364,6 +364,20 @@ function uptimeToSeconds(value) {
   return total || null;
 }
 
+function firstValue(row, keys, fallback = '') {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+  return fallback;
+}
+
+function percentText(value) {
+  const text = String(value || '').trim();
+  if (!text || text === 'not shown') return 'not returned by RouterOS API';
+  return text.endsWith('%') ? text : `${text}%`;
+}
+
 function routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount }) {
   const cpu = Number(cpuLoad);
   const totalSessions = Number(pppCount || 0) + Number(hotspotCount || 0);
@@ -408,36 +422,40 @@ async function buildMikrotikStatusReply({ clientId }) {
     client = await connectRouter(router);
     const [identityRows, resourceRows, pppRows, hotspotRows] = await Promise.all([
       client.command('/system/identity/print').catch(() => []),
-      client.command('/system/resource/print').catch(() => []),
+      client.command('/system/resource/print', { '.proplist': 'version,uptime,cpu-load,free-memory,total-memory' }).catch(() => []),
       router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
       router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
     ]);
     const identity = identityRows[0]?.name || router.last_identity || router.name || 'this router';
     const resource = resourceRows[0] || {};
-    const uptime = resource.uptime || router.last_uptime || 'not shown';
-    const cpuLoad = resource['cpu-load'] || 'not shown';
+    const uptime = firstValue(resource, ['uptime'], router.last_uptime || 'not shown');
+    const cpuLoad = firstValue(resource, ['cpu-load', 'cpu'], 'not shown');
     const pppCount = pppRows.length;
     const hotspotCount = hotspotRows.length;
     const { cpuMessage, uptimeMessage, routerStatus } = routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount });
+    const servingLine = (pppCount + hotspotCount) > 0
+      ? 'is online and currently serving clients'
+      : 'is online, but no active client sessions were returned in this check';
 
-    return `Sir, your router **${identity}** is online and currently serving clients ✅
+    return `Sir, your router ${identity} ${servingLine}.
 
-It has been running for **${uptime}**.
+It has been running for ${uptime}.
 
-Currently, **${pppCount} homes** are enjoying internet through PPPoE, while **${hotspotCount} hotspot users** are connected.
+Currently, ${pppCount} homes are enjoying internet through PPPoE, while ${hotspotCount} hotspot users are connected.
 
-CPU load is at **${cpuLoad}${cpuLoad === 'not shown' ? '' : '%'}**.
+CPU load is at ${percentText(cpuLoad)}.
 ${cpuMessage}
 
 Uptime check:
 ${uptimeMessage}
 
-Overall network view: **${routerStatus}** 🚀`;
+Overall network view: ${routerStatus}`;
+
   } catch (err) {
     return `Sir, I could not complete the live router status check right now.
 
-Router: **${router.name || 'Unknown'}**
-Status: **Unavailable from the current read-only check**
+Router: ${router.name || 'Unknown'}
+Status: Unavailable from the current read-only check
 Error: ${err.message || 'connection failed'}`;
   } finally {
     if (client) client.close();

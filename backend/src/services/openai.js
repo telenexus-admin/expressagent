@@ -313,6 +313,8 @@ async function classifyIntent(userMessage) {
     `- new_installation: wants to sign up / install fibre / subscribe / get connected for the first time\n` +
     `- payment_billing: payment problem, refund, overcharge, M-Pesa issue, invoice or bill question\n` +
     `- technical_issue: internet down, slow, router red lights, equipment broken, frequent disconnects\n` +
+    `- router_management: admin asks for MikroTik/RouterOS uptime, logs, interfaces, active users, diagnostics or reports\n` +
+    `- router_alerts: automatic router error/attention/outage alert routing, not normal customer support\n` +
     `- human_request: explicitly asks for a person/agent/human, or is angry/frustrated\n` +
     `- compliment_feedback: positive feedback, thanks, suggestions worth flagging to a manager\n` +
     `- general_inquiry: pricing questions, hours, coverage area, plans, greetings, anything else\n\n` +

@@ -23,6 +23,20 @@ const INTENTS = [
     department: 'Technical Support',
   },
   {
+    key: 'router_management',
+    label: 'Router Management',
+    description: 'Admin-only MikroTik questions such as router uptime, logs, interfaces, active users and diagnostics.',
+    examples: ['Check MikroTik logs', 'What is HOMELAND uptime?', 'Show active PPPoE users on the router'],
+    department: 'Network Admin / NOC',
+  },
+  {
+    key: 'router_alerts',
+    label: 'Router Alerts & Attention',
+    description: 'Where Nexa sends automatic router error, outage, offline, high-risk or needs-attention notifications.',
+    examples: ['Router offline alert', 'High CPU detected', 'Unknown DHCP server found'],
+    department: 'Network Admin / NOC',
+  },
+  {
     key: 'human_request',
     label: 'Wants to Speak to a Human',
     description: 'Customer explicitly asks for a real person, is frustrated, or wants escalation.',

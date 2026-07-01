@@ -149,13 +149,15 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
     if (employees.length === 0) return;
 
     const nameLine = conversation.customer_name ? `Customer: ${conversation.customer_name}\n` : '';
-    const intentLabelMap = {
-      new_installation: 'New installation request',
-      payment_billing: 'Payment/billing issue',
-      technical_issue: 'Technical problem',
-      human_request: 'Customer wants a human agent',
-      compliment_feedback: 'Compliment/feedback',
-    };
+  const intentLabelMap = {
+    new_installation: 'New installation request',
+    payment_billing: 'Payment/billing issue',
+    technical_issue: 'Technical problem',
+    router_management: 'Router management request',
+    router_alerts: 'Router alert needs attention',
+    human_request: 'Customer wants a human agent',
+    compliment_feedback: 'Compliment/feedback',
+  };
     const heading = intentLabelMap[intent] || 'Customer message';
     const notice =
       `${heading}\n\n` +
@@ -269,6 +271,9 @@ function localDirectReply(client, messageText) {
 
 function classifyIntentLocal(text) {
   const value = String(text || '').toLowerCase();
+  if (/\b(mikrotik|routeros|winbox|router\s+(uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
+    return { intent: 'router_management', confidence: 0.86 };
+  }
   if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
     return { intent: 'human_request', confidence: 0.85 };
   }

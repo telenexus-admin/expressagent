@@ -9,7 +9,7 @@ const { sendSMS } = require('../services/sms');
 const { sendWorkflowEmployeeEmail } = require('../services/email');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
 const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
-const { buildMikrotikAdminContext } = require('../services/mikrotik');
+const { buildMikrotikAdminContext, buildMikrotikStatusReply } = require('../services/mikrotik');
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
@@ -160,6 +160,12 @@ function classifyIntentLocal(text) {
     return { intent: 'payment_billing', confidence: 0.85 };
   }
   return { intent: 'general_inquiry', confidence: 0.5 };
+}
+
+function isRouterStatusQuestion(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\b(interfaces?|ports?|logs?|error|alert|warning|users?|sessions?|pppoe|hotspot|dhcp|traffic|cpu|memory)\b/.test(value)) return false;
+  return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
 }
 
 async function canAnswerRouterManagement(clientId, phoneNumber) {
@@ -543,6 +549,13 @@ router.post('/client/:clientId', async (req, res) => {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, incoming.phone);
       if (!allowedRouterAdmin) {
         console.warn(`[evo client ${client.id}] Router admin question ignored from unauthorized number ${incoming.phone}.`);
+        return;
+      }
+
+      if (isRouterStatusQuestion(userText)) {
+        const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
+        await reply(client, conversation.id, incoming.phone, statusReply, replyAsVoice);
+        console.log(`[evo client ${client.id}] Deterministic router status reply sent to ${incoming.phone}.`);
         return;
       }
 

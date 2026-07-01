@@ -347,6 +347,103 @@ function summarizeRows(rows, fields, limit = 8) {
   }).filter(Boolean);
 }
 
+function uptimeToSeconds(value) {
+  const text = String(value || '').toLowerCase();
+  if (!text || text === 'not shown') return null;
+  let total = 0;
+  const weekMatch = text.match(/(\d+)w/);
+  const dayMatch = text.match(/(\d+)d/);
+  const hourMatch = text.match(/(\d+)h/);
+  const minuteMatch = text.match(/(\d+)m/);
+  const secondMatch = text.match(/(\d+)s/);
+  if (weekMatch) total += Number(weekMatch[1]) * 7 * 24 * 60 * 60;
+  if (dayMatch) total += Number(dayMatch[1]) * 24 * 60 * 60;
+  if (hourMatch) total += Number(hourMatch[1]) * 60 * 60;
+  if (minuteMatch) total += Number(minuteMatch[1]) * 60;
+  if (secondMatch) total += Number(secondMatch[1]);
+  return total || null;
+}
+
+function routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount }) {
+  const cpu = Number(cpuLoad);
+  const totalSessions = Number(pppCount || 0) + Number(hotspotCount || 0);
+  let cpuMessage = 'CPU usage was not returned by the router during this check.';
+  if (Number.isFinite(cpu) && cpu < 50) {
+    cpuMessage = 'CPU usage looks normal. The router is handling the current traffic comfortably.';
+  } else if (Number.isFinite(cpu) && cpu < 70) {
+    cpuMessage = 'CPU usage is slightly active but still under control. It is worth watching during peak hours.';
+  } else if (Number.isFinite(cpu) && cpu < 85) {
+    cpuMessage = 'CPU usage is getting high. Users may start noticing slow browsing, delayed responses, or unstable speeds.';
+  } else if (Number.isFinite(cpu)) {
+    cpuMessage = 'Sir, this router needs urgent attention. CPU load is very high and clients may experience slow internet, disconnections, or poor response time.';
+  }
+
+  const seconds = uptimeToSeconds(uptime);
+  let uptimeMessage = 'Uptime was not returned by the router during this check.';
+  if (seconds !== null && seconds < 24 * 60 * 60) {
+    uptimeMessage = 'The router was restarted recently. Everything looks fresh, but if this happens often, we may need to check for power issues, crashes, or unstable configuration.';
+  } else if (seconds !== null && seconds < 7 * 24 * 60 * 60) {
+    uptimeMessage = 'Uptime looks normal. The router appears stable with no immediate reboot concern.';
+  } else if (seconds !== null && seconds < 30 * 24 * 60 * 60) {
+    uptimeMessage = 'The router has been running steadily for several days. This is okay as long as clients are browsing well and there are no complaints.';
+  } else if (seconds !== null && seconds < 60 * 24 * 60 * 60) {
+    uptimeMessage = 'The router has been online for a long time. If users are reporting slow speeds, delays, or random drops, a planned reboot during low-traffic hours may help refresh performance.';
+  } else if (seconds !== null) {
+    uptimeMessage = 'The router has stayed online for a very long time. That shows stability, but it can also allow small performance issues to build up quietly. A safe maintenance reboot during off-peak hours is recommended, especially if there are complaints, high CPU, or slow speeds.';
+  }
+  const routerStatus = totalSessions > 0 ? 'Online and serving clients' : 'Online, but no active client sessions were returned in this check';
+  return { cpuMessage, uptimeMessage, routerStatus };
+}
+
+async function buildMikrotikStatusReply({ clientId }) {
+  if (!clientId) return '';
+  const routers = await activeRouterConfigs(clientId);
+  if (!routers.length) {
+    return 'No active MikroTik routers are linked to this account yet.';
+  }
+
+  const router = routers[0];
+  let client = null;
+  try {
+    client = await connectRouter(router);
+    const [identityRows, resourceRows, pppRows, hotspotRows] = await Promise.all([
+      client.command('/system/identity/print').catch(() => []),
+      client.command('/system/resource/print').catch(() => []),
+      router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
+      router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+    ]);
+    const identity = identityRows[0]?.name || router.last_identity || router.name || 'this router';
+    const resource = resourceRows[0] || {};
+    const uptime = resource.uptime || router.last_uptime || 'not shown';
+    const cpuLoad = resource['cpu-load'] || 'not shown';
+    const pppCount = pppRows.length;
+    const hotspotCount = hotspotRows.length;
+    const { cpuMessage, uptimeMessage, routerStatus } = routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount });
+
+    return `Sir, your router **${identity}** is online and currently serving clients ✅
+
+It has been running for **${uptime}**.
+
+Currently, **${pppCount} homes** are enjoying internet through PPPoE, while **${hotspotCount} hotspot users** are connected.
+
+CPU load is at **${cpuLoad}${cpuLoad === 'not shown' ? '' : '%'}**.
+${cpuMessage}
+
+Uptime check:
+${uptimeMessage}
+
+Overall network view: **${routerStatus}** 🚀`;
+  } catch (err) {
+    return `Sir, I could not complete the live router status check right now.
+
+Router: **${router.name || 'Unknown'}**
+Status: **Unavailable from the current read-only check**
+Error: ${err.message || 'connection failed'}`;
+  } finally {
+    if (client) client.close();
+  }
+}
+
 async function buildMikrotikAdminContext({ clientId, messageText }) {
   if (!clientId) return '';
   const routers = await activeRouterConfigs(clientId);
@@ -783,6 +880,7 @@ module.exports = {
   listRouters,
   activateWireguardPeer,
   buildMikrotikAdminContext,
+  buildMikrotikStatusReply,
   findMikrotikAccount,
   prepareWireguardOnboarding,
   saveRouter,

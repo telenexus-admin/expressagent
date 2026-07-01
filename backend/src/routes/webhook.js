@@ -16,7 +16,7 @@ const { sendClientText } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { answerBillingQuestion, buildBillingContext } = require('../services/billing');
-const { buildMikrotikAdminContext } = require('../services/mikrotik');
+const { buildMikrotikAdminContext, buildMikrotikStatusReply } = require('../services/mikrotik');
 const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge');
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
@@ -292,6 +292,12 @@ function classifyIntentLocal(text) {
     return { intent: 'compliment_feedback', confidence: 0.75 };
   }
   return { intent: 'general_inquiry', confidence: 0.5 };
+}
+
+function isRouterStatusQuestion(text) {
+  const value = String(text || '').toLowerCase();
+  if (/\b(interfaces?|ports?|logs?|error|alert|warning|users?|sessions?|pppoe|hotspot|dhcp|traffic|cpu|memory)\b/.test(value)) return false;
+  return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
 }
 
 function classifyComplaintLocal(text) {
@@ -982,6 +988,13 @@ router.post('/', async (req, res) => {
       if (!allowedRouterAdmin) {
         console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
         return res.sendStatus(200);
+      }
+      if (isRouterStatusQuestion(classificationText)) {
+        const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
+        await deliverReply(client, phoneNumber, statusReply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, statusReply);
+        console.log(`[client ${client.id}] Deterministic router status reply sent to ${phoneNumber}.`);
+        return;
       }
       routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
     }

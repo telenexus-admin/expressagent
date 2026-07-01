@@ -168,6 +168,17 @@ function looksLikeBillingQuestion(text) {
   return /\b(active|expired|expiry|expire|status|account|client id|clientid|username|password|credential|credentials|login|package|plan|price|payment|paid|mpesa|m-pesa|receipt|transaction|recharge|recharged|balance|bill|billing|renew|renewal|internet off|not connected|disconnected)\b/.test(value);
 }
 
+function isRouterAdminOnlyQuestion(text) {
+  const value = String(text || '').toLowerCase().trim();
+  if (!value) return false;
+  const routerSignal = /\b(mikrotik|routeros|winbox|router\s+(status|online|offline|health|uptime|logs?|interfaces?|cpu|memory|users?|sessions?)|interfaces?|router\s+health|network\s+report)\b/.test(value);
+  if (!routerSignal) return false;
+  const explicitCustomerLookup =
+    /(?:\+?254|0)\d[\d\s-]{7,15}/.test(value) ||
+    /\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|clientid|username|user\s*name)\b/i.test(value);
+  return !explicitCustomerLookup;
+}
+
 function wantsPlans(text) {
   const value = String(text || '');
   if (/\b(my|current|am i on|i am on|i'm on|which)\b.{0,30}\b(package|plan)\b/i.test(value)) return false;
@@ -1153,6 +1164,8 @@ async function reconnectFromPaidPayment({ config, keys, paymentData, messageText
 }
 
 async function answerBillingQuestion({ clientId, customerPhone, customerName, messageText }) {
+  if (isRouterAdminOnlyQuestion(messageText)) return null;
+
   const config = await loadClientBillingConfig(clientId);
   const canBeImportedLookup = looksLikeImportedLookupText(messageText);
   if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText) && !canBeImportedLookup) return null;

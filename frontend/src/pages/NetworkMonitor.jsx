@@ -85,6 +85,17 @@ function TextInput({ value, onChange, type = 'text', placeholder = '', autoCompl
   );
 }
 
+function RefreshIcon({ className = 'h-4 w-4' }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M21 12a9 9 0 0 1-15.2 6.5" />
+      <path d="M3 12A9 9 0 0 1 18.2 5.5" />
+      <path d="M18 2v4h-4" />
+      <path d="M6 22v-4h4" />
+    </svg>
+  );
+}
+
 function StatCard({ icon: Icon, label, value, helper, tone = 'purple' }) {
   const tones = {
     purple: 'bg-[#efe9ff] text-[#4f35f5]',
@@ -93,16 +104,16 @@ function StatCard({ icon: Icon, label, value, helper, tone = 'purple' }) {
     amber: 'bg-amber-50 text-amber-700',
   };
   return (
-    <div className="rounded-2xl border border-[#e5e9f4] bg-white p-4 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-[10px] font-black uppercase tracking-[0.14em] text-[#8a92ad]">{label}</p>
-          <p className="mt-2 text-xl font-black text-[#101633]">{value}</p>
-          <p className="mt-1 text-xs font-semibold text-[#6d7697]">{helper}</p>
-        </div>
-        <span className={`flex h-10 w-10 items-center justify-center rounded-2xl ${tones[tone] || tones.purple}`}>
+    <div className="rounded-[18px] border border-[#dfe5f2] bg-white p-4 shadow-[0_12px_28px_rgba(31,41,80,0.06)]">
+      <div className="flex items-center gap-4">
+        <span className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl ${tones[tone] || tones.purple}`}>
           <Icon className="h-5 w-5" />
         </span>
+        <div>
+          <p className="text-xs font-black text-[#657194]">{label}</p>
+          <p className="mt-1 text-3xl font-black leading-none text-[#101633]">{value}</p>
+          <p className="mt-1 text-xs font-semibold text-[#6d7697]">{helper}</p>
+        </div>
       </div>
     </div>
   );
@@ -238,7 +249,7 @@ function WireGuardWizard({ form, update, onPrepared }) {
   const [routerName, setRouterName] = useState(form.name || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [billingIps, setBillingIps] = useState(form.wireguard_billing_api_ips || '10.133.0.1');
+  const [billingIps] = useState(form.wireguard_billing_api_ips || '');
   const [publicKey, setPublicKey] = useState(form.wireguard_mikrotik_public_key || '');
   const [plan, setPlan] = useState(null);
   const [status, setStatus] = useState(null);
@@ -322,15 +333,15 @@ function WireGuardWizard({ form, update, onPrepared }) {
   }
 
   return (
-    <div className="rounded-2xl border border-[#dfe5f2] bg-[#fbfcff] p-4">
+    <div className="rounded-[18px] border border-[#dfe5f2] bg-white p-4">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <h3 className="text-sm font-black text-[#101633]">WireGuard Onboarding Wizard</h3>
+          <h3 className="text-sm font-black text-[#101633]">Secure Router Setup</h3>
           <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-[#6d7697]">
-            Recommended for production. Nexa allocates a private tunnel IP for each MikroTik, then the router connects outbound to the Nexa server.
+            Add your router details below to enable secure monitoring, diagnostics and client data retrieval.
           </p>
         </div>
-        <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black uppercase text-emerald-700">Recommended</span>
+        <span className="rounded-full bg-emerald-50 px-3 py-1 text-[10px] font-black text-emerald-700">Recommended</span>
       </div>
 
       <div className="mt-4 grid gap-3 lg:grid-cols-4">
@@ -364,13 +375,15 @@ function WireGuardWizard({ form, update, onPrepared }) {
           />
         </label>
         <label className="block">
-          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Billing/API IPs to preserve</span>
+          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Nexa IP</span>
           <input
-            value={billingIps}
-            onChange={(event) => setBillingIps(event.target.value)}
-            placeholder="10.133.0.1"
-            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+            value={NEXA_SERVER_IP}
+            readOnly
+            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none"
           />
+          <span className="mt-1.5 block text-[11px] font-semibold leading-5 text-[#7a849f]">
+            Nexa uses this server IP when creating the secure RouterOS API access.
+          </span>
         </label>
       </div>
 
@@ -598,29 +611,18 @@ export default function NetworkMonitor() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8faff] p-5 sm:p-8">
+    <div className="flex-1 overflow-y-auto bg-[#f7f9ff] p-4 sm:p-6">
       <div className="mx-auto max-w-7xl">
-        <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
-          <div>
-            <h1 className="text-2xl font-black tracking-normal text-[#101633]">Network Monitor</h1>
-            <p className="mt-1 max-w-3xl text-sm font-medium leading-6 text-[#657194]">
-              Link the AI agent to MikroTik RouterOS API through a private WireGuard tunnel so each account can monitor many routers without exposing API to the internet.
+        <div className="mb-5 flex items-start gap-4">
+          <span className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#efe9ff] text-[#5a35f5] shadow-[0_12px_26px_rgba(90,53,245,0.12)]">
+            <PulseIcon className="h-6 w-6" />
+          </span>
+          <div className="min-w-0">
+            <h1 className="text-3xl font-black leading-tight tracking-normal text-[#101633]">Network Monitor</h1>
+            <p className="mt-1 max-w-4xl text-sm font-semibold leading-6 text-[#657194]">
+              Link Nexa with your routers for deeper network analysis, faster troubleshooting and reliable client data retrieval.
             </p>
           </div>
-          <button
-            type="button"
-            onClick={loadRouters}
-            className="h-11 rounded-xl border border-[#d8def0] bg-white px-5 text-sm font-black text-[#4f35f5] shadow-sm"
-          >
-            Refresh Routers
-          </button>
-        </div>
-
-        <div className="mb-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-          <StatCard icon={WrenchIcon} label="Routers" value={summary.total} helper="Saved RouterOS API links." />
-          <StatCard icon={CheckCircleIcon} label="Online" value={summary.online} helper="Last test connected." tone="green" />
-          <StatCard icon={PulseIcon} label="Active" value={summary.active} helper="Enabled for monitoring." tone="blue" />
-          <StatCard icon={WarningIcon} label="Attention" value={summary.errors} helper="Last test failed." tone="amber" />
         </div>
 
         {status && (
@@ -635,23 +637,49 @@ export default function NetworkMonitor() {
           </div>
         )}
 
-        <section className="mb-5 rounded-[24px] border border-[#dfe5f2] bg-white p-5 shadow-sm">
-          <div className="mb-4 flex items-start gap-3">
-            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-[#efe9ff] text-[#4f35f5]">
-              <WrenchIcon className="h-5 w-5" />
-            </span>
+        <section className="mb-5 rounded-[28px] border border-[#dfe5f2] bg-gradient-to-br from-white via-[#fbfcff] to-[#f3edff] p-5 shadow-[0_18px_45px_rgba(31,41,80,0.08)]">
+          <div className="mb-5 flex flex-col gap-3 border-l-4 border-[#5b35f5] pl-5 lg:flex-row lg:items-start lg:justify-between">
             <div>
-              <h2 className="text-base font-black text-[#101633]">How to Link MikroTik</h2>
-              <p className="mt-1 text-xs font-semibold leading-5 text-[#6d7697]">
-                Use WireGuard for production. Each MikroTik gets its own private tunnel IP, while existing billing systems such as Wispman stay allowed on the API service.
+              <h2 className="text-2xl font-black tracking-normal text-[#101633]">Network Monitor</h2>
+              <p className="mt-2 max-w-3xl text-sm font-semibold leading-6 text-[#657194]">
+                Connect your MikroTik routers securely and monitor their status in one place.
               </p>
             </div>
+            <button
+              type="button"
+              onClick={loadRouters}
+              className="flex h-12 w-fit items-center gap-2 rounded-xl bg-gradient-to-r from-[#6d35ff] to-[#3835ff] px-5 text-sm font-black text-white shadow-[0_14px_30px_rgba(79,53,245,0.25)]"
+            >
+              <RefreshIcon />
+              Sync Routers
+            </button>
           </div>
+
+          <div className="mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+            <StatCard icon={WrenchIcon} label="Routers" value={summary.total} helper="Saved router connections" />
+            <StatCard icon={CheckCircleIcon} label="Online" value={summary.online} helper="Routers currently connected" tone="green" />
+            <StatCard icon={PulseIcon} label="Monitoring Active" value={summary.active} helper="Routers under active monitoring" tone="blue" />
+            <StatCard icon={WarningIcon} label="Needs Attention" value={summary.errors} helper="Routers that need review" tone="amber" />
+          </div>
+
+          <div className="rounded-[22px] border border-[#dfe5f2] bg-white p-4 shadow-[0_14px_34px_rgba(31,41,80,0.06)]">
+            <div className="mb-4 flex items-start gap-3">
+              <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#efe9ff] text-[#4f35f5]">
+                <WrenchIcon className="h-5 w-5" />
+              </span>
+              <div>
+                <h2 className="text-base font-black text-[#101633]">Connect Your MikroTik Router</h2>
+                <p className="mt-1 text-xs font-semibold leading-5 text-[#6d7697]">
+                  Set up a secure connection so your team can monitor routers safely without exposing sensitive access details.
+                </p>
+              </div>
+            </div>
           <WireGuardWizard
             form={form}
             update={update}
             onPrepared={() => setStatus({ type: 'success', message: 'WireGuard details filled in the router form. Paste the MikroTik script, activate the tunnel here, then save and test the router.' })}
           />
+          </div>
           <details className="mt-4 rounded-2xl border border-[#dfe5f2] bg-white p-4">
             <summary className="cursor-pointer text-sm font-black text-[#101633]">Advanced public API setup</summary>
             <div className="mt-4">

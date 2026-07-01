@@ -420,15 +420,16 @@ async function buildMikrotikStatusReply({ clientId }) {
   let client = null;
   try {
     client = await connectRouter(router);
-    const [identityRows, resourceRows, pppRows, hotspotRows] = await Promise.all([
-      client.command('/system/identity/print').catch(() => []),
-      client.command('/system/resource/print', { '.proplist': 'version,uptime,cpu-load,free-memory,total-memory' }).catch(() => []),
+    const identityRows = await client.command('/system/identity/print');
+    const resourceRows = await client.command('/system/resource/print');
+    const [pppRows, hotspotRows] = await Promise.all([
       router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
       router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
     ]);
     const identity = identityRows[0]?.name || router.last_identity || router.name || 'this router';
-    const resource = resourceRows[0] || {};
-    const uptime = firstValue(resource, ['uptime'], router.last_uptime || 'not shown');
+    const resource = resourceRows[0];
+    if (!resource) throw new Error('RouterOS did not return /system/resource/print data');
+    const uptime = firstValue(resource, ['uptime'], 'not returned by RouterOS API');
     const cpuLoad = firstValue(resource, ['cpu-load', 'cpu'], 'not shown');
     const pppCount = pppRows.length;
     const hotspotCount = hotspotRows.length;

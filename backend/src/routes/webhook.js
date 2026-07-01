@@ -273,7 +273,7 @@ function localDirectReply(client, messageText) {
 
 function classifyIntentLocal(text) {
   const value = String(text || '').toLowerCase();
-  if (/\b(mikrotik|routeros|winbox|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
+  if (/\b(mikrotik|routeros|winbox|interfaces?|ports?|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)?|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
     return { intent: 'router_management', confidence: 0.86 };
   }
   if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
@@ -995,7 +995,10 @@ router.post('/', async (req, res) => {
     }
 
     if (routerAdminContext) {
-      systemPrompt += `\n\nYou are answering an authorized router administrator. Use the ROUTER ADMIN CONTEXT below to answer directly. If the requested detail is not present, say it is not available from the current read-only check. Do not invent router data.${routerAdminContext}`;
+      systemPrompt +=
+        `\n\nYou are answering an authorized router administrator. Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly. ` +
+        `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context. ` +
+        `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.${routerAdminContext}`;
     }
 
     console.log(`[client ${client.id}] Generating AI reply for ${phoneNumber}. OpenAI config: ${JSON.stringify(openAIModelSummary())}`);

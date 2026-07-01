@@ -401,9 +401,10 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
       const resource = resourceRows[0] || {};
       lines.push('');
       lines.push(`Router ${router.name}: online`);
+      lines.push(`- Checked at: ${new Date().toISOString()}`);
       lines.push(`- Identity: ${identity.name || router.last_identity || router.name}`);
       lines.push(`- RouterOS: ${resource.version || router.last_version || 'not shown'}`);
-      lines.push(`- Uptime: ${resource.uptime || router.last_uptime || 'not shown'}`);
+      lines.push(`- Uptime: ${resource.uptime || router.last_uptime || 'not shown'} (from /system/resource/print)`);
       if (resource['cpu-load']) lines.push(`- CPU load: ${resource['cpu-load']}%`);
       if (resource['free-memory']) lines.push(`- Free memory: ${resource['free-memory']}`);
       lines.push(`- Active PPPoE sessions: ${pppRows.length}`);

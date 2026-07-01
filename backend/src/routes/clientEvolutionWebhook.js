@@ -147,7 +147,7 @@ function normalizeWorkflowPhones(value) {
 
 function classifyIntentLocal(text) {
   const value = String(text || '').toLowerCase();
-  if (/\b(mikrotik|routeros|winbox|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
+  if (/\b(mikrotik|routeros|winbox|interfaces?|ports?|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)?|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
     return { intent: 'router_management', confidence: 0.86 };
   }
   if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
@@ -550,7 +550,9 @@ router.post('/client/:clientId', async (req, res) => {
       const routerPrompt =
         `${client.agent_name ? `Your name is ${client.agent_name}. ` : ''}` +
         `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
-        `Use the ROUTER ADMIN CONTEXT below to answer directly and briefly. If the requested detail is not present, say it is not available from the current read-only check. Do not ask for a router photo. Do not invent router data.\n` +
+        `Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly.\n` +
+        `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context.\n` +
+        `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.\n` +
         routerAdminContext;
       const recent = await db.query(
         `SELECT role, content FROM (

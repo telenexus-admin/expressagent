@@ -74,6 +74,7 @@ const EMPTY_TICKET = {
   summary: '',
   category: 'manually_added',
   priority: 'normal',
+  assigned_employee_id: '',
 };
 
 const NOTIFY_LABELS = {
@@ -321,6 +322,7 @@ export default function Tickets({ detailMode = false }) {
   const { id } = useParams();
   const [tickets, setTickets] = useState([]);
   const [detail, setDetail] = useState(null);
+  const [employees, setEmployees] = useState([]);
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState('active');
   const [category, setCategory] = useState('all');
@@ -379,9 +381,19 @@ export default function Tickets({ detailMode = false }) {
     }
   }, [detailMode]);
 
+  const loadEmployees = useCallback(async () => {
+    try {
+      const { data } = await api.get('/employees');
+      setEmployees(Array.isArray(data) ? data.filter((employee) => employee.is_active) : []);
+    } catch (err) {
+      setEmployees([]);
+    }
+  }, []);
+
   useEffect(() => { loadTickets(); }, [loadTickets]);
   useEffect(() => { loadDetail(); }, [loadDetail]);
   useEffect(() => { loadSummary(); }, [loadSummary]);
+  useEffect(() => { if (!detailMode) loadEmployees(); }, [detailMode, loadEmployees]);
 
   const updateTicket = async (patch) => {
     if (!detail?.ticket?.id || saving) return;
@@ -434,9 +446,10 @@ export default function Tickets({ detailMode = false }) {
       customer_phone: ticketForm.customer_phone.trim(),
       title: ticketForm.title.trim(),
       summary: ticketForm.summary.trim(),
+      assigned_employee_id: ticketForm.assigned_employee_id ? Number(ticketForm.assigned_employee_id) : null,
     };
-    if (!payload.customer_phone || !payload.title) {
-      setFormError('Phone number and ticket subject are required.');
+    if (!payload.customer_phone || !payload.title || !payload.assigned_employee_id) {
+      setFormError('Phone number, ticket subject and assignee are required.');
       return;
     }
     setSaving(true);
@@ -731,12 +744,23 @@ export default function Tickets({ detailMode = false }) {
                   {PRIORITY_OPTIONS.filter(([key]) => key !== 'all').map(([key, label]) => <option key={key} value={key}>{label}</option>)}
                 </select>
               </label>
+              <label className="block">
+                <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">Assign to</span>
+                <select value={ticketForm.assigned_employee_id} onChange={(event) => setTicketForm((form) => ({ ...form, assigned_employee_id: event.target.value }))} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
+                  <option value="">Select employee to notify</option>
+                  {employees.map((employee) => (
+                    <option key={employee.id} value={employee.id}>
+                      {employee.name} - {employee.role || 'team'}{employee.phone ? ` - ${employee.phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
               <TextArea label="Details" value={ticketForm.summary} onChange={(value) => setTicketForm((form) => ({ ...form, summary: value }))} placeholder="Describe the issue, promise made, or next action..." />
             </div>
             <div className="shrink-0 border-t border-slate-100 bg-white p-5 sm:flex sm:gap-3 sm:px-6 sm:pb-6">
               <button onClick={() => setShowTicketModal(false)} className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-black text-slate-600 hover:bg-slate-50">Cancel</button>
               <button onClick={createTicket} disabled={saving} className="mt-3 flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white hover:bg-[#2828DD] disabled:opacity-50 sm:mt-0">
-                {saving ? 'Creating...' : 'Create ticket'}
+                {saving ? 'Saving...' : 'Save and notify'}
               </button>
             </div>
           </div>

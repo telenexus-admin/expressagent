@@ -152,6 +152,7 @@ router.post('/', async (req, res) => {
       source: 'admin',
       summary: req.body.summary,
       messageText: req.body.summary,
+      assignedEmployeeId: req.body.assigned_employee_id || null,
       forceNew: true,
     });
     if (!ticket) return res.status(400).json({ error: 'customer_phone is required' });

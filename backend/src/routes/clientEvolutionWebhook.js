@@ -565,6 +565,7 @@ router.post('/client/:clientId', async (req, res) => {
         `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
         `Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly.\n` +
         `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context.\n` +
+        `For interface, ethernet, SFP, link or port questions, explain which ports are connected/running, which are not linked or disabled, and include TX/RX rates and packet rates when present.\n` +
         `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.\n` +
         routerAdminContext;
       const recent = await db.query(

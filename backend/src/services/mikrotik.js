@@ -392,6 +392,112 @@ function percentText(value) {
   return text.endsWith('%') ? text : `${text}%`;
 }
 
+function parseRateBits(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return 0;
+  const numeric = Number(text.replace(/[^0-9.]/g, ''));
+  if (!Number.isFinite(numeric)) return 0;
+  if (text.includes('gbps') || text.includes('gbit')) return numeric * 1000000000;
+  if (text.includes('mbps') || text.includes('mbit')) return numeric * 1000000;
+  if (text.includes('kbps') || text.includes('kbit')) return numeric * 1000;
+  return numeric;
+}
+
+function formatRate(value) {
+  const bits = parseRateBits(value);
+  if (!bits) return '0 bps';
+  if (bits >= 1000000000) return `${(bits / 1000000000).toFixed(bits >= 10000000000 ? 0 : 1)} Gbps`;
+  if (bits >= 1000000) return `${(bits / 1000000).toFixed(bits >= 10000000 ? 1 : 2)} Mbps`;
+  if (bits >= 1000) return `${(bits / 1000).toFixed(bits >= 10000 ? 1 : 2)} kbps`;
+  return `${Math.round(bits)} bps`;
+}
+
+function firstPresent(row, keys, fallback = '') {
+  for (const key of keys) {
+    const value = row?.[key];
+    if (value !== undefined && value !== null && String(value).trim() !== '') return String(value).trim();
+  }
+  return fallback;
+}
+
+async function interfaceTrafficSnapshot(client, name) {
+  const rows = await client.command('/interface/monitor-traffic', { interface: name, once: '' }).catch(() => []);
+  return rows[0] || {};
+}
+
+async function summarizeInterfacesDetailed(client) {
+  const interfaceRows = await client.command('/interface/print').catch(() => []);
+  const physicalRows = (interfaceRows || [])
+    .filter((row) => {
+      const name = String(row.name || '');
+      const type = String(row.type || '').toLowerCase();
+      return /^(ether|sfp|combo|bridge|vlan|bonding|wg-|wireguard|lte)/i.test(name) ||
+        ['ether', 'vlan', 'bridge', 'bonding', 'wireguard', 'lte'].includes(type);
+    })
+    .slice(0, 24);
+
+  const trafficRows = await Promise.all(physicalRows.map(async (row) => ({
+    row,
+    traffic: row.running === 'true' && row.disabled !== 'true'
+      ? await interfaceTrafficSnapshot(client, row.name)
+      : {},
+  })));
+
+  const enriched = trafficRows.map(({ row, traffic }) => {
+    const name = row.name || 'unnamed';
+    const type = row.type || 'interface';
+    const disabled = row.disabled === 'true';
+    const running = row.running === 'true';
+    const status = disabled ? 'disabled' : running ? 'connected/running' : 'not linked';
+    const tx = firstPresent(traffic, ['tx-bits-per-second'], firstPresent(row, ['tx', 'tx-bits-per-second'], '0'));
+    const rx = firstPresent(traffic, ['rx-bits-per-second'], firstPresent(row, ['rx', 'rx-bits-per-second'], '0'));
+    const txPackets = firstPresent(traffic, ['tx-packets-per-second'], firstPresent(row, ['tx-packet', 'tx-packets'], '0'));
+    const rxPackets = firstPresent(traffic, ['rx-packets-per-second'], firstPresent(row, ['rx-packet', 'rx-packets'], '0'));
+    const mtu = firstPresent(row, ['actual-mtu', 'mtu', 'l2mtu'], 'not shown');
+    return {
+      name,
+      type,
+      disabled,
+      running,
+      status,
+      tx,
+      rx,
+      txBits: parseRateBits(tx),
+      rxBits: parseRateBits(rx),
+      txPackets,
+      rxPackets,
+      mtu,
+    };
+  });
+
+  const connected = enriched
+    .filter((item) => item.running && !item.disabled)
+    .sort((a, b) => (b.txBits + b.rxBits) - (a.txBits + a.rxBits));
+  const inactive = enriched.filter((item) => !item.running && !item.disabled);
+  const disabled = enriched.filter((item) => item.disabled);
+
+  const lines = [];
+  lines.push(`- Interface totals: ${enriched.length} shown, ${connected.length} connected/running, ${inactive.length} not linked, ${disabled.length} disabled.`);
+  if (connected.length) {
+    lines.push('- Connected ports with traffic:');
+    connected.slice(0, 12).forEach((item) => {
+      const trafficText = `TX ${formatRate(item.tx)}, RX ${formatRate(item.rx)}`;
+      const packetText = `TX packets ${item.txPackets}, RX packets ${item.rxPackets}`;
+      lines.push(`  - ${item.name}: ${item.type}, ${item.status}, MTU ${item.mtu}, ${trafficText}, ${packetText}`);
+    });
+  } else {
+    lines.push('- Connected ports with traffic: none returned as running.');
+  }
+  if (inactive.length) {
+    lines.push(`- Ports with no link: ${inactive.slice(0, 16).map((item) => item.name).join(', ')}${inactive.length > 16 ? '...' : ''}`);
+  }
+  if (disabled.length) {
+    lines.push(`- Disabled ports: ${disabled.slice(0, 16).map((item) => item.name).join(', ')}${disabled.length > 16 ? '...' : ''}`);
+  }
+  lines.push('- Explanation: connected/running means RouterOS sees an active link. TX is traffic leaving the router on that interface; RX is traffic entering the router on that interface. 0 bps means the link may be up but idle during the check.');
+  return lines;
+}
+
 function routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount }) {
   const cpu = Number(cpuLoad);
   const totalSessions = Number(pppCount || 0) + Number(hotspotCount || 0);
@@ -618,9 +724,9 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
       }
 
       if (wantsInterfaces && router.features?.interfaces !== false) {
-        const interfaceRows = await client.command('/interface/print').catch(() => []);
-        const interfaceSummary = summarizeRows(interfaceRows, [['name', 'name'], ['type', 'type'], ['running', 'running'], ['disabled', 'disabled']], 12);
-        lines.push(`- Interfaces: ${interfaceSummary.length ? interfaceSummary.join(' | ') : 'not shown'}`);
+        lines.push('- Interface detail:');
+        const interfaceLines = await summarizeInterfacesDetailed(client).catch((err) => [`- Interface details unavailable: ${err.message || 'RouterOS command failed'}`]);
+        interfaceLines.forEach((line) => lines.push(line));
       }
 
       if (wantsLogs && router.features?.logs !== false) {

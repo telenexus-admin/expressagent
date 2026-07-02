@@ -1011,6 +1011,7 @@ router.post('/', async (req, res) => {
       systemPrompt +=
         `\n\nYou are answering an authorized router administrator. Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly. ` +
         `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context. ` +
+        `For interface, ethernet, SFP, link or port questions, explain which ports are connected/running, which are not linked or disabled, and include TX/RX rates and packet rates when present. ` +
         `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.${routerAdminContext}`;
     }
 

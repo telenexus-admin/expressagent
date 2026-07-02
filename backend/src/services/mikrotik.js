@@ -423,6 +423,64 @@ function routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount }) {
   return { cpuMessage, uptimeMessage, routerStatus };
 }
 
+function analyzeRouterSecurityLogs(rows = []) {
+  const attemptsBySource = new Map();
+  const recentFailures = (rows || [])
+    .map((row) => {
+      const message = String(row.message || '').trim();
+      const match = message.match(/login failure for user\s+(.+?)\s+from\s+([0-9a-fA-F:.]+)\s+via\s+([a-z0-9-]+)/i);
+      if (!match) return null;
+      return {
+        time: row.time || row.date || '',
+        username: String(match[1] || '').trim() || 'blank',
+        source: match[2],
+        method: String(match[3] || '').toLowerCase(),
+        message,
+      };
+    })
+    .filter(Boolean);
+
+  for (const failure of recentFailures) {
+    const key = `${failure.source}|${failure.method}`;
+    const current = attemptsBySource.get(key) || {
+      source: failure.source,
+      method: failure.method,
+      count: 0,
+      users: new Set(),
+      lastTime: failure.time,
+    };
+    current.count += 1;
+    current.users.add(failure.username);
+    current.lastTime = failure.time || current.lastTime;
+    attemptsBySource.set(key, current);
+  }
+
+  const suspicious = [...attemptsBySource.values()]
+    .filter((item) => item.count >= 3 || ['ssh', 'ftp', 'telnet', 'winbox'].includes(item.method))
+    .sort((a, b) => b.count - a.count)
+    .slice(0, 5);
+
+  if (!suspicious.length) {
+    return {
+      hasIssue: false,
+      summary: 'No recent login attack pattern was detected in the router logs returned by this check.',
+      lines: [],
+    };
+  }
+
+  const total = recentFailures.length;
+  const lines = suspicious.map((item) => {
+    const users = [...item.users].slice(0, 4).join(', ');
+    return `${item.count} failed ${item.method.toUpperCase()} login attempts from ${item.source}${users ? ` using ${users}` : ''}`;
+  });
+
+  return {
+    hasIssue: true,
+    summary: `Security attention: the router logs show ${total} recent failed login attempt${total === 1 ? '' : 's'}. This looks like brute-force probing against remote access services.`,
+    lines,
+  };
+}
+
 async function buildMikrotikStatusReply({ clientId }) {
   if (!clientId) return '';
   const routers = await activeRouterConfigs(clientId);
@@ -436,9 +494,10 @@ async function buildMikrotikStatusReply({ clientId }) {
     client = await connectRouter(router);
     const identityRows = await client.command('/system/identity/print');
     const resourceRows = await client.command('/system/resource/print');
-    const [pppRows, hotspotRows] = await Promise.all([
+    const [pppRows, hotspotRows, logRows] = await Promise.all([
       router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
       router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+      router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
     ]);
     const identity = identityRows[0]?.name || router.last_identity || router.name || 'this router';
     const resource = resourceRows[0];
@@ -448,9 +507,13 @@ async function buildMikrotikStatusReply({ clientId }) {
     const pppCount = pppRows.length;
     const hotspotCount = hotspotRows.length;
     const { cpuMessage, uptimeMessage, routerStatus } = routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount });
+    const security = analyzeRouterSecurityLogs(logRows);
     const servingLine = (pppCount + hotspotCount) > 0
       ? 'is online and currently serving clients'
       : 'is online, but no active client sessions were returned in this check';
+    const securitySection = security.hasIssue
+      ? `\n\nSecurity check:\n${security.summary}\n${security.lines.map((line) => `- ${line}`).join('\n')}\nRecommendation: restrict or disable public SSH/FTP/Winbox access, allow management only through trusted IPs or VPN, and keep the Nexa API limited to WireGuard.`
+      : `\n\nSecurity check:\n${security.summary}`;
 
     return `Sir, your router ${identity} ${servingLine}.
 
@@ -464,7 +527,7 @@ ${cpuMessage}
 Uptime check:
 ${uptimeMessage}
 
-Overall network view: ${routerStatus}`;
+Overall network view: ${routerStatus}${securitySection}`;
 
   } catch (err) {
     return `Sir, I could not complete the live router status check right now.
@@ -539,6 +602,13 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
       if (resource['free-memory']) lines.push(`- Free memory: ${resource['free-memory']}`);
       lines.push(`- Active PPPoE sessions: ${pppRows.length}`);
       lines.push(`- Active Hotspot sessions: ${hotspotRows.length}`);
+
+      if (router.features?.logs !== false) {
+        const logRows = await client.command('/log/print').catch(() => []);
+        const security = analyzeRouterSecurityLogs(logRows);
+        lines.push(`- Security logs: ${security.summary}`);
+        security.lines.forEach((line) => lines.push(`  - ${line}`));
+      }
 
       if (wantsUsers) {
         const pppSummary = summarizeRows(pppRows, [['name', 'user'], ['address', 'ip'], ['uptime', 'uptime']], 8);

@@ -38,12 +38,20 @@ function routerOsQuote(value) {
 }
 
 function normalizeAllowedApiAddresses(extraAddresses) {
+  const seen = new Set();
   const addresses = String(extraAddresses || '')
     .split(/[,\s]+/)
     .map((value) => value.trim())
     .filter(Boolean)
-    .map((value) => (value.includes('/') ? value : `${value}/32`));
-  return [`${NEXA_SERVER_IP}/32`, ...addresses].join(',');
+    .map((value) => (value.includes('/') ? value : `${value}/32`))
+    .filter((value) => {
+      if (seen.has(value)) return false;
+      seen.add(value);
+      return true;
+    });
+  const nexaAddress = `${NEXA_SERVER_IP}/32`;
+  if (!seen.has(nexaAddress)) addresses.push(nexaAddress);
+  return addresses.join(',');
 }
 
 function buildRouterOsCommands(mode, password, extraAddresses = '') {
@@ -51,9 +59,9 @@ function buildRouterOsCommands(mode, password, extraAddresses = '') {
   const port = mode === 'api-ssl' ? 8729 : 8728;
   return `/ip service enable ${service}
 /ip service set ${service} port=${port} address=${normalizeAllowedApiAddresses(extraAddresses)}
-/user group add name=nexa-readonly policy=read,test,api
+:if ([:len [/user group find name="nexa-readonly"]] = 0) do={/user group add name=nexa-readonly policy=read,test,api}
 /user group set [find name="nexa-readonly"] policy=read,test,api
-/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"
+:if ([:len [/user find name="nexa"]] = 0) do={/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"}
 /user set [find name="nexa"] group=nexa-readonly password="${routerOsQuote(password)}"`;
 }
 
@@ -249,7 +257,7 @@ function WireGuardWizard({ form, update, onPrepared }) {
   const [routerName, setRouterName] = useState(form.name || '');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [billingIps] = useState(form.wireguard_billing_api_ips || '');
+  const [billingIps, setBillingIps] = useState(form.wireguard_billing_api_ips || '');
   const [publicKey, setPublicKey] = useState(form.wireguard_mikrotik_public_key || '');
   const [plan, setPlan] = useState(null);
   const [status, setStatus] = useState(null);
@@ -373,6 +381,18 @@ function WireGuardWizard({ form, update, onPrepared }) {
             placeholder="Confirm password"
             className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
           />
+        </label>
+        <label className="block">
+          <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Billing/API IPs to preserve</span>
+          <input
+            value={billingIps}
+            onChange={(event) => setBillingIps(event.target.value)}
+            placeholder="e.g. 10.150.0.1, 10.133.0.1"
+            className="h-11 w-full rounded-xl border border-[#dfe5f2] bg-white px-3 text-sm font-semibold text-[#101633] outline-none focus:border-[#5b35f5] focus:ring-4 focus:ring-[#eee9ff]"
+          />
+          <span className="mt-1.5 block text-[11px] font-semibold leading-5 text-[#7a849f]">
+            Enter existing billing system API IPs from /ip service print so the generated script keeps them allowed.
+          </span>
         </label>
         <label className="block">
           <span className="mb-1.5 block text-[10px] font-black uppercase tracking-[0.14em] text-[#7d86a3]">Nexa IP</span>

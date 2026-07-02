@@ -120,12 +120,26 @@ function routerOsQuote(value) {
 }
 
 function normalizeApiAllowedIps(value) {
-  const extras = String(value || '')
+  const seen = new Set();
+  const addresses = String(value || '')
     .split(/[,\s]+/)
     .map((item) => item.trim())
     .filter(Boolean)
-    .map((item) => (item.includes('/') ? item : `${item}/32`));
-  return [`${WIREGUARD_SERVER_IP}/32`, ...extras].join(',');
+    .map((item) => (item.includes('/') ? item : `${item}/32`))
+    .filter((item) => {
+      if (!/^(\d{1,3}\.){3}\d{1,3}\/([0-9]|[12][0-9]|3[0-2])$/.test(item)) return false;
+      const [ip] = item.split('/');
+      const validOctets = ip.split('.').every((part) => {
+        const octet = Number(part);
+        return Number.isInteger(octet) && octet >= 0 && octet <= 255;
+      });
+      if (!validOctets || seen.has(item)) return false;
+      seen.add(item);
+      return true;
+    });
+  const nexaAddress = `${WIREGUARD_SERVER_IP}/32`;
+  if (!seen.has(nexaAddress)) addresses.push(nexaAddress);
+  return addresses.join(',');
 }
 
 async function allocateWireguardTunnelIp(preferredIp = '') {
@@ -154,9 +168,9 @@ function buildWireguardScripts({ tunnelIp, routerName, apiPassword, billingApiIp
 /interface/wireguard/peers add interface=${interfaceName} public-key="${WIREGUARD_SERVER_PUBLIC_KEY}" endpoint-address=${WIREGUARD_ENDPOINT} endpoint-port=${WIREGUARD_ENDPOINT_PORT} allowed-address=${WIREGUARD_SERVER_IP}/32 persistent-keepalive=25s
 /ip firewall filter add chain=input in-interface=${interfaceName} protocol=tcp dst-port=8728 src-address=${WIREGUARD_SERVER_IP} action=accept comment="Allow Nexa API via WireGuard"
 /ip firewall filter move [find comment="Allow Nexa API via WireGuard"] 0
-/user group add name=nexa-readonly policy=read,test,api
+:if ([:len [/user group find name="nexa-readonly"]] = 0) do={/user group add name=nexa-readonly policy=read,test,api}
 /user group set [find name="nexa-readonly"] policy=read,test,api
-/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"
+:if ([:len [/user find name="nexa"]] = 0) do={/user add name=nexa group=nexa-readonly password="${routerOsQuote(password)}"}
 /user set [find name="nexa"] group=nexa-readonly password="${routerOsQuote(password)}"
 /ip service enable api
 /ip service set api port=8728 address=${allowedApiIps}

@@ -32,6 +32,42 @@ const initialForm = {
   tone: 'warm',
 };
 
+const TABS = [
+  { key: 'builder', label: 'Mission Builder' },
+  { key: 'missions', label: 'Active Missions' },
+  { key: 'history', label: 'Run History' },
+  { key: 'guardrails', label: 'Guardrails' },
+];
+
+const TEMPLATES = [
+  {
+    title: 'Thank active customers',
+    task_type: 'engagement_message',
+    instruction: 'Thank our active customers for believing in us and remind them that our team is always ready to help.',
+    audience_status: 'active',
+  },
+  {
+    title: 'Daily router health report',
+    task_type: 'mikrotik_report',
+    instruction: 'Check router health, active users, CPU load, uptime, and important logs, then summarize what needs attention.',
+    schedule_mode: 'recurring',
+    repeat: 'daily',
+  },
+  {
+    title: 'Refresh website knowledge',
+    task_type: 'website_summary',
+    instruction: 'Refresh all active website knowledge links and summarize the latest changes for the admin.',
+    schedule_mode: 'recurring',
+    repeat: 'minutes',
+    interval_minutes: 30,
+  },
+  {
+    title: 'Prepare invoice mission',
+    task_type: 'invoice_send',
+    instruction: 'Create and send an invoice to the customer named in the instruction after checking billing details.',
+  },
+];
+
 function localDateTime(value) {
   if (!value) return '-';
   const date = new Date(value);
@@ -52,6 +88,94 @@ function ActionButton({ children, className = '', ...props }) {
     >
       {children}
     </button>
+  );
+}
+
+function TabButton({ active, children, ...props }) {
+  return (
+    <button
+      type="button"
+      className={`h-11 rounded-2xl px-4 text-[13px] font-black transition ${
+        active
+          ? 'bg-gradient-to-r from-[#3158ff] to-[#812cff] text-white shadow-[0_12px_26px_rgba(81,53,245,0.24)]'
+          : 'border border-[#dfe5f5] bg-white text-[#425071] hover:border-[#bfc8e4]'
+      }`}
+      {...props}
+    >
+      {children}
+    </button>
+  );
+}
+
+function HistoryPanel({ runs, loading }) {
+  if (loading) {
+    return <div className="rounded-[24px] border border-[#dfe5f5] bg-white p-8 text-[13px] font-black text-[#637098]">Loading task history...</div>;
+  }
+  if (!runs.length) {
+    return (
+      <div className="rounded-[28px] border border-dashed border-[#cfd8ec] bg-white p-10 text-center">
+        <FlowIcon className="mx-auto h-10 w-10 text-[#6c2cff]" />
+        <h3 className="mt-4 text-[18px] font-black text-[#08103f]">No runs yet</h3>
+        <p className="mt-2 text-[13px] font-semibold text-[#637098]">When a mission runs, the result will appear here.</p>
+      </div>
+    );
+  }
+  return (
+    <section className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <div>
+          <h2 className="text-[18px] font-black text-[#08103f]">Recent mission runs</h2>
+          <p className="text-[12px] font-semibold text-[#637098]">A clear trail of what the agent attempted and what happened.</p>
+        </div>
+        <span className="rounded-full bg-[#f0e8ff] px-3 py-1 text-[12px] font-black text-[#6c2cff]">{runs.length} runs</span>
+      </div>
+      <div className="space-y-3">
+        {runs.map((run) => (
+          <article key={run.id} className="rounded-2xl border border-[#e4e9f6] p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-[14px] font-black text-[#08103f]">{run.title}</p>
+                <p className="text-[12px] font-bold text-[#637098]">{typeLabel(run.task_type)} • {localDateTime(run.started_at)}</p>
+              </div>
+              <span className={`rounded-full border px-3 py-1 text-[11px] font-black uppercase tracking-[0.08em] ${statusClass[run.status] || statusClass.completed}`}>
+                {run.status}
+              </span>
+            </div>
+            <p className="mt-3 text-[13px] font-semibold leading-6 text-[#425071]">{run.summary || run.error || 'No summary returned.'}</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function GuardrailsPanel() {
+  const items = [
+    ['Approval-first actions', 'Invoice and network-changing missions are captured safely so approval can be added before execution.'],
+    ['Audience limits', 'Engagement missions can be limited by account status, package, and maximum recipients.'],
+    ['Human-readable history', 'Every run keeps a result trail with success, failure, and partial-delivery details.'],
+    ['No silent router changes', 'Current network missions report and summarize. Reboot/action layers should stay explicit and permissioned.'],
+  ];
+  return (
+    <section className="rounded-[28px] border border-[#dfe5f5] bg-white p-6 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
+      <div className="flex items-center gap-3">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-emerald-50 text-emerald-600">
+          <CheckCircleIcon className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="text-[20px] font-black text-[#08103f]">Mission guardrails</h2>
+          <p className="text-[13px] font-semibold text-[#637098]">The agent can be powerful without being reckless.</p>
+        </div>
+      </div>
+      <div className="mt-5 grid gap-4 md:grid-cols-2">
+        {items.map(([title, body]) => (
+          <div key={title} className="rounded-2xl border border-[#e4e9f6] bg-[#f8faff] p-4">
+            <p className="text-[14px] font-black text-[#08103f]">{title}</p>
+            <p className="mt-2 text-[13px] font-semibold leading-6 text-[#637098]">{body}</p>
+          </div>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -112,11 +236,14 @@ function TaskCard({ task, busy, onRun, onStatus }) {
 
 export default function AiTasks() {
   const [tasks, setTasks] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [form, setForm] = useState(initialForm);
   const [loading, setLoading] = useState(true);
+  const [historyLoading, setHistoryLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const [activeTab, setActiveTab] = useState('builder');
 
   const selectedType = useMemo(() => TASK_TYPES.find((type) => type.value === form.task_type), [form.task_type]);
 
@@ -132,8 +259,21 @@ export default function AiTasks() {
     }
   };
 
+  const loadRuns = async () => {
+    setHistoryLoading(true);
+    try {
+      const { data } = await api.get('/ai-tasks/runs?limit=50');
+      setRuns(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load AI task history.');
+    } finally {
+      setHistoryLoading(false);
+    }
+  };
+
   useEffect(() => {
     loadTasks();
+    loadRuns();
   }, []);
 
   const updateForm = (key, value) => {
@@ -167,7 +307,9 @@ export default function AiTasks() {
       });
       setForm(initialForm);
       setMessage('Mission created successfully.');
+      setActiveTab('missions');
       await loadTasks();
+      await loadRuns();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to create mission.');
     } finally {
@@ -183,6 +325,7 @@ export default function AiTasks() {
       await api.post(`/ai-tasks/${id}/run`);
       setMessage('Mission run completed.');
       await loadTasks();
+      await loadRuns();
     } catch (err) {
       setError(err.response?.data?.error || 'Mission run failed.');
     } finally {
@@ -198,6 +341,7 @@ export default function AiTasks() {
       await api.patch(`/ai-tasks/${id}/status`, { status });
       setMessage(`Mission ${status}.`);
       await loadTasks();
+      await loadRuns();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to update mission.');
     } finally {
@@ -237,6 +381,15 @@ export default function AiTasks() {
         </div>
       )}
 
+      <div className="flex flex-wrap gap-2">
+        {TABS.map((tab) => (
+          <TabButton key={tab.key} active={activeTab === tab.key} onClick={() => setActiveTab(tab.key)}>
+            {tab.label}
+          </TabButton>
+        ))}
+      </div>
+
+      {activeTab === 'builder' && (
       <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
         <form onSubmit={createTask} className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
           <div className="flex items-center gap-3">
@@ -339,6 +492,24 @@ export default function AiTasks() {
         </form>
 
         <section className="space-y-4">
+          <div className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
+            <h2 className="text-[18px] font-black text-[#08103f]">Mission templates</h2>
+            <p className="mt-1 text-[12px] font-semibold text-[#637098]">Start fast, then edit the instruction before creating the task.</p>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {TEMPLATES.map((template) => (
+                <button
+                  key={template.title}
+                  type="button"
+                  onClick={() => setForm((current) => ({ ...current, ...template }))}
+                  className="rounded-2xl border border-[#e4e9f6] bg-[#f8faff] p-4 text-left transition hover:border-[#6c2cff]"
+                >
+                  <p className="text-[14px] font-black text-[#08103f]">{template.title}</p>
+                  <p className="mt-2 text-[12px] font-semibold leading-5 text-[#637098]">{typeLabel(template.task_type)}</p>
+                </button>
+              ))}
+            </div>
+          </div>
+
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-4">
               <PulseIcon className="h-5 w-5 text-[#5135f5]" />
@@ -370,6 +541,43 @@ export default function AiTasks() {
           )}
         </section>
       </section>
+      )}
+
+      {activeTab === 'missions' && (
+        <section className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-3">
+            <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-4">
+              <PulseIcon className="h-5 w-5 text-[#5135f5]" />
+              <p className="mt-3 text-[22px] font-black text-[#08103f]">{tasks.length}</p>
+              <p className="text-[12px] font-bold text-[#637098]">Total missions</p>
+            </div>
+            <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-4">
+              <FlowIcon className="h-5 w-5 text-[#f59e0b]" />
+              <p className="mt-3 text-[22px] font-black text-[#08103f]">{tasks.filter((task) => ['active', 'scheduled'].includes(task.status)).length}</p>
+              <p className="text-[12px] font-bold text-[#637098]">Ready or scheduled</p>
+            </div>
+            <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-4">
+              <CheckCircleIcon className="h-5 w-5 text-[#10b981]" />
+              <p className="mt-3 text-[22px] font-black text-[#08103f]">{tasks.filter((task) => task.last_run_at).length}</p>
+              <p className="text-[12px] font-bold text-[#637098]">Run before</p>
+            </div>
+          </div>
+          {loading ? (
+            <div className="rounded-[24px] border border-[#dfe5f5] bg-white p-8 text-[13px] font-black text-[#637098]">Loading AI tasks...</div>
+          ) : tasks.length ? (
+            tasks.map((task) => <TaskCard key={task.id} task={task} busy={busy} onRun={runTask} onStatus={changeStatus} />)
+          ) : (
+            <div className="rounded-[28px] border border-dashed border-[#cfd8ec] bg-white p-10 text-center">
+              <AgentIcon className="mx-auto h-10 w-10 text-[#6c2cff]" />
+              <h3 className="mt-4 text-[18px] font-black text-[#08103f]">No missions yet</h3>
+              <p className="mt-2 text-[13px] font-semibold text-[#637098]">Create the first task and Nexa will start handling it from here.</p>
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === 'history' && <HistoryPanel runs={runs} loading={historyLoading} />}
+      {activeTab === 'guardrails' && <GuardrailsPanel />}
     </div>
   );
 }

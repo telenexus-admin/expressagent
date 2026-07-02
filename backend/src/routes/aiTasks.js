@@ -3,6 +3,7 @@ const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const {
   createAiTask,
   ensureAiTaskSchema,
+  listAiTaskRuns,
   listAiTasks,
   runAiTask,
   updateAiTaskStatus,
@@ -43,6 +44,17 @@ router.post('/', async (req, res) => {
   } catch (err) {
     console.error('POST /ai-tasks error:', err.message);
     res.status(400).json({ error: err.message || 'Failed to create AI task' });
+  }
+});
+
+router.get('/runs', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json(await listAiTaskRuns(clientId, req.query.limit));
+  } catch (err) {
+    console.error('GET /ai-tasks/runs error:', err.message);
+    res.status(500).json({ error: 'Failed to load AI task history' });
   }
 });
 

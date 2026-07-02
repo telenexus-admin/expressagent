@@ -159,6 +159,22 @@ async function listAiTasks(clientId) {
   return result.rows;
 }
 
+async function listAiTaskRuns(clientId, limit = 40) {
+  await ensureAiTaskSchema();
+  const safeLimit = Math.min(100, Math.max(1, Number(limit || 40) || 40));
+  const result = await db.query(
+    `SELECT r.id, r.task_id, r.status, r.started_at, r.finished_at, r.summary, r.stats, r.error,
+            t.title, t.task_type
+     FROM ai_task_runs r
+     JOIN ai_tasks t ON t.id = r.task_id
+     WHERE r.client_id = $1
+     ORDER BY r.started_at DESC
+     LIMIT $2`,
+    [clientId, safeLimit]
+  );
+  return result.rows;
+}
+
 async function updateAiTaskStatus(clientId, taskId, status) {
   await ensureAiTaskSchema();
   const nextStatus = normalizeStatus(status, 'paused');
@@ -394,6 +410,7 @@ module.exports = {
   ensureAiTaskSchema,
   createAiTask,
   listAiTasks,
+  listAiTaskRuns,
   updateAiTaskStatus,
   runAiTask,
   startAiTaskScheduler,

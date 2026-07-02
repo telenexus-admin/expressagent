@@ -3,7 +3,7 @@ import { Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import {
-  AgentIcon, BriefcaseIcon, ChartIcon, ChatIcon, CloseIcon, DotsVerticalIcon,
+  AgentIcon, BoltIcon, BriefcaseIcon, ChartIcon, ChatIcon, CloseIcon, DotsVerticalIcon,
   FlowIcon, HomeIcon, LifebuoyIcon, LogoutIcon, MenuIcon, PulseIcon,
   QuestionIcon, TicketIcon, UsersIcon, WarningIcon, WrenchIcon, CogIcon,
 } from '../components/Icons';
@@ -110,6 +110,7 @@ export default function ExpressnetDashboard() {
       icon: AgentIcon,
       items: [
         ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
+        ['/dashboard/ai-tasks', 'AI Tasks', BoltIcon, 'agent'],
         ['/dashboard/knowledge-base', 'Knowledge Base', PulseIcon, 'agent'],
         ['/dashboard/network-monitor', 'Network Monitor', WrenchIcon, 'agent'],
         ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],

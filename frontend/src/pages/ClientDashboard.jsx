@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import api from '../utils/api';
 import {
   AgentIcon,
+  BoltIcon,
   BriefcaseIcon,
   ChartIcon,
   ChatIcon,
@@ -237,6 +238,7 @@ export default function ClientDashboard() {
       icon: AgentIcon,
       items: [
         ['/dashboard/agent', 'Agent Configuration', AgentIcon, 'agent'],
+        ['/dashboard/ai-tasks', 'AI Tasks', BoltIcon, 'agent'],
         ['/dashboard/knowledge-base', 'Knowledge Base', PulseIcon, 'agent'],
         ['/dashboard/network-monitor', 'Network Monitor', WrenchIcon, 'agent'],
         ['/dashboard/sms-settings', 'SMS Provider', AgentIcon, 'agent'],

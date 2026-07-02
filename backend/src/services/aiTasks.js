@@ -92,9 +92,27 @@ async function ensureAiTaskSchema() {
       error TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS ai_task_targets (
+      id SERIAL PRIMARY KEY,
+      task_id INTEGER NOT NULL REFERENCES ai_tasks(id) ON DELETE CASCADE,
+      run_id INTEGER REFERENCES ai_task_runs(id) ON DELETE CASCADE,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      target_type VARCHAR(40) NOT NULL DEFAULT 'customer',
+      target_name VARCHAR(180),
+      target_phone VARCHAR(80),
+      target_email VARCHAR(180),
+      channel VARCHAR(40) NOT NULL DEFAULT 'whatsapp',
+      status VARCHAR(20) NOT NULL DEFAULT 'pending',
+      error TEXT,
+      response_payload JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_ai_tasks_client ON ai_tasks(client_id, created_at DESC);
     CREATE INDEX IF NOT EXISTS idx_ai_tasks_next_run ON ai_tasks(status, next_run_at);
     CREATE INDEX IF NOT EXISTS idx_ai_task_runs_task ON ai_task_runs(task_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_task_targets_task ON ai_task_targets(task_id, run_id, status);
   `);
   await db.query(`ALTER TABLE ai_tasks DROP CONSTRAINT IF EXISTS ai_tasks_task_type_check`);
   await db.query(`ALTER TABLE ai_tasks ADD CONSTRAINT ai_tasks_task_type_check CHECK (task_type IN ('engagement_message', 'invoice_send', 'website_summary', 'mikrotik_report'))`);
@@ -102,6 +120,8 @@ async function ensureAiTaskSchema() {
   await db.query(`ALTER TABLE ai_tasks ADD CONSTRAINT ai_tasks_status_check CHECK (status IN ('draft', 'scheduled', 'active', 'paused', 'completed', 'failed', 'cancelled'))`);
   await db.query(`ALTER TABLE ai_task_runs DROP CONSTRAINT IF EXISTS ai_task_runs_status_check`);
   await db.query(`ALTER TABLE ai_task_runs ADD CONSTRAINT ai_task_runs_status_check CHECK (status IN ('running', 'completed', 'failed', 'partial'))`);
+  await db.query(`ALTER TABLE ai_task_targets DROP CONSTRAINT IF EXISTS ai_task_targets_status_check`);
+  await db.query(`ALTER TABLE ai_task_targets ADD CONSTRAINT ai_task_targets_status_check CHECK (status IN ('pending', 'sent', 'failed', 'skipped', 'approved', 'replied'))`);
   schemaReady = true;
 }
 

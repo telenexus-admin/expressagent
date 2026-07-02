@@ -33,10 +33,13 @@ const initialForm = {
 };
 
 const TABS = [
-  { key: 'builder', label: 'Mission Builder' },
-  { key: 'missions', label: 'Active Missions' },
-  { key: 'history', label: 'Run History' },
-  { key: 'guardrails', label: 'Guardrails' },
+  { key: 'task_center', label: 'Task Center' },
+  { key: 'engagement', label: 'Engagement Campaigns' },
+  { key: 'invoices', label: 'Invoice Tasks' },
+  { key: 'websites', label: 'Website Research' },
+  { key: 'network', label: 'Network Tasks' },
+  { key: 'scheduled', label: 'Scheduled Tasks' },
+  { key: 'logs', label: 'Task Logs' },
 ];
 
 const TEMPLATES = [
@@ -66,7 +69,26 @@ const TEMPLATES = [
     task_type: 'invoice_send',
     instruction: 'Create and send an invoice to the customer named in the instruction after checking billing details.',
   },
+  {
+    title: 'Expiry reminders',
+    task_type: 'engagement_message',
+    instruction: 'Send a friendly reminder to customers expiring tomorrow and guide them to renew before service interruption.',
+    audience_status: 'active',
+  },
+  {
+    title: 'Package offer',
+    task_type: 'engagement_message',
+    instruction: 'Tell customers on the selected package about a better offer and answer replies naturally.',
+    audience_status: 'active',
+  },
 ];
+
+const TAB_TASK_TYPES = {
+  engagement: ['engagement_message'],
+  invoices: ['invoice_send'],
+  websites: ['website_summary'],
+  network: ['mikrotik_report'],
+};
 
 function localDateTime(value) {
   if (!value) return '-';
@@ -179,6 +201,29 @@ function GuardrailsPanel() {
   );
 }
 
+function CapabilityPanel({ title, description, items, icon: Icon = BrainIcon }) {
+  return (
+    <section className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
+      <div className="flex items-start gap-3">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-[#f0e8ff] text-[#6c2cff]">
+          <Icon className="h-5 w-5" />
+        </div>
+        <div>
+          <h2 className="text-[18px] font-black text-[#08103f]">{title}</h2>
+          <p className="mt-1 text-[13px] font-semibold leading-6 text-[#637098]">{description}</p>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-2">
+        {items.map((item) => (
+          <div key={item} className="rounded-2xl border border-[#e4e9f6] bg-[#f8faff] p-4 text-[13px] font-bold leading-6 text-[#425071]">
+            {item}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function TaskCard({ task, busy, onRun, onStatus }) {
   const latestRun = task.recent_runs?.[0];
   const nextStatus = task.status === 'paused' ? 'active' : 'paused';
@@ -234,6 +279,22 @@ function TaskCard({ task, busy, onRun, onStatus }) {
   );
 }
 
+function MissionList({ tasks, loading, busy, onRun, onStatus, emptyTitle = 'No missions yet', emptyBody = 'Create the first task and Nexa will start handling it from here.' }) {
+  if (loading) {
+    return <div className="rounded-[24px] border border-[#dfe5f5] bg-white p-8 text-[13px] font-black text-[#637098]">Loading AI tasks...</div>;
+  }
+  if (!tasks.length) {
+    return (
+      <div className="rounded-[28px] border border-dashed border-[#cfd8ec] bg-white p-10 text-center">
+        <AgentIcon className="mx-auto h-10 w-10 text-[#6c2cff]" />
+        <h3 className="mt-4 text-[18px] font-black text-[#08103f]">{emptyTitle}</h3>
+        <p className="mt-2 text-[13px] font-semibold text-[#637098]">{emptyBody}</p>
+      </div>
+    );
+  }
+  return tasks.map((task) => <TaskCard key={task.id} task={task} busy={busy} onRun={onRun} onStatus={onStatus} />);
+}
+
 export default function AiTasks() {
   const [tasks, setTasks] = useState([]);
   const [runs, setRuns] = useState([]);
@@ -243,7 +304,7 @@ export default function AiTasks() {
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const [activeTab, setActiveTab] = useState('builder');
+  const [activeTab, setActiveTab] = useState('task_center');
 
   const selectedType = useMemo(() => TASK_TYPES.find((type) => type.value === form.task_type), [form.task_type]);
 
@@ -389,7 +450,7 @@ export default function AiTasks() {
         ))}
       </div>
 
-      {activeTab === 'builder' && (
+      {activeTab === 'task_center' && (
       <section className="grid gap-5 xl:grid-cols-[420px_1fr]">
         <form onSubmit={createTask} className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
           <div className="flex items-center gap-3">
@@ -543,7 +604,75 @@ export default function AiTasks() {
       </section>
       )}
 
-      {activeTab === 'missions' && (
+      {activeTab === 'engagement' && (
+        <section className="space-y-4">
+          <CapabilityPanel
+            title="Engagement Campaigns"
+            description="Use this for real customer conversations, not dry broadcasts. Nexa can greet customers naturally and continue the conversation when they reply."
+            icon={ShareIosIcon}
+            items={[
+              'Audience filters: active, expired, expiring soon, package, router, billing import, or recent interaction.',
+              'Delivery styles: warm, brief, reminder, offer, or support follow-up.',
+              'Channels planned: WhatsApp first, then SMS and email when enabled per account.',
+              'Replies stay in conversations so the team can see what customers said back.',
+            ]}
+          />
+          <MissionList tasks={tasks.filter((task) => TAB_TASK_TYPES.engagement.includes(task.task_type))} loading={loading} busy={busy} onRun={runTask} onStatus={changeStatus} emptyTitle="No engagement campaigns yet" emptyBody="Create one from Task Center, or use the thank-you and expiry reminder templates." />
+        </section>
+      )}
+
+      {activeTab === 'invoices' && (
+        <section className="space-y-4">
+          <CapabilityPanel
+            title="Invoice Tasks"
+            description="Invoice missions will connect deeper into the invoice generator: fetch customer details, generate PDF, send invoice, and continue Pay Now / Pay Later flows."
+            icon={CheckCircleIcon}
+            items={[
+              'Create invoice for one customer by name, phone, account number, or username.',
+              'Batch invoice expired customers or monthly customers on a schedule.',
+              'Attach Pay Now and Pay Later buttons after the PDF invoice is sent.',
+              'Current build captures invoice missions safely; full send executor is the next invoice step.',
+            ]}
+          />
+          <MissionList tasks={tasks.filter((task) => TAB_TASK_TYPES.invoices.includes(task.task_type))} loading={loading} busy={busy} onRun={runTask} onStatus={changeStatus} emptyTitle="No invoice tasks yet" emptyBody="Create an invoice mission from Task Center." />
+        </section>
+      )}
+
+      {activeTab === 'websites' && (
+        <section className="space-y-4">
+          <CapabilityPanel
+            title="Website Research Tasks"
+            description="Connect scheduled website refreshes to the Knowledge Base so Nexa can keep learning from pages that change over time."
+            icon={BrainIcon}
+            items={[
+              'Refresh saved website links every 5, 10, 30 minutes, daily, or weekly.',
+              'Summarize changes into the task logs for admin review.',
+              'Save refreshed findings back into Knowledge Base for future customer replies.',
+              'Useful for ISP pricing pages, competitor updates, documentation, and public notices.',
+            ]}
+          />
+          <MissionList tasks={tasks.filter((task) => TAB_TASK_TYPES.websites.includes(task.task_type))} loading={loading} busy={busy} onRun={runTask} onStatus={changeStatus} emptyTitle="No website research tasks yet" emptyBody="Create one from Task Center using the website refresh template." />
+        </section>
+      )}
+
+      {activeTab === 'network' && (
+        <section className="space-y-4">
+          <CapabilityPanel
+            title="Network Tasks"
+            description="Network tasks are read-only by default: router health, CPU, uptime, interfaces, failed logins, offline routers, and active users."
+            icon={PulseIcon}
+            items={[
+              'Safe automatic: check and report router status, logs, CPU, uptime, active users, and interface traffic.',
+              'Approval required later: reboot router, disable interface, enable interface, or disconnect user.',
+              'Forbidden unless explicitly enabled: firewall changes, user deletion, package changes.',
+              'Every network task should log the router checked, warnings found, and any admin approval record.',
+            ]}
+          />
+          <MissionList tasks={tasks.filter((task) => TAB_TASK_TYPES.network.includes(task.task_type))} loading={loading} busy={busy} onRun={runTask} onStatus={changeStatus} emptyTitle="No network tasks yet" emptyBody="Create a MikroTik report mission from Task Center." />
+        </section>
+      )}
+
+      {activeTab === 'scheduled' && (
         <section className="space-y-4">
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-4">
@@ -562,22 +691,11 @@ export default function AiTasks() {
               <p className="text-[12px] font-bold text-[#637098]">Run before</p>
             </div>
           </div>
-          {loading ? (
-            <div className="rounded-[24px] border border-[#dfe5f5] bg-white p-8 text-[13px] font-black text-[#637098]">Loading AI tasks...</div>
-          ) : tasks.length ? (
-            tasks.map((task) => <TaskCard key={task.id} task={task} busy={busy} onRun={runTask} onStatus={changeStatus} />)
-          ) : (
-            <div className="rounded-[28px] border border-dashed border-[#cfd8ec] bg-white p-10 text-center">
-              <AgentIcon className="mx-auto h-10 w-10 text-[#6c2cff]" />
-              <h3 className="mt-4 text-[18px] font-black text-[#08103f]">No missions yet</h3>
-              <p className="mt-2 text-[13px] font-semibold text-[#637098]">Create the first task and Nexa will start handling it from here.</p>
-            </div>
-          )}
+          <MissionList tasks={tasks.filter((task) => ['active', 'scheduled', 'paused'].includes(task.status))} loading={loading} busy={busy} onRun={runTask} onStatus={changeStatus} emptyTitle="No scheduled tasks yet" emptyBody="Create a recurring or run-later mission from Task Center." />
         </section>
       )}
 
-      {activeTab === 'history' && <HistoryPanel runs={runs} loading={historyLoading} />}
-      {activeTab === 'guardrails' && <GuardrailsPanel />}
+      {activeTab === 'logs' && <HistoryPanel runs={runs} loading={historyLoading} />}
     </div>
   );
 }

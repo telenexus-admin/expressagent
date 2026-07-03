@@ -212,11 +212,13 @@ function wantsImportedAccountDetails(text) {
 function looksLikeImportedLookupText(text) {
   const value = String(text || '').trim();
   if (!value) return false;
-  if (/^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|yes|no)$/i.test(value)) return false;
+  if (/^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|yes|no|inquiry|help|need help|support|my internet is slow|internet is slow|slow internet)$/i.test(value)) return false;
+  if (/\b(?:slow|buffering|not working|no internet|need help|help me|assist|issue|problem|complaint|fault|down|router|wifi|wi-fi|internet)\b/i.test(value)) return false;
   if (/(?:\+?254|0)\d[\d\s-]{7,15}/.test(value)) return true;
   if (/\b(?:account\s*(?:number|no\.?)?|acc(?:ount)?\s*(?:number|no\.?)?|client\s*id|clientid|username|user\s*name)\b/i.test(value)) return true;
   if (/^\d{3,14}$/.test(value)) return true;
-  return /^[A-Za-z][A-Za-z .'-]{2,80}$/.test(value);
+  if (/^(?:name|my name is|i am|i'm|this is)\s+[A-Za-z][A-Za-z .'-]{2,80}$/i.test(value)) return true;
+  return false;
 }
 
 function hasStandalonePhone(text) {

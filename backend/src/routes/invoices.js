@@ -214,7 +214,6 @@ function invoiceMessage(invoice, url) {
     `Hello ${invoice.customer_name},`,
     `Your PDF invoice ${invoice.invoice_number} for ${Number(invoice.total_amount).toFixed(2)} is ready.`,
     invoice.due_date ? `Due date: ${new Date(invoice.due_date).toISOString().slice(0, 10)}` : '',
-    `View invoice: ${url}`,
     'Thank you.',
   ].filter(Boolean).join('\n');
 }

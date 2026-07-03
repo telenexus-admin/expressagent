@@ -126,7 +126,7 @@ export default function MikrotikClients() {
       const { data } = await api.post('/mikrotik/clients/sync');
       const sourceText = Array.isArray(data.sources) && data.sources.length
         ? data.sources.map((source) =>
-          `${source.router}: PPP ${source.ppp_active || 0}/${source.ppp_secrets || 0}, Hotspot ${source.hotspot_active || 0}, Hosts ${source.hotspot_hosts || 0}, DHCP ${source.dhcp_leases || 0}`
+          `${source.router}: online PPP ${source.deduped_online_pppoe || 0}, online Hotspot ${source.deduped_online_hotspot || 0}, seen hosts ${source.hotspot_hosts || 0}, DHCP ${source.dhcp_leases || 0}`
         ).join(' | ')
         : '';
       const failureText = data.failed ? ` ${data.failed} router(s) failed.` : '';

@@ -419,6 +419,33 @@ async function upsertMikrotikClient(row) {
   );
 }
 
+async function markStaleMikrotikClientsOffline({ clientId, routerId, onlineRows }) {
+  const onlineKeys = onlineRows
+    .map((row) => `${row.service_type}:${row.username}`)
+    .filter(Boolean);
+  const values = [clientId, routerId];
+  let staleFilter = '';
+
+  if (onlineKeys.length) {
+    values.push(onlineKeys);
+    staleFilter = `AND NOT ((service_type || ':' || username) = ANY($${values.length}::text[]))`;
+  }
+
+  await db.query(
+    `UPDATE mikrotik_clients
+     SET is_online = FALSE,
+         status = CASE WHEN status = 'active' THEN 'offline' ELSE status END,
+         last_seen = CASE WHEN last_seen = 'online now' THEN 'not online in latest sync' ELSE last_seen END,
+         last_synced_at = NOW(),
+         updated_at = NOW()
+     WHERE client_id = $1
+       AND router_id = $2
+       AND is_online = TRUE
+       ${staleFilter}`,
+    values
+  );
+}
+
 async function collectMikrotikClientRows(clientId, router, client) {
   const [pppSecrets, pppActive, hotspotUsers, hotspotActive, hotspotHosts, dhcpLeases] = await Promise.all([
     router.features?.ppp_secrets === false ? Promise.resolve([]) : client.command('/ppp/secret/print').catch(() => []),
@@ -468,7 +495,7 @@ async function collectMikrotikClientRows(clientId, router, client) {
     pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', active }));
   }
   for (const host of hotspotHosts) {
-    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', active: host }));
+    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease: host }));
   }
   for (const lease of dhcpLeases) {
     pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease }));
@@ -529,6 +556,11 @@ async function syncMikrotikClients(clientId) {
         await upsertMikrotikClient(row);
         summary.synced += 1;
       }
+      await markStaleMikrotikClientsOffline({
+        clientId,
+        routerId: router.id,
+        onlineRows: collected.onlineRows,
+      });
     } catch (err) {
       summary.failed += 1;
       summary.errors.push({ router_id: router.id, router: router.name, error: err.message });
@@ -908,7 +940,7 @@ It has been running for ${uptime}.
 
 Currently, ${pppCount} homes are enjoying internet through PPPoE, while ${hotspotCount} hotspot users are connected.
 
-These online numbers use the same logic as the Clients tab: PPP active plus Hotspot active/hosts, deduped by account/IP/MAC. DHCP leases are stored for seen/offline client records, but are not counted as online by themselves.
+These online numbers use the same logic as the Clients tab: PPP active plus Hotspot active sessions, deduped by account/IP/MAC. Hotspot hosts and DHCP leases are stored as seen/offline records, but are not counted as online by themselves.
 
 CPU load is at ${percentText(cpuLoad)}.
 ${cpuMessage}

@@ -1,6 +1,8 @@
 const db = require('../db');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
+const { sendSMS } = require('./sms');
+const { sendWorkflowEmployeeEmail } = require('./email');
 const { buildMikrotikStatusReply } = require('./mikrotik');
 const { refreshWebsiteKnowledge, listWebsiteKnowledge } = require('./websiteKnowledge');
 
@@ -20,6 +22,16 @@ function cleanPhone(value) {
   return String(value || '').replace(/[^0-9]/g, '');
 }
 
+function normalizeChannel(value) {
+  const channel = clean(value, 'whatsapp').toLowerCase();
+  return ['whatsapp', 'sms', 'email'].includes(channel) ? channel : 'whatsapp';
+}
+
+function normalizeTime(value) {
+  const text = clean(value);
+  return /^\d{2}:\d{2}$/.test(text) ? text : null;
+}
+
 function normalizeTaskType(value) {
   const taskType = clean(value, 'engagement_message').toLowerCase();
   return TASK_TYPES.includes(taskType) ? taskType : 'engagement_message';
@@ -36,6 +48,7 @@ function normalizeSchedule(value = {}) {
   return {
     mode: ['now', 'once', 'recurring'].includes(mode) ? mode : 'now',
     run_at: value.run_at || value.next_run_at || null,
+    time: normalizeTime(value.time || value.run_time),
     repeat: ['none', 'daily', 'weekly', 'monthly', 'minutes'].includes(repeat) ? repeat : 'none',
     interval_minutes: Math.max(0, Number(value.interval_minutes || 0) || 0),
   };
@@ -52,6 +65,10 @@ function nextRunFromSchedule(schedule = {}, from = new Date()) {
     return new Date(from.getTime() + normalized.interval_minutes * 60 * 1000);
   }
   const next = new Date(normalized.run_at || from);
+  if (normalized.time) {
+    const [hours, minutes] = normalized.time.split(':').map(Number);
+    next.setHours(hours, minutes, 0, 0);
+  }
   if (Number.isNaN(next.getTime()) || next <= from) {
     if (normalized.repeat === 'weekly') next.setDate(from.getDate() + 7);
     else if (normalized.repeat === 'monthly') next.setMonth(from.getMonth() + 1);
@@ -127,7 +144,7 @@ async function ensureAiTaskSchema() {
 
 async function resolveClient(clientId) {
   const result = await db.query(
-    `SELECT id, name, business_name, connection_provider, evolution_instance_name, meta_phone_number_id, meta_access_token
+    `SELECT *
      FROM clients WHERE id = $1 LIMIT 1`,
     [clientId]
   );
@@ -247,11 +264,17 @@ async function updateTaskAfterRun(task, success) {
 
 async function activeBillingRecipients(clientId, audience = {}) {
   const limit = Math.min(500, Math.max(1, Number(audience.limit || 200) || 200));
+  const channel = normalizeChannel(audience.channel);
   const filters = [];
   const params = [clientId];
   filters.push(`client_id = $1`);
-  filters.push(`phone_normalized IS NOT NULL`);
-  filters.push(`phone_normalized <> ''`);
+  if (channel === 'email') {
+    filters.push(`email IS NOT NULL`);
+    filters.push(`email <> ''`);
+  } else {
+    filters.push(`phone_normalized IS NOT NULL`);
+    filters.push(`phone_normalized <> ''`);
+  }
   const status = clean(audience.status || 'active').toLowerCase();
   if (status === 'active') {
     filters.push(`LOWER(COALESCE(package_status, client_status, '')) IN ('active', 'on', 'enabled', 'paid')`);
@@ -264,15 +287,16 @@ async function activeBillingRecipients(clientId, audience = {}) {
   }
   params.push(limit);
   const result = await db.query(
-    `SELECT DISTINCT ON (phone_normalized)
+    `SELECT DISTINCT ON (${channel === 'email' ? 'email' : 'phone_normalized'})
        phone_normalized AS phone,
+       email,
        COALESCE(full_name, username, account_number, phone) AS name,
        package_name,
        package_price,
        expiration_date
      FROM billing_import_accounts
      WHERE ${filters.join(' AND ')}
-     ORDER BY phone_normalized, imported_at DESC
+     ORDER BY ${channel === 'email' ? 'email' : 'phone_normalized'}, imported_at DESC
      LIMIT $${params.length}`,
     params
   ).catch(() => ({ rows: [] }));
@@ -295,6 +319,40 @@ async function conversationRecipients(clientId, audience = {}) {
   return result.rows;
 }
 
+function parseCustomRecipients(value) {
+  const lines = String(value || '')
+    .split(/[\n;]+/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+  const recipients = [];
+  for (const line of lines) {
+    const parts = line.split(',').map((part) => part.trim()).filter(Boolean);
+    const joined = parts.join(' ');
+    const email = parts.find((part) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(part)) ||
+      (joined.match(/[^\s@]+@[^\s@]+\.[^\s@]+/) || [])[0] ||
+      '';
+    const phone = parts.find((part) => cleanPhone(part).length >= 7) || '';
+    const name = parts.find((part) => part !== email && part !== phone && !/^[+\d\s()-]+$/.test(part)) || '';
+    recipients.push({
+      name: clean(name, email || phone || 'there'),
+      phone: phone ? cleanPhone(phone) : '',
+      email,
+    });
+  }
+  return recipients.filter((recipient) => recipient.phone || recipient.email);
+}
+
+function customAudienceRecipients(audience = {}) {
+  const type = clean(audience.type, 'filtered').toLowerCase();
+  if (type === 'custom_numbers') {
+    return parseCustomRecipients(audience.custom_numbers || audience.custom_recipients || '');
+  }
+  if (type === 'custom_group') {
+    return parseCustomRecipients(audience.group?.contacts || audience.contacts || '');
+  }
+  return [];
+}
+
 function humanEngagementMessage(task, recipient, client) {
   const company = client.business_name || client.name || 'us';
   const name = clean(recipient.name, 'there').split(/\s+/)[0];
@@ -304,9 +362,23 @@ function humanEngagementMessage(task, recipient, client) {
   return `Hello ${name},\n\n${body}\n\nWe truly appreciate you for being part of ${company}.`;
 }
 
-async function sendClientMessage(client, phone, message) {
-  const cleanTo = cleanPhone(phone);
+async function sendTaskMessage(client, recipient, message, channel, task) {
+  if (channel === 'email') {
+    if (!recipient.email) throw new Error('Recipient email is missing');
+    const result = await sendWorkflowEmployeeEmail(client, { email: recipient.email }, {
+      subject: task.title || 'Message from your internet provider',
+      message,
+    });
+    if (result.status !== 'sent') throw new Error(result.error || 'Email was not sent');
+    return;
+  }
+  const cleanTo = cleanPhone(recipient.phone);
   if (!cleanTo) throw new Error('Recipient phone is missing');
+  if (channel === 'sms') {
+    const result = await sendSMS(cleanTo, message, { client });
+    if (result?.status && result.status !== 'sent') throw new Error(result.error || 'SMS was not sent');
+    return;
+  }
   if (client.evolution_instance_name) {
     await sendClientText(client, cleanTo, message);
     return;
@@ -315,25 +387,27 @@ async function sendClientMessage(client, phone, message) {
 }
 
 async function runEngagementTask(task, client) {
-  const audience = task.audience || {};
-  let recipients = await activeBillingRecipients(task.client_id, audience);
-  let source = 'billing_import_accounts';
+  const channel = normalizeChannel(task.options?.channel || task.audience?.channel);
+  const audience = { ...(task.audience || {}), channel };
+  let recipients = customAudienceRecipients(audience);
+  let source = recipients.length ? clean(audience.group?.name, audience.type || 'custom') : 'billing_import_accounts';
+  if (!recipients.length) recipients = await activeBillingRecipients(task.client_id, audience);
   if (!recipients.length) {
-    recipients = await conversationRecipients(task.client_id, audience);
+    recipients = channel === 'email' ? [] : await conversationRecipients(task.client_id, audience);
     source = 'conversations';
   }
-  const stats = { source, targets: recipients.length, sent: 0, failed: 0, errors: [] };
+  const stats = { source, channel, targets: recipients.length, sent: 0, failed: 0, errors: [] };
   for (const recipient of recipients) {
     try {
-      await sendClientMessage(client, recipient.phone, humanEngagementMessage(task, recipient, client));
+      await sendTaskMessage(client, recipient, humanEngagementMessage(task, recipient, client), channel, task);
       stats.sent += 1;
     } catch (err) {
       stats.failed += 1;
-      stats.errors.push({ phone: recipient.phone, error: err.message });
+      stats.errors.push({ phone: recipient.phone, email: recipient.email, error: err.message });
     }
   }
   const status = stats.sent > 0 && stats.failed > 0 ? 'partial' : stats.sent > 0 ? 'completed' : 'failed';
-  const summary = `Engagement sent to ${stats.sent} of ${stats.targets} target customer${stats.targets === 1 ? '' : 's'}.`;
+  const summary = `Engagement sent by ${channel} to ${stats.sent} of ${stats.targets} target customer${stats.targets === 1 ? '' : 's'}.`;
   return { status, summary, stats };
 }
 

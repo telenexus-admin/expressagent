@@ -22,11 +22,17 @@ const initialForm = {
   title: '',
   task_type: 'engagement_message',
   instruction: '',
+  audience_type: 'filtered',
   audience_status: 'active',
   package_name: '',
+  custom_numbers: '',
+  custom_group_name: '',
+  custom_group_contacts: '',
   limit: 100,
+  channel: 'whatsapp',
   schedule_mode: 'now',
   run_at: '',
+  run_time: '20:00',
   repeat: 'none',
   interval_minutes: 30,
   tone: 'warm',
@@ -354,21 +360,28 @@ export default function AiTasks() {
         task_type: form.task_type,
         instruction: form.instruction,
         audience: {
+          type: form.audience_type,
           status: form.audience_status,
           package_name: form.package_name,
           limit: Number(form.limit) || 100,
+          custom_numbers: form.custom_numbers,
+          group: {
+            name: form.custom_group_name,
+            contacts: form.custom_group_contacts,
+          },
         },
         schedule: {
           mode: form.schedule_mode,
           run_at: form.run_at || null,
+          time: form.run_time || null,
           repeat: form.repeat,
           interval_minutes: Number(form.interval_minutes) || 0,
         },
-        options: { tone: form.tone, approval_required: form.task_type !== 'engagement_message' },
+        options: { tone: form.tone, channel: form.channel, approval_required: form.task_type !== 'engagement_message' },
       });
       setForm(initialForm);
       setMessage('Mission created successfully.');
-      setActiveTab('missions');
+      setActiveTab('scheduled');
       await loadTasks();
       await loadRuns();
     } catch (err) {
@@ -484,22 +497,63 @@ export default function AiTasks() {
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
                 <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Audience</span>
-                <select value={form.audience_status} onChange={(e) => updateForm('audience_status', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]">
-                  <option value="active">Active customers</option>
-                  <option value="expired">Expired customers</option>
-                  <option value="all">All known customers</option>
+                <select value={form.audience_type} onChange={(e) => updateForm('audience_type', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]">
+                  <option value="filtered">Customers from system</option>
+                  <option value="custom_numbers">Custom number</option>
+                  <option value="custom_group">Custom group</option>
                 </select>
               </label>
               <label className="block">
-                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Limit</span>
-                <input type="number" min="1" max="500" value={form.limit} onChange={(e) => updateForm('limit', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]" />
+                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Communication method</span>
+                <select value={form.channel} onChange={(e) => updateForm('channel', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]">
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="sms">SMS</option>
+                  <option value="email">Email</option>
+                </select>
               </label>
             </div>
 
-            <label className="block">
+            {form.audience_type === 'filtered' && (
+              <div className="grid gap-3 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Customer filter</span>
+                  <select value={form.audience_status} onChange={(e) => updateForm('audience_status', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]">
+                    <option value="active">Active customers</option>
+                    <option value="expired">Expired customers</option>
+                    <option value="all">All known customers</option>
+                  </select>
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Limit</span>
+                  <input type="number" min="1" max="500" value={form.limit} onChange={(e) => updateForm('limit', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]" />
+                </label>
+              </div>
+            )}
+
+            {form.audience_type === 'custom_numbers' && (
+              <label className="block">
+                <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Custom number or email</span>
+                <textarea value={form.custom_numbers} onChange={(e) => updateForm('custom_numbers', e.target.value)} rows={3} placeholder="One recipient per line. Example: James, 254712345678, james@example.com" className="mt-2 w-full resize-none rounded-2xl border border-[#d9e1f2] bg-white px-4 py-3 text-[13px] font-semibold leading-6 text-[#08103f] outline-none focus:border-[#6c2cff]" />
+              </label>
+            )}
+
+            {form.audience_type === 'custom_group' && (
+              <div className="space-y-3 rounded-2xl border border-[#e4e9f6] bg-[#f8faff] p-4">
+                <label className="block">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Group name</span>
+                  <input value={form.custom_group_name} onChange={(e) => updateForm('custom_group_name', e.target.value)} placeholder="VIP customers" className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]" />
+                </label>
+                <label className="block">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Group contacts</span>
+                  <textarea value={form.custom_group_contacts} onChange={(e) => updateForm('custom_group_contacts', e.target.value)} rows={4} placeholder="One contact per line: Name, phone, email" className="mt-2 w-full resize-none rounded-2xl border border-[#d9e1f2] bg-white px-4 py-3 text-[13px] font-semibold leading-6 text-[#08103f] outline-none focus:border-[#6c2cff]" />
+                </label>
+              </div>
+            )}
+
+            {form.audience_type === 'filtered' && <label className="block">
               <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Package filter</span>
               <input value={form.package_name} onChange={(e) => updateForm('package_name', e.target.value)} placeholder="Optional package name" className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]" />
-            </label>
+            </label>}
 
             <div className="grid gap-3 sm:grid-cols-2">
               <label className="block">
@@ -521,10 +575,13 @@ export default function AiTasks() {
 
             {form.schedule_mode !== 'now' && (
               <div className="grid gap-3 sm:grid-cols-2">
-                <label className="block">
-                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Run at</span>
+                {form.schedule_mode === 'once' ? <label className="block">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Execution date and time</span>
                   <input type="datetime-local" value={form.run_at} onChange={(e) => updateForm('run_at', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]" />
-                </label>
+                </label> : <label className="block">
+                  <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Execution time</span>
+                  <input type="time" value={form.run_time} onChange={(e) => updateForm('run_time', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]" />
+                </label>}
                 <label className="block">
                   <span className="text-[11px] font-black uppercase tracking-[0.14em] text-[#7b86a8]">Repeat</span>
                   <select value={form.repeat} onChange={(e) => updateForm('repeat', e.target.value)} className="mt-2 h-12 w-full rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]">

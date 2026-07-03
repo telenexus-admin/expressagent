@@ -45,7 +45,7 @@ const TABS = [
   { key: 'websites', label: 'Website Research' },
   { key: 'network', label: 'Network Tasks' },
   { key: 'scheduled', label: 'Scheduled Tasks' },
-  { key: 'logs', label: 'Task Logs' },
+  { key: 'logs', label: 'Mission Reports' },
 ];
 
 const TEMPLATES = [
@@ -152,8 +152,8 @@ function HistoryPanel({ runs, loading }) {
     <section className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-[18px] font-black text-[#08103f]">Recent mission runs</h2>
-          <p className="text-[12px] font-semibold text-[#637098]">A clear trail of what the agent attempted and what happened.</p>
+          <h2 className="text-[18px] font-black text-[#08103f]">Mission reports</h2>
+          <p className="text-[12px] font-semibold text-[#637098]">Delivery, replies, failures and how Nexa handled the task.</p>
         </div>
         <span className="rounded-full bg-[#f0e8ff] px-3 py-1 text-[12px] font-black text-[#6c2cff]">{runs.length} runs</span>
       </div>
@@ -169,7 +169,13 @@ function HistoryPanel({ runs, loading }) {
                 {run.status}
               </span>
             </div>
-            <p className="mt-3 text-[13px] font-semibold leading-6 text-[#425071]">{run.summary || run.error || 'No summary returned.'}</p>
+            <div className="mt-3 grid gap-2 text-[12px] font-black text-[#425071] sm:grid-cols-4">
+              <span className="rounded-xl bg-[#f8faff] px-3 py-2">Targets: {run.target_count ?? run.stats?.targets ?? 0}</span>
+              <span className="rounded-xl bg-emerald-50 px-3 py-2 text-emerald-700">Sent: {run.sent_count ?? run.stats?.sent ?? 0}</span>
+              <span className="rounded-xl bg-blue-50 px-3 py-2 text-blue-700">Replies: {run.reply_count ?? run.stats?.replies ?? 0}</span>
+              <span className="rounded-xl bg-rose-50 px-3 py-2 text-rose-700">Failed: {run.failed_count ?? run.stats?.failed ?? 0}</span>
+            </div>
+            <p className="mt-3 whitespace-pre-line text-[13px] font-semibold leading-6 text-[#425071]">{run.summary || run.error || 'No summary returned.'}</p>
           </article>
         ))}
       </div>

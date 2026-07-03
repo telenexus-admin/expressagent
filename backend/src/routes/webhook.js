@@ -23,6 +23,7 @@ const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, 
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
+const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -951,6 +952,8 @@ router.post('/', async (req, res) => {
     if (conversation.customer_name) {
       systemPrompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}". Use their name naturally when useful, without repeating a greeting in every reply.`;
     }
+    const missionContext = await buildActiveMissionReplyContext(client.id, phoneNumber);
+    if (missionContext) systemPrompt += missionContext;
     systemPrompt +=
       `\n\nREPLY DISCIPLINE:\n` +
       `Always answer the customer's latest message directly. If they state a problem, start solving that problem immediately. ` +
@@ -1122,6 +1125,12 @@ router.post('/', async (req, res) => {
     } else if (taggedReplyMedia.length > 0) {
       await deliverMediaItems(client, phoneNumber, taggedReplyMedia, conversation.id, 'tagged');
     }
+    await recordAiTaskRecipientReply({
+      clientId: client.id,
+      phone: phoneNumber,
+      customerMessage: messageText,
+      assistantReply: customerReply,
+    });
 
     runAfterReply('Post-reply ticket workflow', async () => {
       const complaint = classifyComplaintLocal(classificationText);

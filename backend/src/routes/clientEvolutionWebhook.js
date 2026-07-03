@@ -16,6 +16,7 @@ const { buildCustomerIntakeUrl } = require('../services/customerIntake');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { isBlockedNumber } = require('../services/blockedNumbers');
+const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -743,6 +744,8 @@ router.post('/client/:clientId', async (req, res) => {
     if (conversation.customer_name) {
       prompt += `\n\nThe customer's WhatsApp display name is "${conversation.customer_name}". Use their name naturally when useful, without repeating a greeting in every reply.`;
     }
+    const missionContext = await buildActiveMissionReplyContext(client.id, incoming.phone);
+    if (missionContext) prompt += missionContext;
     if (client.support_number) {
       prompt += `\n\nWhen a human is required, tell the customer they can reach support at ${client.support_number}.`;
     }
@@ -777,6 +780,12 @@ router.post('/client/:clientId', async (req, res) => {
     await reply(client, conversation.id, incoming.phone, cleanReply, replyAsVoice);
     if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
     else await sendMatchedMedia(client, conversation.id, incoming.phone, aiReply);
+    await recordAiTaskRecipientReply({
+      clientId: client.id,
+      phone: incoming.phone,
+      customerMessage: userText,
+      assistantReply: cleanReply,
+    });
     console.log(`[evo client ${client.id}] AI reply sent to ${incoming.phone}.`);
     runAfterReply('Evolution post-reply ticket workflow', async () => {
       const [complaint, intentResult] = await Promise.all([

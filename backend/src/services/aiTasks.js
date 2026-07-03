@@ -5,6 +5,7 @@ const { sendSMS } = require('./sms');
 const { sendWorkflowEmployeeEmail } = require('./email');
 const { buildMikrotikStatusReply } = require('./mikrotik');
 const { refreshWebsiteKnowledge, listWebsiteKnowledge } = require('./websiteKnowledge');
+const { generateAIResponse } = require('./openai');
 
 let schemaReady = false;
 let schedulerStarted = false;
@@ -139,6 +140,9 @@ async function ensureAiTaskSchema() {
   await db.query(`ALTER TABLE ai_task_runs ADD CONSTRAINT ai_task_runs_status_check CHECK (status IN ('running', 'completed', 'failed', 'partial'))`);
   await db.query(`ALTER TABLE ai_task_targets DROP CONSTRAINT IF EXISTS ai_task_targets_status_check`);
   await db.query(`ALTER TABLE ai_task_targets ADD CONSTRAINT ai_task_targets_status_check CHECK (status IN ('pending', 'sent', 'failed', 'skipped', 'approved', 'replied'))`);
+  await db.query(`ALTER TABLE ai_task_targets ADD COLUMN IF NOT EXISTS target_email VARCHAR(180)`);
+  await db.query(`ALTER TABLE ai_task_targets ADD COLUMN IF NOT EXISTS channel VARCHAR(40) NOT NULL DEFAULT 'whatsapp'`);
+  await db.query(`ALTER TABLE ai_task_targets ADD COLUMN IF NOT EXISTS response_payload JSONB NOT NULL DEFAULT '{}'::jsonb`);
   schemaReady = true;
 }
 
@@ -201,7 +205,11 @@ async function listAiTaskRuns(clientId, limit = 40) {
   const safeLimit = Math.min(100, Math.max(1, Number(limit || 40) || 40));
   const result = await db.query(
     `SELECT r.id, r.task_id, r.status, r.started_at, r.finished_at, r.summary, r.stats, r.error,
-            t.title, t.task_type
+            t.title, t.task_type,
+            COALESCE((SELECT COUNT(*)::int FROM ai_task_targets target WHERE target.run_id = r.id), 0) AS target_count,
+            COALESCE((SELECT COUNT(*)::int FROM ai_task_targets target WHERE target.run_id = r.id AND target.status IN ('sent','replied')), 0) AS sent_count,
+            COALESCE((SELECT COUNT(*)::int FROM ai_task_targets target WHERE target.run_id = r.id AND target.status = 'replied'), 0) AS reply_count,
+            COALESCE((SELECT COUNT(*)::int FROM ai_task_targets target WHERE target.run_id = r.id AND target.status = 'failed'), 0) AS failed_count
      FROM ai_task_runs r
      JOIN ai_tasks t ON t.id = r.task_id
      WHERE r.client_id = $1
@@ -357,9 +365,58 @@ function humanEngagementMessage(task, recipient, client) {
   const company = client.business_name || client.name || 'us';
   const name = clean(recipient.name, 'there').split(/\s+/)[0];
   const tone = clean(task.options?.tone, 'warm');
-  const body = clean(task.instruction);
+  const body = clean(task.options?.campaign_message, task.instruction);
   if (tone === 'brief') return `Hello ${name}, ${body}`;
   return `Hello ${name},\n\n${body}\n\nWe truly appreciate you for being part of ${company}.`;
+}
+
+async function buildCampaignBrief(task, client) {
+  const company = client.business_name || client.name || 'this internet provider';
+  const prompt =
+    `You are planning a customer engagement mission for ${company}.\n` +
+    `Take the admin instruction, understand the goal, broaden it slightly, and create a natural short customer message.\n` +
+    `Keep it human, warm, clear, and not spammy. Do not include placeholders. Do not overpromise.\n` +
+    `Return JSON only with keys: campaign_goal, customer_message, reply_guidance, report_focus.`;
+  const raw = await generateAIResponse(prompt, [
+    { role: 'user', content: `Mission title: ${task.title}\nInstruction: ${task.instruction}\nTone: ${task.options?.tone || 'warm'}` },
+  ]).catch(() => '');
+  try {
+    const jsonText = String(raw || '').replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
+    const parsed = JSON.parse(jsonText);
+    return {
+      campaign_goal: clean(parsed.campaign_goal, task.title),
+      customer_message: clean(parsed.customer_message, task.instruction),
+      reply_guidance: clean(parsed.reply_guidance, 'Stay on the campaign topic and answer customer replies naturally.'),
+      report_focus: clean(parsed.report_focus, 'Track delivery, replies, sentiment, and follow-up needs.'),
+    };
+  } catch (_) {
+    return {
+      campaign_goal: task.title,
+      customer_message: clean(task.instruction),
+      reply_guidance: 'Stay on the campaign topic and answer customer replies naturally.',
+      report_focus: 'Track delivery, replies, sentiment, and follow-up needs.',
+    };
+  }
+}
+
+async function insertTaskTarget(task, runId, recipient, channel, status, error = null, payload = {}) {
+  await db.query(
+    `INSERT INTO ai_task_targets
+       (task_id, run_id, client_id, target_type, target_name, target_phone, target_email, channel, status, error, response_payload, updated_at)
+     VALUES ($1,$2,$3,'customer',$4,$5,$6,$7,$8,$9,$10::jsonb,NOW())`,
+    [
+      task.id,
+      runId || null,
+      task.client_id,
+      recipient.name || null,
+      cleanPhone(recipient.phone) || null,
+      recipient.email || null,
+      channel,
+      status,
+      error,
+      JSON.stringify(payload || {}),
+    ]
+  );
 }
 
 async function sendTaskMessage(client, recipient, message, channel, task) {
@@ -396,18 +453,42 @@ async function runEngagementTask(task, client) {
     recipients = channel === 'email' ? [] : await conversationRecipients(task.client_id, audience);
     source = 'conversations';
   }
-  const stats = { source, channel, targets: recipients.length, sent: 0, failed: 0, errors: [] };
+  const campaign = await buildCampaignBrief(task, client);
+  task.options = { ...(task.options || {}), campaign_message: campaign.customer_message, campaign };
+  const stats = {
+    source,
+    channel,
+    targets: recipients.length,
+    sent: 0,
+    failed: 0,
+    replies: 0,
+    errors: [],
+    campaign,
+  };
   for (const recipient of recipients) {
     try {
-      await sendTaskMessage(client, recipient, humanEngagementMessage(task, recipient, client), channel, task);
+      const message = humanEngagementMessage(task, recipient, client);
+      await sendTaskMessage(client, recipient, message, channel, task);
+      await insertTaskTarget(task, task.current_run_id, recipient, channel, 'sent', null, {
+        sent_message: message,
+        campaign_goal: campaign.campaign_goal,
+        reply_guidance: campaign.reply_guidance,
+      });
       stats.sent += 1;
     } catch (err) {
       stats.failed += 1;
       stats.errors.push({ phone: recipient.phone, email: recipient.email, error: err.message });
+      await insertTaskTarget(task, task.current_run_id, recipient, channel, 'failed', err.message, {
+        campaign_goal: campaign.campaign_goal,
+      });
     }
   }
   const status = stats.sent > 0 && stats.failed > 0 ? 'partial' : stats.sent > 0 ? 'completed' : 'failed';
-  const summary = `Engagement sent by ${channel} to ${stats.sent} of ${stats.targets} target customer${stats.targets === 1 ? '' : 's'}.`;
+  const summary =
+    `Mission goal: ${campaign.campaign_goal}\n` +
+    `Delivery: ${channel} sent to ${stats.sent} of ${stats.targets} target customer${stats.targets === 1 ? '' : 's'}.\n` +
+    `How Nexa should handle replies: ${campaign.reply_guidance}\n` +
+    `Report focus: ${campaign.report_focus}`;
   return { status, summary, stats };
 }
 
@@ -462,6 +543,7 @@ async function runAiTask(clientId, taskId) {
   const task = await loadTaskForRun(clientId, taskId);
   if (!task) throw new Error('Task not found');
   const run = await insertRun(task);
+  task.current_run_id = run.id;
   try {
     const result = await executeAiTask(task);
     await finishRun(run.id, result.status, result.summary, result.stats);
@@ -489,6 +571,76 @@ async function runDueTasks() {
   }
 }
 
+async function buildActiveMissionReplyContext(clientId, phone, email = '') {
+  await ensureAiTaskSchema();
+  const cleanTo = cleanPhone(phone);
+  const params = [clientId];
+  const where = [`t.client_id = $1`, `t.status IN ('active', 'completed')`, `target.status IN ('sent', 'replied')`];
+  if (cleanTo) {
+    params.push(cleanTo);
+    where.push(`regexp_replace(COALESCE(target.target_phone, ''), '[^0-9]', '', 'g') = $${params.length}`);
+  } else if (email) {
+    params.push(String(email).trim().toLowerCase());
+    where.push(`LOWER(COALESCE(target.target_email, '')) = $${params.length}`);
+  } else {
+    return '';
+  }
+  const result = await db.query(
+    `SELECT t.id, t.title, t.instruction, t.options, target.id AS target_id, target.response_payload, target.updated_at
+     FROM ai_task_targets target
+     JOIN ai_tasks t ON t.id = target.task_id
+     WHERE ${where.join(' AND ')}
+     ORDER BY target.updated_at DESC
+     LIMIT 1`,
+    params
+  ).catch(() => ({ rows: [] }));
+  const row = result.rows[0];
+  if (!row) return '';
+  const campaign = row.options?.campaign || row.response_payload || {};
+  return `\n\nACTIVE AI TASK CONTEXT:\n` +
+    `This customer recently received an AI Task campaign.\n` +
+    `Mission: ${row.title}\n` +
+    `Admin instruction: ${row.instruction}\n` +
+    `Campaign goal: ${campaign.campaign_goal || row.response_payload?.campaign_goal || row.title}\n` +
+    `Original sent message: ${row.response_payload?.sent_message || 'not recorded'}\n` +
+    `Reply guidance: ${campaign.reply_guidance || row.response_payload?.reply_guidance || 'Stay on the mission topic and answer naturally.'}\n` +
+    `When the customer replies, respond like a real person continuing this mission. Stay on-topic, acknowledge their message, ask one useful follow-up when needed, and do not switch into generic support unless they clearly ask for another issue.`;
+}
+
+async function recordAiTaskRecipientReply({ clientId, phone, email = '', customerMessage = '', assistantReply = '' }) {
+  await ensureAiTaskSchema();
+  const cleanTo = cleanPhone(phone);
+  if (!cleanTo && !email) return;
+  const params = [clientId];
+  const where = [`client_id = $1`, `status IN ('sent', 'replied')`];
+  if (cleanTo) {
+    params.push(cleanTo);
+    where.push(`regexp_replace(COALESCE(target_phone, ''), '[^0-9]', '', 'g') = $${params.length}`);
+  } else {
+    params.push(String(email).trim().toLowerCase());
+    where.push(`LOWER(COALESCE(target_email, '')) = $${params.length}`);
+  }
+  const target = await db.query(
+    `SELECT id, response_payload FROM ai_task_targets
+     WHERE ${where.join(' AND ')}
+     ORDER BY updated_at DESC
+     LIMIT 1`,
+    params
+  ).catch(() => ({ rows: [] }));
+  const row = target.rows[0];
+  if (!row) return;
+  const replies = Array.isArray(row.response_payload?.replies) ? row.response_payload.replies.slice(-20) : [];
+  replies.push({ customer_message: customerMessage, assistant_reply: assistantReply, at: new Date().toISOString() });
+  await db.query(
+    `UPDATE ai_task_targets
+     SET status = 'replied',
+         response_payload = response_payload || $2::jsonb,
+         updated_at = NOW()
+     WHERE id = $1`,
+    [row.id, JSON.stringify({ replies, last_customer_message: customerMessage, last_assistant_reply: assistantReply })]
+  );
+}
+
 function startAiTaskScheduler() {
   if (schedulerStarted) return;
   schedulerStarted = true;
@@ -505,6 +657,8 @@ module.exports = {
   createAiTask,
   listAiTasks,
   listAiTaskRuns,
+  buildActiveMissionReplyContext,
+  recordAiTaskRecipientReply,
   updateAiTaskStatus,
   runAiTask,
   startAiTaskScheduler,

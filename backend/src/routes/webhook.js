@@ -987,7 +987,10 @@ router.post('/', async (req, res) => {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
       if (!allowedRouterAdmin) {
         console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
-        return res.sendStatus(200);
+        const safeReply = 'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.';
+        await deliverReply(client, phoneNumber, safeReply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, safeReply);
+        return;
       }
       if (isRouterStatusQuestion(classificationText)) {
         const statusReply = await buildMikrotikStatusReply({ clientId: client.id });

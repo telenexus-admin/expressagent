@@ -550,11 +550,11 @@ async function createOrUpdateTicket(signal) {
     const nextPriority = strongerPriority(ticket.priority, priority);
     const updated = await db.query(
       `UPDATE tickets
-       SET customer_name = COALESCE($2, customer_name),
-           priority = $3,
-           summary = COALESCE($4, summary),
-           last_message = COALESCE($5, last_message),
-           assigned_employee_id = COALESCE(assigned_employee_id, $6),
+       SET customer_name = COALESCE($2::text, customer_name),
+           priority = $3::text,
+           summary = COALESCE($4::text, summary),
+           last_message = COALESCE($5::text, last_message),
+           assigned_employee_id = COALESCE(assigned_employee_id, $6::int),
            updated_at = NOW()
        WHERE id = $1
        RETURNING *`,

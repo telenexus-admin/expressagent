@@ -549,6 +549,13 @@ router.post('/client/:clientId', async (req, res) => {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, incoming.phone);
       if (!allowedRouterAdmin) {
         console.warn(`[evo client ${client.id}] Router admin question ignored from unauthorized number ${incoming.phone}.`);
+        await reply(
+          client,
+          conversation.id,
+          incoming.phone,
+          'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.',
+          replyAsVoice
+        );
         return;
       }
 

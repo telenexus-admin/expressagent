@@ -411,7 +411,7 @@ export default function AiTasks() {
   };
 
   return (
-    <div className="space-y-5 pb-8">
+    <div className="h-full min-h-0 overflow-y-auto space-y-5 p-4 pb-10 sm:p-5">
       <section className="overflow-hidden rounded-[28px] border border-[#dfe5f5] bg-white shadow-[0_24px_70px_rgba(30,41,59,0.08)]">
         <div className="relative flex flex-col gap-5 p-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex items-start gap-4">

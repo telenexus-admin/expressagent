@@ -124,7 +124,13 @@ export default function MikrotikClients() {
     setError('');
     try {
       const { data } = await api.post('/mikrotik/clients/sync');
-      setMessage(`Synced ${data.synced || 0} client records from ${data.routers || 0} router(s).`);
+      const sourceText = Array.isArray(data.sources) && data.sources.length
+        ? data.sources.map((source) =>
+          `${source.router}: PPP ${source.ppp_active || 0}/${source.ppp_secrets || 0}, Hotspot ${source.hotspot_active || 0}, Hosts ${source.hotspot_hosts || 0}, DHCP ${source.dhcp_leases || 0}`
+        ).join(' | ')
+        : '';
+      const failureText = data.failed ? ` ${data.failed} router(s) failed.` : '';
+      setMessage(`Synced ${data.synced || 0} client records from ${data.routers || 0} router(s).${failureText}${sourceText ? ` Sources: ${sourceText}` : ''}`);
       await loadClients();
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to sync MikroTik clients.');

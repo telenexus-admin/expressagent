@@ -305,19 +305,20 @@ function mikrotikStatusFromRows({ router, service, profile, secret, active, leas
   const expiry = parsePossibleExpiry(secret?.comment, active?.comment, lease?.comment);
   const disabled = String(secret?.disabled || '').toLowerCase() === 'true';
   const status = active ? 'active' : disabled ? 'inactive' : secret ? 'offline' : lease ? 'seen' : 'unknown';
+  const activeIp = active?.address || active?.['remote-address'] || active?.['to-address'];
   return {
     source: 'mikrotik',
     fullname: source.comment || source.name || source.user || '',
     phone: phoneFromText(source.comment, source.name, source.user),
-    account: source.name || source.user || '',
-    username: source.name || source.user || '',
+    account: source.name || source.user || source['mac-address'] || source.address || '',
+    username: source.name || source.user || source['mac-address'] || source.address || '',
     status,
-    plan: profile || source.profile || '',
+    plan: profile || source.profile || source.server || '',
     service,
     router: router.name,
-    ip_address: active?.address || active?.['remote-address'] || lease?.['active-address'] || lease?.address || '',
-    mac_address: active?.['caller-id'] || lease?.['mac-address'] || '',
-    uptime: active?.uptime || lease?.['last-seen'] || '',
+    ip_address: activeIp || lease?.['active-address'] || lease?.address || '',
+    mac_address: active?.['caller-id'] || active?.['mac-address'] || lease?.['mac-address'] || '',
+    uptime: active?.uptime || active?.['idle-time'] || lease?.['last-seen'] || '',
     last_seen: active ? 'online now' : secret?.['last-logged-out'] || lease?.['last-seen'] || '',
     expiration: expiry.expiration,
     expiration_time: expiry.expiration_time,
@@ -438,18 +439,30 @@ function publicMikrotikClient(row) {
 async function syncMikrotikClients(clientId) {
   await ensureMikrotikTables();
   const routers = await activeRouterConfigs(clientId);
-  const summary = { routers: routers.length, synced: 0, failed: 0, errors: [] };
+  const summary = { routers: routers.length, synced: 0, failed: 0, sources: [], errors: [] };
 
   for (const router of routers) {
     let client = null;
     try {
       client = await connectRouter(router);
-      const [pppSecrets, pppActive, hotspotUsers, hotspotActive] = await Promise.all([
+      const [pppSecrets, pppActive, hotspotUsers, hotspotActive, hotspotHosts, dhcpLeases] = await Promise.all([
         router.features?.ppp_secrets === false ? Promise.resolve([]) : client.command('/ppp/secret/print').catch(() => []),
         router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
         router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/user/print').catch(() => []),
         router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/host/print').catch(() => []),
+        router.features?.dhcp_leases === false ? Promise.resolve([]) : client.command('/ip/dhcp-server/lease/print').catch(() => []),
       ]);
+      summary.sources.push({
+        router_id: router.id,
+        router: router.name,
+        ppp_secrets: pppSecrets.length,
+        ppp_active: pppActive.length,
+        hotspot_users: hotspotUsers.length,
+        hotspot_active: hotspotActive.length,
+        hotspot_hosts: hotspotHosts.length,
+        dhcp_leases: dhcpLeases.length,
+      });
 
       const seen = new Set();
       const rows = [];
@@ -469,10 +482,13 @@ async function syncMikrotikClients(clientId) {
         }
       }
       for (const active of pppActive) {
-        const key = `pppoe:${active.name}`;
+        const key = `pppoe:${active.name || active.address || active['caller-id']}`;
         if (seen.has(key)) continue;
         const row = normalizeMikrotikClient({ clientId, router, service: 'pppoe', active });
-        if (row) rows.push(row);
+        if (row) {
+          rows.push(row);
+          seen.add(`pppoe:${row.username}`);
+        }
       }
       for (const user of hotspotUsers) {
         const active = hotspotActive.find((item) => item.user === user.name);
@@ -490,10 +506,25 @@ async function syncMikrotikClients(clientId) {
         }
       }
       for (const active of hotspotActive) {
-        const key = `hotspot:${active.user}`;
-        if (seen.has(key)) continue;
         const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', active });
-        if (row) rows.push(row);
+        if (row && !seen.has(`hotspot:${row.username}`)) {
+          rows.push(row);
+          seen.add(`hotspot:${row.username}`);
+        }
+      }
+      for (const host of hotspotHosts) {
+        const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', active: host });
+        if (row && !seen.has(`hotspot:${row.username}`)) {
+          rows.push(row);
+          seen.add(`hotspot:${row.username}`);
+        }
+      }
+      for (const lease of dhcpLeases) {
+        const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease });
+        if (row && !seen.has(`hotspot:${row.username}`)) {
+          rows.push(row);
+          seen.add(`hotspot:${row.username}`);
+        }
       }
 
       for (const row of rows) {

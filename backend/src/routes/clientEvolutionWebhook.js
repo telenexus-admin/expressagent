@@ -21,7 +21,9 @@ const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
 const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
 const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
-const INSTALL_RE = /\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/i;
+const INSTALL_RE = /\b(want|need|looking for|book|schedule|please|can\s*(?:you|i)|how\s*(?:do|to))\b[^.?!]{0,40}\b(install|installation|new\s+connection|get\s+connected|connect\s+me|fibre|fiber|subscribe|register|sign\s*up)\b|\b(install|installation|new\s+connection|get\s+connected|connect\s+me|subscribe|register|sign\s*up)\b|\b(nataka|naomba|nahitaji|tafadhali)\b[^.?!]{0,40}\b(installation|kuunganishwa|usajili)\b|\bniunganish(e|wa|ie|ieni|eni)\b/i;
+const CONNECTION_PROBLEM_RE = /\b(problem|issue|trouble|fault|slow|down|offline|unstable|disconnect|disconnecting|not\s+working|no\s+internet|no\s+network|no\s+connection|cannot\s+connect|can't\s+connect|connected\s+without\s+internet)\b/i;
+const TECHNICAL_ISSUE_RE = /\b(no\s+internet|internet\s+down|not\s+working|slow|buffer|lag|disconnect|disconnecting|offline|los|red\s+light|no\s+connection|connection\s+(problem|issue|fault)|problem\s+with\s+(my\s+)?connection)\b/i;
 const INVOICE_RE = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 const CASUAL_REPLY_RE = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
 const CASUAL_REPLY_LINE_RE = /(?:^|\n|\r)\s*(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*(?:$|\n|\r)/i;
@@ -145,6 +147,12 @@ function normalizeWorkflowPhones(value) {
   return [...new Set(raw.map(normalizeWorkflowPhone).filter((item) => item.length >= 9))];
 }
 
+function isInstallationRequest(text) {
+  const value = String(text || '');
+  if (CONNECTION_PROBLEM_RE.test(value)) return false;
+  return INSTALL_RE.test(value);
+}
+
 function classifyIntentLocal(text) {
   const value = String(text || '').toLowerCase();
   if (/\b(mikrotik|routeros|winbox|interfaces?|ports?|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)?|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
@@ -153,7 +161,10 @@ function classifyIntentLocal(text) {
   if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
     return { intent: 'human_request', confidence: 0.85 };
   }
-  if (/\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/.test(value)) {
+  if (TECHNICAL_ISSUE_RE.test(value)) {
+    return { intent: 'technical_issue', confidence: 0.85 };
+  }
+  if (isInstallationRequest(value)) {
     return { intent: 'new_installation', confidence: 0.85 };
   }
   if (/\b(pay|payment|paid|mpesa|m-pesa|bill|billing|expire|expiry|recharge|refund|overcharge|invoice)\b/.test(value)) {
@@ -623,7 +634,7 @@ router.post('/client/:clientId', async (req, res) => {
       }
     }
 
-    if (!incoming.isImage && INSTALL_RE.test(userText)) {
+    if (!incoming.isImage && isInstallationRequest(userText)) {
       const intakeUrl = buildCustomerIntakeUrl(client, { phone: incoming.phone, name: conversation.customer_name });
       if (intakeUrl) {
         const answer =

@@ -279,14 +279,14 @@ function classifyIntentLocal(text) {
   if (/\b(human|agent|person|representative|support|mtu|mwakilishi|msaada|manager|alex)\b/.test(value)) {
     return { intent: 'human_request', confidence: 0.85 };
   }
-  if (/\b(install|installation|connect|connection|subscribe|register|fibre|fiber|niunganish|kuunganishwa)\b/.test(value)) {
+  if (isTechnicalIssue(value)) {
+    return { intent: 'technical_issue', confidence: 0.85 };
+  }
+  if (isInstallationRequest(value)) {
     return { intent: 'new_installation', confidence: 0.85 };
   }
   if (/\b(pay|payment|paid|mpesa|m-pesa|bill|billing|expire|expiry|recharge|refund|overcharge|invoice)\b/.test(value)) {
     return { intent: 'payment_billing', confidence: 0.85 };
-  }
-  if (isTechnicalIssue(value)) {
-    return { intent: 'technical_issue', confidence: 0.85 };
   }
   if (/\b(thank|thanks|great|good service|love|loving|awesome|feedback|suggestion)\b/.test(value)) {
     return { intent: 'compliment_feedback', confidence: 0.75 };
@@ -434,13 +434,19 @@ function shouldReplyAsVoice(replyMode, inboundIsVoice) {
 const INSTALL_REGEX = new RegExp(
   [
     '\\b(want|need|looking for|book|schedule|please|can\\s*(?:you|i)|how\\s*(?:do|to))\\b' +
-      '[^.?!]{0,40}\\b(install|installation|connection|connect|fibre|fiber|subscribe|register|sign\\s*up)\\b',
-    '\\b(install|installation|connection|connect|subscribe|register|sign\\s*up)\\s+me\\b',
+      '[^.?!]{0,40}\\b(install|installation|new\\s+connection|get\\s+connected|connect\\s+me|fibre|fiber|subscribe|register|sign\\s*up)\\b',
+    '\\b(install|installation|new\\s+connection|get\\s+connected|connect\\s+me|subscribe|register|sign\\s*up)\\b',
     '\\b(nataka|naomba|nahitaji|tafadhali)\\b[^.?!]{0,40}\\b(installation|kuunganishwa|usajili)\\b',
     '\\bniunganish(e|wa|ie|ieni|eni)\\b',
   ].join('|'),
   'i'
 );
+const CONNECTION_PROBLEM_REGEX = /\b(problem|issue|trouble|fault|slow|down|offline|unstable|disconnect|disconnecting|not\s+working|no\s+internet|no\s+network|no\s+connection|cannot\s+connect|can't\s+connect|connected\s+without\s+internet)\b/i;
+function isInstallationRequest(text) {
+  const value = String(text || '');
+  if (CONNECTION_PROBLEM_REGEX.test(value)) return false;
+  return INSTALL_REGEX.test(value);
+}
 const INVOICE_REGEX = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 const CASUAL_REPLY_REGEX = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
 const CASUAL_REPLY_LINE_REGEX = /(?:^|\n|\r)\s*(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*(?:$|\n|\r)/i;
@@ -861,7 +867,7 @@ router.post('/', async (req, res) => {
       installationState = null;
       console.log(`[client ${client.id}] Cleared stale installation collection state for ${phoneNumber}.`);
     }
-    if (!inboundIsImage && !installationState && INSTALL_REGEX.test(normalized)) {
+    if (!inboundIsImage && !installationState && isInstallationRequest(normalized)) {
       const intakeUrl = buildCustomerIntakeUrl(client, { phone: phoneNumber, name: conversation.customer_name });
       if (intakeUrl) {
         const reply =

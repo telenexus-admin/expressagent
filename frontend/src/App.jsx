@@ -30,6 +30,7 @@ import Agent from './pages/Agent';
 import KnowledgeBase from './pages/KnowledgeBase';
 import AiTasks from './pages/AiTasks';
 import NetworkMonitor from './pages/NetworkMonitor';
+import MikrotikClients from './pages/MikrotikClients';
 import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
@@ -190,6 +191,7 @@ export default function App() {
             <Route path="knowledge-base" element={<PermissionRoute permission="agent"><KnowledgeBase /></PermissionRoute>} />
             <Route path="ai-tasks" element={<PermissionRoute permission="agent"><AiTasks /></PermissionRoute>} />
             <Route path="network-monitor" element={<PermissionRoute permission="agent"><NetworkMonitor /></PermissionRoute>} />
+            <Route path="mikrotik-clients" element={<PermissionRoute permission="agent"><MikrotikClients /></PermissionRoute>} />
             <Route path="logs" element={<PermissionRoute permission="logs"><Logs /></PermissionRoute>} />
             <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
           </Route>

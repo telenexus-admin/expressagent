@@ -241,6 +241,7 @@ export default function ClientDashboard() {
         ['/dashboard/ai-tasks', 'AI Tasks', BoltIcon, 'agent'],
         ['/dashboard/knowledge-base', 'Knowledge Base', PulseIcon, 'agent'],
         ['/dashboard/network-monitor', 'Network Monitor', WrenchIcon, 'agent'],
+        ['/dashboard/mikrotik-clients', 'Clients', UsersIcon, 'agent'],
         ['/dashboard/sms-settings', 'SMS Provider', AgentIcon, 'agent'],
         ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
         ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],

@@ -4,9 +4,11 @@ const {
   activateWireguardPeer,
   deleteRouter,
   getRouter,
+  listMikrotikClients,
   listRouters,
   prepareWireguardOnboarding,
   saveRouter,
+  syncMikrotikClients,
   testRouterConfig,
   updateRouterStatus,
 } = require('../services/mikrotik');
@@ -44,6 +46,28 @@ router.get('/', async (req, res) => {
   } catch (err) {
     console.error('GET /mikrotik error:', err.message);
     res.status(500).json({ error: 'Failed to load MikroTik routers' });
+  }
+});
+
+router.get('/clients', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json(await listMikrotikClients(clientId, req.query || {}));
+  } catch (err) {
+    console.error('GET /mikrotik/clients error:', err.message);
+    res.status(500).json({ error: 'Failed to load MikroTik clients' });
+  }
+});
+
+router.post('/clients/sync', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json(await syncMikrotikClients(clientId));
+  } catch (err) {
+    console.error('POST /mikrotik/clients/sync error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to sync MikroTik clients' });
   }
 });
 

@@ -74,6 +74,36 @@ async function ensureMikrotikTables() {
     )
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_mikrotik_routers_client ON mikrotik_routers(client_id, is_active)`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS mikrotik_clients (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      router_id INTEGER NOT NULL REFERENCES mikrotik_routers(id) ON DELETE CASCADE,
+      router_name VARCHAR(160),
+      service_type VARCHAR(30) NOT NULL,
+      account_number VARCHAR(180),
+      username VARCHAR(180) NOT NULL,
+      display_name VARCHAR(255),
+      phone VARCHAR(80),
+      profile VARCHAR(180),
+      package_name VARCHAR(180),
+      status VARCHAR(40),
+      is_online BOOLEAN NOT NULL DEFAULT FALSE,
+      expiry_date VARCHAR(80),
+      expiry_time VARCHAR(40),
+      ip_address VARCHAR(80),
+      mac_address VARCHAR(80),
+      uptime VARCHAR(120),
+      last_seen VARCHAR(160),
+      raw JSONB NOT NULL DEFAULT '{}'::jsonb,
+      last_synced_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      UNIQUE (client_id, router_id, service_type, username)
+    )
+  `);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_mikrotik_clients_client_service ON mikrotik_clients(client_id, service_type, is_online)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_mikrotik_clients_client_phone ON mikrotik_clients(client_id, phone)`);
   await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS connection_method VARCHAR(40) NOT NULL DEFAULT 'public_api'`);
   await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_tunnel_ip VARCHAR(45)`);
   await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_interface VARCHAR(80)`);
@@ -208,6 +238,14 @@ function compactPhone(value) {
   return digits;
 }
 
+function phoneFromText(...values) {
+  const text = values.filter(Boolean).join(' ');
+  const match = text.match(/(?:\+?254|0)\d[\d\s-]{7,15}/);
+  if (match) return compactPhone(match[0]);
+  const compact = compactPhone(text);
+  return compact.length >= 9 && compact.length <= 12 ? compact : '';
+}
+
 function extractMikrotikLookupCandidates({ customerPhone, messageText }) {
   const text = String(messageText || '');
   const values = new Set();
@@ -270,7 +308,7 @@ function mikrotikStatusFromRows({ router, service, profile, secret, active, leas
   return {
     source: 'mikrotik',
     fullname: source.comment || source.name || source.user || '',
-    phone: compactPhone(source.comment || source.name || source.user || ''),
+    phone: phoneFromText(source.comment, source.name, source.user),
     account: source.name || source.user || '',
     username: source.name || source.user || '',
     status,
@@ -287,6 +325,40 @@ function mikrotikStatusFromRows({ router, service, profile, secret, active, leas
   };
 }
 
+function normalizeServiceType(value) {
+  const text = String(value || '').toLowerCase();
+  if (text.includes('hotspot')) return 'hotspot';
+  if (text.includes('ppp')) return 'pppoe';
+  return text || 'unknown';
+}
+
+function normalizeMikrotikClient({ clientId, router, service, profile, secret, active, lease }) {
+  const status = mikrotikStatusFromRows({ router, service, profile, secret, active, lease });
+  const username = status.username || status.account || status.phone || status.mac_address || status.ip_address;
+  if (!username) return null;
+  return {
+    client_id: clientId,
+    router_id: router.id,
+    router_name: router.name,
+    service_type: normalizeServiceType(service),
+    account_number: status.account || username,
+    username,
+    display_name: status.fullname || username,
+    phone: status.phone || '',
+    profile: status.plan || profile || '',
+    package_name: status.plan || profile || '',
+    status: status.status || 'unknown',
+    is_online: status.status === 'active',
+    expiry_date: status.expiration || '',
+    expiry_time: status.expiration_time || '',
+    ip_address: status.ip_address || '',
+    mac_address: status.mac_address || '',
+    uptime: status.uptime || '',
+    last_seen: status.last_seen || '',
+    raw: status.raw || {},
+  };
+}
+
 async function activeRouterConfigs(clientId) {
   await ensureMikrotikTables();
   const result = await db.query(
@@ -294,6 +366,187 @@ async function activeRouterConfigs(clientId) {
     [clientId]
   );
   return result.rows.map((row) => ({ ...row, password: decryptSecret(row.password_encrypted) }));
+}
+
+async function upsertMikrotikClient(row) {
+  await db.query(
+    `INSERT INTO mikrotik_clients (
+       client_id, router_id, router_name, service_type, account_number, username, display_name, phone,
+       profile, package_name, status, is_online, expiry_date, expiry_time, ip_address, mac_address,
+       uptime, last_seen, raw, last_synced_at, updated_at
+     )
+     VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19::jsonb,NOW(),NOW())
+     ON CONFLICT (client_id, router_id, service_type, username)
+     DO UPDATE SET router_name = EXCLUDED.router_name,
+                   account_number = EXCLUDED.account_number,
+                   display_name = EXCLUDED.display_name,
+                   phone = EXCLUDED.phone,
+                   profile = EXCLUDED.profile,
+                   package_name = EXCLUDED.package_name,
+                   status = EXCLUDED.status,
+                   is_online = EXCLUDED.is_online,
+                   expiry_date = EXCLUDED.expiry_date,
+                   expiry_time = EXCLUDED.expiry_time,
+                   ip_address = EXCLUDED.ip_address,
+                   mac_address = EXCLUDED.mac_address,
+                   uptime = EXCLUDED.uptime,
+                   last_seen = EXCLUDED.last_seen,
+                   raw = EXCLUDED.raw,
+                   last_synced_at = NOW(),
+                   updated_at = NOW()`,
+    [
+      row.client_id,
+      row.router_id,
+      row.router_name,
+      row.service_type,
+      row.account_number,
+      row.username,
+      row.display_name,
+      row.phone,
+      row.profile,
+      row.package_name,
+      row.status,
+      row.is_online,
+      row.expiry_date,
+      row.expiry_time,
+      row.ip_address,
+      row.mac_address,
+      row.uptime,
+      row.last_seen,
+      JSON.stringify(row.raw || {}),
+    ]
+  );
+}
+
+function isExpiredMikrotikClient(row) {
+  const expiry = String(row.expiry_date || '').trim();
+  if (!expiry) return false;
+  const match = expiry.match(/20\d{2}-\d{1,2}-\d{1,2}/);
+  if (!match) return false;
+  const date = new Date(`${match[0]}T23:59:59`);
+  return !Number.isNaN(date.getTime()) && date < new Date();
+}
+
+function publicMikrotikClient(row) {
+  return {
+    ...row,
+    is_online: row.is_online === true,
+    is_expired: isExpiredMikrotikClient(row),
+  };
+}
+
+async function syncMikrotikClients(clientId) {
+  await ensureMikrotikTables();
+  const routers = await activeRouterConfigs(clientId);
+  const summary = { routers: routers.length, synced: 0, failed: 0, errors: [] };
+
+  for (const router of routers) {
+    let client = null;
+    try {
+      client = await connectRouter(router);
+      const [pppSecrets, pppActive, hotspotUsers, hotspotActive] = await Promise.all([
+        router.features?.ppp_secrets === false ? Promise.resolve([]) : client.command('/ppp/secret/print').catch(() => []),
+        router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
+        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/user/print').catch(() => []),
+        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+      ]);
+
+      const seen = new Set();
+      const rows = [];
+      for (const secret of pppSecrets) {
+        const active = pppActive.find((item) => item.name === secret.name);
+        const row = normalizeMikrotikClient({
+          clientId,
+          router,
+          service: 'pppoe',
+          profile: secret.profile || '',
+          secret,
+          active,
+        });
+        if (row) {
+          rows.push(row);
+          seen.add(`pppoe:${row.username}`);
+        }
+      }
+      for (const active of pppActive) {
+        const key = `pppoe:${active.name}`;
+        if (seen.has(key)) continue;
+        const row = normalizeMikrotikClient({ clientId, router, service: 'pppoe', active });
+        if (row) rows.push(row);
+      }
+      for (const user of hotspotUsers) {
+        const active = hotspotActive.find((item) => item.user === user.name);
+        const row = normalizeMikrotikClient({
+          clientId,
+          router,
+          service: 'hotspot',
+          profile: user.profile || '',
+          secret: user,
+          active,
+        });
+        if (row) {
+          rows.push(row);
+          seen.add(`hotspot:${row.username}`);
+        }
+      }
+      for (const active of hotspotActive) {
+        const key = `hotspot:${active.user}`;
+        if (seen.has(key)) continue;
+        const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', active });
+        if (row) rows.push(row);
+      }
+
+      for (const row of rows) {
+        await upsertMikrotikClient(row);
+        summary.synced += 1;
+      }
+    } catch (err) {
+      summary.failed += 1;
+      summary.errors.push({ router_id: router.id, router: router.name, error: err.message });
+      console.error(`MikroTik client sync failed for router ${router.id}:`, err.message);
+    } finally {
+      if (client) client.close();
+    }
+  }
+  return summary;
+}
+
+async function listMikrotikClients(clientId, filters = {}) {
+  await ensureMikrotikTables();
+  const params = [clientId];
+  const where = ['client_id = $1'];
+  const service = normalizeServiceType(filters.service_type || filters.service || '');
+  if (['pppoe', 'hotspot'].includes(service)) {
+    params.push(service);
+    where.push(`service_type = $${params.length}`);
+  }
+  const status = String(filters.status || 'all').toLowerCase();
+  if (status === 'online') where.push('is_online = TRUE');
+  if (status === 'offline') where.push('is_online = FALSE');
+  if (filters.search) {
+    params.push(`%${String(filters.search).toLowerCase()}%`);
+    where.push(`LOWER(COALESCE(username,'') || ' ' || COALESCE(display_name,'') || ' ' || COALESCE(phone,'') || ' ' || COALESCE(account_number,'')) LIKE $${params.length}`);
+  }
+  const result = await db.query(
+    `SELECT * FROM mikrotik_clients
+     WHERE ${where.join(' AND ')}
+     ORDER BY is_online DESC, last_synced_at DESC, updated_at DESC
+     LIMIT 1000`,
+    params
+  );
+  const rows = result.rows.map(publicMikrotikClient);
+  const filtered = status === 'expired' ? rows.filter((row) => row.is_expired) : rows;
+  return {
+    clients: filtered,
+    counts: {
+      total: rows.length,
+      online: rows.filter((row) => row.is_online).length,
+      offline: rows.filter((row) => !row.is_online).length,
+      expired: rows.filter((row) => row.is_expired).length,
+      pppoe: rows.filter((row) => row.service_type === 'pppoe').length,
+      hotspot: rows.filter((row) => row.service_type === 'hotspot').length,
+    },
+  };
 }
 
 async function findMikrotikAccount({ clientId, customerPhone, messageText }) {
@@ -1086,6 +1339,7 @@ module.exports = {
   deleteRouter,
   ensureMikrotikTables,
   getRouter,
+  listMikrotikClients,
   listRouters,
   activateWireguardPeer,
   buildMikrotikAdminContext,
@@ -1093,6 +1347,7 @@ module.exports = {
   findMikrotikAccount,
   prepareWireguardOnboarding,
   saveRouter,
+  syncMikrotikClients,
   testRouterConfig,
   updateRouterStatus,
 };

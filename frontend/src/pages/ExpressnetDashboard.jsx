@@ -113,6 +113,7 @@ export default function ExpressnetDashboard() {
         ['/dashboard/ai-tasks', 'AI Tasks', BoltIcon, 'agent'],
         ['/dashboard/knowledge-base', 'Knowledge Base', PulseIcon, 'agent'],
         ['/dashboard/network-monitor', 'Network Monitor', WrenchIcon, 'agent'],
+        ['/dashboard/mikrotik-clients', 'Clients', UsersIcon, 'agent'],
         ['/dashboard/workflow', 'Workflow', FlowIcon, 'workflow'],
         ['/dashboard/ai-health', 'AI Health', PulseIcon, 'ai_health'],
         ['/dashboard/reports', 'Daily Reports', ChartIcon, 'statistics'],

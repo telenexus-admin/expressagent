@@ -419,6 +419,83 @@ async function upsertMikrotikClient(row) {
   );
 }
 
+async function collectMikrotikClientRows(clientId, router, client) {
+  const [pppSecrets, pppActive, hotspotUsers, hotspotActive, hotspotHosts, dhcpLeases] = await Promise.all([
+    router.features?.ppp_secrets === false ? Promise.resolve([]) : client.command('/ppp/secret/print').catch(() => []),
+    router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
+    router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/user/print').catch(() => []),
+    router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+    router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/host/print').catch(() => []),
+    router.features?.dhcp_leases === false ? Promise.resolve([]) : client.command('/ip/dhcp-server/lease/print').catch(() => []),
+  ]);
+
+  const seen = new Set();
+  const rows = [];
+  const pushRow = (row) => {
+    if (!row) return;
+    const key = `${row.service_type}:${row.username}`;
+    if (seen.has(key)) return;
+    rows.push(row);
+    seen.add(key);
+  };
+
+  for (const secret of pppSecrets) {
+    const active = pppActive.find((item) => item.name === secret.name);
+    pushRow(normalizeMikrotikClient({
+      clientId,
+      router,
+      service: 'pppoe',
+      profile: secret.profile || '',
+      secret,
+      active,
+    }));
+  }
+  for (const active of pppActive) {
+    pushRow(normalizeMikrotikClient({ clientId, router, service: 'pppoe', active }));
+  }
+  for (const user of hotspotUsers) {
+    const active = hotspotActive.find((item) => item.user === user.name);
+    pushRow(normalizeMikrotikClient({
+      clientId,
+      router,
+      service: 'hotspot',
+      profile: user.profile || '',
+      secret: user,
+      active,
+    }));
+  }
+  for (const active of hotspotActive) {
+    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', active }));
+  }
+  for (const host of hotspotHosts) {
+    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', active: host }));
+  }
+  for (const lease of dhcpLeases) {
+    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease }));
+  }
+
+  const onlineRows = rows.filter((row) => row.is_online);
+  return {
+    rows,
+    onlineRows,
+    onlinePppRows: onlineRows.filter((row) => row.service_type === 'pppoe'),
+    onlineHotspotRows: onlineRows.filter((row) => row.service_type === 'hotspot'),
+    sources: {
+      router_id: router.id,
+      router: router.name,
+      ppp_secrets: pppSecrets.length,
+      ppp_active: pppActive.length,
+      hotspot_users: hotspotUsers.length,
+      hotspot_active: hotspotActive.length,
+      hotspot_hosts: hotspotHosts.length,
+      dhcp_leases: dhcpLeases.length,
+      deduped_online_pppoe: onlineRows.filter((row) => row.service_type === 'pppoe').length,
+      deduped_online_hotspot: onlineRows.filter((row) => row.service_type === 'hotspot').length,
+      deduped_total: rows.length,
+    },
+  };
+}
+
 function isExpiredMikrotikClient(row) {
   const expiry = String(row.expiry_date || '').trim();
   if (!expiry) return false;
@@ -445,89 +522,10 @@ async function syncMikrotikClients(clientId) {
     let client = null;
     try {
       client = await connectRouter(router);
-      const [pppSecrets, pppActive, hotspotUsers, hotspotActive, hotspotHosts, dhcpLeases] = await Promise.all([
-        router.features?.ppp_secrets === false ? Promise.resolve([]) : client.command('/ppp/secret/print').catch(() => []),
-        router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/user/print').catch(() => []),
-        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
-        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/host/print').catch(() => []),
-        router.features?.dhcp_leases === false ? Promise.resolve([]) : client.command('/ip/dhcp-server/lease/print').catch(() => []),
-      ]);
-      summary.sources.push({
-        router_id: router.id,
-        router: router.name,
-        ppp_secrets: pppSecrets.length,
-        ppp_active: pppActive.length,
-        hotspot_users: hotspotUsers.length,
-        hotspot_active: hotspotActive.length,
-        hotspot_hosts: hotspotHosts.length,
-        dhcp_leases: dhcpLeases.length,
-      });
+      const collected = await collectMikrotikClientRows(clientId, router, client);
+      summary.sources.push(collected.sources);
 
-      const seen = new Set();
-      const rows = [];
-      for (const secret of pppSecrets) {
-        const active = pppActive.find((item) => item.name === secret.name);
-        const row = normalizeMikrotikClient({
-          clientId,
-          router,
-          service: 'pppoe',
-          profile: secret.profile || '',
-          secret,
-          active,
-        });
-        if (row) {
-          rows.push(row);
-          seen.add(`pppoe:${row.username}`);
-        }
-      }
-      for (const active of pppActive) {
-        const key = `pppoe:${active.name || active.address || active['caller-id']}`;
-        if (seen.has(key)) continue;
-        const row = normalizeMikrotikClient({ clientId, router, service: 'pppoe', active });
-        if (row) {
-          rows.push(row);
-          seen.add(`pppoe:${row.username}`);
-        }
-      }
-      for (const user of hotspotUsers) {
-        const active = hotspotActive.find((item) => item.user === user.name);
-        const row = normalizeMikrotikClient({
-          clientId,
-          router,
-          service: 'hotspot',
-          profile: user.profile || '',
-          secret: user,
-          active,
-        });
-        if (row) {
-          rows.push(row);
-          seen.add(`hotspot:${row.username}`);
-        }
-      }
-      for (const active of hotspotActive) {
-        const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', active });
-        if (row && !seen.has(`hotspot:${row.username}`)) {
-          rows.push(row);
-          seen.add(`hotspot:${row.username}`);
-        }
-      }
-      for (const host of hotspotHosts) {
-        const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', active: host });
-        if (row && !seen.has(`hotspot:${row.username}`)) {
-          rows.push(row);
-          seen.add(`hotspot:${row.username}`);
-        }
-      }
-      for (const lease of dhcpLeases) {
-        const row = normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease });
-        if (row && !seen.has(`hotspot:${row.username}`)) {
-          rows.push(row);
-          seen.add(`hotspot:${row.username}`);
-        }
-      }
-
-      for (const row of rows) {
+      for (const row of collected.rows) {
         await upsertMikrotikClient(row);
         summary.synced += 1;
       }
@@ -884,9 +882,8 @@ async function buildMikrotikStatusReply({ clientId }) {
     client = await connectRouter(router);
     const identityRows = await client.command('/system/identity/print');
     const resourceRows = await client.command('/system/resource/print');
-    const [pppRows, hotspotRows, logRows] = await Promise.all([
-      router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-      router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+    const [collected, logRows] = await Promise.all([
+      collectMikrotikClientRows(clientId, router, client),
       router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
     ]);
     const identity = identityRows[0]?.name || router.last_identity || router.name || 'this router';
@@ -894,8 +891,8 @@ async function buildMikrotikStatusReply({ clientId }) {
     if (!resource) throw new Error('RouterOS did not return /system/resource/print data');
     const uptime = firstValue(resource, ['uptime'], 'not returned by RouterOS API');
     const cpuLoad = firstValue(resource, ['cpu-load', 'cpu'], 'not shown');
-    const pppCount = pppRows.length;
-    const hotspotCount = hotspotRows.length;
+    const pppCount = collected.onlinePppRows.length;
+    const hotspotCount = collected.onlineHotspotRows.length;
     const { cpuMessage, uptimeMessage, routerStatus } = routerStatusMessages({ uptime, cpuLoad, pppCount, hotspotCount });
     const security = analyzeRouterSecurityLogs(logRows);
     const servingLine = (pppCount + hotspotCount) > 0
@@ -910,6 +907,8 @@ async function buildMikrotikStatusReply({ clientId }) {
 It has been running for ${uptime}.
 
 Currently, ${pppCount} homes are enjoying internet through PPPoE, while ${hotspotCount} hotspot users are connected.
+
+These online numbers use the same logic as the Clients tab: PPP active plus Hotspot active/hosts, deduped by account/IP/MAC. DHCP leases are stored for seen/offline client records, but are not counted as online by themselves.
 
 CPU load is at ${percentText(cpuLoad)}.
 ${cpuMessage}
@@ -974,11 +973,10 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
     let client = null;
     try {
       client = await connectRouter(router);
-      const [identityRows, resourceRows, pppRows, hotspotRows] = await Promise.all([
+      const [identityRows, resourceRows, collected] = await Promise.all([
         client.command('/system/identity/print').catch(() => []),
         client.command('/system/resource/print').catch(() => []),
-        router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-        router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+        collectMikrotikClientRows(clientId, router, client),
       ]);
       const identity = identityRows[0] || {};
       const resource = resourceRows[0] || {};
@@ -990,8 +988,9 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
       lines.push(`- Uptime: ${resource.uptime || router.last_uptime || 'not shown'} (from /system/resource/print)`);
       if (resource['cpu-load']) lines.push(`- CPU load: ${resource['cpu-load']}%`);
       if (resource['free-memory']) lines.push(`- Free memory: ${resource['free-memory']}`);
-      lines.push(`- Active PPPoE sessions: ${pppRows.length}`);
-      lines.push(`- Active Hotspot sessions: ${hotspotRows.length}`);
+      lines.push(`- Active PPPoE sessions: ${collected.onlinePppRows.length}`);
+      lines.push(`- Active Hotspot clients: ${collected.onlineHotspotRows.length}`);
+      lines.push(`- Client count source: PPP active ${collected.sources.ppp_active}, Hotspot active ${collected.sources.hotspot_active}, Hotspot hosts ${collected.sources.hotspot_hosts}, DHCP leases ${collected.sources.dhcp_leases}, deduped total ${collected.sources.deduped_total}`);
 
       if (router.features?.logs !== false) {
         const logRows = await client.command('/log/print').catch(() => []);
@@ -1001,8 +1000,8 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
       }
 
       if (wantsUsers) {
-        const pppSummary = summarizeRows(pppRows, [['name', 'user'], ['address', 'ip'], ['uptime', 'uptime']], 8);
-        const hotspotSummary = summarizeRows(hotspotRows, [['user', 'user'], ['address', 'ip'], ['uptime', 'uptime']], 8);
+        const pppSummary = collected.onlinePppRows.slice(0, 8).map((row) => `${row.username || row.account_number || 'user'} ip=${row.ip_address || '-'} uptime=${row.uptime || '-'}`);
+        const hotspotSummary = collected.onlineHotspotRows.slice(0, 8).map((row) => `${row.username || row.account_number || 'user'} ip=${row.ip_address || '-'} uptime=${row.uptime || '-'}`);
         if (pppSummary.length) lines.push(`- PPPoE sample: ${pppSummary.join(' | ')}`);
         if (hotspotSummary.length) lines.push(`- Hotspot sample: ${hotspotSummary.join(' | ')}`);
       }

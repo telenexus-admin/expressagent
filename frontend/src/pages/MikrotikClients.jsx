@@ -15,21 +15,29 @@ const STATUSES = [
   { key: 'expired', label: 'Expired' },
 ];
 
-function StatCard({ title, value, icon: Icon, tone = 'violet' }) {
+function StatCard({ title, value, icon: Icon, tone = 'violet', active = false, onClick }) {
   const tones = {
     violet: 'bg-[#f0e8ff] text-[#6c2cff]',
     green: 'bg-emerald-50 text-emerald-600',
     amber: 'bg-amber-50 text-amber-600',
     blue: 'bg-blue-50 text-blue-600',
+    rose: 'bg-rose-50 text-rose-600',
   };
+  const Tag = onClick ? 'button' : 'div';
   return (
-    <div className="rounded-[22px] border border-[#dfe5f5] bg-white p-4 shadow-[0_16px_35px_rgba(30,41,59,0.05)]">
+    <Tag
+      type={onClick ? 'button' : undefined}
+      onClick={onClick}
+      className={`w-full rounded-[22px] border bg-white p-4 text-left shadow-[0_16px_35px_rgba(30,41,59,0.05)] transition ${
+        active ? 'border-[#6c2cff] ring-4 ring-[#ede7ff]' : 'border-[#dfe5f5]'
+      } ${onClick ? 'hover:-translate-y-0.5 hover:border-[#bca8ff]' : ''}`}
+    >
       <div className={`flex h-11 w-11 items-center justify-center rounded-2xl ${tones[tone]}`}>
         <Icon className="h-5 w-5" />
       </div>
       <p className="mt-3 text-[24px] font-black text-[#08103f]">{value || 0}</p>
       <p className="text-[12px] font-bold text-[#637098]">{title}</p>
-    </div>
+    </Tag>
   );
 }
 
@@ -125,6 +133,16 @@ export default function MikrotikClients() {
     }
   };
 
+  const setClientFilter = (nextService = 'all', nextStatus = 'all') => {
+    setService(nextService);
+    setStatus(nextStatus);
+  };
+
+  const clearFilters = () => {
+    setClientFilter('all', 'all');
+    setSearch('');
+  };
+
   return (
     <div className="h-full min-h-0 overflow-y-auto space-y-5 p-4 pb-10 sm:p-5">
       <section className="rounded-[28px] border border-[#dfe5f5] bg-white p-6 shadow-[0_24px_70px_rgba(30,41,59,0.08)]">
@@ -159,12 +177,13 @@ export default function MikrotikClients() {
         </div>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-        <StatCard title="Stored clients" value={counts.total} icon={UsersIcon} />
-        <StatCard title="Online" value={counts.online} icon={CheckCircleIcon} tone="green" />
-        <StatCard title="Offline" value={counts.offline} icon={PulseIcon} tone="amber" />
-        <StatCard title="PPPoE" value={counts.pppoe} icon={PulseIcon} tone="blue" />
-        <StatCard title="Hotspot" value={counts.hotspot} icon={PulseIcon} />
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+        <StatCard title="Stored clients" value={counts.total} icon={UsersIcon} active={service === 'all' && status === 'all'} onClick={() => setClientFilter('all', 'all')} />
+        <StatCard title="Online" value={counts.online} icon={CheckCircleIcon} tone="green" active={status === 'online'} onClick={() => setClientFilter(service, 'online')} />
+        <StatCard title="Offline" value={counts.offline} icon={PulseIcon} tone="amber" active={status === 'offline'} onClick={() => setClientFilter(service, 'offline')} />
+        <StatCard title="Expired" value={counts.expired} icon={PulseIcon} tone="rose" active={status === 'expired'} onClick={() => setClientFilter(service, 'expired')} />
+        <StatCard title="PPPoE" value={counts.pppoe} icon={PulseIcon} tone="blue" active={service === 'pppoe'} onClick={() => setClientFilter('pppoe', status)} />
+        <StatCard title="Hotspot" value={counts.hotspot} icon={PulseIcon} active={service === 'hotspot'} onClick={() => setClientFilter('hotspot', status)} />
       </div>
 
       <section className="rounded-[28px] border border-[#dfe5f5] bg-white p-5 shadow-[0_18px_45px_rgba(30,41,59,0.06)]">
@@ -175,12 +194,21 @@ export default function MikrotikClients() {
           <div className="flex flex-wrap gap-2">
             {STATUSES.map((item) => <FilterButton key={item.key} active={status === item.key} onClick={() => setStatus(item.key)}>{item.label}</FilterButton>)}
           </div>
-          <input
-            value={search}
-            onChange={(event) => setSearch(event.target.value)}
-            placeholder="Search name, phone, username..."
-            className="h-11 min-w-[240px] rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]"
-          />
+          <div className="flex flex-1 flex-col gap-2 sm:flex-row xl:max-w-[470px]">
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search name, phone, username..."
+              className="h-11 min-w-0 flex-1 rounded-2xl border border-[#d9e1f2] bg-white px-4 text-[13px] font-bold text-[#08103f] outline-none focus:border-[#6c2cff]"
+            />
+            <button
+              type="button"
+              onClick={clearFilters}
+              className="h-11 rounded-2xl border border-[#dfe5f5] bg-white px-4 text-[13px] font-black text-[#425071] transition hover:border-[#bca8ff] hover:text-[#4f2cff]"
+            >
+              Reset
+            </button>
+          </div>
         </div>
 
         <div className="mt-5 overflow-x-auto">

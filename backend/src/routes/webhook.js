@@ -21,6 +21,7 @@ const { buildWebsiteKnowledgeContext } = require('../services/websiteKnowledge')
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
+const { buildRelocationUrl } = require('../services/relocationRequests');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
@@ -154,6 +155,7 @@ async function dispatchToEmployee({ client, conversation, intent, messageText, p
     const nameLine = conversation.customer_name ? `Customer: ${conversation.customer_name}\n` : '';
   const intentLabelMap = {
     new_installation: 'New installation request',
+    relocation_request: 'Relocation / transfer request',
     payment_billing: 'Payment/billing issue',
     technical_issue: 'Technical problem',
     router_management: 'Router management request',
@@ -283,9 +285,8 @@ function classifyIntentLocal(text) {
   if (isTechnicalIssue(value)) {
     return { intent: 'technical_issue', confidence: 0.85 };
   }
-  if (isInstallationRequest(value)) {
-    return { intent: 'new_installation', confidence: 0.85 };
-  }
+  if (isRelocationRequest(value)) return { intent: 'relocation_request', confidence: 0.88 };
+  if (isInstallationRequest(value)) return { intent: 'new_installation', confidence: 0.85 };
   if (/\b(pay|payment|paid|mpesa|m-pesa|bill|billing|expire|expiry|recharge|refund|overcharge|invoice)\b/.test(value)) {
     return { intent: 'payment_billing', confidence: 0.85 };
   }
@@ -443,10 +444,14 @@ const INSTALL_REGEX = new RegExp(
   'i'
 );
 const CONNECTION_PROBLEM_REGEX = /\b(problem|issue|trouble|fault|slow|down|offline|unstable|disconnect|disconnecting|not\s+working|no\s+internet|no\s+network|no\s+connection|cannot\s+connect|can't\s+connect|connected\s+without\s+internet)\b/i;
+const RELOCATION_REGEX = /\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b[^.?!]{0,60}\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b|\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b[^.?!]{0,60}\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b|\b(nahama|kuhama|hamisha|kuhamisha)\b[^.?!]{0,60}\b(internet|wifi|router|network)\b/i;
 function isInstallationRequest(text) {
   const value = String(text || '');
   if (CONNECTION_PROBLEM_REGEX.test(value)) return false;
   return INSTALL_REGEX.test(value);
+}
+function isRelocationRequest(text) {
+  return RELOCATION_REGEX.test(String(text || ''));
 }
 const INVOICE_REGEX = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
 const CASUAL_REPLY_REGEX = /^(?:hi|hey|hello|hallo|thanks?|thank you|asante|sawa|okay|ok|cool|fine|poa|yes|no|nope|alright|great|good|morning|afternoon|evening)[.!?\s]*$/i;
@@ -868,6 +873,39 @@ router.post('/', async (req, res) => {
       installationState = null;
       console.log(`[client ${client.id}] Cleared stale installation collection state for ${phoneNumber}.`);
     }
+    if (!inboundIsImage && !installationState && isRelocationRequest(messageText)) {
+      const relocationUrl = buildRelocationUrl(client, { phone: phoneNumber, name: conversation.customer_name });
+      if (relocationUrl) {
+        const reply =
+          `Sure, I can help you request a network relocation.\n\n` +
+          `Please complete this relocation form:\n${relocationUrl}\n\n` +
+          `It captures your new location, preferred visit time, router condition and equipment availability so the field team can prepare well.`;
+        await deliverReply(client, phoneNumber, reply, replyAsVoice, voiceId);
+        await persistOutgoing(conversation.id, reply);
+        console.log(`Relocation form link sent to ${phoneNumber}.`);
+        runAfterReply('Relocation workflow dispatch', () => dispatchToEmployee({
+          client,
+          conversation,
+          intent: 'relocation_request',
+          messageText,
+          phoneNumber,
+        }));
+        runAfterReply('Relocation ticket creation', () => createOrUpdateTicket({
+          clientId: client.id,
+          conversationId: conversation.id,
+          customerPhone: phoneNumber,
+          customerName: conversation.customer_name,
+          title: 'Relocation / transfer request',
+          category: 'installation',
+          priority: 'normal',
+          intent: 'relocation_request',
+          source: 'whatsapp_meta',
+          summary: messageText,
+          messageText,
+        }));
+        return;
+      }
+    }
     if (!inboundIsImage && !installationState && isInstallationRequest(normalized)) {
       const intakeUrl = buildCustomerIntakeUrl(client, { phone: phoneNumber, name: conversation.customer_name });
       if (intakeUrl) {
@@ -985,6 +1023,10 @@ router.post('/', async (req, res) => {
         `Use valid JSON and keep the keys name, plan, location and email in English. Never explain this marker to the customer.`;
     } else if (installationState === 'submitted') {
       systemPrompt += `\n\nThis customer's installation request has already been submitted. Reassure them that the team will contact them; do not submit it again.`;
+    }
+    const relocationUrl = buildRelocationUrl(client, { phone: phoneNumber, name: conversation.customer_name });
+    if (relocationUrl) {
+      systemPrompt += `\n\nFor relocation, transfer, moving house, shifting internet, or moving router/service requests, send this relocation form link: ${relocationUrl}. It collects the new location, preferred date, router condition and equipment availability.`;
     }
 
     const classificationText = inboundIsImage

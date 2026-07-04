@@ -9,6 +9,13 @@ const INTENTS = [
     department: 'Sales / Field Team',
   },
   {
+    key: 'relocation_request',
+    label: 'Relocation / Transfer Request',
+    description: 'Existing customer wants to move their internet service to a new house, office or location.',
+    examples: ['I want to relocate', 'Transfer my internet to another house', 'I am moving and need WiFi moved'],
+    department: 'Field Team / Technical Support',
+  },
+  {
     key: 'payment_billing',
     label: 'Payment or Billing Issue',
     description: 'Payment problems, overcharges, refunds, M-Pesa, invoices, late bills.',

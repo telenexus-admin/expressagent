@@ -92,6 +92,22 @@ function Detail({ label, value }) {
   );
 }
 
+function normalizeRelocation(item) {
+  const location = [item.new_location, item.new_landmark].filter(Boolean).join(' | ');
+  return {
+    ...item,
+    source_type: 'relocation',
+    uid: `relocation-${item.id}`,
+    customer_email: item.email,
+    trigger_message: item.notes || item.reason || '',
+    plan_interest: 'Service relocation',
+    area: item.new_location,
+    landmark: item.new_landmark,
+    location_label: location || item.new_location,
+    notify_status: 'logged',
+  };
+}
+
 function Field({ label, value, onChange, placeholder }) {
   return (
     <label className="block">
@@ -104,13 +120,14 @@ function Field({ label, value, onChange, placeholder }) {
 function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId, onDownloadSpecial, downloadingSpecial, onSpecialStatus }) {
   if (!item) return null;
   const isIntake = item.source_type === 'intake';
+  const isRelocation = item.source_type === 'relocation';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
       <div className="max-h-[92vh] w-full max-w-5xl overflow-hidden rounded-[30px] bg-white shadow-2xl">
         <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-4 sm:flex-row sm:items-start sm:justify-between sm:px-7">
           <div>
             <div className="text-xs font-black uppercase tracking-[0.18em] text-[#3535FF]">
-              {isIntake ? 'Customer intake CRM' : 'Chat installation request'}
+              {isRelocation ? 'Relocation transfer CRM' : isIntake ? 'Customer intake CRM' : 'Chat installation request'}
             </div>
             <h2 className="mt-2 text-2xl font-black text-slate-950">{item.customer_name || 'Unknown customer'}</h2>
             <p className="mt-1 text-sm font-semibold text-slate-500">+{item.customer_phone} - {formatDateTime(item.created_at)}</p>
@@ -136,14 +153,14 @@ function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId, 
               </section>
 
               <section className="rounded-[26px] border border-slate-100 bg-white p-4 shadow-sm">
-                <h3 className="mb-4 text-sm font-black uppercase tracking-wide text-slate-500">Installation Details</h3>
+                <h3 className="mb-4 text-sm font-black uppercase tracking-wide text-slate-500">{isRelocation ? 'Relocation Details' : 'Installation Details'}</h3>
                 <div className="grid gap-3 sm:grid-cols-2">
-                  <Detail label="Preferred package" value={item.plan_interest} />
+                  <Detail label={isRelocation ? 'Request type' : 'Preferred package'} value={item.plan_interest} />
                   <Detail label="Service type" value={item.service_type} />
                   <Detail label="County / town" value={item.county} />
-                  <Detail label="Estate / area" value={item.area || item.location_label} />
-                  <Detail label="Landmark" value={item.landmark} />
-                  <Detail label="Building type" value={item.building_type} />
+                  <Detail label={isRelocation ? 'New location' : 'Estate / area'} value={item.area || item.location_label} />
+                  <Detail label={isRelocation ? 'New landmark' : 'Landmark'} value={item.landmark} />
+                  <Detail label={isRelocation ? 'Current location' : 'Building type'} value={isRelocation ? item.current_location : item.building_type} />
                   <Detail label="Preferred date" value={item.preferred_date} />
                   <Detail label="Preferred time" value={item.preferred_time} />
                 </div>
@@ -152,6 +169,20 @@ function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId, 
                   <Detail label="Customer notes" value={item.notes || item.trigger_message} />
                 </div>
               </section>
+
+              {isRelocation && (
+                <section className="rounded-[26px] border border-purple-100 bg-purple-50/40 p-4 shadow-sm">
+                  <h3 className="mb-4 text-sm font-black uppercase tracking-wide text-purple-700">Equipment Check</h3>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <Detail label="Router available" value={item.router_available ? 'Yes' : 'No'} />
+                    <Detail label="Router condition" value={String(item.router_condition || 'not_sure').replaceAll('_', ' ')} />
+                    <Detail label="Power adapter" value={item.router_power_adapter ? 'Available' : 'Missing / not sure'} />
+                    <Detail label="ONT" value={item.ont_available ? 'Available' : 'Missing / not sure'} />
+                    <Detail label="Old cables" value={item.cable_available ? 'Available' : 'Not available'} />
+                    <Detail label="Reason" value={item.reason} />
+                  </div>
+                </section>
+              )}
 
               {isIntake && (
                 <section className="rounded-[26px] border border-slate-100 bg-white p-4 shadow-sm">
@@ -211,7 +242,7 @@ function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId, 
               <div className="rounded-[26px] bg-[#0A0A0F] p-5 text-white">
                 <div className="text-xs font-black uppercase tracking-wide text-white/45">Request status</div>
                 <div className="mt-3 text-2xl font-black">{item.resolved_at ? 'Confirmed' : item.ticket_status || 'Pending'}</div>
-                <div className="mt-2 text-sm font-semibold text-white/60">{isIntake ? 'Submitted through public form' : 'Submitted through chat'}</div>
+                <div className="mt-2 text-sm font-semibold text-white/60">{isRelocation ? 'Submitted through relocation form' : isIntake ? 'Submitted through public form' : 'Submitted through chat'}</div>
               </div>
               <div className="rounded-[26px] border border-slate-100 bg-white p-4 shadow-sm">
                 <h3 className="text-sm font-black text-slate-950">Location</h3>
@@ -225,6 +256,11 @@ function InstallationDetailsModal({ item, onClose, onDownloadId, downloadingId, 
                   >
                     Open GPS pin
                   </a>
+                )}
+                {isRelocation && item.has_photo && (
+                  <button type="button" onClick={() => onDownloadSpecial(item)} disabled={downloadingSpecial === item.id} className="mt-3 inline-flex rounded-xl bg-purple-50 px-4 py-2 text-xs font-black text-purple-700">
+                    {downloadingSpecial === item.id ? 'Opening...' : 'View router photo'}
+                  </button>
                 )}
               </div>
               <div className="rounded-[26px] border border-slate-100 bg-white p-4 shadow-sm">
@@ -266,13 +302,15 @@ export default function Installations() {
       if (currentFilter !== 'all') params.set('status', currentFilter);
       const intakeParams = new URLSearchParams();
       if (currentFilter !== 'all') intakeParams.set('status', currentFilter);
-      const [chatRes, intakeRes] = await Promise.all([
+      const [chatRes, intakeRes, relocationRes] = await Promise.all([
         api.get(`/escalations?${params.toString()}`),
         api.get(`/escalations/installation-intakes?${intakeParams.toString()}`),
+        api.get(`/escalations/relocation-requests?${intakeParams.toString()}`),
       ]);
       const merged = [
         ...(Array.isArray(chatRes.data) ? chatRes.data.map(normalizeEscalation) : []),
         ...(Array.isArray(intakeRes.data) ? intakeRes.data.map(normalizeIntake) : []),
+        ...(Array.isArray(relocationRes.data) ? relocationRes.data.map(normalizeRelocation) : []),
       ].sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       setItems(merged);
       setSelected((current) => current && merged.find((row) => row.uid === current.uid) ? merged.find((row) => row.uid === current.uid) : current);
@@ -363,7 +401,10 @@ export default function Installations() {
   const downloadSpecial = async (item) => {
     setDownloadingSpecial(item.id);
     try {
-      const response = await api.get(`/escalations/installation-intakes/${item.id}/special-document`, { responseType: 'blob' });
+      const urlPath = item.source_type === 'relocation'
+        ? `/escalations/relocation-requests/${item.id}/photo`
+        : `/escalations/installation-intakes/${item.id}/special-document`;
+      const response = await api.get(urlPath, { responseType: 'blob' });
       const url = URL.createObjectURL(response.data);
       window.open(url, '_blank', 'noopener,noreferrer');
       setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -393,7 +434,7 @@ export default function Installations() {
           <div>
             <h1 className="text-2xl font-black text-slate-950">Installation Requests</h1>
             <p className="mt-1 text-sm text-slate-500">
-              CRM view for chat requests and public form submissions, including customer details and ID uploads.
+              CRM view for installations, relocation transfers and public form submissions, including customer details and field-team notes.
             </p>
           </div>
           <button onClick={() => { setInstallationForm(EMPTY_INSTALLATION); setFormError(''); setShowInstallModal(true); }} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
@@ -444,14 +485,14 @@ export default function Installations() {
                 <div key={item.uid} className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm transition hover:shadow-md">
                   <div className="mb-3 flex items-start justify-between gap-4">
                     <div className="min-w-0 flex items-center gap-3">
-                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-black text-white ${isIntake ? 'bg-slate-950' : 'bg-[#3535FF]'}`}>
+                      <div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-sm font-black text-white ${item.source_type === 'relocation' ? 'bg-purple-600' : isIntake ? 'bg-slate-950' : 'bg-[#3535FF]'}`}>
                         {(item.customer_name || 'U').charAt(0).toUpperCase()}
                       </div>
                       <div className="min-w-0">
                         <div className="flex flex-wrap items-center gap-2">
                           <h3 className="truncate text-sm font-black text-slate-950">{item.customer_name || 'Unknown customer'}</h3>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-black ${isIntake ? 'bg-blue-50 text-blue-700' : 'bg-purple-50 text-purple-700'}`}>
-                            {isIntake ? 'Form CRM' : 'Chat'}
+                            {item.source_type === 'relocation' ? 'Relocation' : isIntake ? 'Form CRM' : 'Chat'}
                           </span>
                         </div>
                         <p className="mt-1 text-xs text-slate-500">+{item.customer_phone} - {formatDateTime(item.created_at)}</p>

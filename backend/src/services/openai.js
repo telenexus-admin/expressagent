@@ -311,6 +311,7 @@ async function classifyIntent(userMessage) {
     `You classify customer WhatsApp messages for a Kenyan ISP into ONE workflow category.\n\n` +
     `Categories:\n` +
     `- new_installation: wants to sign up / install fibre / subscribe / get connected for the first time\n` +
+    `- relocation_request: existing customer wants to relocate, transfer, move or shift their internet/router/service to a new location\n` +
     `- payment_billing: payment problem, refund, overcharge, M-Pesa issue, invoice or bill question\n` +
     `- technical_issue: internet down, slow, router red lights, equipment broken, frequent disconnects\n` +
     `- router_management: admin asks for MikroTik/RouterOS uptime, logs, interfaces, active users, diagnostics or reports\n` +

@@ -4,6 +4,7 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { ensureRemarksSchema } = require('../services/clientRemarks');
 const { ensureTicketSchema } = require('../services/tickets');
+const { ensureRelocationSchema } = require('../services/relocationRequests');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -191,6 +192,74 @@ router.get('/installation-intakes', async (req, res) => {
   } catch (err) {
     console.error('GET /escalations/installation-intakes error:', err.message);
     res.status(500).json({ error: 'Failed to load installation intake details' });
+  }
+});
+
+router.get('/relocation-requests', async (req, res) => {
+  try {
+    await ensureRelocationSchema();
+    await ensureTicketSchema();
+    const { status } = req.query;
+
+    const params = [];
+    const conditions = [applyClientScope(req, params, 'r')];
+    if (status === 'open') conditions.push(`COALESCE(t.status, 'open') NOT IN ('resolved', 'closed')`);
+    else if (status === 'resolved') conditions.push(`t.status IN ('resolved', 'closed')`);
+    const condition = conditions.join(' AND ');
+    const result = await db.query(
+      `SELECT
+         r.id, r.client_id, r.customer_name, r.customer_phone, r.alternate_phone,
+         r.email, r.account_number, r.current_location, r.new_location, r.new_landmark,
+         r.house_description, r.latitude, r.longitude, r.preferred_date, r.preferred_time,
+         r.router_available, r.router_condition, r.router_power_adapter, r.ont_available,
+         r.cable_available, r.reason, r.notes, r.consent_accepted, r.photo_mime_type,
+         r.photo_filename, (r.photo IS NOT NULL) AS has_photo, r.status, r.metadata,
+         r.created_at, r.updated_at,
+         t.id AS ticket_id, t.status AS ticket_status, t.priority AS ticket_priority
+       FROM relocation_requests r
+       LEFT JOIN LATERAL (
+         SELECT id, status, priority
+         FROM tickets
+         WHERE client_id = r.client_id
+           AND customer_phone = r.customer_phone
+           AND category = 'installation'
+           AND title ILIKE '%relocation%'
+         ORDER BY updated_at DESC
+         LIMIT 1
+       ) t ON TRUE
+       WHERE ${condition}
+       ORDER BY r.created_at DESC
+       LIMIT 250`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /escalations/relocation-requests error:', err.message);
+    res.status(500).json({ error: 'Failed to load relocation requests' });
+  }
+});
+
+router.get('/relocation-requests/:id/photo', async (req, res) => {
+  try {
+    await ensureRelocationSchema();
+    const params = [req.params.id];
+    let where = 'id = $1';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `SELECT photo, photo_mime_type, photo_filename FROM relocation_requests WHERE ${where} LIMIT 1`,
+      params
+    );
+    const row = result.rows[0];
+    if (!row?.photo) return res.status(404).json({ error: 'Relocation photo not found' });
+    res.setHeader('Content-Type', row.photo_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${String(row.photo_filename || 'relocation-photo').replace(/"/g, '')}"`);
+    res.send(row.photo);
+  } catch (err) {
+    console.error('GET relocation photo error:', err.message);
+    res.status(500).json({ error: 'Failed to load relocation photo' });
   }
 });
 

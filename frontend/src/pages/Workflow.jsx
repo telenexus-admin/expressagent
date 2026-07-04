@@ -15,6 +15,7 @@ import {
 
 const INTENT_STYLE = {
   new_installation:    { Icon: BoltIcon,       accent: '#0EA5E9', bg: 'bg-sky-50',     ring: 'ring-sky-200' },
+  relocation_request:  { Icon: WrenchIcon,     accent: '#7C3AED', bg: 'bg-violet-50',  ring: 'ring-violet-200' },
   payment_billing:     { Icon: CreditCardIcon, accent: '#F59E0B', bg: 'bg-amber-50',   ring: 'ring-amber-200' },
   technical_issue:     { Icon: WrenchIcon,     accent: '#EF4444', bg: 'bg-red-50',     ring: 'ring-red-200' },
   router_management:   { Icon: WrenchIcon,     accent: '#2563EB', bg: 'bg-blue-50',    ring: 'ring-blue-200' },
@@ -26,6 +27,7 @@ const INTENT_STYLE = {
 
 const INTENT_LABELS = {
   new_installation: 'New Installation',
+  relocation_request: 'Relocation / Transfer',
   payment_billing: 'Payment / Billing',
   technical_issue: 'Technical Problem',
   router_management: 'Router Management',

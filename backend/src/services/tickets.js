@@ -144,6 +144,7 @@ function priorityForSignal(category, messageText, fallback = 'normal') {
 function categoryFromIntent(intent) {
   const map = {
     new_installation: 'installation',
+    relocation_request: 'installation',
     payment_billing: 'billing',
     technical_issue: 'technical',
     human_request: 'human_support',
@@ -287,7 +288,7 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
   const link = ticketLink(ticket.id);
   let installationFormLine = '';
   let locationLine = '';
-  if (ticket.category === 'installation') {
+  if (ticket.category === 'installation' && assignment.intentKey !== 'relocation_request') {
     const workOrder = await getOrCreateInstallationWorkOrder(ticket, assignment.employeeId);
     const formUrl = buildInstallationWorkOrderUrl(workOrder.public_token);
     const location = clean(summary).replace(/^Location:\s*/i, '') || 'Not provided';
@@ -297,10 +298,10 @@ async function notifyAssignedEmployee({ ticket, assignment, customerPhone, custo
       : '\n\nTechnician installation form is ready, but PUBLIC_FRONTEND_URL is not configured.';
   }
   const message = ticket.category === 'installation'
-    ? `NEW INSTALLATION REQUEST\n` +
+    ? `${assignment.intentKey === 'relocation_request' ? 'NEW RELOCATION REQUEST' : 'NEW INSTALLATION REQUEST'}\n` +
       `Name: ${customerName || ticket.customer_name || 'Customer'}\n` +
       `Phone Number: ${customerPhone}\n` +
-      locationLine +
+      (assignment.intentKey === 'relocation_request' ? `Details: ${summary || ticket.summary || ticket.last_message || 'Relocation details submitted'}\n` : locationLine) +
       (link ? `\nTicket: ${link}` : '') +
       installationFormLine
     : `New ticket assigned to you\n\n` +

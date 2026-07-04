@@ -13,6 +13,7 @@ const { buildMikrotikAdminContext, buildMikrotikStatusReply } = require('../serv
 const invoiceRoutes = require('./invoices');
 const { claimWelcomeMediaRecipient, matchingMedia, mediaByTags, stripMediaTags, uniqueMediaItems, welcomeMedia } = require('../services/mediaLibrary');
 const { buildCustomerIntakeUrl } = require('../services/customerIntake');
+const { buildRelocationUrl } = require('../services/relocationRequests');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { isBlockedNumber } = require('../services/blockedNumbers');
@@ -23,6 +24,7 @@ const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha',
 const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
 const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
 const INSTALL_RE = /\b(want|need|looking for|book|schedule|please|can\s*(?:you|i)|how\s*(?:do|to))\b[^.?!]{0,40}\b(install|installation|new\s+connection|get\s+connected|connect\s+me|fibre|fiber|subscribe|register|sign\s*up)\b|\b(install|installation|new\s+connection|get\s+connected|connect\s+me|subscribe|register|sign\s*up)\b|\b(nataka|naomba|nahitaji|tafadhali)\b[^.?!]{0,40}\b(installation|kuunganishwa|usajili)\b|\bniunganish(e|wa|ie|ieni|eni)\b/i;
+const RELOCATION_RE = /\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b[^.?!]{0,60}\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b|\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b[^.?!]{0,60}\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b|\b(nahama|kuhama|hamisha|kuhamisha)\b[^.?!]{0,60}\b(internet|wifi|router|network)\b/i;
 const CONNECTION_PROBLEM_RE = /\b(problem|issue|trouble|fault|slow|down|offline|unstable|disconnect|disconnecting|not\s+working|no\s+internet|no\s+network|no\s+connection|cannot\s+connect|can't\s+connect|connected\s+without\s+internet)\b/i;
 const TECHNICAL_ISSUE_RE = /\b(no\s+internet|internet\s+down|not\s+working|slow|buffer|lag|disconnect|disconnecting|offline|los|red\s+light|no\s+connection|connection\s+(problem|issue|fault)|problem\s+with\s+(my\s+)?connection)\b/i;
 const INVOICE_RE = /\b(invoice|receipt|bill statement|billing statement|tax invoice)\b/i;
@@ -154,6 +156,10 @@ function isInstallationRequest(text) {
   return INSTALL_RE.test(value);
 }
 
+function isRelocationRequest(text) {
+  return RELOCATION_RE.test(String(text || ''));
+}
+
 function classifyIntentLocal(text) {
   const value = String(text || '').toLowerCase();
   if (/\b(mikrotik|routeros|winbox|interfaces?|ports?|router\s+(status|online|offline|connected|uptime|logs?|log|interfaces?|cpu|memory|reboot|diagnostics?|report|health|data|details)|uptime|pppoe\s+(active|users?)|hotspot\s+(active|users?)|dhcp\s+lease|interface\s+(status|traffic)?|active\s+users?|router\s+health|network\s+report)\b/.test(value)) {
@@ -164,6 +170,9 @@ function classifyIntentLocal(text) {
   }
   if (TECHNICAL_ISSUE_RE.test(value)) {
     return { intent: 'technical_issue', confidence: 0.85 };
+  }
+  if (isRelocationRequest(value)) {
+    return { intent: 'relocation_request', confidence: 0.88 };
   }
   if (isInstallationRequest(value)) {
     return { intent: 'new_installation', confidence: 0.85 };
@@ -249,6 +258,7 @@ async function dispatchWorkflowToEmployees({ client, conversation, intent, messa
 
     const intentLabelMap = {
       new_installation: 'New installation request',
+      relocation_request: 'Relocation / transfer request',
       payment_billing: 'Payment/billing issue',
       technical_issue: 'Technical problem',
       human_request: 'Customer wants a human agent',
@@ -635,6 +645,39 @@ router.post('/client/:clientId', async (req, res) => {
       }
     }
 
+    if (!incoming.isImage && isRelocationRequest(userText)) {
+      const relocationUrl = buildRelocationUrl(client, { phone: incoming.phone, name: conversation.customer_name });
+      if (relocationUrl) {
+        const answer =
+          `Sure, I can help you request a network relocation.\n\n` +
+          `Please complete this relocation form:\n${relocationUrl}\n\n` +
+          `It captures your new location, preferred visit time, router condition and equipment availability so the field team can prepare well.`;
+        await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        console.log(`[evo client ${client.id}] Relocation form link sent to ${incoming.phone}.`);
+        runAfterReply('Evolution relocation workflow dispatch', () => dispatchWorkflowToEmployees({
+          client,
+          conversation,
+          intent: 'relocation_request',
+          messageText: userText,
+          phoneNumber: incoming.phone,
+        }));
+        runAfterReply('Evolution relocation ticket creation', () => createOrUpdateTicket({
+          clientId: client.id,
+          conversationId: conversation.id,
+          customerPhone: incoming.phone,
+          customerName: conversation.customer_name,
+          title: 'Relocation / transfer request',
+          category: 'installation',
+          priority: 'normal',
+          intent: 'relocation_request',
+          source: 'whatsapp_evolution',
+          summary: userText,
+          messageText: userText,
+        }));
+        return;
+      }
+    }
+
     if (!incoming.isImage && isInstallationRequest(userText)) {
       const intakeUrl = buildCustomerIntakeUrl(client, { phone: incoming.phone, name: conversation.customer_name });
       if (intakeUrl) {
@@ -752,6 +795,10 @@ router.post('/client/:clientId', async (req, res) => {
     const intakeUrl = buildCustomerIntakeUrl(client, { phone: incoming.phone, name: conversation.customer_name });
     if (intakeUrl) {
       prompt += `\n\nFor new installation requests, send this intake form link: ${intakeUrl}. It collects ID scan, location and contact details.`;
+    }
+    const relocationUrl = buildRelocationUrl(client, { phone: incoming.phone, name: conversation.customer_name });
+    if (relocationUrl) {
+      prompt += `\n\nFor relocation, transfer, moving house, shifting internet, or moving router/service requests, send this relocation form link: ${relocationUrl}. It collects the new location, preferred date, router condition and equipment availability.`;
     }
     if (!incoming.isImage) {
       const websiteContext = await buildWebsiteKnowledgeContext(client.id);

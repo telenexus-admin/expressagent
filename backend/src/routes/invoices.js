@@ -7,6 +7,7 @@ const { sendWhatsAppButtons, sendWhatsAppMediaMessage } = require('../services/w
 const { sendClientButtons, sendClientMedia } = require('../services/clientEvolution');
 const { lookupInvoiceCustomer } = require('../services/billing');
 const { startInvoicePaymentPrompt } = require('../services/payhero');
+const { sendEmail, isEmailConfigured } = require('../services/email');
 
 const router = express.Router();
 
@@ -188,7 +189,9 @@ function calculateItems(items = [], discountAmount = 0) {
 async function loadInvoice(clientId, invoiceId) {
   const invoice = await db.query(
     `SELECT i.*, c.business_name, c.name AS client_name, c.meta_phone_number_id, c.meta_access_token,
-            c.evolution_instance_name
+            c.evolution_instance_name,
+            c.email_provider, c.email_enabled, c.email_from_name, c.email_from_address, c.email_reply_to,
+            c.email_smtp_host, c.email_smtp_port, c.email_smtp_secure, c.email_smtp_username, c.email_smtp_password
      FROM invoices i
      JOIN clients c ON c.id = i.client_id
      WHERE i.client_id = $1 AND i.id = $2`,
@@ -451,6 +454,53 @@ async function sendInvoicePaymentButtons(client, phone, invoice) {
   }
 }
 
+async function sendInvoiceEmail(invoice, email, url) {
+  const recipient = cleanText(email || invoice.customer_email, 180);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    const error = new Error('A valid customer email is required');
+    error.statusCode = 400;
+    throw error;
+  }
+  if (!isEmailConfigured(invoice) && !process.env.RESEND_API_KEY) {
+    const error = new Error('Email delivery is not configured for this account');
+    error.statusCode = 400;
+    throw error;
+  }
+
+  const company = invoice.business_name || invoice.client_name || 'Support';
+  const fromAddress = cleanText(invoice.email_from_address || process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_FROM_EMAIL, 180);
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(fromAddress)) {
+    const error = new Error('A valid From email address is required before sending invoices by email');
+    error.statusCode = 400;
+    throw error;
+  }
+  const fromName = cleanText(invoice.email_from_name || process.env.EMAIL_FROM_NAME || process.env.SMTP_FROM_NAME || company, 160);
+  const message = invoiceMessage(invoice, url);
+  const result = await sendEmail(invoice, {
+    from: `${fromName} <${fromAddress}>`,
+    to: [recipient],
+    reply_to: invoice.email_reply_to || fromAddress,
+    subject: `Invoice ${invoice.invoice_number} from ${company}`,
+    text: `${message}\n\nOpen invoice: ${url}`,
+    html:
+      `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6">` +
+      `<h2 style="color:#172b72;margin-bottom:8px">Invoice ${esc(invoice.invoice_number)}</h2>` +
+      `<p>Hello ${esc(invoice.customer_name)},</p>` +
+      `<p>Your PDF invoice for <strong>${esc(pdfMoney(invoice.total_amount))}</strong> is ready.</p>` +
+      (invoice.due_date ? `<p><strong>Due date:</strong> ${esc(new Date(invoice.due_date).toISOString().slice(0, 10))}</p>` : '') +
+      `<p><a href="${esc(url)}" style="display:inline-block;background:#3535ff;color:#fff;text-decoration:none;border-radius:12px;padding:12px 18px;font-weight:800">View invoice</a></p>` +
+      `<p style="color:#64748b">Thank you.</p>` +
+      `</div>`,
+  });
+
+  if (result.status === 'failed') {
+    const error = new Error(result.error || 'Email delivery failed');
+    error.statusCode = 502;
+    throw error;
+  }
+  return result;
+}
+
 function invoiceProfileResponse(row = {}) {
   const { logo_data, signature_data, ...safe } = row;
   return {
@@ -643,6 +693,24 @@ router.put('/products/:id', async (req, res) => {
   }
 });
 
+router.delete('/products/:id', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    await ensureInvoiceSchema();
+    const result = await db.query(
+      `UPDATE invoice_products SET is_active = FALSE, updated_at = NOW()
+       WHERE client_id = $1 AND id = $2 RETURNING *`,
+      [clientId, req.params.id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Product not found' });
+    res.json({ success: true, product: result.rows[0] });
+  } catch (err) {
+    console.error('DELETE /invoices/products/:id error:', err.message);
+    res.status(500).json({ error: 'Server error' });
+  }
+});
+
 router.get('/', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
@@ -831,16 +899,25 @@ router.post('/:id/send', async (req, res) => {
     await ensureInvoiceSchema();
     const invoice = await loadInvoice(clientId, req.params.id);
     if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
-    const phone = cleanPhone(req.body.phone || invoice.customer_phone);
-    if (!/^[0-9]{9,15}$/.test(phone)) return res.status(400).json({ error: 'A valid WhatsApp number is required' });
+    const channel = ['whatsapp', 'email'].includes(req.body.channel) ? req.body.channel : 'whatsapp';
     const url = invoiceUrl(invoice.public_token, req);
-    await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
-    await sendInvoicePaymentButtons(invoice, phone, invoice);
+    let sentTo;
+    if (channel === 'email') {
+      const result = await sendInvoiceEmail(invoice, req.body.email, url);
+      sentTo = cleanText(req.body.email || invoice.customer_email, 180);
+      if (result.status !== 'sent') throw new Error(result.error || 'Email delivery failed');
+    } else {
+      const phone = cleanPhone(req.body.phone || invoice.customer_phone);
+      if (!/^[0-9]{9,15}$/.test(phone)) return res.status(400).json({ error: 'A valid WhatsApp number is required' });
+      await sendInvoiceNotice(invoice, phone, invoiceMessage(invoice, url), { ...invoice, public_url: url });
+      await sendInvoicePaymentButtons(invoice, phone, invoice);
+      sentTo = phone;
+    }
     await db.query(`UPDATE invoices SET status = CASE WHEN status = 'draft' THEN 'sent' ELSE status END, sent_at = NOW(), updated_at = NOW() WHERE id = $1`, [invoice.id]);
-    res.json({ success: true, sent_to: phone, public_url: url });
+    res.json({ success: true, channel, sent_to: sentTo, public_url: url });
   } catch (err) {
     console.error('POST /invoices/:id/send error:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Invoice could not be sent' });
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Invoice could not be sent' });
   }
 });
 

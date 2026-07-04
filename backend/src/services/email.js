@@ -282,6 +282,7 @@ async function sendWorkflowEmployeeEmail(client, employee, details) {
 }
 
 module.exports = {
+  sendEmail,
   sendInstallationRequestEmail,
   sendInstallationConfirmedEmail,
   sendHighPriorityTicketEmail,

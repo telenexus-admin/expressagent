@@ -46,6 +46,8 @@ function Icon({ name, className = 'h-5 w-5' }) {
   if (name === 'plus') return <svg {...common}><path d="M12 5v14M5 12h14" /></svg>;
   if (name === 'search') return <svg {...common}><circle cx="11" cy="11" r="7" /><path d="m21 21-4.3-4.3" /></svg>;
   if (name === 'send') return <svg {...common}><path d="m22 2-7 20-4-9-9-4 20-7Z" /><path d="M22 2 11 13" /></svg>;
+  if (name === 'message') return <svg {...common}><path d="M21 12a8 8 0 0 1-8 8H7l-4 3v-6a8 8 0 1 1 18-5Z" /><path d="M8 12h.01M12 12h.01M16 12h.01" /></svg>;
+  if (name === 'mail') return <svg {...common}><rect x="3" y="5" width="18" height="14" rx="2" /><path d="m3 7 9 6 9-6" /></svg>;
   if (name === 'file') return <svg {...common}><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" /><path d="M14 2v6h6" /><path d="M8 13h8M8 17h5" /></svg>;
   if (name === 'wallet') return <svg {...common}><path d="M19 7V6a2 2 0 0 0-2-2H5a3 3 0 0 0 0 6h14a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H5a3 3 0 0 1-3-3V7" /><path d="M16 14h.01" /></svg>;
   if (name === 'pen') return <svg {...common}><path d="M12 20h9" /><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z" /></svg>;
@@ -284,6 +286,10 @@ export default function InvoiceManagement() {
   const [selectedId, setSelectedId] = useState(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [productOpen, setProductOpen] = useState(false);
+  const [deliveryOpen, setDeliveryOpen] = useState(false);
+  const [deliveryTarget, setDeliveryTarget] = useState(null);
+  const [deliveryChannel, setDeliveryChannel] = useState('whatsapp');
+  const [deliveryAddress, setDeliveryAddress] = useState('');
   const [status, setStatus] = useState('');
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -364,22 +370,77 @@ export default function InvoiceManagement() {
     }
   }
 
-  async function createInvoice(send = false) {
+  async function createInvoice(send = false, delivery = null) {
     if (!draft.customer_name.trim()) {
       setStatus('Customer name is required.');
-      return;
+      return false;
     }
     setBusy(true);
     try {
       const { data } = await api.post('/invoices', draft);
-      if (send) await api.post(`/invoices/${data.id}/send`, { phone: draft.customer_phone });
+      if (send) {
+        await api.post(`/invoices/${data.id}/send`, {
+          channel: delivery?.channel || 'whatsapp',
+          phone: delivery?.channel === 'whatsapp' ? delivery?.address : draft.customer_phone,
+          email: delivery?.channel === 'email' ? delivery?.address : draft.customer_email,
+        });
+      }
       setDraft(emptyDraft);
       setLookup('');
       setStatus(send ? `Created and sent ${data.invoice_number}.` : `Created draft ${data.invoice_number}.`);
       await loadAll();
       setSelectedId(data.id);
+      return true;
     } catch (err) {
       setStatus(err.response?.data?.error || err.response?.data?.errors?.[0]?.msg || 'Could not create invoice.');
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function openDraftDelivery() {
+    if (!draft.customer_name.trim()) {
+      setStatus('Customer name is required.');
+      return;
+    }
+    setDeliveryTarget({ type: 'draft' });
+    setDeliveryChannel(draft.customer_email ? 'email' : 'whatsapp');
+    setDeliveryAddress(draft.customer_email || draft.customer_phone || '');
+    setDeliveryOpen(true);
+  }
+
+  function openInvoiceDelivery(invoice) {
+    setDeliveryTarget({ type: 'invoice', invoice });
+    setDeliveryChannel(invoice.customer_email ? 'email' : 'whatsapp');
+    setDeliveryAddress(invoice.customer_email || invoice.customer_phone || '');
+    setDeliveryOpen(true);
+  }
+
+  async function confirmDelivery() {
+    if (!deliveryTarget) return;
+    if (!deliveryAddress.trim()) {
+      setStatus(deliveryChannel === 'email' ? 'Enter the customer email address.' : 'Enter the customer WhatsApp number.');
+      return;
+    }
+    setBusy(true);
+    try {
+      if (deliveryTarget.type === 'draft') {
+        const created = await createInvoice(true, { channel: deliveryChannel, address: deliveryAddress });
+        if (!created) return;
+      } else {
+        await api.post(`/invoices/${deliveryTarget.invoice.id}/send`, {
+          channel: deliveryChannel,
+          phone: deliveryChannel === 'whatsapp' ? deliveryAddress : undefined,
+          email: deliveryChannel === 'email' ? deliveryAddress : undefined,
+        });
+        setStatus(`Invoice sent by ${deliveryChannel === 'email' ? 'email' : 'WhatsApp'}.`);
+        await loadAll();
+      }
+      setDeliveryOpen(false);
+      setDeliveryTarget(null);
+    } catch (err) {
+      setStatus(err.response?.data?.error || 'Invoice could not be sent.');
     } finally {
       setBusy(false);
     }
@@ -404,6 +465,24 @@ export default function InvoiceManagement() {
     }
   }
 
+  async function deleteProduct(product) {
+    if (!window.confirm(`Delete product "${product.name}" from the catalog?`)) return;
+    setBusy(true);
+    try {
+      await api.delete(`/invoices/products/${product.id}`);
+      setProducts((items) => items.filter((item) => item.id !== product.id));
+      setDraft((current) => ({
+        ...current,
+        items: current.items.map((item) => item.product_id === product.id ? { ...item, product_id: '' } : item),
+      }));
+      setStatus('Product deleted.');
+    } catch (err) {
+      setStatus(err.response?.data?.error || 'Could not delete product.');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function updateItem(index, patch) {
     setDraft((current) => ({ ...current, items: current.items.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }));
   }
@@ -415,18 +494,7 @@ export default function InvoiceManagement() {
   }
 
   async function sendInvoice(invoice) {
-    const phone = window.prompt('Send to WhatsApp number:', invoice.customer_phone || '');
-    if (phone === null) return;
-    setBusy(true);
-    try {
-      await api.post(`/invoices/${invoice.id}/send`, { phone });
-      setStatus(`Invoice sent to ${phone}.`);
-      await loadAll();
-    } catch (err) {
-      setStatus(err.response?.data?.error || 'Invoice could not be sent.');
-    } finally {
-      setBusy(false);
-    }
+    openInvoiceDelivery(invoice);
   }
 
   async function sendDue() {
@@ -459,7 +527,7 @@ export default function InvoiceManagement() {
               <Icon name="settings" className="h-4 w-4" />
               Invoice Settings
             </button>
-            <button type="button" onClick={() => createInvoice(true)} disabled={busy} className="flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#3158ff] to-[#812cff] px-5 text-sm font-black text-white shadow-[0_16px_34px_rgba(81,53,245,0.25)] disabled:opacity-60">
+            <button type="button" onClick={openDraftDelivery} disabled={busy} className="flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#3158ff] to-[#812cff] px-5 text-sm font-black text-white shadow-[0_16px_34px_rgba(81,53,245,0.25)] disabled:opacity-60">
               <Icon name="plus" className="h-4 w-4" />
               Create invoice
             </button>
@@ -580,7 +648,7 @@ export default function InvoiceManagement() {
                         <div className="grid gap-2 lg:grid-cols-[1fr_1.25fr_80px_110px_76px]">
                           <select value={item.product_id || ''} onChange={(event) => useProduct(index, event.target.value)} className="h-11 rounded-xl border border-[#dfe5f2] bg-white px-3 text-xs font-black text-[#263150] outline-none">
                             <option value="">Catalog</option>
-                            {products.map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
+                            {products.filter((product) => product.is_active !== false).map((product) => <option key={product.id} value={product.id}>{product.name}</option>)}
                           </select>
                           <input value={item.description} onChange={(event) => updateItem(index, { description: event.target.value })} placeholder="Package or invoice item" className="h-11 rounded-xl border border-[#dfe5f2] bg-white px-3 text-xs font-bold text-[#263150] outline-none" />
                           <input type="number" value={item.quantity} onChange={(event) => updateItem(index, { quantity: event.target.value })} className="h-11 rounded-xl border border-[#dfe5f2] bg-white px-3 text-xs font-bold text-[#263150] outline-none" />
@@ -592,7 +660,7 @@ export default function InvoiceManagement() {
                   </div>
                   <div className="mt-4 flex flex-wrap justify-end gap-2">
                     <button type="button" onClick={() => createInvoice(false)} disabled={busy} className="h-11 rounded-2xl bg-[#101427] px-5 text-sm font-black text-white disabled:opacity-50">Save draft</button>
-                    <button type="button" onClick={() => createInvoice(true)} disabled={busy} className="flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#3158ff] to-[#812cff] px-5 text-sm font-black text-white disabled:opacity-50">
+                    <button type="button" onClick={openDraftDelivery} disabled={busy} className="flex h-11 items-center gap-2 rounded-2xl bg-gradient-to-r from-[#3158ff] to-[#812cff] px-5 text-sm font-black text-white disabled:opacity-50">
                       <Icon name="send" className="h-4 w-4" />
                       Create and send
                     </button>
@@ -740,6 +808,102 @@ export default function InvoiceManagement() {
                 <Field label="Unit price" type="number" value={productForm.unit_price} onChange={(v) => setProductForm({ ...productForm, unit_price: v })} />
                 <Field label="Tax rate %" type="number" value={productForm.tax_rate} onChange={(v) => setProductForm({ ...productForm, tax_rate: v })} />
                 <button type="button" onClick={addProduct} disabled={busy} className="h-12 w-full rounded-2xl bg-[#101427] text-sm font-black text-white disabled:opacity-50">Save product</button>
+              </div>
+              <div className="mt-5 border-t border-[#dfe5f2] pt-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-[#08103f]">Catalog products</p>
+                    <p className="text-xs font-semibold text-[#637098]">Delete products you no longer want admins to pick.</p>
+                  </div>
+                  <StatusPill tone="purple">{products.filter((product) => product.is_active !== false).length} active</StatusPill>
+                </div>
+                <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+                  {products.filter((product) => product.is_active !== false).length === 0 && (
+                    <div className="rounded-2xl border border-dashed border-[#dfe5f2] bg-[#fbfcff] p-4 text-center text-xs font-bold text-[#8a93ad]">
+                      No saved products yet.
+                    </div>
+                  )}
+                  {products.filter((product) => product.is_active !== false).map((product) => (
+                    <div key={product.id} className="flex items-center justify-between gap-3 rounded-2xl border border-[#e4e9f4] bg-[#fbfcff] p-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-black text-[#08103f]">{product.name}</p>
+                        <p className="truncate text-xs font-semibold text-[#637098]">{money(product.unit_price)}{Number(product.tax_rate || 0) ? ` - Tax ${product.tax_rate}%` : ''}</p>
+                      </div>
+                      <button type="button" onClick={() => deleteProduct(product)} disabled={busy} className="shrink-0 rounded-xl bg-rose-50 px-3 py-2 text-xs font-black text-rose-600 disabled:opacity-50">
+                        Delete
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {deliveryOpen && (
+          <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 p-3 sm:items-center">
+            <div className="w-full max-w-xl rounded-[28px] border border-[#dfe5f2] bg-white p-5 shadow-[0_30px_90px_rgba(15,23,42,0.28)]">
+              <div className="mb-5 flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#6d35ff]">Delivery method</p>
+                  <h2 className="mt-1 text-xl font-black text-[#08103f]">Send invoice</h2>
+                  <p className="mt-1 text-sm font-semibold text-[#637098]">Choose how this online invoice should reach the customer.</p>
+                </div>
+                <button type="button" onClick={() => setDeliveryOpen(false)} className="rounded-xl border border-[#dfe5f2] bg-white px-3 py-2 text-xs font-black text-[#59607a]">Cancel</button>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryChannel('whatsapp');
+                    setDeliveryAddress(deliveryTarget?.type === 'invoice' ? (deliveryTarget.invoice.customer_phone || '') : (draft.customer_phone || ''));
+                  }}
+                  className={`rounded-2xl border p-4 text-left transition ${deliveryChannel === 'whatsapp' ? 'border-[#6d35ff] bg-[#efe9ff]' : 'border-[#dfe5f2] bg-[#fbfcff]'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#5d2df5]"><Icon name="message" className="h-5 w-5" /></span>
+                    <div>
+                      <p className="text-sm font-black text-[#08103f]">WhatsApp</p>
+                      <p className="text-xs font-semibold text-[#637098]">Send the PDF to the customer chat.</p>
+                    </div>
+                  </div>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeliveryChannel('email');
+                    setDeliveryAddress(deliveryTarget?.type === 'invoice' ? (deliveryTarget.invoice.customer_email || '') : (draft.customer_email || ''));
+                  }}
+                  className={`rounded-2xl border p-4 text-left transition ${deliveryChannel === 'email' ? 'border-[#6d35ff] bg-[#efe9ff]' : 'border-[#dfe5f2] bg-[#fbfcff]'}`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-white text-[#5d2df5]"><Icon name="mail" className="h-5 w-5" /></span>
+                    <div>
+                      <p className="text-sm font-black text-[#08103f]">Email</p>
+                      <p className="text-xs font-semibold text-[#637098]">Send the invoice link by email.</p>
+                    </div>
+                  </div>
+                </button>
+              </div>
+
+              <div className="mt-4">
+                <Field
+                  label={deliveryChannel === 'email' ? 'Email address' : 'WhatsApp number'}
+                  value={deliveryAddress}
+                  onChange={setDeliveryAddress}
+                  placeholder={deliveryChannel === 'email' ? 'customer@example.com' : '+2547...'}
+                />
+              </div>
+
+              <div className="mt-5 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <button type="button" onClick={() => setDeliveryOpen(false)} className="h-12 rounded-2xl border border-[#dfe5f2] bg-white px-5 text-sm font-black text-[#263150]">
+                  Cancel
+                </button>
+                <button type="button" onClick={confirmDelivery} disabled={busy} className="flex h-12 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-[#3158ff] to-[#812cff] px-5 text-sm font-black text-white disabled:opacity-50">
+                  <Icon name="send" className="h-4 w-4" />
+                  Send by {deliveryChannel === 'email' ? 'Email' : 'WhatsApp'}
+                </button>
               </div>
             </div>
           </div>

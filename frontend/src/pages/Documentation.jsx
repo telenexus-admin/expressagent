@@ -127,8 +127,8 @@ const sections = [
       },
       {
         icon: ChartIcon,
-        title: 'Activity Logs',
-        body: 'Audit important admin actions, configuration changes, sign-ins and system activity for accountability.',
+        title: 'Audit Trail',
+        body: 'Review admin actions, AI replies, ticket updates, invoices, router alerts, communication events and system activity for accountability.',
       },
       {
         icon: CogIcon,

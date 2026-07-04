@@ -142,7 +142,7 @@ export default function ExpressnetDashboard() {
       items: [
         ['/dashboard/employees', 'Employees', BriefcaseIcon, 'employees'],
         ['/dashboard/admins', 'Admin Management', UsersIcon, 'admins'],
-        ['/dashboard/logs', 'Activity Logs', ChartIcon, 'logs'],
+        ['/dashboard/logs', 'Audit Trail', ChartIcon, 'logs'],
       ],
     },
     {

@@ -82,6 +82,29 @@ export const CheckCircleIcon = makeIcon(
   </>
 );
 
+export const SearchIcon = makeIcon(
+  <>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </>
+);
+
+export const RefreshIcon = makeIcon(
+  <>
+    <path d="M20 12a8 8 0 0 1-13.66 5.66" />
+    <path d="M4 12A8 8 0 0 1 17.66 6.34" />
+    <path d="M18 2v5h-5" />
+    <path d="M6 22v-5h5" />
+  </>
+);
+
+export const ShieldIcon = makeIcon(
+  <>
+    <path d="M12 3 20 6v6c0 5-3.4 8.5-8 9-4.6-.5-8-4-8-9V6l8-3Z" />
+    <path d="m9 12 2 2 4-5" />
+  </>
+);
+
 export const ActivityIcon = makeIcon(
   <circle cx="12" cy="12" r="4" />
 );

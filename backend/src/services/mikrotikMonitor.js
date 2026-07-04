@@ -88,7 +88,11 @@ function formatBytes(value) {
 }
 
 function renderTemplate(template, variables = {}) {
-  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => String(variables[key] ?? 'not shown'));
+  return template.replace(/\{\{(\w+)\}\}/g, (_, key) => {
+    const value = variables[key];
+    if (value === null || value === undefined || value === '') return 'not available';
+    return String(value);
+  });
 }
 
 function chooseTemplate(eventType) {
@@ -347,24 +351,32 @@ function securityFailures(logs = []) {
 }
 
 function cpuStatus(cpu) {
-  if (cpu >= 90) return 'critical';
-  if (cpu >= 80) return 'warning';
+  if (!Number.isFinite(Number(cpu))) return 'unknown';
+  if (Number(cpu) >= 90) return 'critical';
+  if (Number(cpu) >= 80) return 'warning';
   return 'normal';
+}
+
+function numeric(value) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : null;
 }
 
 async function processSnapshot(router, client, snapshot, state) {
   await storeSnapshot(snapshot);
   const variables = {
     router_name: snapshot.router_name || router.name,
-    cpu_load: snapshot.cpu_load,
+    cpu_load: numeric(snapshot.cpu_load),
     free_memory: formatBytes(snapshot.free_memory),
     total_memory: formatBytes(snapshot.total_memory),
-    active_pppoe: snapshot.active_pppoe,
-    active_hotspot: snapshot.active_hotspot,
-    wan_rx_mbps: snapshot.wan_rx_mbps,
-    wan_tx_mbps: snapshot.wan_tx_mbps,
+    active_pppoe: numeric(snapshot.active_pppoe),
+    active_hotspot: numeric(snapshot.active_hotspot),
+    wan_rx_mbps: numeric(snapshot.wan_rx_mbps),
+    wan_tx_mbps: numeric(snapshot.wan_tx_mbps),
   };
-  if (state && state.is_online === false) {
+  const previousJson = state?.state_json || {};
+  const previousFailureCount = Number(previousJson.failure_count || 0);
+  if (state && state.is_online === false && previousFailureCount >= 2) {
     const offlineSince = state.offline_since ? new Date(state.offline_since) : new Date();
     const downtimeMinutes = Math.max(1, Math.round((Date.now() - offlineSince.getTime()) / 60000));
     await notifyEvent({
@@ -376,14 +388,20 @@ async function processSnapshot(router, client, snapshot, state) {
     });
   }
 
-  const currentCpuStatus = cpuStatus(Number(snapshot.cpu_load || 0));
-  if (['warning', 'critical'].includes(currentCpuStatus) && currentCpuStatus !== state?.last_cpu_status) {
+  const currentCpuStatus = cpuStatus(snapshot.cpu_load);
+  const previousCpuStatus = state?.last_cpu_status || 'normal';
+  const cpuConfirmCount = currentCpuStatus === previousCpuStatus
+    ? Number(previousJson.cpu_confirm_count || 0) + 1
+    : 1;
+  const requiredCpuChecks = currentCpuStatus === 'critical' ? 2 : 3;
+  if (['warning', 'critical'].includes(currentCpuStatus) && cpuConfirmCount >= requiredCpuChecks && currentCpuStatus !== previousJson.last_cpu_alert_status) {
     await notifyEvent({ router, client, eventType: 'high_cpu', severity: currentCpuStatus, variables });
   }
 
-  const previousPppoe = Number(state?.previous_pppoe_count || 0);
-  if (previousPppoe >= 20 && snapshot.active_pppoe < previousPppoe) {
-    const dropped = previousPppoe - snapshot.active_pppoe;
+  const currentPppoe = numeric(snapshot.active_pppoe);
+  const previousPppoe = numeric(state?.previous_pppoe_count);
+  if (currentPppoe !== null && previousPppoe !== null && previousPppoe >= 20 && currentPppoe < previousPppoe) {
+    const dropped = previousPppoe - currentPppoe;
     const pct = Math.round((dropped / previousPppoe) * 100);
     if (dropped >= 20 || pct >= 25) {
       await notifyEvent({
@@ -394,7 +412,7 @@ async function processSnapshot(router, client, snapshot, state) {
         variables: {
           ...variables,
           previous_pppoe_count: previousPppoe,
-          current_pppoe_count: snapshot.active_pppoe,
+          current_pppoe_count: currentPppoe,
           dropped_count: dropped,
           drop_percentage: pct,
         },
@@ -402,9 +420,10 @@ async function processSnapshot(router, client, snapshot, state) {
     }
   }
 
-  const previousHotspot = Number(state?.previous_hotspot_count || 0);
-  if (previousHotspot >= 20 && snapshot.active_hotspot < previousHotspot) {
-    const dropped = previousHotspot - snapshot.active_hotspot;
+  const currentHotspot = numeric(snapshot.active_hotspot);
+  const previousHotspot = numeric(state?.previous_hotspot_count);
+  if (currentHotspot !== null && previousHotspot !== null && previousHotspot >= 20 && currentHotspot < previousHotspot) {
+    const dropped = previousHotspot - currentHotspot;
     const pct = Math.round((dropped / previousHotspot) * 100);
     if (dropped >= 20 || pct >= 30) {
       await notifyEvent({
@@ -415,7 +434,7 @@ async function processSnapshot(router, client, snapshot, state) {
         variables: {
           ...variables,
           previous_hotspot_count: previousHotspot,
-          current_hotspot_count: snapshot.active_hotspot,
+          current_hotspot_count: currentHotspot,
           dropped_count: dropped,
           drop_percentage: pct,
         },
@@ -423,14 +442,17 @@ async function processSnapshot(router, client, snapshot, state) {
     }
   }
 
-  for (const failure of securityFailures(snapshot.logs)) {
+  const failures = securityFailures(snapshot.logs).sort((a, b) => b.attempt_count - a.attempt_count);
+  const topFailure = failures[0] || null;
+  const securitySignature = topFailure ? `${topFailure.source_ip}|${topFailure.service}|${topFailure.attempt_count}` : state?.last_security_signature || null;
+  if (topFailure && securitySignature !== state?.last_security_signature) {
     await notifyEvent({
       router,
       client,
       eventType: 'security_failed_login',
       severity: 'critical',
-      key: `${failure.source_ip}|${failure.service}`,
-      variables: { ...variables, ...failure },
+      key: `${topFailure.source_ip}|${topFailure.service}`,
+      variables: { ...variables, ...topFailure },
     });
   }
 
@@ -438,9 +460,18 @@ async function processSnapshot(router, client, snapshot, state) {
     is_online: true,
     last_seen: new Date(),
     offline_since: null,
-    previous_pppoe_count: snapshot.active_pppoe,
-    previous_hotspot_count: snapshot.active_hotspot,
+    previous_pppoe_count: currentPppoe ?? state?.previous_pppoe_count ?? 0,
+    previous_hotspot_count: currentHotspot ?? state?.previous_hotspot_count ?? 0,
     last_cpu_status: currentCpuStatus,
+    last_security_signature: securitySignature,
+    state_json: {
+      failure_count: 0,
+      cpu_confirm_count: cpuConfirmCount,
+      last_cpu_alert_status: ['warning', 'critical'].includes(currentCpuStatus) && cpuConfirmCount >= requiredCpuChecks
+        ? currentCpuStatus
+        : null,
+      source_ok: snapshot.source_ok || {},
+    },
   });
 }
 
@@ -453,6 +484,7 @@ async function processRouter(router) {
     await processSnapshot(router, client, snapshot, state);
   } catch (err) {
     const now = new Date();
+    const failureCount = Number(state?.state_json?.failure_count || 0) + 1;
     const offlineSince = state?.offline_since ? new Date(state.offline_since) : now;
     const downtimeMinutes = Math.max(1, Math.round((Date.now() - offlineSince.getTime()) / 60000));
     await saveState(router.id, {
@@ -460,8 +492,13 @@ async function processRouter(router) {
       offline_since: state?.offline_since || now,
       previous_pppoe_count: state?.previous_pppoe_count || 0,
       previous_hotspot_count: state?.previous_hotspot_count || 0,
+      state_json: {
+        ...(state?.state_json || {}),
+        failure_count: failureCount,
+        last_error: err.message || 'router check failed',
+      },
     });
-    if (!state || state.is_online !== false) {
+    if (failureCount >= 2 && (!state || state.is_online !== false || Number(state?.state_json?.failure_count || 0) < 2)) {
       await notifyEvent({
         router,
         client,

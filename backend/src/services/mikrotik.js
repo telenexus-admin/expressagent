@@ -1392,11 +1392,8 @@ async function updateRouterStatus(clientId, id, status) {
 
 function pickWanInterface(interfaces = []) {
   const usable = interfaces.filter((item) => item && item.disabled !== 'true' && item.disabled !== true);
-  return usable.find((item) => /\b(wan|internet|uplink)\b/i.test(`${item.name || ''} ${item.comment || ''}`)) ||
-    usable.find((item) => /^(ether1|sfp|sfp-sfpplus1|lte1)/i.test(String(item.name || ''))) ||
-    usable.find((item) => item.running === 'true' || item.running === true) ||
-    usable[0] ||
-    {};
+  const explicitWan = usable.find((item) => /\b(wan|internet|uplink|provider|backhaul)\b/i.test(`${item.name || ''} ${item.comment || ''}`));
+  return explicitWan || {};
 }
 
 function monitoringInterfaceSummary(interfaces = []) {
@@ -1412,23 +1409,40 @@ function monitoringInterfaceSummary(interfaces = []) {
   }));
 }
 
+async function monitorCommand(client, path, fallback = []) {
+  try {
+    return { ok: true, rows: await client.command(path) };
+  } catch (err) {
+    return { ok: false, rows: fallback, error: err.message || 'command failed' };
+  }
+}
+
 async function collectMonitoringSnapshot(router) {
   const config = router.password ? router : { ...router, password: decryptSecret(router.password_encrypted) };
   let client = null;
   try {
     client = await connectRouter(config);
-    const [identityRows, resourceRows, pppActive, hotspotActive, interfaces, logs] = await Promise.all([
-      client.command('/system/identity/print').catch(() => []),
-      client.command('/system/resource/print').catch(() => []),
-      router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-      router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
-      router.features?.interfaces === false ? Promise.resolve([]) : client.command('/interface/print').catch(() => []),
-      router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
+    const [identityResult, resourceResult, pppResult, hotspotResult, interfaceResult, logResult] = await Promise.all([
+      monitorCommand(client, '/system/identity/print'),
+      monitorCommand(client, '/system/resource/print'),
+      router.features?.ppp_active === false ? Promise.resolve({ ok: false, rows: [], disabled: true }) : monitorCommand(client, '/ppp/active/print'),
+      router.features?.hotspot_active === false ? Promise.resolve({ ok: false, rows: [], disabled: true }) : monitorCommand(client, '/ip/hotspot/active/print'),
+      router.features?.interfaces === false ? Promise.resolve({ ok: false, rows: [], disabled: true }) : monitorCommand(client, '/interface/print'),
+      router.features?.logs === false ? Promise.resolve({ ok: false, rows: [], disabled: true }) : monitorCommand(client, '/log/print'),
     ]);
+    const identityRows = identityResult.rows;
+    const resourceRows = resourceResult.rows;
+    const pppActive = pppResult.rows;
+    const hotspotActive = hotspotResult.rows;
+    const interfaces = interfaceResult.rows;
+    const logs = logResult.rows;
     const resource = resourceRows[0] || {};
     const identity = identityRows[0]?.name || router.last_identity || router.name;
     const ifaceSummary = monitoringInterfaceSummary(interfaces);
     const wan = pickWanInterface(ifaceSummary);
+    const cpuValue = firstValue(resource, ['cpu-load', 'cpu'], null);
+    const freeMemory = firstValue(resource, ['free-memory'], null);
+    const totalMemory = firstValue(resource, ['total-memory'], null);
     return {
       ok: true,
       router_id: router.id,
@@ -1436,18 +1450,26 @@ async function collectMonitoringSnapshot(router) {
       router_name: identity || router.name,
       version: firstValue(resource, ['version'], ''),
       uptime: firstValue(resource, ['uptime'], ''),
-      cpu_load: Number(firstValue(resource, ['cpu-load', 'cpu'], 0)) || 0,
-      free_memory: Number(firstValue(resource, ['free-memory'], 0)) || 0,
-      total_memory: Number(firstValue(resource, ['total-memory'], 0)) || 0,
-      active_pppoe: pppActive.length,
-      active_hotspot: hotspotActive.length,
+      cpu_load: cpuValue === null ? null : Number(cpuValue),
+      free_memory: freeMemory === null ? null : Number(freeMemory),
+      total_memory: totalMemory === null ? null : Number(totalMemory),
+      active_pppoe: pppResult.ok ? pppActive.length : null,
+      active_hotspot: hotspotResult.ok ? hotspotActive.length : null,
       wan_interface: wan.name || '',
-      wan_link_status: wan.running ? 'running' : 'down',
+      wan_link_status: wan.name ? (wan.running ? 'running' : 'down') : 'unknown',
       wan_link_speed: wan.speed || '',
-      wan_rx_mbps: Number(((wan.rx_bps || 0) / 1000000).toFixed(2)),
-      wan_tx_mbps: Number(((wan.tx_bps || 0) / 1000000).toFixed(2)),
+      wan_rx_mbps: wan.name ? Number(((wan.rx_bps || 0) / 1000000).toFixed(2)) : null,
+      wan_tx_mbps: wan.name ? Number(((wan.tx_bps || 0) / 1000000).toFixed(2)) : null,
       interfaces: ifaceSummary,
       logs,
+      source_ok: {
+        identity: identityResult.ok,
+        resource: resourceResult.ok,
+        ppp_active: pppResult.ok,
+        hotspot_active: hotspotResult.ok,
+        interfaces: interfaceResult.ok,
+        logs: logResult.ok,
+      },
       checked_at: new Date(),
     };
   } finally {

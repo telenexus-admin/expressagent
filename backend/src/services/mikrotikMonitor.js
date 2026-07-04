@@ -362,6 +362,35 @@ function numeric(value) {
   return Number.isFinite(num) ? num : null;
 }
 
+function sessionDropCandidate({ current, baseline, previousJson, key, minBaseline, minDrop, minPercent }) {
+  if (current === null || baseline === null || baseline < minBaseline) {
+    return { shouldAlert: false, dropped: 0, percent: 0, confirmCount: 0, baseline, baselineForState: current ?? baseline };
+  }
+  if (current >= baseline) {
+    return { shouldAlert: false, dropped: 0, percent: 0, confirmCount: 0, baseline: current, baselineForState: current };
+  }
+
+  const dropped = baseline - current;
+  const percent = Math.round((dropped / baseline) * 100);
+  const qualifies = dropped >= minDrop || percent >= minPercent;
+  if (!qualifies) {
+    return { shouldAlert: false, dropped, percent, confirmCount: 0, baseline, baselineForState: current };
+  }
+
+  const prior = previousJson?.[key] || {};
+  const priorCurrent = numeric(prior.current);
+  const similarLowReading = priorCurrent !== null && Math.abs(priorCurrent - current) <= Math.max(5, Math.round(baseline * 0.08));
+  const confirmCount = similarLowReading ? Number(prior.confirm_count || 0) + 1 : 1;
+  return {
+    shouldAlert: confirmCount >= 2,
+    dropped,
+    percent,
+    confirmCount,
+    baseline,
+    baselineForState: confirmCount >= 2 ? current : baseline,
+  };
+}
+
 async function processSnapshot(router, client, snapshot, state) {
   await storeSnapshot(snapshot);
   const variables = {
@@ -398,48 +427,60 @@ async function processSnapshot(router, client, snapshot, state) {
     await notifyEvent({ router, client, eventType: 'high_cpu', severity: currentCpuStatus, variables });
   }
 
+  const recoveringFromOffline = state && state.is_online === false;
+  const hadRecentFailure = Number(previousJson.failure_count || 0) > 0;
   const currentPppoe = numeric(snapshot.active_pppoe);
   const previousPppoe = numeric(state?.previous_pppoe_count);
-  if (currentPppoe !== null && previousPppoe !== null && previousPppoe >= 20 && currentPppoe < previousPppoe) {
-    const dropped = previousPppoe - currentPppoe;
-    const pct = Math.round((dropped / previousPppoe) * 100);
-    if (dropped >= 20 || pct >= 25) {
-      await notifyEvent({
-        router,
-        client,
-        eventType: 'pppoe_drop',
-        severity: 'critical',
-        variables: {
-          ...variables,
-          previous_pppoe_count: previousPppoe,
-          current_pppoe_count: currentPppoe,
-          dropped_count: dropped,
-          drop_percentage: pct,
-        },
-      });
-    }
+  const pppoeDrop = sessionDropCandidate({
+    current: currentPppoe,
+    baseline: previousPppoe,
+    previousJson,
+    key: 'pppoe_drop_candidate',
+    minBaseline: 20,
+    minDrop: 20,
+    minPercent: 25,
+  });
+  if (!recoveringFromOffline && !hadRecentFailure && pppoeDrop.shouldAlert) {
+    await notifyEvent({
+      router,
+      client,
+      eventType: 'pppoe_drop',
+      severity: 'critical',
+      variables: {
+        ...variables,
+        previous_pppoe_count: pppoeDrop.baseline,
+        current_pppoe_count: currentPppoe,
+        dropped_count: pppoeDrop.dropped,
+        drop_percentage: pppoeDrop.percent,
+      },
+    });
   }
 
   const currentHotspot = numeric(snapshot.active_hotspot);
   const previousHotspot = numeric(state?.previous_hotspot_count);
-  if (currentHotspot !== null && previousHotspot !== null && previousHotspot >= 20 && currentHotspot < previousHotspot) {
-    const dropped = previousHotspot - currentHotspot;
-    const pct = Math.round((dropped / previousHotspot) * 100);
-    if (dropped >= 20 || pct >= 30) {
-      await notifyEvent({
-        router,
-        client,
-        eventType: 'hotspot_drop',
-        severity: 'warning',
-        variables: {
-          ...variables,
-          previous_hotspot_count: previousHotspot,
-          current_hotspot_count: currentHotspot,
-          dropped_count: dropped,
-          drop_percentage: pct,
-        },
-      });
-    }
+  const hotspotDrop = sessionDropCandidate({
+    current: currentHotspot,
+    baseline: previousHotspot,
+    previousJson,
+    key: 'hotspot_drop_candidate',
+    minBaseline: 20,
+    minDrop: 20,
+    minPercent: 30,
+  });
+  if (!recoveringFromOffline && !hadRecentFailure && hotspotDrop.shouldAlert) {
+    await notifyEvent({
+      router,
+      client,
+      eventType: 'hotspot_drop',
+      severity: 'warning',
+      variables: {
+        ...variables,
+        previous_hotspot_count: hotspotDrop.baseline,
+        current_hotspot_count: currentHotspot,
+        dropped_count: hotspotDrop.dropped,
+        drop_percentage: hotspotDrop.percent,
+      },
+    });
   }
 
   const failures = securityFailures(snapshot.logs).sort((a, b) => b.attempt_count - a.attempt_count);
@@ -460,8 +501,8 @@ async function processSnapshot(router, client, snapshot, state) {
     is_online: true,
     last_seen: new Date(),
     offline_since: null,
-    previous_pppoe_count: currentPppoe ?? state?.previous_pppoe_count ?? 0,
-    previous_hotspot_count: currentHotspot ?? state?.previous_hotspot_count ?? 0,
+    previous_pppoe_count: pppoeDrop.baselineForState ?? state?.previous_pppoe_count ?? 0,
+    previous_hotspot_count: hotspotDrop.baselineForState ?? state?.previous_hotspot_count ?? 0,
     last_cpu_status: currentCpuStatus,
     last_security_signature: securitySignature,
     state_json: {
@@ -469,6 +510,12 @@ async function processSnapshot(router, client, snapshot, state) {
       cpu_confirm_count: cpuConfirmCount,
       last_cpu_alert_status: ['warning', 'critical'].includes(currentCpuStatus) && cpuConfirmCount >= requiredCpuChecks
         ? currentCpuStatus
+        : null,
+      pppoe_drop_candidate: pppoeDrop.confirmCount > 0
+        ? { current: currentPppoe, baseline: pppoeDrop.baseline, confirm_count: pppoeDrop.confirmCount }
+        : null,
+      hotspot_drop_candidate: hotspotDrop.confirmCount > 0
+        ? { current: currentHotspot, baseline: hotspotDrop.baseline, confirm_count: hotspotDrop.confirmCount }
         : null,
       source_ok: snapshot.source_ok || {},
     },

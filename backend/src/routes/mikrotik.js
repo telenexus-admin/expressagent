@@ -12,6 +12,7 @@ const {
   testRouterConfig,
   updateRouterStatus,
 } = require('../services/mikrotik');
+const { previewMikrotikAlert } = require('../services/mikrotikMonitor');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -113,6 +114,24 @@ router.post('/test', async (req, res) => {
     if (req.body?.id) await updateRouterStatus(clientId, req.body.id, { ok: false, error: message }).catch(() => {});
     console.error('POST /mikrotik/test error:', message);
     res.status(400).json({ error: message });
+  }
+});
+
+router.post('/alerts/test', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const result = await previewMikrotikAlert({
+      clientId,
+      routerId: req.body.router_id || req.body.routerId,
+      eventType: req.body.event_type || req.body.eventType || 'high_cpu',
+      variables: req.body.variables || {},
+      send: req.body.send === true,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('POST /mikrotik/alerts/test error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to test MikroTik alert' });
   }
 });
 

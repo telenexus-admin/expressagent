@@ -43,6 +43,7 @@ const { startOperatorFollowUpScheduler } = require('./services/evolution');
 const { startHumanTakeoverRecoveryScheduler } = require('./services/humanTakeoverRecovery');
 const { startWebsiteKnowledgeScheduler } = require('./services/websiteKnowledge');
 const { startAiTaskScheduler } = require('./services/aiTasks');
+const { startMikrotikMonitorScheduler } = require('./services/mikrotikMonitor');
 const { openAIModelSummary } = require('./services/openai');
 
 const app = express();
@@ -142,4 +143,5 @@ app.listen(PORT, () => {
   startHumanTakeoverRecoveryScheduler();
   startWebsiteKnowledgeScheduler();
   startAiTaskScheduler();
+  startMikrotikMonitorScheduler();
 });

@@ -1390,6 +1390,71 @@ async function updateRouterStatus(clientId, id, status) {
   return result.rows[0] ? safeRouter(result.rows[0]) : null;
 }
 
+function pickWanInterface(interfaces = []) {
+  const usable = interfaces.filter((item) => item && item.disabled !== 'true' && item.disabled !== true);
+  return usable.find((item) => /\b(wan|internet|uplink)\b/i.test(`${item.name || ''} ${item.comment || ''}`)) ||
+    usable.find((item) => /^(ether1|sfp|sfp-sfpplus1|lte1)/i.test(String(item.name || ''))) ||
+    usable.find((item) => item.running === 'true' || item.running === true) ||
+    usable[0] ||
+    {};
+}
+
+function monitoringInterfaceSummary(interfaces = []) {
+  return interfaces.map((item) => ({
+    name: item.name || '',
+    comment: item.comment || '',
+    type: item.type || '',
+    running: item.running === true || item.running === 'true',
+    disabled: item.disabled === true || item.disabled === 'true',
+    rx_bps: parseRateBits(item.rx || item['rx-rate'] || item['rx-bits-per-second'] || item['rx-byte'] || 0),
+    tx_bps: parseRateBits(item.tx || item['tx-rate'] || item['tx-bits-per-second'] || item['tx-byte'] || 0),
+    speed: item['actual-speed'] || item.speed || item['link-speed'] || '',
+  }));
+}
+
+async function collectMonitoringSnapshot(router) {
+  const config = router.password ? router : { ...router, password: decryptSecret(router.password_encrypted) };
+  let client = null;
+  try {
+    client = await connectRouter(config);
+    const [identityRows, resourceRows, pppActive, hotspotActive, interfaces, logs] = await Promise.all([
+      client.command('/system/identity/print').catch(() => []),
+      client.command('/system/resource/print').catch(() => []),
+      router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
+      router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
+      router.features?.interfaces === false ? Promise.resolve([]) : client.command('/interface/print').catch(() => []),
+      router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
+    ]);
+    const resource = resourceRows[0] || {};
+    const identity = identityRows[0]?.name || router.last_identity || router.name;
+    const ifaceSummary = monitoringInterfaceSummary(interfaces);
+    const wan = pickWanInterface(ifaceSummary);
+    return {
+      ok: true,
+      router_id: router.id,
+      client_id: router.client_id,
+      router_name: identity || router.name,
+      version: firstValue(resource, ['version'], ''),
+      uptime: firstValue(resource, ['uptime'], ''),
+      cpu_load: Number(firstValue(resource, ['cpu-load', 'cpu'], 0)) || 0,
+      free_memory: Number(firstValue(resource, ['free-memory'], 0)) || 0,
+      total_memory: Number(firstValue(resource, ['total-memory'], 0)) || 0,
+      active_pppoe: pppActive.length,
+      active_hotspot: hotspotActive.length,
+      wan_interface: wan.name || '',
+      wan_link_status: wan.running ? 'running' : 'down',
+      wan_link_speed: wan.speed || '',
+      wan_rx_mbps: Number(((wan.rx_bps || 0) / 1000000).toFixed(2)),
+      wan_tx_mbps: Number(((wan.tx_bps || 0) / 1000000).toFixed(2)),
+      interfaces: ifaceSummary,
+      logs,
+      checked_at: new Date(),
+    };
+  } finally {
+    if (client) client.close();
+  }
+}
+
 async function deleteRouter(clientId, id) {
   await ensureMikrotikTables();
   const result = await db.query(`DELETE FROM mikrotik_routers WHERE client_id = $1 AND id = $2 RETURNING id`, [clientId, id]);
@@ -1406,6 +1471,7 @@ module.exports = {
   activateWireguardPeer,
   buildMikrotikAdminContext,
   buildMikrotikStatusReply,
+  collectMonitoringSnapshot,
   findMikrotikAccount,
   prepareWireguardOnboarding,
   saveRouter,

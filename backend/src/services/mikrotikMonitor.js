@@ -12,8 +12,7 @@ const COOLDOWNS = {
   router_offline: 5,
   router_back_online: 0,
   high_cpu: 10,
-  pppoe_drop: 10,
-  hotspot_drop: 10,
+  storage_bad: 30,
   security_failed_login: 10,
 };
 
@@ -28,40 +27,27 @@ const notificationTemplates = {
     '{{router_name}} is offline.\n\nI cannot read PPPoE, hotspot, WAN or router health data until it comes back online.',
   ],
   router_back_online: [
-    'Router back online\n\n{{router_name}} is reachable again.\nDowntime: {{downtime_duration}}\nCPU: {{cpu_load}}%\nPPPoE: {{active_pppoe}}\nHotspot: {{active_hotspot}}',
+    'Router back online\n\n{{router_name}} is reachable again.\nDowntime: {{downtime_duration}}\nCPU: {{cpu_load}}%',
     'Good news, {{router_name}} is back online.\n\nIt was down for about {{downtime_duration}}. I will keep watching it for stability.',
     'Recovery detected\n\nRouter: {{router_name}}\nStatus: Online again\nDowntime: {{downtime_duration}}',
-    '{{router_name}} has reconnected.\n\nCPU: {{cpu_load}}%\nPPPoE homes: {{active_pppoe}}\nHotspot users: {{active_hotspot}}',
+    '{{router_name}} has reconnected.\n\nCPU: {{cpu_load}}%\nStorage free: {{storage_free_percent}}%',
     'Boss, the router is back.\n\n{{router_name}} is responding again after {{downtime_duration}} of downtime.',
     '{{router_name}} is alive again.\n\nWAN traffic: {{wan_rx_mbps}} Mbps down / {{wan_tx_mbps}} Mbps up.',
     'Router recovery notice\n\n{{router_name}} is back online. Check logs later if the drop repeats.',
   ],
   high_cpu: [
     'Router CPU is high\n\nRouter: {{router_name}}\nCPU Load: {{cpu_load}}%\nFree memory: {{free_memory}}\n\nCustomers may feel slow browsing if this continues.',
-    'Boss, {{router_name}} is under pressure.\n\nCPU: {{cpu_load}}%\nPPPoE: {{active_pppoe}}\nHotspot: {{active_hotspot}}\n\nWorth checking heavy traffic or queue/firewall load.',
+    'Boss, {{router_name}} is under pressure.\n\nCPU: {{cpu_load}}%\nFree memory: {{free_memory}}\n\nWorth checking heavy traffic or queue/firewall load.',
     'Performance warning\n\n{{router_name}} CPU has stayed high at {{cpu_load}}%.\nWAN: {{wan_rx_mbps}} Mbps down / {{wan_tx_mbps}} Mbps up.',
     '{{router_name}} is working harder than normal.\n\nCPU: {{cpu_load}}%\nMemory free: {{free_memory}}\n\nCheck traffic spikes and heavy rules.',
     'Critical router load\n\n{{router_name}} CPU has reached {{cpu_load}}%. This can affect PPPoE login, hotspot auth and browsing speed.',
-    'The router load is not looking normal.\n\n{{router_name}} is at {{cpu_load}}% CPU with {{active_pppoe}} PPPoE homes and {{active_hotspot}} hotspot users online.',
+    'The router load is not looking normal.\n\n{{router_name}} is at {{cpu_load}}% CPU. Please check traffic spikes, queues and heavy firewall rules.',
     'CPU alert\n\n{{router_name}} may be overloaded.\nCPU: {{cpu_load}}%\n\nIf this continues, check traffic spikes or schedule maintenance.',
   ],
-  pppoe_drop: [
-    'PPPoE drop detected\n\nRouter: {{router_name}}\nBefore: {{previous_pppoe_count}}\nNow: {{current_pppoe_count}}\nDropped: {{dropped_count}} homes\n\nThis may be a sector, switch, power or fibre issue.',
-    'Boss, many PPPoE clients have gone offline.\n\n{{dropped_count}} homes dropped from {{router_name}}. Current online: {{current_pppoe_count}}.',
-    'Possible area outage\n\nPPPoE sessions on {{router_name}} dropped by {{drop_percentage}}%.\nBefore: {{previous_pppoe_count}}\nCurrent: {{current_pppoe_count}}',
-    'Nexa noticed a sudden PPPoE drop.\n\nRouter: {{router_name}}\nDropped clients: {{dropped_count}}\n\nThis does not look like normal customer logout.',
-    'Customer sessions reduced sharply.\n\n{{router_name}} PPPoE moved from {{previous_pppoe_count}} to {{current_pppoe_count}}. Check AP/sector/switch/fibre side.',
-    'Possible distribution problem detected.\n\nPPPoE homes dropped by {{dropped_count}} on {{router_name}}.',
-    'PPPoE alert\n\n{{router_name}} lost {{dropped_count}} active PPPoE sessions. Check power or link issues before customers start reporting.',
-  ],
-  hotspot_drop: [
-    'Hotspot users dropped\n\nRouter: {{router_name}}\nBefore: {{previous_hotspot_count}}\nNow: {{current_hotspot_count}}\nDropped: {{dropped_count}} users\n\nPossible AP, power, bridge or uplink issue.',
-    'Boss, hotspot activity dropped sharply on {{router_name}}.\n\nUsers dropped by {{drop_percentage}}%. Current active: {{current_hotspot_count}}.',
-    'Hotspot drop detected\n\n{{dropped_count}} hotspot users disappeared from {{router_name}}. Please check the hotspot area.',
-    'Hotspot sessions reduced suddenly.\n\nRouter: {{router_name}}\nBefore: {{previous_hotspot_count}}\nNow: {{current_hotspot_count}}',
-    'Possible hotspot area problem\n\n{{router_name}} lost {{dropped_count}} active hotspot users.',
-    'Nexa noticed abnormal hotspot drop on {{router_name}}. This may not be normal user logout.',
-    'Boss, hotspot users are down.\n\nRouter: {{router_name}}\nCurrent users: {{current_hotspot_count}}\n\nCheck APs, power or uplink.',
+  storage_bad: [
+    'Router storage warning\n\nRouter: {{router_name}}\nStorage free: {{storage_free_percent}}%\nFree storage: {{free_storage}}\nBad blocks: {{bad_blocks}}%\n\nPlease review storage health and logs.',
+    'Boss, {{router_name}} needs a storage check.\n\nFree storage is {{storage_free_percent}}% and bad blocks are {{bad_blocks}}%. If this keeps getting worse, RouterOS stability can be affected.',
+    'MikroTik resource alert\n\n{{router_name}} storage is not looking healthy.\nFree: {{free_storage}} of {{total_storage}}\nBad blocks: {{bad_blocks}}%',
   ],
   security_failed_login: [
     'Security alert\n\nRouter: {{router_name}}\nService: {{service}}\nSource IP: {{source_ip}}\nFailed attempts: {{attempt_count}}\n\nSomeone may be trying to access the router.',
@@ -362,33 +348,19 @@ function numeric(value) {
   return Number.isFinite(num) ? num : null;
 }
 
-function sessionDropCandidate({ current, baseline, previousJson, key, minBaseline, minDrop, minPercent }) {
-  if (current === null || baseline === null || baseline < minBaseline) {
-    return { shouldAlert: false, dropped: 0, percent: 0, confirmCount: 0, baseline, baselineForState: current ?? baseline };
-  }
-  if (current >= baseline) {
-    return { shouldAlert: false, dropped: 0, percent: 0, confirmCount: 0, baseline: current, baselineForState: current };
-  }
+function percentFree(free, total) {
+  const freeNum = numeric(free);
+  const totalNum = numeric(total);
+  if (freeNum === null || totalNum === null || totalNum <= 0) return null;
+  return Math.round((freeNum / totalNum) * 100);
+}
 
-  const dropped = baseline - current;
-  const percent = Math.round((dropped / baseline) * 100);
-  const qualifies = dropped >= minDrop || percent >= minPercent;
-  if (!qualifies) {
-    return { shouldAlert: false, dropped, percent, confirmCount: 0, baseline, baselineForState: current };
-  }
-
-  const prior = previousJson?.[key] || {};
-  const priorCurrent = numeric(prior.current);
-  const similarLowReading = priorCurrent !== null && Math.abs(priorCurrent - current) <= Math.max(5, Math.round(baseline * 0.08));
-  const confirmCount = similarLowReading ? Number(prior.confirm_count || 0) + 1 : 1;
-  return {
-    shouldAlert: confirmCount >= 2,
-    dropped,
-    percent,
-    confirmCount,
-    baseline,
-    baselineForState: confirmCount >= 2 ? current : baseline,
-  };
+function storageStatus(snapshot) {
+  const badBlocks = numeric(snapshot.bad_blocks);
+  const freePercent = percentFree(snapshot.free_storage, snapshot.total_storage);
+  if ((badBlocks !== null && badBlocks >= 5) || (freePercent !== null && freePercent <= 10)) return 'critical';
+  if ((badBlocks !== null && badBlocks >= 1) || (freePercent !== null && freePercent <= 20)) return 'warning';
+  return 'normal';
 }
 
 async function processSnapshot(router, client, snapshot, state) {
@@ -398,8 +370,10 @@ async function processSnapshot(router, client, snapshot, state) {
     cpu_load: numeric(snapshot.cpu_load),
     free_memory: formatBytes(snapshot.free_memory),
     total_memory: formatBytes(snapshot.total_memory),
-    active_pppoe: numeric(snapshot.active_pppoe),
-    active_hotspot: numeric(snapshot.active_hotspot),
+    free_storage: formatBytes(snapshot.free_storage),
+    total_storage: formatBytes(snapshot.total_storage),
+    storage_free_percent: percentFree(snapshot.free_storage, snapshot.total_storage),
+    bad_blocks: numeric(snapshot.bad_blocks),
     wan_rx_mbps: numeric(snapshot.wan_rx_mbps),
     wan_tx_mbps: numeric(snapshot.wan_tx_mbps),
   };
@@ -427,60 +401,12 @@ async function processSnapshot(router, client, snapshot, state) {
     await notifyEvent({ router, client, eventType: 'high_cpu', severity: currentCpuStatus, variables });
   }
 
-  const recoveringFromOffline = state && state.is_online === false;
-  const hadRecentFailure = Number(previousJson.failure_count || 0) > 0;
-  const currentPppoe = numeric(snapshot.active_pppoe);
-  const previousPppoe = numeric(state?.previous_pppoe_count);
-  const pppoeDrop = sessionDropCandidate({
-    current: currentPppoe,
-    baseline: previousPppoe,
-    previousJson,
-    key: 'pppoe_drop_candidate',
-    minBaseline: 20,
-    minDrop: 20,
-    minPercent: 25,
-  });
-  if (!recoveringFromOffline && !hadRecentFailure && pppoeDrop.shouldAlert) {
-    await notifyEvent({
-      router,
-      client,
-      eventType: 'pppoe_drop',
-      severity: 'critical',
-      variables: {
-        ...variables,
-        previous_pppoe_count: pppoeDrop.baseline,
-        current_pppoe_count: currentPppoe,
-        dropped_count: pppoeDrop.dropped,
-        drop_percentage: pppoeDrop.percent,
-      },
-    });
-  }
-
-  const currentHotspot = numeric(snapshot.active_hotspot);
-  const previousHotspot = numeric(state?.previous_hotspot_count);
-  const hotspotDrop = sessionDropCandidate({
-    current: currentHotspot,
-    baseline: previousHotspot,
-    previousJson,
-    key: 'hotspot_drop_candidate',
-    minBaseline: 20,
-    minDrop: 20,
-    minPercent: 30,
-  });
-  if (!recoveringFromOffline && !hadRecentFailure && hotspotDrop.shouldAlert) {
-    await notifyEvent({
-      router,
-      client,
-      eventType: 'hotspot_drop',
-      severity: 'warning',
-      variables: {
-        ...variables,
-        previous_hotspot_count: hotspotDrop.baseline,
-        current_hotspot_count: currentHotspot,
-        dropped_count: hotspotDrop.dropped,
-        drop_percentage: hotspotDrop.percent,
-      },
-    });
+  const currentStorageStatus = storageStatus(snapshot);
+  const storageConfirmCount = currentStorageStatus === previousJson.last_storage_status
+    ? Number(previousJson.storage_confirm_count || 0) + 1
+    : 1;
+  if (['warning', 'critical'].includes(currentStorageStatus) && storageConfirmCount >= 2 && currentStorageStatus !== previousJson.last_storage_alert_status) {
+    await notifyEvent({ router, client, eventType: 'storage_bad', severity: currentStorageStatus, variables });
   }
 
   const failures = securityFailures(snapshot.logs).sort((a, b) => b.attempt_count - a.attempt_count);
@@ -501,8 +427,8 @@ async function processSnapshot(router, client, snapshot, state) {
     is_online: true,
     last_seen: new Date(),
     offline_since: null,
-    previous_pppoe_count: pppoeDrop.baselineForState ?? state?.previous_pppoe_count ?? 0,
-    previous_hotspot_count: hotspotDrop.baselineForState ?? state?.previous_hotspot_count ?? 0,
+    previous_pppoe_count: state?.previous_pppoe_count ?? 0,
+    previous_hotspot_count: state?.previous_hotspot_count ?? 0,
     last_cpu_status: currentCpuStatus,
     last_security_signature: securitySignature,
     state_json: {
@@ -511,12 +437,13 @@ async function processSnapshot(router, client, snapshot, state) {
       last_cpu_alert_status: ['warning', 'critical'].includes(currentCpuStatus) && cpuConfirmCount >= requiredCpuChecks
         ? currentCpuStatus
         : null,
-      pppoe_drop_candidate: pppoeDrop.confirmCount > 0
-        ? { current: currentPppoe, baseline: pppoeDrop.baseline, confirm_count: pppoeDrop.confirmCount }
+      last_storage_status: currentStorageStatus,
+      storage_confirm_count: storageConfirmCount,
+      last_storage_alert_status: ['warning', 'critical'].includes(currentStorageStatus) && storageConfirmCount >= 2
+        ? currentStorageStatus
         : null,
-      hotspot_drop_candidate: hotspotDrop.confirmCount > 0
-        ? { current: currentHotspot, baseline: hotspotDrop.baseline, confirm_count: hotspotDrop.confirmCount }
-        : null,
+      pppoe_drop_candidate: null,
+      hotspot_drop_candidate: null,
       source_ok: snapshot.source_ok || {},
     },
   });

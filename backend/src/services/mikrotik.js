@@ -717,6 +717,12 @@ function parseRateBits(value) {
   return numeric;
 }
 
+function parseMetricNumber(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const num = Number(String(value).replace(/[^0-9.-]/g, ''));
+  return Number.isFinite(num) ? num : null;
+}
+
 function formatRate(value) {
   const bits = parseRateBits(value);
   if (!bits) return '0 bps';
@@ -1443,6 +1449,9 @@ async function collectMonitoringSnapshot(router) {
     const cpuValue = firstValue(resource, ['cpu-load', 'cpu'], null);
     const freeMemory = firstValue(resource, ['free-memory'], null);
     const totalMemory = firstValue(resource, ['total-memory'], null);
+    const freeStorage = firstValue(resource, ['free-hdd-space', 'free-disk-space'], null);
+    const totalStorage = firstValue(resource, ['total-hdd-space', 'total-disk-space'], null);
+    const badBlocks = firstValue(resource, ['bad-blocks'], null);
     return {
       ok: true,
       router_id: router.id,
@@ -1453,6 +1462,9 @@ async function collectMonitoringSnapshot(router) {
       cpu_load: cpuValue === null ? null : Number(cpuValue),
       free_memory: freeMemory === null ? null : Number(freeMemory),
       total_memory: totalMemory === null ? null : Number(totalMemory),
+      free_storage: freeStorage === null ? null : Number(freeStorage),
+      total_storage: totalStorage === null ? null : Number(totalStorage),
+      bad_blocks: parseMetricNumber(badBlocks),
       active_pppoe: pppResult.ok ? pppActive.length : null,
       active_hotspot: hotspotResult.ok ? hotspotActive.length : null,
       wan_interface: wan.name || '',

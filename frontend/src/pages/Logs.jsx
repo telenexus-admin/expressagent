@@ -94,9 +94,15 @@ function safeMetadata(metadata) {
   return metadata;
 }
 
-function SummaryCard({ icon: Icon, label, value, helper, tone = 'purple' }) {
+function SummaryCard({ icon: Icon, label, value, helper, tone = 'purple', active = false, onClick }) {
   return (
-    <div className="bg-white border border-slate-200 rounded-[22px] p-4 shadow-sm">
+    <button
+      type="button"
+      onClick={onClick}
+      className={`text-left bg-white border rounded-[22px] p-4 shadow-sm transition hover:-translate-y-0.5 hover:shadow-lg focus:outline-none focus:ring-2 focus:ring-[#6D35FF]/30 ${
+        active ? 'border-[#6D35FF] ring-2 ring-[#6D35FF]/15' : 'border-slate-200'
+      }`}
+    >
       <div className="flex items-center justify-between gap-3">
         <div className={`w-12 h-12 rounded-2xl flex items-center justify-center border ${toneClasses(tone)}`}>
           <Icon className="w-5 h-5" />
@@ -106,7 +112,7 @@ function SummaryCard({ icon: Icon, label, value, helper, tone = 'purple' }) {
       <div className="mt-4 text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">{label}</div>
       <div className="mt-1 text-3xl font-black text-slate-950">{Number(value || 0).toLocaleString()}</div>
       <div className="mt-1 text-xs font-semibold text-slate-500">{helper}</div>
-    </div>
+    </button>
   );
 }
 
@@ -230,8 +236,11 @@ export default function Logs() {
   const [summary, setSummary] = useState({});
   const [filters, setFilters] = useState({ modules: [], actors: [], severities: [] });
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState(null);
   const [error, setError] = useState('');
   const [selected, setSelected] = useState(null);
+  const [quickFilter, setQuickFilter] = useState('all');
   const [query, setQuery] = useState({
     search: '',
     actor: 'all',
@@ -241,6 +250,7 @@ export default function Logs() {
 
   const fetchLogs = async () => {
     try {
+      setRefreshing(true);
       const params = new URLSearchParams({ limit: '220' });
       Object.entries(query).forEach(([key, value]) => {
         if (value && value !== 'all') params.set(key, value);
@@ -250,25 +260,35 @@ export default function Logs() {
       setEvents(nextEvents);
       setSummary(data.summary || {});
       setFilters(data.filters || { modules: [], actors: [], severities: [] });
+      setLastRefreshedAt(new Date());
       setError('');
     } catch (err) {
       setError(err.response?.data?.error || 'Failed to load audit trail');
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
     fetchLogs();
-    const interval = setInterval(fetchLogs, 30000);
+    const interval = setInterval(fetchLogs, 180000);
     return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [query.actor, query.module, query.severity]);
 
   const searchedEvents = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
     const search = query.search.trim().toLowerCase();
-    if (!search) return events;
-    return events.filter((event) => [
+    return events.filter((event) => {
+      if (quickFilter === 'today' && new Date(event.created_at) < today) return false;
+      if (quickFilter === 'admin' && event.actor_type !== 'admin') return false;
+      if (quickFilter === 'ai' && event.actor_type !== 'ai') return false;
+      if (quickFilter === 'failed' && !['failed', 'critical'].includes(event.severity)) return false;
+      if (quickFilter === 'security' && event.module !== 'security') return false;
+      if (!search) return true;
+      return [
       event.title,
       event.description,
       event.actor_name,
@@ -278,8 +298,18 @@ export default function Logs() {
       event.action,
       event.module,
       JSON.stringify(event.metadata || {}),
-    ].some((value) => String(value || '').toLowerCase().includes(search)));
-  }, [events, query.search]);
+      ].some((value) => String(value || '').toLowerCase().includes(search));
+    });
+  }, [events, query.search, quickFilter]);
+
+  const applySummaryFilter = (filterName) => {
+    setQuickFilter((current) => (current === filterName ? 'all' : filterName));
+    if (filterName === 'admin') setQuery((current) => ({ ...current, actor: current.actor === 'admin' ? 'all' : 'admin' }));
+    else if (filterName === 'ai') setQuery((current) => ({ ...current, actor: current.actor === 'ai' ? 'all' : 'ai' }));
+    else if (filterName === 'security') setQuery((current) => ({ ...current, module: current.module === 'security' ? 'all' : 'security' }));
+    else if (filterName === 'failed') setQuery((current) => ({ ...current, severity: 'all' }));
+    else setQuery((current) => ({ ...current, actor: 'all', module: 'all', severity: 'all' }));
+  };
 
   if (loading) {
     return <div className="flex-1 flex items-center justify-center text-sm text-slate-400">Loading audit trail...</div>;
@@ -305,10 +335,11 @@ export default function Logs() {
             <button
               type="button"
               onClick={fetchLogs}
-              className="h-12 px-5 rounded-2xl bg-[#111127] text-white text-sm font-black shadow-lg shadow-slate-200 inline-flex items-center justify-center gap-2"
+              disabled={refreshing}
+              className="h-12 px-5 rounded-2xl bg-[#111127] text-white text-sm font-black shadow-lg shadow-slate-200 inline-flex items-center justify-center gap-2 disabled:opacity-70"
             >
-              <RefreshIcon className="w-4 h-4" />
-              Refresh
+              <RefreshIcon className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
+              {refreshing ? 'Refreshing...' : 'Refresh'}
             </button>
           </div>
         </section>
@@ -316,11 +347,11 @@ export default function Logs() {
         {error && <div className="bg-red-50 border border-red-100 text-red-700 rounded-2xl px-4 py-3 text-sm font-bold">{error}</div>}
 
         <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-5 gap-4">
-          <SummaryCard icon={ActivityIcon} label="Events today" value={summary.today} helper="Fresh activity" tone="purple" />
-          <SummaryCard icon={UsersIcon} label="Admin actions" value={summary.admin_actions} helper="People changes" tone="indigo" />
-          <SummaryCard icon={AgentIcon} label="AI actions" value={summary.ai_actions} helper="Automated work" tone="blue" />
-          <SummaryCard icon={WarningIcon} label="Failed / critical" value={summary.failed_actions} helper="Needs review" tone="red" />
-          <SummaryCard icon={ShieldIcon} label="Security alerts" value={summary.security_alerts} helper="Access risks" tone="amber" />
+          <SummaryCard icon={ActivityIcon} label="Events today" value={summary.today} helper="Fresh activity" tone="purple" active={quickFilter === 'today'} onClick={() => applySummaryFilter('today')} />
+          <SummaryCard icon={UsersIcon} label="Admin actions" value={summary.admin_actions} helper="People changes" tone="indigo" active={quickFilter === 'admin'} onClick={() => applySummaryFilter('admin')} />
+          <SummaryCard icon={AgentIcon} label="AI actions" value={summary.ai_actions} helper="Automated work" tone="blue" active={quickFilter === 'ai'} onClick={() => applySummaryFilter('ai')} />
+          <SummaryCard icon={WarningIcon} label="Failed / critical" value={summary.failed_actions} helper="Needs review" tone="red" active={quickFilter === 'failed'} onClick={() => applySummaryFilter('failed')} />
+          <SummaryCard icon={ShieldIcon} label="Security alerts" value={summary.security_alerts} helper="Access risks" tone="amber" active={quickFilter === 'security'} onClick={() => applySummaryFilter('security')} />
         </div>
 
         <section className="rounded-[28px] border border-slate-200 bg-white shadow-sm overflow-hidden">
@@ -340,7 +371,7 @@ export default function Logs() {
               </label>
               <select
                 value={query.actor}
-                onChange={(e) => setQuery((current) => ({ ...current, actor: e.target.value }))}
+                onChange={(e) => { setQuickFilter('all'); setQuery((current) => ({ ...current, actor: e.target.value })); }}
                 className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 outline-none"
               >
                 <option value="all">All actors</option>
@@ -348,7 +379,7 @@ export default function Logs() {
               </select>
               <select
                 value={query.module}
-                onChange={(e) => setQuery((current) => ({ ...current, module: e.target.value }))}
+                onChange={(e) => { setQuickFilter('all'); setQuery((current) => ({ ...current, module: e.target.value })); }}
                 className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 outline-none"
               >
                 <option value="all">All modules</option>
@@ -356,7 +387,7 @@ export default function Logs() {
               </select>
               <select
                 value={query.severity}
-                onChange={(e) => setQuery((current) => ({ ...current, severity: e.target.value }))}
+                onChange={(e) => { setQuickFilter('all'); setQuery((current) => ({ ...current, severity: e.target.value })); }}
                 className="h-12 rounded-2xl border border-slate-200 bg-white px-4 text-sm font-black text-slate-700 outline-none"
               >
                 <option value="all">All severity</option>
@@ -370,7 +401,9 @@ export default function Logs() {
               <div className="text-sm font-black text-slate-950">System Activity</div>
               <div className="text-xs font-semibold text-slate-500">{searchedEvents.length} event{searchedEvents.length === 1 ? '' : 's'} shown</div>
             </div>
-            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">Live refresh every 30s</div>
+            <div className="text-[11px] font-black uppercase tracking-[0.16em] text-slate-400">
+              Auto refresh every 3 min{lastRefreshedAt ? ` · Last ${lastRefreshedAt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}
+            </div>
           </div>
 
           {searchedEvents.length === 0 ? (

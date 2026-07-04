@@ -430,6 +430,239 @@ body {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38) !important;
 }
 
+/* Clean dark finish: no pale icon bubbles, no dimmed robot art, readable headings everywhere. */
+.theme-dark :where(
+  .bg-\[\#e8e9ff\],
+  .bg-\[\#e9e9ff\],
+  .bg-\[\#eafff6\],
+  .bg-\[\#eafff8\],
+  .bg-\[\#ececff\],
+  .bg-\[\#ede8ff\],
+  .bg-\[\#eef2fb\],
+  .bg-\[\#eef2ff\],
+  .bg-\[\#eef3ff\],
+  .bg-\[\#eef6ff\],
+  .bg-\[\#eef8ff\],
+  .bg-\[\#efe9ff\],
+  .bg-\[\#f0e8ff\],
+  .bg-\[\#f0eaff\],
+  .bg-\[\#f0ebff\],
+  .bg-\[\#f0f1f7\],
+  .bg-\[\#f0f8ff\],
+  .bg-\[\#f1eaff\],
+  .bg-\[\#f1edff\],
+  .bg-\[\#f2f4fb\],
+  .bg-\[\#f2f5fb\],
+  .bg-\[\#f3f2ff\],
+  .bg-\[\#f3f6fb\],
+  .bg-\[\#f4eaff\],
+  .bg-\[\#f4edff\],
+  .bg-\[\#f4f1ff\],
+  .bg-\[\#f4f2ff\],
+  .bg-\[\#f5f2ff\],
+  .bg-\[\#f6f3ff\],
+  .bg-\[\#f6f7ff\],
+  .bg-\[\#f7f3ff\],
+  .bg-\[\#f7f8fc\],
+  .bg-\[\#f8f9ff\],
+  .bg-\[\#faf8ff\],
+  .bg-\[\#fafbff\],
+  .bg-\[\#fbfaff\],
+  .bg-\[\#fbfcff\],
+  .bg-\[\#fff0f1\],
+  .bg-\[\#fff4df\],
+  .bg-amber-50,
+  .bg-blue-50,
+  .bg-emerald-50,
+  .bg-gray-100,
+  .bg-indigo-50,
+  .bg-purple-50,
+  .bg-red-50,
+  .bg-sky-50,
+  .bg-slate-100,
+  .bg-violet-50
+) {
+  background-color: rgba(13, 20, 38, 0.94) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  color: #d8def3 !important;
+}
+
+.theme-dark :where(.bg-white, .bg-\[\#ffffff\], button.bg-white, span.bg-white) {
+  background-color: rgba(8, 13, 28, 0.96) !important;
+  color: #eef2ff !important;
+}
+
+.theme-dark :where(
+  h1,
+  h2,
+  h3,
+  .text-\[\#07103d\],
+  .text-\[\#08103f\],
+  .text-\[\#0A0A0F\],
+  .text-\[\#0d1438\],
+  .text-\[\#101027\],
+  .text-\[\#111827\],
+  .text-\[\#121a3d\],
+  .text-\[\#16204a\],
+  .text-\[\#17264d\],
+  .text-\[\#20284d\],
+  .text-\[\#263150\],
+  .text-\[\#273459\],
+  .text-\[\#354052\],
+  .text-slate-950,
+  .text-slate-900,
+  .text-slate-800,
+  .text-gray-900
+) {
+  color: #f8fafc !important;
+}
+
+.theme-dark :where(
+  p,
+  label,
+  .text-\[\#425071\],
+  .text-\[\#475274\],
+  .text-\[\#505987\],
+  .text-\[\#59607a\],
+  .text-\[\#637098\],
+  .text-\[\#647092\],
+  .text-\[\#67739a\],
+  .text-\[\#686e86\],
+  .text-\[\#6c789d\],
+  .text-\[\#6d7697\],
+  .text-\[\#7580a6\],
+  .text-\[\#7a86a8\],
+  .text-\[\#7b84a8\],
+  .text-\[\#7b86a8\],
+  .text-\[\#7b86aa\],
+  .text-\[\#8a92ad\],
+  .text-\[\#8a93ad\],
+  .text-\[\#8b94b8\],
+  .text-\[\#99a4bf\],
+  .text-slate-700,
+  .text-slate-600,
+  .text-slate-500,
+  .text-gray-700,
+  .text-gray-600,
+  .text-gray-500
+) {
+  color: #b8c2e0 !important;
+}
+
+.theme-dark :where(
+  .text-\[\#2086ff\],
+  .text-\[\#2563eb\],
+  .text-\[\#315dff\],
+  .text-\[\#3535FF\],
+  .text-\[\#3a35ff\],
+  .text-\[\#4538ff\],
+  .text-\[\#4B16B5\],
+  .text-\[\#4b16b5\],
+  .text-\[\#4d1ab8\],
+  .text-\[\#4f35f5\],
+  .text-\[\#5135f5\],
+  .text-\[\#5b35f5\],
+  .text-\[\#5d2cff\],
+  .text-\[\#5d2df5\],
+  .text-\[\#6c2cff\],
+  .text-\[\#6d2cff\],
+  .text-\[\#6d35ff\],
+  .text-\[\#6f43ff\],
+  .text-\[\#7b25ff\],
+  .text-violet-700,
+  .text-indigo-700,
+  .text-blue-700
+) {
+  color: #c4b5fd !important;
+}
+
+.theme-dark :where(.text-\[\#10b981\], .text-\[\#17c98f\], .text-emerald-600, .text-emerald-700) {
+  color: #6ee7b7 !important;
+}
+
+.theme-dark :where(.text-\[\#f59e0b\], .text-\[\#ffa51e\], .text-amber-700) {
+  color: #fcd34d !important;
+}
+
+.theme-dark :where(.text-\[\#ff4d6a\], .text-red-600, .text-red-700, .text-rose-700) {
+  color: #fda4af !important;
+}
+
+.theme-dark :where(
+  .rounded-full.bg-white,
+  .rounded-xl.bg-white,
+  .rounded-2xl.bg-white,
+  .rounded-3xl.bg-white,
+  .rounded-\[22px\].bg-white,
+  .rounded-\[24px\].bg-white,
+  .rounded-\[26px\].bg-white,
+  .rounded-\[28px\].bg-white,
+  .rounded-\[30px\].bg-white,
+  .rounded-\[32px\].bg-white
+) {
+  background-color: rgba(13, 20, 38, 0.96) !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+.theme-dark :where(
+  .border-\[\#cfd8ec\],
+  .border-\[\#d7d7ff\],
+  .border-\[\#d8d0ff\],
+  .border-\[\#d9d8ff\],
+  .border-\[\#d9defb\],
+  .border-\[\#d9e1f2\],
+  .border-\[\#dbe5ff\],
+  .border-\[\#ded6ff\],
+  .border-\[\#dfe2ee\],
+  .border-\[\#dfe3f1\],
+  .border-\[\#dfe5f2\],
+  .border-\[\#dfe5f5\],
+  .border-\[\#e2dcff\],
+  .border-\[\#e3e8f5\],
+  .border-\[\#e3e8f7\],
+  .border-\[\#e4e9f4\],
+  .border-\[\#e4e9f6\],
+  .border-\[\#e7e9f2\],
+  .border-\[\#edf2f8\],
+  .border-blue-100,
+  .border-purple-50,
+  .border-purple-100,
+  .border-slate-200
+) {
+  border-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+.theme-dark :where(input, select, textarea) {
+  background-color: rgba(8, 13, 28, 0.98) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  color: #eef2ff !important;
+}
+
+.theme-dark :where(input, select, textarea)::placeholder {
+  color: #7f8cac !important;
+}
+
+.theme-dark :where(img, .mix-blend-multiply) {
+  mix-blend-mode: normal !important;
+  opacity: 1 !important;
+  filter: none !important;
+}
+
+.theme-dark .dashboard-ai-card::before,
+.theme-dark .dashboard-ai-card::after {
+  opacity: 0 !important;
+}
+
+.theme-dark .dashboard-sidebar :where(button span:first-child, .flex.h-8.w-8, .flex.h-9.w-9, .flex.h-10.w-10, .flex.h-11.w-11, .flex.h-12.w-12, .flex.h-16.w-16, .flex.h-\[68px\].w-\[68px\], .w-8.h-8, .w-9.h-9, .w-10.h-10) {
+  background-color: rgba(13, 20, 38, 0.96) !important;
+  border: 1px solid rgba(148, 163, 184, 0.22) !important;
+  color: #c4b5fd !important;
+}
+
+.theme-dark :where(.shadow-slate-200, .shadow-slate-200\/70, .shadow-purple-100\/50, .shadow-purple-100\/60, .shadow-purple-100\/70, .shadow-purple-200, .shadow-indigo-100\/70, .shadow-purple-900\/25) {
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.45) !important;
+}
+
 /* Dark polish: remove the remaining pale islands from dashboard pages. */
 .theme-dark :where(
   .bg-\[\#e8e9ff\],

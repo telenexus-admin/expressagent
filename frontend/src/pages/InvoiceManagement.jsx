@@ -515,7 +515,7 @@ export default function InvoiceManagement() {
 
   return (
     <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden bg-[#f6f8ff] p-3 sm:p-5">
-      <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-4">
+      <div className="mx-auto flex w-full max-w-[1320px] flex-col gap-4">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-[11px] font-black uppercase tracking-[0.2em] text-[#6d35ff]">Invoice control center</p>
@@ -543,8 +543,8 @@ export default function InvoiceManagement() {
           <SummaryCard label="Available for instant payout" value={money(paidAmount)} helper="Paid invoices recorded" icon="wallet" tone="green" />
         </section>
 
-        <section className="grid min-h-0 gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
-          <aside className="min-w-0 overflow-hidden rounded-[28px] bg-[#101427] text-white shadow-[0_20px_60px_rgba(15,23,42,0.18)]">
+        <section className="grid min-h-0 gap-4 2xl:grid-cols-[340px_minmax(0,1fr)]">
+          <aside className="order-2 min-w-0 overflow-hidden rounded-[28px] bg-[#101427] text-white shadow-[0_20px_60px_rgba(15,23,42,0.18)] 2xl:order-1">
             <div className="border-b border-white/10 p-4">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -595,8 +595,8 @@ export default function InvoiceManagement() {
             </div>
           </aside>
 
-          <main className="min-w-0 rounded-[28px] border border-[#dfe5f2] bg-white p-4 shadow-[0_22px_60px_rgba(30,41,59,0.08)]">
-            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <main className="order-1 min-w-0 rounded-[28px] border border-[#dfe5f2] bg-white p-4 shadow-[0_22px_60px_rgba(30,41,59,0.08)] 2xl:order-2">
+            <div className="grid gap-4 2xl:grid-cols-[minmax(0,1fr)_340px]">
               <div className="min-w-0 space-y-4">
                 <section className="rounded-[24px] border border-[#dfe5f2] bg-[#fbfcff] p-4">
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-end">

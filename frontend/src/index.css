@@ -430,6 +430,110 @@ body {
   box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38) !important;
 }
 
+/* Dark polish: remove the remaining pale islands from dashboard pages. */
+.theme-dark :where(
+  .bg-\[\#e8e9ff\],
+  .bg-\[\#eafff6\],
+  .bg-\[\#eafff8\],
+  .bg-\[\#ede8ff\],
+  .bg-\[\#eef2fb\],
+  .bg-\[\#eef2ff\],
+  .bg-\[\#eef3ff\],
+  .bg-\[\#eef8ff\],
+  .bg-\[\#efe9ff\],
+  .bg-\[\#f0eaff\],
+  .bg-\[\#f0ebff\],
+  .bg-\[\#f0f1f7\],
+  .bg-\[\#f0f8ff\],
+  .bg-\[\#f1edff\],
+  .bg-\[\#f2f5fb\],
+  .bg-\[\#f3f2ff\],
+  .bg-\[\#f3f6fb\],
+  .bg-\[\#f4edff\],
+  .bg-\[\#f4f1ff\],
+  .bg-\[\#f4f2ff\],
+  .bg-\[\#f5f2ff\],
+  .bg-\[\#f6f3ff\],
+  .bg-\[\#f6f7ff\],
+  .bg-\[\#f7f8fc\],
+  .bg-\[\#f8f9ff\],
+  .bg-\[\#faf8ff\],
+  .bg-\[\#fafbff\],
+  .bg-\[\#fbfaff\],
+  .bg-\[\#fbfcff\],
+  .bg-\[\#fff0f1\],
+  .bg-\[\#fff4df\],
+  .bg-blue-50,
+  .bg-emerald-50,
+  .bg-indigo-50,
+  .bg-purple-50,
+  .bg-sky-50,
+  .bg-slate-100,
+  .bg-violet-50,
+  .bg-red-50,
+  .bg-amber-50
+) {
+  background-color: rgba(15, 23, 42, 0.82) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  color: #c7d2fe !important;
+}
+
+.theme-dark :where(.bg-white, button.bg-white, span.bg-white) {
+  background-color: rgba(8, 13, 28, 0.96) !important;
+  color: #eef2ff !important;
+}
+
+.theme-dark :where(.rounded-full.bg-white, .rounded-xl.bg-white, .rounded-2xl.bg-white, .rounded-\[22px\].bg-white, .rounded-\[24px\].bg-white, .rounded-\[26px\].bg-white, .rounded-\[28px\].bg-white, .rounded-\[32px\].bg-white) {
+  background-color: rgba(15, 23, 42, 0.92) !important;
+  border-color: rgba(148, 163, 184, 0.24) !important;
+}
+
+.theme-dark :where(.text-\[\#17264d\], .text-\[\#1f2b4d\], .text-\[\#263150\], .text-\[\#273459\], .text-\[\#315dff\], .text-\[\#3535FF\], .text-\[\#4538ff\], .text-\[\#4B16B5\], .text-\[\#4b16b5\], .text-\[\#4d1ab8\], .text-\[\#4f35f5\], .text-\[\#5b35f5\], .text-\[\#5d2cff\], .text-\[\#5d2df5\], .text-\[\#6d35ff\], .text-\[\#6f43ff\], .text-violet-700, .text-indigo-700, .text-blue-700) {
+  color: #b9a6ff !important;
+}
+
+.theme-dark :where(.text-\[\#17c98f\], .text-emerald-700) {
+  color: #6ee7b7 !important;
+}
+
+.theme-dark :where(.text-\[\#ffa51e\], .text-amber-700) {
+  color: #fcd34d !important;
+}
+
+.theme-dark :where(.text-\[\#ff4d6a\], .text-red-700) {
+  color: #fca5a5 !important;
+}
+
+.theme-dark :where(.border-\[\#d7d7ff\], .border-\[\#d8d0ff\], .border-\[\#d9d8ff\], .border-\[\#ded6ff\], .border-\[\#dfe3f1\], .border-\[\#dfe5f2\], .border-\[\#e4e9f4\], .border-\[\#e7e9f2\], .border-purple-50, .border-purple-100) {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+.theme-dark :where(.from-\[\#eef3ff\], .from-white, .via-slate-100, .to-transparent) {
+  --tw-gradient-from: rgba(15, 23, 42, 0.50) var(--tw-gradient-from-position) !important;
+  --tw-gradient-to: rgba(15, 23, 42, 0) var(--tw-gradient-to-position) !important;
+  --tw-gradient-stops: var(--tw-gradient-from), rgba(30, 41, 59, 0.48) var(--tw-gradient-via-position), var(--tw-gradient-to) !important;
+}
+
+.theme-dark .dashboard-sidebar :where(button span:first-child, .flex.h-8.w-8, .flex.h-9.w-9, .flex.h-10.w-10, .w-8.h-8, .w-9.h-9, .w-10.h-10) {
+  background-color: rgba(15, 23, 42, 0.82) !important;
+  border: 1px solid rgba(148, 163, 184, 0.20) !important;
+  color: #c7d2fe !important;
+}
+
+.theme-dark .dashboard-sidebar :where(.dashboard-nav-active span:first-child) {
+  background-color: rgba(255, 255, 255, 0.12) !important;
+  border-color: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+}
+
+.theme-dark .client-sidebar {
+  background: linear-gradient(180deg, rgba(8, 13, 28, 0.98), rgba(3, 7, 18, 0.98)) !important;
+}
+
+.theme-dark :where(.shadow-slate-200, .shadow-slate-200\/70, .shadow-purple-200, .shadow-purple-900\/25) {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45) !important;
+}
+
 /* Final dark theme pass: keep every dashboard tab aligned to the black glass reference. */
 .theme-dark .dashboard-shell {
   background:

@@ -43,17 +43,442 @@ body {
 }
 
 .theme-dark body {
-  background: #070b14;
+  background: #030712;
+  color: #eef2ff;
 }
 
 .theme-dark .dashboard-shell {
-  background: #050a18 !important;
+  background:
+    radial-gradient(circle at 84% 12%, rgba(91, 53, 245, 0.12), transparent 28%),
+    radial-gradient(circle at 18% 92%, rgba(20, 184, 166, 0.06), transparent 26%),
+    #030712 !important;
   color: #f8fafc;
 }
 
 .theme-dark .dashboard-sidebar,
 .theme-dark .dashboard-main,
-.theme-dark .dashboard-content,
+.theme-dark .dashboard-content {
+  background: rgba(5, 10, 22, 0.94) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  box-shadow: 0 22px 70px rgba(0, 0, 0, 0.46) !important;
+}
+
+.theme-dark .dashboard-sidebar {
+  background:
+    linear-gradient(180deg, rgba(10, 15, 31, 0.98), rgba(4, 8, 18, 0.98)) !important;
+}
+
+.theme-dark .dashboard-content {
+  background:
+    radial-gradient(circle at 95% 0%, rgba(91, 53, 245, 0.10), transparent 32%),
+    rgba(5, 10, 22, 0.94) !important;
+}
+
+.theme-dark .conversation-list,
+.theme-dark .conversation-search,
+.theme-dark .conversation-filter,
+.theme-dark .conversation-filter-tab,
+.theme-dark .conversation-row {
+  background: rgba(8, 13, 28, 0.94) !important;
+  border-color: rgba(148, 163, 184, 0.20) !important;
+}
+
+.theme-dark .dashboard-main > header {
+  border-bottom-color: rgba(148, 163, 184, 0.10) !important;
+}
+
+.theme-dark .dashboard-sidebar,
+.theme-dark .dashboard-main {
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.50) !important;
+}
+
+.theme-dark .dashboard-ai-card {
+  background:
+    linear-gradient(135deg, rgba(12, 21, 58, 0.94) 0%, rgba(21, 18, 54, 0.94) 52%, rgba(43, 18, 93, 0.94) 100%) !important;
+  border-color: rgba(126, 87, 255, 0.36) !important;
+}
+
+.theme-dark .dashboard-brand-title,
+.theme-dark .conversation-row .dashboard-brand-title {
+  color: #ffffff !important;
+}
+
+.theme-dark .dashboard-muted,
+.theme-dark .conversation-row .dashboard-muted {
+  color: #9ca7c7 !important;
+}
+
+.theme-dark .dashboard-section-label {
+  color: #7882a7 !important;
+}
+
+.theme-dark .dashboard-nav-item {
+  color: #cbd5f5 !important;
+}
+
+.theme-dark .dashboard-nav-item:not(.dashboard-nav-active):hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.theme-dark .dashboard-nav-active {
+  background: linear-gradient(90deg, #2d55ff 0%, #7e22ce 100%) !important;
+  box-shadow: 0 14px 32px rgba(91, 53, 245, 0.32) !important;
+}
+
+.theme-dark .conversation-hero-icon {
+  background: rgba(91, 53, 245, 0.2) !important;
+  border-color: rgba(126, 87, 255, 0.45) !important;
+  color: #c8b8ff !important;
+}
+
+.theme-dark .conversation-row:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.theme-dark .conversation-filter-tab:not(.bg-gradient-to-r) {
+  color: #b9c0df !important;
+}
+
+.theme-dark .chat-message-panel {
+  background: #050914 !important;
+}
+
+.theme-dark .chat-message-panel .bg-gray-100 {
+  background: #111827 !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+.theme-dark .chat-message-panel .bg-\[\#3535FF\] {
+  background: linear-gradient(135deg, #3045ff 0%, #6d2cff 100%) !important;
+  color: #ffffff !important;
+}
+
+.theme-dark .chat-message-panel .bg-\[\#0A0A0F\] {
+  background: #101827 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+.theme-dark .chat-message-panel .text-gray-500,
+.theme-dark .chat-message-panel .text-gray-700,
+.theme-dark .chat-message-panel .text-\[\#3535FF\] {
+  color: #c7d2fe !important;
+}
+
+.theme-dark .chat-message-panel .text-gray-400 {
+  color: #9ca3af !important;
+}
+
+.theme-dark :where(
+  .bg-\[\#f2f0f7\],
+  .bg-\[\#f5f6fa\],
+  .bg-\[\#f5f7fb\],
+  .bg-\[\#f6f8ff\],
+  .bg-\[\#f7f9fd\],
+  .bg-\[\#f7f9fe\],
+  .bg-\[\#f8faff\],
+  .bg-\[\#f8fafc\],
+  .bg-\[\#f8f6ff\],
+  .bg-\[\#fbfcff\],
+  .bg-\[\#FAFAFF\],
+  .bg-gray-50,
+  .bg-slate-50
+) {
+  background-color: #050914 !important;
+}
+
+.theme-dark :where(.bg-white, .bg-\[\#ffffff\]) {
+  background-color: #080d1c !important;
+}
+
+.theme-dark :where(section, article, aside, div).bg-white,
+.theme-dark :where(.rounded-2xl, .rounded-\[22px\], .rounded-\[24px\], .rounded-\[26px\], .rounded-\[28px\], .rounded-\[32px\], .rounded-\[34px\]).bg-white {
+  background: rgba(8, 13, 28, 0.94) !important;
+}
+
+.theme-dark :where(.text-slate-950, .text-slate-900, .text-gray-900, .text-\[\#0d1438\], .text-\[\#111827\], .text-\[\#17264d\], .text-\[\#354052\]) {
+  color: #f8fafc !important;
+}
+
+.theme-dark :where(.text-slate-800, .text-slate-700, .text-gray-700, .text-gray-600, .text-\[\#20284d\], .text-\[\#263150\], .text-\[\#475274\], .text-\[\#505987\]) {
+  color: #d8def3 !important;
+}
+
+.theme-dark :where(.text-slate-600, .text-slate-500, .text-gray-500, .text-slate-400, .text-gray-400, .text-\[\#6d7697\], .text-\[\#7b84a8\], .text-\[\#8a92ad\], .text-\[\#8a93ad\]) {
+  color: #95a0bf !important;
+}
+
+.theme-dark :where(
+  .border-white,
+  .border-slate-100,
+  .border-slate-200,
+  .border-gray-100,
+  .border-gray-200,
+  .border-\[\#dce3f1\],
+  .border-\[\#dfe6f3\],
+  .border-\[\#e0e6f2\],
+  .border-\[\#e2e7f4\],
+  .border-\[\#e4e9f4\],
+  .border-\[\#e5eaf4\],
+  .border-\[\#e5eaf5\]
+) {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
+
+.theme-dark :where(input, select, textarea) {
+  background-color: rgba(5, 10, 22, 0.86) !important;
+  border-color: rgba(148, 163, 184, 0.28) !important;
+  color: #f8fafc !important;
+}
+
+.theme-dark :where(input, select, textarea)::placeholder {
+  color: #7480a2 !important;
+}
+
+.theme-dark :where(table, thead, tbody, tr, td, th) {
+  border-color: rgba(148, 163, 184, 0.16) !important;
+}
+
+.theme-dark :where(thead, .bg-\[\#fbfcff\]) {
+  background-color: #0d1324 !important;
+}
+
+.theme-dark :where(.shadow-slate-200\/70, .shadow-purple-100\/50, .shadow-purple-100\/60, .shadow-purple-100\/70, .shadow-2xl, .shadow-xl, .shadow-lg) {
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.42) !important;
+}
+
+.theme-dark :where(.bg-\[\#efe9ff\], .bg-\[\#f0ebff\], .bg-\[\#f0eaff\], .bg-\[\#f3f2ff\], .bg-\[\#f4f1ff\], .bg-\[\#f5f2ff\], .bg-\[\#f6f3ff\], .bg-violet-50) {
+  background-color: rgba(91, 53, 245, 0.16) !important;
+}
+
+.theme-dark :where(.text-\[\#4B16B5\], .text-\[\#4b16b5\], .text-\[\#4d1ab8\], .text-\[\#4f35f5\], .text-\[\#5d2cff\], .text-\[\#5d2df5\], .text-\[\#6d35ff\], .text-violet-700) {
+  color: #b9a6ff !important;
+}
+
+.theme-dark :where(.bg-\[\#3535FF\], .bg-\[\#4B16B5\], .bg-\[\#4b16b5\], .bg-\[\#4f35f5\], .bg-\[\#5b22f5\], .bg-\[\#6d35ff\]) {
+  background: linear-gradient(135deg, #315cff 0%, #8028ff 100%) !important;
+  color: #ffffff !important;
+}
+
+.theme-dark :where(.bg-emerald-50, .bg-blue-50, .bg-amber-50, .bg-red-50, .bg-indigo-50, .bg-purple-50, .bg-slate-100, .bg-gray-100) {
+  background-color: rgba(15, 23, 42, 0.82) !important;
+}
+
+.theme-dark :where(.text-emerald-700) {
+  color: #6ee7b7 !important;
+}
+
+.theme-dark :where(.text-blue-700, .text-indigo-700) {
+  color: #93c5fd !important;
+}
+
+.theme-dark :where(.text-amber-700) {
+  color: #fcd34d !important;
+}
+
+.theme-dark :where(.text-red-700) {
+  color: #fca5a5 !important;
+}
+
+.theme-dark ::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+.theme-dark ::-webkit-scrollbar-track {
+  background: rgba(5, 10, 22, 0.9);
+}
+
+.theme-dark ::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.45);
+  border-radius: 999px;
+}
+
+.theme-dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(185, 166, 255, 0.58);
+}
+
+/* Legacy dark overrides kept for older dashboard components. */
+.theme-dark .conversation-list,
+.theme-dark .conversation-search,
+.theme-dark .conversation-filter,
+.theme-dark .conversation-filter-tab,
+.theme-dark .conversation-row {
+  background: rgba(10, 16, 38, 0.92) !important;
+  border-color: rgba(91, 116, 180, 0.28) !important;
+}
+
+.theme-dark .dashboard-sidebar,
+.theme-dark .dashboard-main {
+  box-shadow: 0 18px 55px rgba(0, 0, 0, 0.36) !important;
+}
+
+.theme-dark .dashboard-ai-card {
+  background: linear-gradient(135deg, #101a48 0%, #111139 50%, #210d54 100%) !important;
+  border-color: rgba(91, 116, 180, 0.34) !important;
+}
+
+.theme-dark .dashboard-brand-title,
+.theme-dark .conversation-row .dashboard-brand-title {
+  color: #ffffff !important;
+}
+
+.theme-dark .dashboard-muted,
+.theme-dark .conversation-row .dashboard-muted {
+  color: #a7b0d4 !important;
+}
+
+.theme-dark .dashboard-section-label {
+  color: #707ba5 !important;
+}
+
+.theme-dark .dashboard-nav-item {
+  color: #c6cbea !important;
+}
+
+.theme-dark .dashboard-nav-item:not(.dashboard-nav-active):hover {
+  background: rgba(255, 255, 255, 0.06) !important;
+}
+
+.theme-dark .conversation-hero-icon {
+  background: rgba(91, 53, 245, 0.2) !important;
+  border-color: rgba(126, 87, 255, 0.45) !important;
+  color: #c8b8ff !important;
+}
+
+.theme-dark .conversation-row:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+
+.theme-dark .conversation-filter-tab:not(.bg-gradient-to-r) {
+  color: #b9c0df !important;
+}
+
+.theme-dark .chat-message-panel {
+  background: #071020 !important;
+}
+
+.theme-dark .chat-message-panel .bg-gray-100 {
+  background: #172033 !important;
+  color: #f8fafc !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+.theme-dark .chat-message-panel .bg-\[\#3535FF\] {
+  background: linear-gradient(135deg, #3045ff 0%, #6d2cff 100%) !important;
+  color: #ffffff !important;
+}
+
+.theme-dark .chat-message-panel .bg-\[\#0A0A0F\] {
+  background: #101827 !important;
+  color: #ffffff !important;
+  border: 1px solid rgba(148, 163, 184, 0.18) !important;
+}
+
+.theme-dark .chat-message-panel .text-gray-500,
+.theme-dark .chat-message-panel .text-gray-700,
+.theme-dark .chat-message-panel .text-\[\#3535FF\] {
+  color: #c7d2fe !important;
+}
+
+.theme-dark .chat-message-panel .text-gray-400 {
+  color: #9ca3af !important;
+}
+
+.theme-dark .bg-\[\#f2f0f7\],
+.theme-dark .bg-\[\#f8fafc\],
+.theme-dark .bg-\[\#f8f6ff\],
+.theme-dark .bg-gray-50,
+.theme-dark .bg-slate-50 {
+  background-color: #0b1020 !important;
+}
+
+.theme-dark .bg-white {
+  background-color: #111827 !important;
+}
+
+.theme-dark .text-slate-950,
+.theme-dark .text-slate-900,
+.theme-dark .text-gray-900 {
+  color: #f8fafc !important;
+}
+
+.theme-dark .text-slate-700,
+.theme-dark .text-gray-700,
+.theme-dark .text-gray-600 {
+  color: #cbd5e1 !important;
+}
+
+.theme-dark .text-slate-500,
+.theme-dark .text-gray-500,
+.theme-dark .text-slate-400,
+.theme-dark .text-gray-400 {
+  color: #94a3b8 !important;
+}
+
+.theme-dark .border-white,
+.theme-dark .border-slate-100,
+.theme-dark .border-gray-100,
+.theme-dark .border-gray-200 {
+  border-color: #1f2937 !important;
+}
+
+.theme-dark .shadow-slate-200\/70,
+.theme-dark .shadow-purple-100\/60,
+.theme-dark .shadow-purple-100\/70 {
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.38) !important;
+}
+
+/* Final dark theme pass: keep every dashboard tab aligned to the black glass reference. */
+.theme-dark .dashboard-shell {
+  background:
+    radial-gradient(circle at 84% 12%, rgba(91, 53, 245, 0.12), transparent 28%),
+    radial-gradient(circle at 18% 92%, rgba(20, 184, 166, 0.06), transparent 26%),
+    #030712 !important;
+}
+
+.theme-dark .dashboard-sidebar,
+.theme-dark .dashboard-main,
+.theme-dark .dashboard-content {
+  background: rgba(5, 10, 22, 0.96) !important;
+  border-color: rgba(148, 163, 184, 0.22) !important;
+  color: #eef2ff !important;
+}
+
+.theme-dark .dashboard-sidebar {
+  background: linear-gradient(180deg, rgba(8, 13, 28, 0.98), rgba(3, 7, 18, 0.98)) !important;
+}
+
+.theme-dark .dashboard-content {
+  background:
+    radial-gradient(circle at 96% 0%, rgba(91, 53, 245, 0.10), transparent 32%),
+    rgba(5, 10, 22, 0.96) !important;
+}
+
+.theme-dark :where(.bg-white, .bg-\[\#ffffff\]) {
+  background-color: #080d1c !important;
+}
+
+.theme-dark :where(.bg-gray-50, .bg-slate-50, .bg-\[\#f5f7fb\], .bg-\[\#f7f9fd\], .bg-\[\#f8faff\], .bg-\[\#fbfcff\]) {
+  background-color: #050914 !important;
+}
+
+.theme-dark :where(.text-slate-950, .text-slate-900, .text-gray-900, .text-\[\#0d1438\]) {
+  color: #f8fafc !important;
+}
+
+.theme-dark :where(.text-slate-700, .text-slate-600, .text-gray-700, .text-gray-600, .text-\[\#20284d\], .text-\[\#263150\]) {
+  color: #d8def3 !important;
+}
+
+.theme-dark :where(.text-slate-500, .text-slate-400, .text-gray-500, .text-gray-400, .text-\[\#6d7697\], .text-\[\#7b84a8\]) {
+  color: #95a0bf !important;
+}
+
+.theme-dark :where(.border-white, .border-slate-100, .border-slate-200, .border-gray-100, .border-gray-200, .border-\[\#dce3f1\], .border-\[\#e0e6f2\]) {
+  border-color: rgba(148, 163, 184, 0.22) !important;
+}
 .theme-dark .conversation-list,
 .theme-dark .conversation-search,
 .theme-dark .conversation-filter,

@@ -362,6 +362,38 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_employees_client ON employees(client_id);
   CREATE INDEX IF NOT EXISTS idx_employees_active ON employees(client_id, is_active);
 
+  CREATE TABLE IF NOT EXISTS operator_domain_settings (
+    id INTEGER PRIMARY KEY DEFAULT 1,
+    cloudflare_zone_id TEXT,
+    cloudflare_api_token TEXT,
+    root_domain VARCHAR(255),
+    target_domain VARCHAR(255),
+    proxied BOOLEAN NOT NULL DEFAULT TRUE,
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+  INSERT INTO operator_domain_settings (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+  CREATE TABLE IF NOT EXISTS client_domains (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    domain VARCHAR(255) NOT NULL UNIQUE,
+    slug VARCHAR(120) NOT NULL,
+    domain_type VARCHAR(30) NOT NULL DEFAULT 'subdomain',
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    dns_record_id VARCHAR(120),
+    dns_record_type VARCHAR(20) NOT NULL DEFAULT 'CNAME',
+    dns_target VARCHAR(255),
+    proxied BOOLEAN NOT NULL DEFAULT TRUE,
+    ssl_status VARCHAR(30) NOT NULL DEFAULT 'cloudflare',
+    last_checked_at TIMESTAMP WITH TIME ZONE,
+    error TEXT,
+    metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_client_domains_client ON client_domains(client_id, created_at DESC);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_client_domains_primary_subdomain ON client_domains(client_id, domain_type) WHERE domain_type = 'subdomain';
+
   CREATE TABLE IF NOT EXISTS workflow_routes (
     id SERIAL PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,

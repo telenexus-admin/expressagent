@@ -28,6 +28,8 @@ const EMPTY_FORM = {
   name: '',
   business_name: '',
   contact_email: '',
+  auto_create_domain: false,
+  domain_slug: '',
   connection_provider: 'meta',
   meta_phone_number_id: '',
   meta_access_token: '',
@@ -42,6 +44,13 @@ const EMPTY_FORM = {
   admin_password: '',
 };
 
+const slugifyDomain = (value) =>
+  String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 63);
+
 export default function Clients() {
   const [clients, setClients] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -51,6 +60,9 @@ export default function Clients() {
   const [formError, setFormError] = useState('');
   const [formLoading, setFormLoading] = useState(false);
   const [created, setCreated] = useState(null);
+  const [domainSettings, setDomainSettings] = useState(null);
+  const [showDomainSettings, setShowDomainSettings] = useState(false);
+  const [domainBusyId, setDomainBusyId] = useState(null);
 
   useEffect(() => {
     fetchClients();
@@ -59,8 +71,12 @@ export default function Clients() {
   const fetchClients = async () => {
     setLoading(true);
     try {
-      const { data } = await api.get('/clients');
+      const [{ data }, settingsResult] = await Promise.all([
+        api.get('/clients'),
+        api.get('/clients/domain-settings/cloudflare').catch(() => ({ data: null })),
+      ]);
       setClients(data);
+      setDomainSettings(settingsResult.data);
     } catch (err) {
       console.error('Failed to fetch clients:', err.message);
     } finally {
@@ -69,7 +85,7 @@ export default function Clients() {
   };
 
   const openModal = () => {
-    setForm(EMPTY_FORM);
+    setForm({ ...EMPTY_FORM, auto_create_domain: Boolean(domainSettings?.configured) });
     setFormError('');
     setCreated(null);
     setShowModal(true);
@@ -162,6 +178,33 @@ export default function Clients() {
     }
   };
 
+  const createClientDomain = async (client) => {
+    const suggested = (client.business_name || client.name || '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+    const slug = window.prompt('Client subdomain slug', suggested);
+    if (!slug) return;
+    setDomainBusyId(client.id);
+    try {
+      await api.post(`/clients/${client.id}/domain/create`, { slug });
+      await fetchClients();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to create client domain');
+    } finally {
+      setDomainBusyId(null);
+    }
+  };
+
+  const verifyClientDomain = async (client, domain) => {
+    setDomainBusyId(client.id);
+    try {
+      await api.post(`/clients/${client.id}/domain/${domain.id}/verify`);
+      await fetchClients();
+    } catch (err) {
+      alert(err.response?.data?.error || 'Failed to verify client domain');
+    } finally {
+      setDomainBusyId(null);
+    }
+  };
+
   return (
     <div className="p-6 sm:p-8">
       <div className="max-w-5xl mx-auto">
@@ -172,13 +215,35 @@ export default function Clients() {
               Businesses you've onboarded onto Nexa
             </p>
           </div>
-          <button
-            onClick={openModal}
-            className="bg-[#3535FF] hover:bg-[#2828DD] text-white px-5 py-2.5 rounded-full text-sm font-semibold transition-colors flex items-center gap-1.5"
-          >
-            <span className="text-lg leading-none">+</span>
-            New Client
-          </button>
+          <div className="flex flex-wrap items-center justify-end gap-2">
+            <button
+              onClick={() => setShowDomainSettings(true)}
+              className={`px-5 py-2.5 rounded-full text-sm font-semibold transition-colors ${domainSettings?.configured ? 'bg-emerald-50 text-emerald-700 hover:bg-emerald-100' : 'bg-amber-50 text-amber-700 hover:bg-amber-100'}`}
+            >
+              {domainSettings?.configured ? 'Domain Automation Ready' : 'Setup Domain Automation'}
+            </button>
+            <button
+              onClick={openModal}
+              className="bg-[#3535FF] hover:bg-[#2828DD] text-white px-5 py-2.5 rounded-full text-sm font-semibold transition-colors flex items-center gap-1.5"
+            >
+              <span className="text-lg leading-none">+</span>
+              New Client
+            </button>
+          </div>
+        </div>
+
+        <div className="mb-5 rounded-2xl border border-indigo-100 bg-white p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="text-xs font-black uppercase tracking-[0.16em] text-[#3535FF]">Automatic Client Domains</div>
+              <p className="mt-1 text-sm font-semibold text-slate-600">
+                Create branded client portals like <span className="font-mono text-slate-900">client.{domainSettings?.root_domain || 'your-domain.com'}</span> directly from onboarding.
+              </p>
+            </div>
+            <div className={`rounded-full px-4 py-2 text-xs font-black ${domainSettings?.configured ? 'bg-emerald-50 text-emerald-700' : 'bg-amber-50 text-amber-700'}`}>
+              {domainSettings?.configured ? `Target: ${domainSettings.target_domain}` : 'Cloudflare not configured'}
+            </div>
+          </div>
         </div>
 
         <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
@@ -188,6 +253,7 @@ export default function Clients() {
                 <tr className="bg-gray-50 border-b border-gray-100">
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Client</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Connection</th>
+                  <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Domain</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Status</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Admins</th>
                   <th className="text-left px-5 py-3 text-[10px] font-bold text-gray-500 uppercase tracking-wider">Convos</th>
@@ -198,7 +264,7 @@ export default function Clients() {
               <tbody className="divide-y divide-gray-50">
                 {loading && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-gray-400">
+                    <td colSpan={8} className="px-5 py-10 text-center text-sm text-gray-400">
                       Loading clients...
                     </td>
                   </tr>
@@ -231,6 +297,29 @@ export default function Clients() {
                         <div className="text-[11px] text-gray-400 font-mono">
                           {c.meta_phone_number_id || (c.connection_provider === 'website' ? 'site chat' : 'not set')}
                         </div>
+                      </td>
+                      <td className="px-5 py-3.5">
+                        {Array.isArray(c.domains) && c.domains.length ? (
+                          <div className="max-w-[230px]">
+                            <a href={`https://${c.domains[0].domain}`} target="_blank" rel="noreferrer" className="block truncate text-xs font-black text-[#3535FF]">
+                              {c.domains[0].domain}
+                            </a>
+                            <div className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${c.domains[0].status === 'active' ? 'bg-emerald-50 text-emerald-700' : c.domains[0].status === 'failed' ? 'bg-rose-50 text-rose-700' : 'bg-amber-50 text-amber-700'}`}>
+                              {c.domains[0].status}
+                            </div>
+                            <button onClick={() => verifyClientDomain(c, c.domains[0])} disabled={domainBusyId === c.id} className="ml-2 text-[10px] font-black text-slate-500 hover:text-slate-900">
+                              Verify
+                            </button>
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => createClientDomain(c)}
+                            disabled={domainBusyId === c.id || !domainSettings?.configured}
+                            className="rounded-full bg-indigo-50 px-3 py-1.5 text-[10px] font-black text-[#3535FF] disabled:opacity-40"
+                          >
+                            {domainBusyId === c.id ? 'Creating...' : 'Create Domain'}
+                          </button>
+                        )}
                       </td>
                       <td className="px-5 py-3.5">
                         <span
@@ -275,7 +364,7 @@ export default function Clients() {
                   ))}
                 {!loading && clients.length === 0 && (
                   <tr>
-                    <td colSpan={7} className="px-5 py-10 text-center text-sm text-gray-400">
+                    <td colSpan={8} className="px-5 py-10 text-center text-sm text-gray-400">
                       No clients yet. Click "New Client" to onboard your first one.
                     </td>
                   </tr>
@@ -308,6 +397,24 @@ export default function Clients() {
                     {created.client.name} · admin login:{' '}
                     <span className="font-mono">{created.admin.email}</span>
                   </div>
+                  {created.domain && (
+                    <div className="mt-2">
+                      Domain:{' '}
+                      <a
+                        href={`https://${created.domain.domain}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-mono font-black underline"
+                      >
+                        {created.domain.domain}
+                      </a>
+                    </div>
+                  )}
+                  {created.domain_error && (
+                    <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs font-bold text-amber-800">
+                      Client was created, but domain automation needs attention: {created.domain_error}
+                    </div>
+                  )}
                 </div>
 
                 {created.client.connection_provider === 'website' ? (
@@ -360,6 +467,40 @@ export default function Clients() {
                   <Field label="Client / Company Name" value={form.name} onChange={(v) => updateField('name', v)} placeholder="Acme Internet" />
                   <Field label="Business Name (shown to customers)" value={form.business_name} onChange={(v) => updateField('business_name', v)} placeholder="Acme Internet" />
                   <Field label="Contact Email" value={form.contact_email} onChange={(v) => updateField('contact_email', v)} placeholder="ceo@acme.com" type="email" />
+                  <div className="rounded-2xl border border-indigo-100 bg-[#F6F7FF] p-4">
+                    <label className="flex items-start gap-3 text-sm font-bold text-slate-800">
+                      <input
+                        type="checkbox"
+                        checked={form.auto_create_domain}
+                        onChange={(event) => updateField('auto_create_domain', event.target.checked)}
+                        disabled={!domainSettings?.configured}
+                        className="mt-1 h-4 w-4 accent-[#3535FF] disabled:opacity-40"
+                      />
+                      <span>
+                        Create client portal domain automatically
+                        <span className="mt-1 block text-xs font-semibold leading-5 text-slate-500">
+                          {domainSettings?.configured
+                            ? 'Nexa will add the Cloudflare DNS record during onboarding.'
+                            : 'Configure Cloudflare domain automation first to enable this.'}
+                        </span>
+                      </span>
+                    </label>
+                    {form.auto_create_domain && (
+                      <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
+                        <Field
+                          label="Client domain slug"
+                          value={form.domain_slug}
+                          onChange={(v) => updateField('domain_slug', v)}
+                          placeholder={slugifyDomain(form.business_name || form.name) || 'leave blank to auto-generate'}
+                          mono
+                          hint="Only letters, numbers and hyphens are used. Leave blank to use the business name."
+                        />
+                        <div className="rounded-xl bg-white px-4 py-3 text-xs font-black text-slate-700 ring-1 ring-indigo-100">
+                          {(slugifyDomain(form.domain_slug || form.business_name || form.name) || 'client')}.{domainSettings?.root_domain || 'your-domain.com'}
+                        </div>
+                      </div>
+                    )}
+                  </div>
                   <div>
                     <label className="block text-xs font-semibold text-gray-700 mb-1.5">Connection Type</label>
                     <select
@@ -458,6 +599,93 @@ export default function Clients() {
           </div>
         </div>
       )}
+
+      {showDomainSettings && (
+        <DomainSettingsModal
+          initial={domainSettings}
+          onClose={() => setShowDomainSettings(false)}
+          onSaved={(settings) => {
+            setDomainSettings(settings);
+            setShowDomainSettings(false);
+            fetchClients();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+function DomainSettingsModal({ initial, onClose, onSaved }) {
+  const [form, setForm] = useState({
+    cloudflare_zone_id: initial?.cloudflare_zone_id || '',
+    cloudflare_api_token: '',
+    root_domain: initial?.root_domain || '',
+    target_domain: initial?.target_domain || '',
+    proxied: initial?.proxied !== false,
+  });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const update = (key, value) => setForm((current) => ({ ...current, [key]: value }));
+
+  const save = async () => {
+    if (!form.cloudflare_zone_id.trim() || !form.root_domain.trim() || !form.target_domain.trim()) {
+      setError('Zone ID, root domain and target domain are required.');
+      return;
+    }
+    if (!initial?.cloudflare_api_token_masked && !form.cloudflare_api_token.trim()) {
+      setError('Cloudflare API token is required the first time.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    try {
+      const { data } = await api.put('/clients/domain-settings/cloudflare', form);
+      onSaved(data);
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save domain automation settings');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+      <div className="w-full max-w-2xl overflow-hidden rounded-[30px] bg-white shadow-2xl">
+        <div className="border-b border-slate-100 px-6 py-5">
+          <p className="text-xs font-black uppercase tracking-[0.18em] text-[#3535FF]">Cloudflare Automation</p>
+          <h2 className="mt-2 text-2xl font-black text-slate-950">Automatic client domains</h2>
+          <p className="mt-1 text-sm font-semibold leading-6 text-slate-500">
+            Configure once, then Nexa creates client subdomains from the onboarding panel.
+          </p>
+        </div>
+        <div className="space-y-4 p-6">
+          {error && <div className="rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
+          {initial?.cloudflare_api_token_masked && (
+            <div className="rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3 text-xs font-bold text-emerald-700">
+              API token already saved: {initial.cloudflare_api_token_masked}. Leave token blank to keep it.
+            </div>
+          )}
+          <Field label="Cloudflare Zone ID" value={form.cloudflare_zone_id} onChange={(value) => update('cloudflare_zone_id', value)} placeholder="Cloudflare zone id for telenexustechnologies.com" mono />
+          <Field label="Cloudflare API Token" value={form.cloudflare_api_token} onChange={(value) => update('cloudflare_api_token', value)} placeholder={initial?.cloudflare_api_token_masked ? 'Leave blank to keep current token' : 'Token with DNS edit permission'} type="password" mono />
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="Root domain for clients" value={form.root_domain} onChange={(value) => update('root_domain', value)} placeholder="nexa.telenexustechnologies.com" mono />
+            <Field label="Target domain" value={form.target_domain} onChange={(value) => update('target_domain', value)} placeholder="nexa.telenexustechnologies.com" mono />
+          </div>
+          <label className="flex items-center gap-3 rounded-2xl bg-[#F6F7FF] p-4 text-sm font-bold text-slate-700">
+            <input type="checkbox" checked={form.proxied} onChange={(event) => update('proxied', event.target.checked)} className="h-4 w-4 accent-[#3535FF]" />
+            Proxy through Cloudflare for automatic SSL
+          </label>
+          <div className="rounded-2xl border border-slate-100 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
+            Example: if root domain is <span className="font-mono font-black">nexa.telenexustechnologies.com</span>, client slug <span className="font-mono font-black">pronet</span> becomes <span className="font-mono font-black">pronet.nexa.telenexustechnologies.com</span>.
+          </div>
+        </div>
+        <div className="flex gap-3 border-t border-slate-100 px-6 py-4">
+          <button onClick={onClose} className="flex-1 rounded-full border border-slate-200 py-3 text-sm font-black text-slate-600">Cancel</button>
+          <button onClick={save} disabled={saving} className="flex-1 rounded-full bg-[#3535FF] py-3 text-sm font-black text-white disabled:opacity-50">
+            {saving ? 'Saving...' : 'Save automation'}
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

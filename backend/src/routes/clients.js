@@ -8,6 +8,13 @@ const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 const { logActivity } = require('../services/audit');
+const {
+  createClientSubdomain,
+  ensureClientDomainSchema,
+  getDomainSettings,
+  saveDomainSettings,
+  verifyClientDomain,
+} = require('../services/clientDomains');
 
 router.use(authMiddleware, superadminMiddleware);
 
@@ -47,7 +54,8 @@ async function ensureProviderSchema() {
       ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution', 'website'));
     `);
   }
-  return providerSchemaReady;
+  await providerSchemaReady;
+  await ensureClientDomainSchema();
 }
 
 function normalizeConnectionProvider(value) {
@@ -88,7 +96,27 @@ router.get('/', async (_req, res) => {
          c.meta_phone_number_id, c.meta_business_account_id,
          c.support_number, c.agent_name, c.voice_id, c.photo_troubleshooting_enabled, c.created_at,
          (SELECT COUNT(*)::int FROM admins WHERE client_id = c.id) AS admin_count,
-         (SELECT COUNT(*)::int FROM conversations WHERE client_id = c.id) AS conversation_count
+         (SELECT COUNT(*)::int FROM conversations WHERE client_id = c.id) AS conversation_count,
+         COALESCE(
+           (
+             SELECT jsonb_agg(
+               jsonb_build_object(
+                 'id', d.id,
+                 'domain', d.domain,
+                 'slug', d.slug,
+                 'status', d.status,
+                 'domain_type', d.domain_type,
+                 'ssl_status', d.ssl_status,
+                 'last_checked_at', d.last_checked_at,
+                 'error', d.error
+               )
+               ORDER BY d.created_at DESC
+             )
+             FROM client_domains d
+             WHERE d.client_id = c.id
+           ),
+           '[]'::jsonb
+         ) AS domains
        FROM clients c
        ORDER BY c.created_at DESC`
     );
@@ -96,6 +124,34 @@ router.get('/', async (_req, res) => {
   } catch (err) {
     console.error('GET /clients error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/domain-settings/cloudflare', async (_req, res) => {
+  try {
+    const settings = await getDomainSettings();
+    res.json(settings);
+  } catch (err) {
+    console.error('GET /clients/domain-settings/cloudflare error:', err.message);
+    res.status(500).json({ error: 'Failed to load Cloudflare domain settings' });
+  }
+});
+
+router.put('/domain-settings/cloudflare', async (req, res) => {
+  try {
+    const settings = await saveDomainSettings(req.body || {});
+    await logActivity({
+      req,
+      action: 'cloudflare_domain_settings_updated',
+      entityType: 'operator_domain_settings',
+      entityId: 1,
+      description: `${req.user.name || 'Operator'} updated Cloudflare automatic domain settings.`,
+      metadata: { root_domain: settings.root_domain, target_domain: settings.target_domain, proxied: settings.proxied },
+    });
+    res.json(settings);
+  } catch (err) {
+    console.error('PUT /clients/domain-settings/cloudflare error:', err.message);
+    res.status(500).json({ error: 'Failed to save Cloudflare domain settings' });
   }
 });
 
@@ -178,6 +234,48 @@ router.post('/:id/operator-access', async (req, res) => {
   }
 });
 
+router.post('/:id/domain/create', async (req, res) => {
+  try {
+    await ensureProviderSchema();
+    const result = await db.query(
+      `SELECT id, name, business_name FROM clients WHERE id = $1 LIMIT 1`,
+      [req.params.id]
+    );
+    const client = result.rows[0];
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    const domain = await createClientSubdomain(client, req.body?.slug);
+    await logActivity({
+      req,
+      action: 'client_domain_created',
+      entityType: 'client',
+      entityId: client.id,
+      description: `${req.user.name || 'Operator'} created ${domain.domain} for ${client.name}.`,
+      metadata: { client_id: client.id, domain: domain.domain, status: domain.status },
+    });
+    res.status(201).json(domain);
+  } catch (err) {
+    console.error('POST /clients/:id/domain/create error:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Failed to create client domain' });
+  }
+});
+
+router.post('/:id/domain/:domainId/verify', async (req, res) => {
+  try {
+    await ensureProviderSchema();
+    const result = await db.query(
+      `SELECT * FROM client_domains WHERE id = $1 AND client_id = $2 LIMIT 1`,
+      [req.params.domainId, req.params.id]
+    );
+    const domain = result.rows[0];
+    if (!domain) return res.status(404).json({ error: 'Client domain not found' });
+    const verified = await verifyClientDomain(domain);
+    res.json(verified);
+  } catch (err) {
+    console.error('POST /clients/:id/domain/:domainId/verify error:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Failed to verify client domain' });
+  }
+});
+
 // POST /api/clients — create a new client + first admin login in one transaction
 router.post(
   '/',
@@ -196,6 +294,8 @@ router.post(
     body('voice_id').optional().isIn(ALLOWED_VOICES).withMessage(`Voice must be one of ${ALLOWED_VOICES.join(', ')}`),
     body('opening_message').optional().isString(),
     body('photo_troubleshooting_enabled').optional().isBoolean().withMessage('Photo troubleshooting must be true or false'),
+    body('auto_create_domain').optional().isBoolean().withMessage('Auto-create domain must be true or false'),
+    body('domain_slug').optional().trim().isLength({ max: 80 }).withMessage('Domain slug max 80 chars'),
     body('admin_name').trim().notEmpty().withMessage('Admin name is required'),
     body('admin_email').isEmail().normalizeEmail().withMessage('Valid admin email required'),
     body('admin_password').isLength({ min: 8 }).withMessage('Admin password must be at least 8 characters'),
@@ -221,6 +321,8 @@ router.post(
       voice_id,
       opening_message,
       photo_troubleshooting_enabled,
+      auto_create_domain,
+      domain_slug,
       admin_name,
       admin_email,
       admin_password,
@@ -275,7 +377,28 @@ router.post(
       );
 
       await client.query('COMMIT');
-      res.status(201).json({ client: newClient, admin: insertedAdmin.rows[0] });
+
+      let domain = null;
+      let domainError = null;
+      if (auto_create_domain === true) {
+        try {
+          domain = await createClientSubdomain(newClient, domain_slug);
+          await logActivity({
+            req,
+            action: 'client_domain_created',
+            module: 'onboarding',
+            entityType: 'client_domain',
+            entityId: domain.id,
+            description: `${req.user.name || 'Operator'} created ${domain.domain} while onboarding ${newClient.name}.`,
+            metadata: { client_id: newClient.id, domain: domain.domain, status: domain.status },
+          });
+        } catch (domainErr) {
+          domainError = domainErr.message;
+          console.error('Automatic client domain creation failed:', domainErr.message);
+        }
+      }
+
+      res.status(201).json({ client: newClient, admin: insertedAdmin.rows[0], domain, domain_error: domainError });
     } catch (err) {
       await client.query('ROLLBACK');
       if (err.code === '23505') {

@@ -16,6 +16,7 @@ import OnboardingClientDetail from './pages/onboarding/ClientDetail';
 import OnboardingClientAccess from './pages/onboarding/ClientAccess';
 import EvoClients from './pages/onboarding/EvoClients';
 import NexaWhatsApp from './pages/onboarding/NexaWhatsApp';
+import UpdateContacts from './pages/onboarding/UpdateContacts';
 import Dashboard from './pages/DashboardShell';
 import Conversations from './pages/Conversations';
 import ChatView from './components/ChatView';
@@ -165,6 +166,7 @@ export default function App() {
             <Route path="client-access" element={<OnboardingClientAccess />} />
             <Route path="evo-clients" element={<EvoClients />} />
             <Route path="nexa-whatsapp" element={<NexaWhatsApp />} />
+            <Route path="update-contacts" element={<UpdateContacts />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
             <Route index element={<DashboardIndexRedirect />} />

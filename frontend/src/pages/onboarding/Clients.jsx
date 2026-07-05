@@ -28,6 +28,9 @@ const EMPTY_FORM = {
   name: '',
   business_name: '',
   contact_email: '',
+  official_contact_name: '',
+  official_whatsapp_number: '',
+  update_notifications_enabled: true,
   auto_create_domain: false,
   domain_slug: '',
   connection_provider: 'meta',
@@ -467,6 +470,25 @@ export default function Clients() {
                   <Field label="Client / Company Name" value={form.name} onChange={(v) => updateField('name', v)} placeholder="Acme Internet" />
                   <Field label="Business Name (shown to customers)" value={form.business_name} onChange={(v) => updateField('business_name', v)} placeholder="Acme Internet" />
                   <Field label="Contact Email" value={form.contact_email} onChange={(v) => updateField('contact_email', v)} placeholder="ceo@acme.com" type="email" />
+                  <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+                    <div className="text-sm font-black text-slate-900">Official update WhatsApp</div>
+                    <p className="mt-1 text-xs font-semibold leading-5 text-slate-500">
+                      This is separate from the AI agent WhatsApp number. Nexa uses it to notify the client admin about new platform updates.
+                    </p>
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                      <Field label="Contact name" value={form.official_contact_name} onChange={(v) => updateField('official_contact_name', v)} placeholder="Owner or admin name" />
+                      <Field label="Official WhatsApp number" value={form.official_whatsapp_number} onChange={(v) => updateField('official_whatsapp_number', v)} placeholder="2547XXXXXXXX" />
+                    </div>
+                    <label className="mt-3 flex items-center gap-2 text-xs font-bold text-slate-600">
+                      <input
+                        type="checkbox"
+                        checked={form.update_notifications_enabled}
+                        onChange={(event) => updateField('update_notifications_enabled', event.target.checked)}
+                        className="h-4 w-4 accent-[#3535FF]"
+                      />
+                      Add this number to Nexa update broadcasts
+                    </label>
+                  </div>
                   <div className="rounded-2xl border border-indigo-100 bg-[#F6F7FF] p-4">
                     <label className="flex items-start gap-3 text-sm font-bold text-slate-800">
                       <input

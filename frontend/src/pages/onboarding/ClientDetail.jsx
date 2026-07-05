@@ -63,6 +63,9 @@ export default function ClientDetail() {
         name: data.name || '',
         business_name: data.business_name || '',
         contact_email: data.contact_email || '',
+        official_contact_name: data.official_contact_name || '',
+        official_whatsapp_number: data.official_whatsapp_number || '',
+        update_notifications_enabled: data.update_notifications_enabled !== false,
         status: data.status || 'active',
         connection_provider: data.connection_provider || 'meta',
         meta_phone_number_id: data.meta_phone_number_id || '',
@@ -168,6 +171,9 @@ export default function ClientDetail() {
         name: form.name,
         business_name: form.business_name,
         contact_email: form.contact_email,
+        official_contact_name: form.official_contact_name,
+        official_whatsapp_number: form.official_whatsapp_number,
+        update_notifications_enabled: form.update_notifications_enabled,
         status: form.status,
         connection_provider: form.connection_provider,
         meta_phone_number_id: form.meta_phone_number_id,
@@ -359,6 +365,25 @@ export default function ClientDetail() {
           <Field label="Client / Company Name" value={form.name} onChange={(v) => updateField('name', v)} />
           <Field label="Business Name (shown to customers)" value={form.business_name} onChange={(v) => updateField('business_name', v)} />
           <Field label="Contact Email" value={form.contact_email} onChange={(v) => updateField('contact_email', v)} type="email" />
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+            <h3 className="text-sm font-black text-gray-900">Official update WhatsApp</h3>
+            <p className="mt-1 text-xs font-semibold leading-5 text-gray-500">
+              This is the client's admin/owner number for Nexa system update announcements. It is separate from the AI agent number.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Contact name" value={form.official_contact_name} onChange={(v) => updateField('official_contact_name', v)} placeholder="Owner or admin name" />
+              <Field label="Official WhatsApp number" value={form.official_whatsapp_number} onChange={(v) => updateField('official_whatsapp_number', v)} placeholder="2547XXXXXXXX" />
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-xs font-bold text-gray-600">
+              <input
+                type="checkbox"
+                checked={form.update_notifications_enabled}
+                onChange={(event) => updateField('update_notifications_enabled', event.target.checked)}
+                className="h-4 w-4 accent-[#3535FF]"
+              />
+              Receive Nexa system update messages
+            </label>
+          </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Connection Type</label>
             <select

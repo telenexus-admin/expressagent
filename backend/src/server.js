@@ -32,6 +32,7 @@ const payheroRoutes = require('./routes/payhero');
 const siteChatRoutes = require('./routes/siteChat');
 const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
+const operatorUpdateContactRoutes = require('./routes/operatorUpdateContacts');
 const evoSelfOnboardingRoutes = require('./routes/evoSelfOnboarding');
 const evoClientRoutes = require('./routes/evoClients');
 const evoRoutingRoutes = require('./routes/evoRouting');
@@ -128,6 +129,7 @@ app.use('/api/help-bot', helpBotRoutes);
 app.use('/api/push', pushRoutes);
 app.use('/api/operator-agent', operatorAgentRoutes);
 app.use('/api/operator-evolution', operatorEvolutionRoutes);
+app.use('/api/operator-update-contacts', operatorUpdateContactRoutes);
 
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
 

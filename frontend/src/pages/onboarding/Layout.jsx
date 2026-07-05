@@ -24,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/onboarding/evo-clients', label: 'Evo Clients', Icon: BuildingIcon },
   { to: '/onboarding/client-access', label: 'Open Client Dashboard', Icon: AgentIcon },
   { to: '/onboarding/nexa-whatsapp', label: 'Nexa Official WhatsApp', Icon: AgentIcon },
+  { to: '/onboarding/update-contacts', label: 'Client Update Contacts', Icon: AgentIcon },
 ];
 
 export default function OnboardingLayout() {
@@ -102,6 +103,7 @@ export default function OnboardingLayout() {
 
   const currentLabel = (() => {
     if (location.pathname.startsWith('/onboarding/nexa-whatsapp')) return 'Nexa Official WhatsApp';
+    if (location.pathname.startsWith('/onboarding/update-contacts')) return 'Client Update Contacts';
     if (location.pathname.startsWith('/onboarding/client-access')) return 'Open Client Dashboard';
     if (location.pathname.startsWith('/onboarding/evo-clients')) return 'Evo Clients';
     if (location.pathname.startsWith('/onboarding/clients')) return 'Meta Clients';

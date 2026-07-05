@@ -56,6 +56,13 @@ async function ensureProviderSchema() {
   }
   await providerSchemaReady;
   await ensureClientDomainSchema();
+  await db.query(`
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS official_whatsapp_number VARCHAR(80);
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS official_contact_name VARCHAR(160);
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS update_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS update_contact_updated_at TIMESTAMP WITH TIME ZONE;
+    CREATE INDEX IF NOT EXISTS idx_clients_official_whatsapp ON clients(official_whatsapp_number);
+  `);
 }
 
 function normalizeConnectionProvider(value) {
@@ -95,6 +102,7 @@ router.get('/', async (_req, res) => {
          c.id, c.name, c.business_name, c.contact_email, c.status, c.connection_provider,
          c.meta_phone_number_id, c.meta_business_account_id,
          c.support_number, c.agent_name, c.voice_id, c.photo_troubleshooting_enabled, c.created_at,
+         c.official_whatsapp_number, c.official_contact_name, c.update_notifications_enabled, c.update_contact_updated_at,
          (SELECT COUNT(*)::int FROM admins WHERE client_id = c.id) AS admin_count,
          (SELECT COUNT(*)::int FROM conversations WHERE client_id = c.id) AS conversation_count,
          COALESCE(
@@ -163,7 +171,8 @@ router.get('/:id', async (req, res) => {
       `SELECT id, name, business_name, contact_email, status, connection_provider,
               meta_phone_number_id, meta_business_account_id, meta_verify_token,
               support_number, system_prompt, agent_name, voice_id, opening_message,
-              photo_troubleshooting_enabled, created_at
+              photo_troubleshooting_enabled, official_whatsapp_number, official_contact_name,
+              update_notifications_enabled, update_contact_updated_at, created_at
        FROM clients WHERE id = $1`,
       [req.params.id]
     );
@@ -289,6 +298,9 @@ router.post(
     body('meta_business_account_id').optional().trim(),
     body('meta_verify_token').optional().trim(),
     body('support_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Invalid support phone number'),
+    body('official_whatsapp_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Invalid official update WhatsApp number'),
+    body('official_contact_name').optional({ checkFalsy: true }).isString().isLength({ max: 160 }).withMessage('Official contact name max 160 chars'),
+    body('update_notifications_enabled').optional().isBoolean().withMessage('Update notification setting must be true or false'),
     body('system_prompt').optional().isString(),
     body('agent_name').optional().isLength({ max: 80 }).withMessage('Agent name max 80 chars'),
     body('voice_id').optional().isIn(ALLOWED_VOICES).withMessage(`Voice must be one of ${ALLOWED_VOICES.join(', ')}`),
@@ -316,6 +328,9 @@ router.post(
       meta_business_account_id,
       meta_verify_token,
       support_number,
+      official_whatsapp_number,
+      official_contact_name,
+      update_notifications_enabled,
       system_prompt,
       agent_name,
       voice_id,
@@ -340,14 +355,17 @@ router.post(
         `INSERT INTO clients (
            name, business_name, contact_email, status, connection_provider,
            meta_phone_number_id, meta_access_token, meta_business_account_id, meta_verify_token,
-           support_number, system_prompt, agent_name, voice_id, opening_message, photo_troubleshooting_enabled
+           support_number, official_whatsapp_number, official_contact_name, update_notifications_enabled, update_contact_updated_at,
+           system_prompt, agent_name, voice_id, opening_message, photo_troubleshooting_enabled
          ) VALUES (
            $1, $2, $3, 'active', $4,
            $5, $6, $7, $8,
-           $9, $10, $11, $12, $13, $14
+           $9, $10, $11, $12, CASE WHEN $10 IS NULL THEN NULL ELSE NOW() END,
+           $13, $14, $15, $16, $17
          ) RETURNING id, name, business_name, contact_email, status, connection_provider,
                     meta_phone_number_id, meta_business_account_id, meta_verify_token,
-                    support_number, agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
+                    support_number, official_whatsapp_number, official_contact_name, update_notifications_enabled,
+                    agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
         [
           name.trim(),
           (business_name || '').trim() || null,
@@ -358,6 +376,9 @@ router.post(
           (meta_business_account_id || '').trim() || null,
           verifyToken,
           (support_number || '').trim() || null,
+          (official_whatsapp_number || '').replace(/[^0-9]/g, '') || null,
+          (official_contact_name || '').trim() || null,
+          update_notifications_enabled !== false,
           (system_prompt || '').trim() || DEFAULT_SYSTEM_PROMPT,
           (agent_name || '').trim() || null,
           (voice_id || 'alloy').trim(),
@@ -435,6 +456,9 @@ router.put(
     body('meta_business_account_id').optional().trim(),
     body('meta_verify_token').optional().trim().notEmpty(),
     body('support_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/),
+    body('official_whatsapp_number').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/),
+    body('official_contact_name').optional({ checkFalsy: true }).isString().isLength({ max: 160 }),
+    body('update_notifications_enabled').optional().isBoolean(),
     body('system_prompt').optional().isString().notEmpty(),
     body('agent_name').optional().isLength({ max: 80 }),
     body('voice_id').optional().isIn(ALLOWED_VOICES),
@@ -451,7 +475,7 @@ router.put(
       'name', 'business_name', 'contact_email', 'status', 'connection_provider',
       'meta_phone_number_id', 'meta_access_token', 'meta_business_account_id', 'meta_verify_token',
       'support_number', 'system_prompt', 'agent_name', 'voice_id', 'opening_message',
-      'photo_troubleshooting_enabled',
+      'photo_troubleshooting_enabled', 'official_whatsapp_number', 'official_contact_name', 'update_notifications_enabled',
     ];
 
     const updates = [];
@@ -459,10 +483,16 @@ router.put(
     for (const key of allowed) {
       if (req.body[key] !== undefined) {
         const raw = req.body[key];
-        const val = typeof raw === 'string' ? raw.trim() : raw;
+        const val = key === 'official_whatsapp_number'
+          ? String(raw || '').replace(/[^0-9]/g, '')
+          : typeof raw === 'string' ? raw.trim() : raw;
         params.push(val === '' ? null : val);
         updates.push(`${key} = $${params.length}`);
       }
+    }
+
+    if (req.body.official_whatsapp_number !== undefined || req.body.official_contact_name !== undefined || req.body.update_notifications_enabled !== undefined) {
+      updates.push('update_contact_updated_at = NOW()');
     }
 
     if (updates.length === 0) {
@@ -476,7 +506,8 @@ router.put(
         `UPDATE clients SET ${updates.join(', ')} WHERE id = $${params.length}
          RETURNING id, name, business_name, contact_email, status, connection_provider,
                    meta_phone_number_id, meta_business_account_id, meta_verify_token,
-                   support_number, agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
+                   support_number, official_whatsapp_number, official_contact_name, update_notifications_enabled,
+                   agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
         params
       );
       if (result.rows.length === 0) {

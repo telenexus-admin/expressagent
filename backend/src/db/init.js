@@ -47,6 +47,10 @@ const schema = `
     connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta' CHECK (connection_provider IN ('meta', 'evolution', 'website')),
     evolution_instance_name VARCHAR(120) UNIQUE,
     evolution_webhook_secret VARCHAR(96),
+    official_whatsapp_number VARCHAR(80),
+    official_contact_name VARCHAR(160),
+    update_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE,
+    update_contact_updated_at TIMESTAMP WITH TIME ZONE,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
   );
 
@@ -80,6 +84,10 @@ const schema = `
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_instance_name VARCHAR(120);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS evolution_webhook_secret VARCHAR(96);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS official_whatsapp_number VARCHAR(80);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS official_contact_name VARCHAR(160);
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS update_notifications_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS update_contact_updated_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_enabled BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_basic_auth TEXT;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS payhero_channel_id INTEGER;
@@ -95,6 +103,7 @@ const schema = `
   ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_connection_provider_check;
   ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution', 'website'));
   CREATE UNIQUE INDEX IF NOT EXISTS idx_clients_evolution_instance_unique ON clients(evolution_instance_name) WHERE evolution_instance_name IS NOT NULL;
+  CREATE INDEX IF NOT EXISTS idx_clients_official_whatsapp ON clients(official_whatsapp_number);
 
   CREATE TABLE IF NOT EXISTS admins (
     id SERIAL PRIMARY KEY,
@@ -393,6 +402,32 @@ const schema = `
   );
   CREATE INDEX IF NOT EXISTS idx_client_domains_client ON client_domains(client_id, created_at DESC);
   CREATE UNIQUE INDEX IF NOT EXISTS idx_client_domains_primary_subdomain ON client_domains(client_id, domain_type) WHERE domain_type = 'subdomain';
+
+  CREATE TABLE IF NOT EXISTS operator_update_broadcasts (
+    id SERIAL PRIMARY KEY,
+    title VARCHAR(180) NOT NULL,
+    message TEXT NOT NULL,
+    created_by_admin_id INTEGER REFERENCES admins(id) ON DELETE SET NULL,
+    created_by_name VARCHAR(160),
+    total_recipients INTEGER NOT NULL DEFAULT 0,
+    sent_count INTEGER NOT NULL DEFAULT 0,
+    failed_count INTEGER NOT NULL DEFAULT 0,
+    skipped_count INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS operator_update_broadcast_recipients (
+    id SERIAL PRIMARY KEY,
+    broadcast_id INTEGER NOT NULL REFERENCES operator_update_broadcasts(id) ON DELETE CASCADE,
+    client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+    client_name VARCHAR(255),
+    phone VARCHAR(80),
+    status VARCHAR(30) NOT NULL DEFAULT 'pending',
+    error TEXT,
+    sent_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  );
+  CREATE INDEX IF NOT EXISTS idx_operator_update_recipients_broadcast ON operator_update_broadcast_recipients(broadcast_id);
 
   CREATE TABLE IF NOT EXISTS workflow_routes (
     id SERIAL PRIMARY KEY,

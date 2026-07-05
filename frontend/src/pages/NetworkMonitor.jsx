@@ -93,6 +93,57 @@ function TextInput({ value, onChange, type = 'text', placeholder = '', autoCompl
   );
 }
 
+function AllowedIpsGuide() {
+  const [copied, setCopied] = useState(false);
+  const command = '/ip service print detail where name~"api"';
+
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2200);
+    } catch {
+      setCopied(false);
+    }
+  };
+
+  return (
+    <div className="rounded-2xl border border-blue-100 bg-blue-50/80 p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h4 className="text-sm font-black text-[#101633]">How to find billing/API IPs to preserve</h4>
+          <p className="mt-1 max-w-3xl text-xs font-semibold leading-5 text-[#5f6b8a]">
+            Run this in MikroTik Terminal before generating the Nexa script. Copy any IPs shown after
+            <span className="mx-1 font-mono font-black text-[#101633]">address=</span>
+            into the preserve field so existing billing systems keep API access.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={copy}
+          className="h-9 rounded-xl bg-white px-4 text-xs font-black text-[#3535FF] shadow-sm ring-1 ring-blue-100"
+        >
+          {copied ? 'Copied' : 'Copy command'}
+        </button>
+      </div>
+      <pre className="mt-3 overflow-x-auto rounded-xl bg-[#101633] p-3 text-xs font-semibold leading-6 text-white"><code>{command}</code></pre>
+      <div className="mt-3 grid gap-3 text-[11px] font-bold leading-5 text-[#5f6b8a] lg:grid-cols-3">
+        <div className="rounded-xl bg-white/80 p-3 ring-1 ring-blue-100">
+          If you see <span className="font-mono text-[#101633]">address=10.150.0.1/32</span>, enter
+          <span className="font-mono text-[#101633]"> 10.150.0.1</span>.
+        </div>
+        <div className="rounded-xl bg-white/80 p-3 ring-1 ring-blue-100">
+          If you see multiple IPs, paste them separated by commas, for example
+          <span className="font-mono text-[#101633]"> 10.150.0.1, 10.133.0.1</span>.
+        </div>
+        <div className="rounded-xl bg-white/80 p-3 ring-1 ring-blue-100">
+          If <span className="font-mono text-[#101633]">address=""</span>, MikroTik is not restricting API by IP. If a billing system exists, confirm its API IP before restricting access.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RefreshIcon({ className = 'h-4 w-4' }) {
   return (
     <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -405,6 +456,10 @@ function WireGuardWizard({ form, update, onPrepared }) {
             Nexa uses this server IP when creating the secure RouterOS API access.
           </span>
         </label>
+      </div>
+
+      <div className="mt-4">
+        <AllowedIpsGuide />
       </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-3">

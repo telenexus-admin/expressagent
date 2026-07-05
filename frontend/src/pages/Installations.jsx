@@ -11,6 +11,19 @@ const EMPTY_INSTALLATION = {
   priority: 'normal',
 };
 
+const EMPTY_RESCHEDULE = {
+  scheduled_for: '',
+  assigned_employee_id: '',
+  reason: '',
+};
+
+const INSTALLATION_SECTIONS = [
+  { key: 'requests', label: 'Requests' },
+  { key: 'forms', label: 'Submitted Forms' },
+  { key: 'reports', label: 'Technician Reports' },
+  { key: 'schedule', label: 'Schedule' },
+];
+
 const NOTIFY_STYLES = {
   sent: 'bg-emerald-100 text-emerald-700',
   failed: 'bg-red-100 text-red-700',
@@ -108,11 +121,16 @@ function normalizeRelocation(item) {
   };
 }
 
-function Field({ label, value, onChange, placeholder }) {
+function Field({ label, value, onChange, placeholder, type = 'text', textarea = false }) {
+  const className = "h-12 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 outline-none placeholder:text-slate-300 focus:border-[#3535FF]";
   return (
     <label className="block">
       <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">{label}</span>
-      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className="h-12 w-full rounded-xl border border-slate-200 px-4 text-sm font-bold text-slate-700 outline-none placeholder:text-slate-300 focus:border-[#3535FF]" />
+      {textarea ? (
+        <textarea rows={4} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={`${className} h-auto py-3`} />
+      ) : (
+        <input type={type} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} className={className} />
+      )}
     </label>
   );
 }
@@ -295,6 +313,14 @@ export default function Installations() {
   const [installationForm, setInstallationForm] = useState(EMPTY_INSTALLATION);
   const [formError, setFormError] = useState('');
   const [creatingInstall, setCreatingInstall] = useState(false);
+  const [activeSection, setActiveSection] = useState('requests');
+  const [workOrders, setWorkOrders] = useState([]);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [scheduleTarget, setScheduleTarget] = useState(null);
+  const [scheduleForm, setScheduleForm] = useState(EMPTY_RESCHEDULE);
+  const [scheduleEvents, setScheduleEvents] = useState([]);
+  const [scheduleError, setScheduleError] = useState('');
+  const [savingSchedule, setSavingSchedule] = useState(false);
 
   const fetchItems = async (currentFilter) => {
     try {
@@ -322,10 +348,26 @@ export default function Installations() {
     }
   };
 
+  const fetchWorkOrders = async (currentFilter) => {
+    try {
+      const params = new URLSearchParams();
+      if (currentFilter !== 'all') params.set('status', currentFilter);
+      const { data } = await api.get(`/tickets/installations/work-orders?${params.toString()}`);
+      setWorkOrders(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error('Failed to fetch technician reports:', err.message);
+      setActionError(err.response?.data?.error || 'Failed to fetch technician reports');
+    }
+  };
+
+  const refreshAll = async (currentFilter = filter) => {
+    await Promise.all([fetchItems(currentFilter), fetchWorkOrders(currentFilter)]);
+  };
+
   useEffect(() => {
     setLoading(true);
-    fetchItems(filter);
-    const interval = setInterval(() => fetchItems(filter), 15000);
+    refreshAll(filter);
+    const interval = setInterval(() => refreshAll(filter), 15000);
     return () => clearInterval(interval);
   }, [filter]);
 
@@ -361,7 +403,7 @@ export default function Installations() {
       const { data } = await api.post('/tickets/installations', payload);
       setShowInstallModal(false);
       setInstallationForm(EMPTY_INSTALLATION);
-      await fetchItems(filter);
+      await refreshAll(filter);
       navigate(`/dashboard/tickets/${data.id}`);
     } catch (err) {
       setFormError(err.response?.data?.error || 'Failed to create installation request');
@@ -376,7 +418,7 @@ export default function Installations() {
     setConfirmingId(item.id);
     try {
       await api.post(`/conversations/${item.conversation_id}/confirm-installation`, {});
-      fetchItems(filter);
+      refreshAll(filter);
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to confirm installation');
     } finally {
@@ -417,7 +459,7 @@ export default function Installations() {
   const updateSpecialStatus = async (item, status) => {
     try {
       await api.patch(`/escalations/installation-intakes/${item.id}/special-status`, { status });
-      await fetchItems(filter);
+      await refreshAll(filter);
     } catch (err) {
       setActionError(err.response?.data?.error || 'Failed to update verification status');
     }
@@ -426,6 +468,58 @@ export default function Installations() {
   const openCount = items.filter((e) => !e.resolved_at && e.ticket_status !== 'resolved' && e.ticket_status !== 'closed').length;
   const doneCount = items.filter((e) => e.resolved_at || e.ticket_status === 'resolved' || e.ticket_status === 'closed').length;
   const totalCount = items.length;
+  const submittedForms = items.filter((item) => item.source_type === 'intake' || item.source_type === 'relocation');
+  const submittedReports = workOrders.filter((order) => order.submitted_at || order.technician_status !== 'pending');
+  const scheduledOrders = workOrders.filter((order) => order.scheduled_for || order.last_rescheduled_at || order.ticket_status !== 'resolved');
+  const visibleItems = activeSection === 'forms' ? submittedForms : items;
+  const emptyMessage = activeSection === 'forms'
+    ? 'No submitted customer forms yet.'
+    : filter === 'open'
+      ? 'No pending installation requests.'
+      : filter === 'resolved'
+        ? 'No confirmed installations yet.'
+        : 'No installation requests recorded yet.';
+
+  const openSchedule = async (order) => {
+    setScheduleTarget(order);
+    setScheduleError('');
+    setScheduleForm({
+      scheduled_for: order.scheduled_for ? String(order.scheduled_for).slice(0, 16) : '',
+      assigned_employee_id: order.assigned_employee_id || '',
+      reason: order.latest_schedule_reason || order.schedule_note || '',
+    });
+    try {
+      const { data } = await api.get(`/tickets/installations/${order.ticket_id}/schedule`);
+      setScheduleEvents(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setScheduleEvents([]);
+      setScheduleError(err.response?.data?.error || 'Failed to load schedule history');
+    }
+  };
+
+  const submitSchedule = async () => {
+    if (!scheduleTarget) return;
+    if (!scheduleForm.scheduled_for) {
+      setScheduleError('Choose the new installation date and time.');
+      return;
+    }
+    setSavingSchedule(true);
+    setScheduleError('');
+    try {
+      await api.post(`/tickets/installations/${scheduleTarget.ticket_id}/reschedule`, {
+        scheduled_for: scheduleForm.scheduled_for,
+        assigned_employee_id: scheduleForm.assigned_employee_id || null,
+        reason: scheduleForm.reason,
+      });
+      await refreshAll(filter);
+      const { data } = await api.get(`/tickets/installations/${scheduleTarget.ticket_id}/schedule`);
+      setScheduleEvents(Array.isArray(data) ? data : []);
+    } catch (err) {
+      setScheduleError(err.response?.data?.error || 'Failed to reschedule installation');
+    } finally {
+      setSavingSchedule(false);
+    }
+  };
 
   return (
     <div className="flex-1 overflow-y-auto bg-[#f8fafc] p-5 sm:p-8">
@@ -462,6 +556,18 @@ export default function Installations() {
           </div>
         </div>
 
+        <div className="mb-4 flex gap-2 overflow-x-auto rounded-2xl border border-slate-100 bg-white p-2">
+          {INSTALLATION_SECTIONS.map((section) => (
+            <button
+              key={section.key}
+              onClick={() => setActiveSection(section.key)}
+              className={`whitespace-nowrap rounded-xl px-4 py-2.5 text-xs font-black transition ${activeSection === section.key ? 'bg-slate-950 text-white shadow-lg' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900'}`}
+            >
+              {section.label}
+            </button>
+          ))}
+        </div>
+
         <div className="mb-5 flex gap-2">
           {[{ key: 'open', label: 'Pending' }, { key: 'resolved', label: 'Confirmed' }, { key: 'all', label: 'All' }].map((f) => (
             <button key={f.key} onClick={() => setFilter(f.key)} className={`rounded-full px-4 py-2 text-xs font-medium transition-colors ${filter === f.key ? 'bg-[#3535FF] text-white' : 'border border-slate-200 bg-white text-slate-600 hover:bg-slate-50'}`}>
@@ -472,13 +578,71 @@ export default function Installations() {
 
         {loading ? (
           <div className="py-12 text-center text-sm text-slate-400">Loading...</div>
-        ) : items.length === 0 ? (
+        ) : activeSection === 'reports' ? (
+          submittedReports.length === 0 ? (
+            <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center">
+              <p className="text-sm text-slate-500">No technician reports submitted yet.</p>
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {submittedReports.map((order) => (
+                <div key={order.id} className="rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm">
+                  <div className="flex items-start justify-between gap-4">
+                    <div>
+                      <div className="text-xs font-black uppercase tracking-[0.16em] text-[#3535FF]">Technician report</div>
+                      <h3 className="mt-2 text-lg font-black text-slate-950">{order.customer_name || 'Installation customer'}</h3>
+                      <p className="mt-1 text-sm font-semibold text-slate-500">+{order.customer_phone} - Ticket #{order.ticket_id}</p>
+                    </div>
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{order.technician_status || 'pending'}</span>
+                  </div>
+                  <div className="mt-4 grid grid-cols-2 gap-3">
+                    <Detail label="Technician" value={order.technician_name || 'Unassigned'} />
+                    <Detail label="Submitted" value={formatDateTime(order.submitted_at)} />
+                    <Detail label="Power / DCBs" value={order.power_dcbs} />
+                    <Detail label="Signal" value={order.signal_power} />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+                    <button onClick={() => setSelectedReport(order)} className="rounded-full bg-slate-950 px-4 py-2 text-xs font-black text-white">Open report</button>
+                    <button onClick={() => openSchedule(order)} className="rounded-full border border-slate-200 px-4 py-2 text-xs font-black text-slate-600">Reschedule</button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )
+        ) : activeSection === 'schedule' ? (
+          scheduledOrders.length === 0 ? (
+            <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center">
+              <p className="text-sm text-slate-500">No installation schedule records yet.</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {scheduledOrders.map((order) => (
+                <div key={order.id} className="grid gap-4 rounded-[24px] border border-slate-100 bg-white p-5 shadow-sm lg:grid-cols-[1fr_220px_auto] lg:items-center">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-base font-black text-slate-950">{order.customer_name || 'Installation customer'}</h3>
+                      <span className="rounded-full bg-blue-50 px-2.5 py-1 text-[10px] font-black text-blue-700">{order.ticket_status}</span>
+                    </div>
+                    <p className="mt-1 text-sm font-semibold text-slate-500">+{order.customer_phone} - {order.summary || order.title}</p>
+                    {order.latest_schedule_reason && <p className="mt-2 text-xs font-bold text-slate-400">Last reason: {order.latest_schedule_reason}</p>}
+                  </div>
+                  <div className="rounded-2xl bg-slate-50 p-3">
+                    <div className="text-[10px] font-black uppercase tracking-wide text-slate-400">Scheduled for</div>
+                    <div className="mt-1 text-sm font-black text-slate-900">{formatDateTime(order.scheduled_for) || 'Not scheduled'}</div>
+                    <div className="mt-1 text-xs font-semibold text-slate-500">{order.technician_name || 'No technician assigned'}</div>
+                  </div>
+                  <button onClick={() => openSchedule(order)} className="h-11 rounded-full bg-[#3535FF] px-5 text-xs font-black text-white">Reschedule</button>
+                </div>
+              ))}
+            </div>
+          )
+        ) : visibleItems.length === 0 ? (
           <div className="rounded-2xl border border-slate-100 bg-white p-10 text-center">
-            <p className="text-sm text-slate-500">{filter === 'open' ? 'No pending installation requests.' : filter === 'resolved' ? 'No confirmed installations yet.' : 'No installation requests recorded yet.'}</p>
+            <p className="text-sm text-slate-500">{emptyMessage}</p>
           </div>
         ) : (
           <div className="grid gap-4 lg:grid-cols-2">
-            {items.map((item) => {
+            {visibleItems.map((item) => {
               const emailStatus = item.resolved_at ? item.confirmation_email_status : item.request_email_status;
               const isIntake = item.source_type === 'intake';
               return (
@@ -556,6 +720,20 @@ export default function Installations() {
         onSpecialStatus={updateSpecialStatus}
       />
 
+      <WorkOrderDetailsModal report={selectedReport} onClose={() => setSelectedReport(null)} />
+
+      <ScheduleModal
+        target={scheduleTarget}
+        form={scheduleForm}
+        setForm={setScheduleForm}
+        employees={employees}
+        events={scheduleEvents}
+        onClose={() => setScheduleTarget(null)}
+        onSubmit={submitSchedule}
+        saving={savingSchedule}
+        error={scheduleError}
+      />
+
       {showInstallModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 p-4">
           <div className="w-full max-w-xl rounded-3xl bg-white shadow-2xl">
@@ -585,6 +763,117 @@ export default function Installations() {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+function WorkOrderDetailsModal({ report, onClose }) {
+  if (!report) return null;
+  const equipment = Array.isArray(report.equipment_used) ? report.equipment_used : [];
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+      <div className="max-h-[92vh] w-full max-w-4xl overflow-hidden rounded-[30px] bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-[#3535FF]">Technician Site Report</div>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">{report.customer_name || 'Installation customer'}</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Ticket #{report.ticket_id} - +{report.customer_phone}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 px-4 py-2 text-sm font-black text-slate-600">Close</button>
+        </div>
+        <div className="max-h-[calc(92vh-100px)] overflow-y-auto p-6">
+          <div className="grid gap-4 md:grid-cols-3">
+            <Detail label="Technician" value={report.technician_name || 'Unassigned'} />
+            <Detail label="Report status" value={report.technician_status || report.work_order_status} />
+            <Detail label="Submitted at" value={formatDateTime(report.submitted_at)} />
+            <Detail label="Started at" value={formatDateTime(report.installation_started_at)} />
+            <Detail label="Completed at" value={formatDateTime(report.installation_completed_at)} />
+            <Detail label="Time taken" value={report.installation_time_minutes ? `${report.installation_time_minutes} minutes` : ''} />
+            <Detail label="Power / DCBs" value={report.power_dcbs} />
+            <Detail label="Signal power" value={report.signal_power} />
+            <Detail label="Next schedule" value={formatDateTime(report.scheduled_for)} />
+          </div>
+          <section className="mt-5 rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Equipment Used</h3>
+            {equipment.length === 0 ? (
+              <p className="mt-3 text-sm font-semibold text-slate-400">No equipment lines submitted yet.</p>
+            ) : (
+              <div className="mt-4 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+                {equipment.map((item, index) => (
+                  <div key={`${item.name}-${index}`} className="grid gap-2 border-b border-slate-100 px-4 py-3 text-sm last:border-b-0 sm:grid-cols-[1fr_90px_90px_1fr]">
+                    <div className="font-black text-slate-900">{item.name || 'Inventory item'}</div>
+                    <div className="font-bold text-slate-600">{item.quantity || 0}</div>
+                    <div className="font-bold text-slate-500">{item.unit || 'pcs'}</div>
+                    <div className="text-slate-500">{item.notes || '-'}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+          <section className="mt-5 rounded-[24px] border border-slate-100 bg-white p-4">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Technician Notes</h3>
+            <p className="mt-3 whitespace-pre-wrap text-sm font-semibold leading-6 text-slate-600">{report.notes || 'No notes submitted yet.'}</p>
+          </section>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleModal({ target, form, setForm, employees, events, onClose, onSubmit, saving, error }) {
+  if (!target) return null;
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/55 p-4 backdrop-blur-sm">
+      <div className="max-h-[92vh] w-full max-w-3xl overflow-hidden rounded-[30px] bg-white shadow-2xl">
+        <div className="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+          <div>
+            <div className="text-xs font-black uppercase tracking-[0.18em] text-[#3535FF]">Installation Schedule</div>
+            <h2 className="mt-2 text-2xl font-black text-slate-950">{target.customer_name || 'Installation customer'}</h2>
+            <p className="mt-1 text-sm font-semibold text-slate-500">Ticket #{target.ticket_id} - +{target.customer_phone}</p>
+          </div>
+          <button type="button" onClick={onClose} className="rounded-full bg-slate-100 px-4 py-2 text-sm font-black text-slate-600">Close</button>
+        </div>
+        <div className="max-h-[calc(92vh-100px)] overflow-y-auto p-6">
+          {error && <div className="mb-4 rounded-xl border border-red-100 bg-red-50 px-4 py-3 text-sm font-bold text-red-700">{error}</div>}
+          <div className="grid gap-4 sm:grid-cols-2">
+            <Field label="New date and time" type="datetime-local" value={form.scheduled_for} onChange={(value) => setForm((current) => ({ ...current, scheduled_for: value }))} />
+            <label className="block">
+              <span className="mb-1.5 block text-xs font-black uppercase tracking-[0.16em] text-slate-400">Technician</span>
+              <select value={form.assigned_employee_id} onChange={(event) => setForm((current) => ({ ...current, assigned_employee_id: event.target.value }))} className="h-12 w-full rounded-xl border border-slate-200 bg-white px-4 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
+                <option value="">Keep current technician</option>
+                {employees.map((employee) => <option key={employee.id} value={employee.id}>{employee.name} - {employee.phone}</option>)}
+              </select>
+            </label>
+            <div className="sm:col-span-2">
+              <Field label="Reason / note" value={form.reason} onChange={(value) => setForm((current) => ({ ...current, reason: value }))} textarea placeholder="Customer requested afternoon visit, technician unavailable, weather delay..." />
+            </div>
+          </div>
+          <div className="mt-5 flex flex-col gap-3 sm:flex-row">
+            <button type="button" onClick={onClose} className="h-12 flex-1 rounded-full border border-slate-200 text-sm font-black text-slate-600">Cancel</button>
+            <button type="button" onClick={onSubmit} disabled={saving} className="h-12 flex-1 rounded-full bg-[#3535FF] text-sm font-black text-white disabled:opacity-50">
+              {saving ? 'Rescheduling...' : 'Save and notify'}
+            </button>
+          </div>
+          <section className="mt-6 rounded-[24px] border border-slate-100 bg-slate-50 p-4">
+            <h3 className="text-sm font-black uppercase tracking-wide text-slate-500">Schedule History</h3>
+            {events.length === 0 ? (
+              <p className="mt-3 text-sm font-semibold text-slate-400">No reschedule history yet.</p>
+            ) : (
+              <div className="mt-4 space-y-3">
+                {events.map((event) => (
+                  <div key={event.id} className="rounded-2xl bg-white p-4 text-sm shadow-sm">
+                    <div className="font-black text-slate-950">{formatDateTime(event.scheduled_for)}</div>
+                    <div className="mt-1 text-slate-500">{event.reason || 'No reason recorded'}</div>
+                    <div className="mt-2 text-xs font-bold text-slate-400">
+                      Customer: {event.customer_notify_status} - Technician: {event.technician_notify_status}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </div>
+      </div>
     </div>
   );
 }

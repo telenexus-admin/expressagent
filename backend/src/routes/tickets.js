@@ -3,6 +3,11 @@ const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { ensureTicketSchema, addTicketEvent, createOrUpdateTicket } = require('../services/tickets');
+const {
+  getInstallationScheduleEvents,
+  listInstallationWorkOrders,
+  rescheduleInstallation,
+} = require('../services/installationWorkOrders');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -201,6 +206,56 @@ router.post('/installations', async (req, res) => {
   } catch (err) {
     console.error('POST /tickets/installations error:', err.message);
     res.status(500).json({ error: 'Server error' });
+  }
+});
+
+router.get('/installations/work-orders', async (req, res) => {
+  try {
+    await ensureTicketSchema();
+    const clientId = req.scope.isSuperadmin ? (req.query.clientId || req.scope.clientId) : req.scope.clientId;
+    if (!clientId) return res.status(400).json({ error: 'client_id is required' });
+    const rows = await listInstallationWorkOrders({
+      clientId: Number(clientId),
+      status: req.query.status || 'all',
+    });
+    res.json(rows);
+  } catch (err) {
+    console.error('GET /tickets/installations/work-orders error:', err.message);
+    res.status(500).json({ error: 'Failed to load technician reports' });
+  }
+});
+
+router.get('/installations/:ticketId/schedule', async (req, res) => {
+  try {
+    await ensureTicketSchema();
+    const ticket = await loadScopedTicket(req, req.params.ticketId);
+    if (!ticket || ticket.category !== 'installation') return res.status(404).json({ error: 'Installation ticket not found' });
+    const events = await getInstallationScheduleEvents(ticket.id, ticket.client_id);
+    res.json(events);
+  } catch (err) {
+    console.error('GET /tickets/installations/:ticketId/schedule error:', err.message);
+    res.status(500).json({ error: 'Failed to load schedule history' });
+  }
+});
+
+router.post('/installations/:ticketId/reschedule', async (req, res) => {
+  try {
+    await ensureTicketSchema();
+    const ticket = await loadScopedTicket(req, req.params.ticketId);
+    if (!ticket || ticket.category !== 'installation') return res.status(404).json({ error: 'Installation ticket not found' });
+    const result = await rescheduleInstallation({
+      ticketId: ticket.id,
+      clientId: ticket.client_id,
+      scheduledFor: req.body.scheduled_for,
+      reason: req.body.reason,
+      assignedEmployeeId: req.body.assigned_employee_id ? Number(req.body.assigned_employee_id) : null,
+      adminId: req.user?.id || null,
+    });
+    if (!result) return res.status(404).json({ error: 'Installation ticket not found' });
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('POST /tickets/installations/:ticketId/reschedule error:', err.message);
+    res.status(err.statusCode || 500).json({ error: err.statusCode ? err.message : 'Failed to reschedule installation' });
   }
 });
 

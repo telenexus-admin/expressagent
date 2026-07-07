@@ -73,11 +73,11 @@ function TrafficTrendChart({ history = [], overview }) {
       <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-sm font-black text-white">Traffic Trends (Live) <span className="text-white/40">i</span></h2>
-          <p className="mt-1 text-[11px] font-semibold text-white/45">Real sampled traffic from the selected MikroTik uplink.</p>
+          <p className="mt-1 text-[11px] font-semibold text-white/45">Real sampled bandwidth currently consumed across live MikroTik interfaces.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px] font-bold">
-          <span className="rounded bg-[#160b24] px-2 py-1 text-[#c084fc]">Download ({overview?.wan_interface || 'RX'}) {formatNumber(latestDownload)} Mbps</span>
-          <span className="rounded bg-[#160b24] px-2 py-1 text-[#f0abfc]">Upload ({overview?.wan_interface || 'TX'}) {formatNumber(latestUpload)} Mbps</span>
+          <span className="rounded bg-[#160b24] px-2 py-1 text-[#c084fc]">Download {formatNumber(latestDownload)} Mbps</span>
+          <span className="rounded bg-[#160b24] px-2 py-1 text-[#f0abfc]">Upload {formatNumber(latestUpload)} Mbps</span>
           <span className="rounded bg-[#111827] px-2 py-1 text-white">Total {formatNumber(latestTotal)} Mbps</span>
         </div>
       </div>
@@ -115,6 +115,7 @@ function TrafficTrendChart({ history = [], overview }) {
             <p className="font-black text-[#f0abfc]">Upload<br /><span className="text-lg text-white">{formatNumber(latestUpload)} Mbps</span></p>
             <p className="font-black text-white/70">Total<br /><span className="text-lg text-white">{formatNumber(latestTotal)} Mbps</span></p>
             <div className="border-t border-white/10 pt-3 text-[11px] font-bold text-white/45">
+              <p>Source: <span className="text-[#c084fc]">{overview?.bandwidth?.source || 'live interfaces'}</span></p>
               <p>Peak (1h): <span className="text-[#c084fc]">{formatNumber(Math.max(0, ...total))} Mbps</span></p>
               <p>Average: <span className="text-[#f0abfc]">{formatNumber(total.length ? total.reduce((sum, value) => sum + value, 0) / total.length : 0)} Mbps</span></p>
             </div>
@@ -141,7 +142,7 @@ function NocStatusTable({ overview, history, interfaces }) {
       item: 'WAN Uplink',
       subtitle: overview?.wan_interface || 'Selected uplink',
       metric: `${formatNumber(overview?.download_mbps)} Mbps / ${formatNumber(overview?.upload_mbps)} Mbps`,
-      details: `${overview?.wan_link_speed || 'Link speed unknown'} / ${overview?.wan_status || 'unknown'}`,
+      details: `${overview?.wan_link_speed || 'Link speed unknown'} / ${overview?.wan_status || 'unknown'} / sampled ${formatNumber(overview?.bandwidth?.sampled_interfaces)} interface(s)`,
       status: overview?.wan_status === 'stable' ? 'Stable' : 'Warning',
       trend: history.map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0)),
       icon: <ChartIcon className="h-4 w-4" />,
@@ -359,7 +360,7 @@ export default function NocOverview() {
             </div>
             <div>
               <h1 className="text-2xl font-black">NOC Overview</h1>
-              <p className="text-xs font-semibold text-white/45">Real-time MikroTik traffic, clients, and network health</p>
+              <p className="text-xs font-semibold text-white/45">Live bandwidth consumption, router status, interfaces, and top users</p>
             </div>
           </div>
           <div className="flex gap-2">

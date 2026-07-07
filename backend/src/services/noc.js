@@ -118,8 +118,8 @@ function trendFromRows(rows, key) {
 
 async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') {
   const candidates = orderInterfaceCandidates(interfaceRows, preferred);
-
-  const rows = await Promise.all(candidates.map(async (row) => {
+  const rows = [];
+  for (const row of candidates) {
     const traffic = row.disabled === 'true'
       ? {}
       : (await client.command('/interface/monitor-traffic', { interface: row.name, once: '' }).catch(() => []))[0] || {};
@@ -128,7 +128,7 @@ async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') 
       : {};
     const rxBps = bitsPerSecond(traffic['rx-bits-per-second']);
     const txBps = bitsPerSecond(traffic['tx-bits-per-second']);
-    return {
+    rows.push({
       name: row.name || '',
       type: row.type || '',
       running: row.running === 'true',
@@ -142,10 +142,38 @@ async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') 
       link_speed: ethernet.rate || row['actual-speed'] || row.speed || row['link-speed'] || '',
       full_duplex: ethernet['full-duplex'] || '',
       status: row.disabled === 'true' ? 'disabled' : row.running === 'true' ? 'running' : 'down',
-    };
-  }));
+    });
+  }
 
   return rows.sort((a, b) => (b.total_mbps || 0) - (a.total_mbps || 0));
+}
+
+function interfaceCountsForBandwidth(row = {}) {
+  const name = String(row.name || '').toLowerCase();
+  const type = String(row.type || '').toLowerCase();
+  if (row.disabled || row.status === 'disabled') return false;
+  if (name === 'lo' || type === 'loopback') return false;
+  if (/^(wg-|wireguard|ovpn|sstp|l2tp|pptp)/i.test(name)) return false;
+  return row.status === 'running' || row.running === true || Number(row.total_mbps || 0) > 0;
+}
+
+function aggregateBandwidth(interfaces = [], wan = {}) {
+  const counted = interfaces.filter(interfaceCountsForBandwidth);
+  const active = counted.filter((row) => Number(row.total_mbps || 0) > 0);
+  const rows = active.length ? active : counted;
+  const rxBps = rows.reduce((sum, row) => sum + Number(row.rx_bps || 0), 0);
+  const txBps = rows.reduce((sum, row) => sum + Number(row.tx_bps || 0), 0);
+  const fallbackRx = Number(wan.rx_bps || 0);
+  const fallbackTx = Number(wan.tx_bps || 0);
+  const finalRx = rxBps || fallbackRx;
+  const finalTx = txBps || fallbackTx;
+  return {
+    download_mbps: mbpsFromBits(finalRx),
+    upload_mbps: mbpsFromBits(finalTx),
+    total_mbps: mbpsFromBits(finalRx + finalTx),
+    sampled_interfaces: rows.length,
+    source: rows.length > 1 ? 'aggregate-live-interfaces' : 'live-interface',
+  };
 }
 
 function topUsersFromQueues(queueRows = []) {
@@ -262,23 +290,22 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
   let client = null;
   try {
     client = await connectRouter(router);
-    const [identityRows, resourceRows, interfaceRows, pppRows, hotspotRows, queueRows, logRows] = await Promise.all([
-      client.command('/system/identity/print').catch(() => []),
-      client.command('/system/resource/print').catch(() => []),
-      router.features?.interfaces === false ? Promise.resolve([]) : client.command('/interface/print').catch(() => []),
-      router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-      router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
-      client.command('/queue/simple/print', { stats: '' }).catch(() => client.command('/queue/simple/print').catch(() => [])),
-      router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
-    ]);
+    const identityRows = await client.command('/system/identity/print').catch(() => []);
+    const resourceRows = await client.command('/system/resource/print').catch(() => []);
+    const interfaceRows = router.features?.interfaces === false ? [] : await client.command('/interface/print').catch(() => []);
+    const pppRows = router.features?.ppp_active === false ? [] : await client.command('/ppp/active/print').catch(() => []);
+    const hotspotRows = router.features?.hotspot_active === false ? [] : await client.command('/ip/hotspot/active/print').catch(() => []);
+    const queueRows = await client.command('/queue/simple/print', { stats: '' }).catch(() => client.command('/queue/simple/print').catch(() => []));
+    const logRows = router.features?.logs === false ? [] : await client.command('/log/print').catch(() => []);
 
     const resource = resourceRows[0] || {};
     const interfaces = await interfaceTrafficRows(client, interfaceRows, options.wan_interface);
     const wan = chooseWanInterface(interfaces, options.wan_interface);
+    const bandwidth = aggregateBandwidth(interfaces, wan);
     const topUsers = topUsersFromQueues(queueRows);
 
-    const downloadMbps = mbpsFromBits(wan.rx_bps || 0);
-    const uploadMbps = mbpsFromBits(wan.tx_bps || 0);
+    const downloadMbps = bandwidth.download_mbps;
+    const uploadMbps = bandwidth.upload_mbps;
     const cpuLoad = percent(resource['cpu-load']);
     const memoryUsedPercent = bytesPercent(resource['free-memory'], resource['total-memory']);
     const storageUsedPercent = bytesPercent(resource['free-hdd-space'] || resource['free-disk-space'], resource['total-hdd-space'] || resource['total-disk-space']);
@@ -307,6 +334,7 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
       wan_interface: wan.name || '',
       wan_link_speed: wan.link_speed || '',
       wan_status: wan.name ? (wan.running ? 'stable' : 'down') : 'unknown',
+      bandwidth,
       queue_health_percent: queueHealth,
       total_queues: queueRows.length,
       active_queues: activeQueues,

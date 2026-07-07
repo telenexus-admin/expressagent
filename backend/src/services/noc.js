@@ -7,6 +7,7 @@ const {
 } = require('./mikrotik');
 
 const SNAPSHOT_LIMIT = 1200;
+const LIVE_INTERFACE_LIMIT = 14;
 
 function num(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -71,6 +72,28 @@ function chooseWanInterface(interfaces = [], preferred = '') {
   return running[0] || usable[0] || {};
 }
 
+function orderInterfaceCandidates(rows = [], preferred = '') {
+  const target = String(preferred || '').trim().toLowerCase();
+  const scored = rows
+    .filter(trafficInterfaceCandidate)
+    .filter((row) => row.disabled !== 'true' && row.disabled !== true)
+    .map((row) => {
+      const name = String(row.name || '').toLowerCase();
+      const haystack = `${row.name || ''} ${row.comment || ''}`.toLowerCase();
+      let score = 0;
+      if (target && name === target) score += 1000;
+      if (/\b(wan|internet|uplink|provider|backhaul)\b/i.test(haystack)) score += 500;
+      if (row.running === 'true' || row.running === true) score += 200;
+      if (/^(sfp|ether|combo)/i.test(row.name || '')) score += 80;
+      if (/^(bridge|vlan|wg-|wireguard)/i.test(row.name || '')) score += 20;
+      return { row, score };
+    });
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, LIVE_INTERFACE_LIMIT)
+    .map((item) => item.row);
+}
+
 function routerHealth({ cpuLoad, memoryUsedPercent, storageUsedPercent, ok }) {
   if (!ok) return 0;
   const penalties = [
@@ -93,10 +116,8 @@ function trendFromRows(rows, key) {
   return rows.map((row) => Number(row[key] || 0)).filter((value) => Number.isFinite(value));
 }
 
-async function interfaceTrafficRows(client, interfaceRows = []) {
-  const candidates = interfaceRows
-    .filter(trafficInterfaceCandidate)
-    .slice(0, 32);
+async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') {
+  const candidates = orderInterfaceCandidates(interfaceRows, preferred);
 
   const rows = await Promise.all(candidates.map(async (row) => {
     const traffic = row.disabled === 'true'
@@ -149,6 +170,52 @@ function topUsersFromQueues(queueRows = []) {
     .slice(0, 12);
 }
 
+async function latestStoredSnapshot(clientId, routerId) {
+  await ensureNocTables();
+  const result = await db.query(
+    `SELECT raw, created_at
+     FROM noc_router_snapshots
+     WHERE client_id = $1 AND router_id = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [clientId, routerId]
+  );
+  const row = result.rows[0];
+  if (!row?.raw) return null;
+  return {
+    ...row.raw,
+    cached_at: row.created_at,
+  };
+}
+
+function recentEnough(dateValue, minutes = 10) {
+  const time = new Date(dateValue || 0).getTime();
+  return Number.isFinite(time) && Date.now() - time <= minutes * 60 * 1000;
+}
+
+function stabilizeSnapshot(snapshot, previous) {
+  if (!previous) return snapshot;
+  const next = { ...snapshot };
+  const liveInterfaces = Array.isArray(snapshot.interfaces) ? snapshot.interfaces : [];
+  const liveHasTraffic = liveInterfaces.some((row) => Number(row.total_mbps || 0) > 0);
+  const previousInterfaces = Array.isArray(previous.interfaces) ? previous.interfaces : [];
+  if (!liveHasTraffic && previousInterfaces.length && recentEnough(previous.checked_at || previous.cached_at, 10)) {
+    next.interfaces = previousInterfaces;
+    next.wan_interface = snapshot.wan_interface || previous.wan_interface;
+    next.wan_link_speed = snapshot.wan_link_speed || previous.wan_link_speed;
+    next.download_mbps = Number(previous.download_mbps || 0);
+    next.upload_mbps = Number(previous.upload_mbps || 0);
+    next.total_traffic_mbps = Number(previous.total_traffic_mbps || 0);
+    next.wan_status = snapshot.wan_status === 'stable' ? snapshot.wan_status : previous.wan_status;
+    next.traffic_source = 'last-good-snapshot';
+  }
+  if ((!snapshot.top_users || snapshot.top_users.length === 0) && Array.isArray(previous.top_users) && previous.top_users.length && recentEnough(previous.checked_at || previous.cached_at, 10)) {
+    next.top_users = previous.top_users;
+    next.top_users_source = 'last-good-snapshot';
+  }
+  return next;
+}
+
 async function ensureNocTables() {
   await ensureMikrotikTables();
   await db.query(`
@@ -191,6 +258,7 @@ async function resolveRouter(clientId, routerId) {
 async function readLiveSnapshot(clientId, routerId, options = {}) {
   await ensureNocTables();
   const router = await resolveRouter(clientId, routerId);
+  const previous = await latestStoredSnapshot(clientId, router.id).catch(() => null);
   let client = null;
   try {
     client = await connectRouter(router);
@@ -205,7 +273,7 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
     ]);
 
     const resource = resourceRows[0] || {};
-    const interfaces = await interfaceTrafficRows(client, interfaceRows);
+    const interfaces = await interfaceTrafficRows(client, interfaceRows, options.wan_interface);
     const wan = chooseWanInterface(interfaces, options.wan_interface);
     const topUsers = topUsersFromQueues(queueRows);
 
@@ -219,7 +287,7 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
     const queueHealth = queueRows.length ? Number(((activeQueues / queueRows.length) * 100).toFixed(1)) : null;
     const warningLogs = logRows.filter((row) => /error|critical|warning|failed|failure|attack|dhcp alert/i.test(`${row.topics || ''} ${row.message || ''}`)).slice(-10);
 
-    const snapshot = {
+    const snapshot = stabilizeSnapshot({
       router_id: router.id,
       client_id: clientId,
       router_name: identityRows[0]?.name || router.last_identity || router.name,
@@ -254,7 +322,7 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
       interfaces,
       checked_at: new Date().toISOString(),
       source: 'mikrotik-live',
-    };
+    }, previous);
 
     await storeSnapshot(snapshot).catch((err) => console.error('NOC snapshot store failed:', err.message));
     return snapshot;
@@ -308,7 +376,20 @@ async function nocRouters(clientId) {
 }
 
 async function nocOverview(clientId, routerId, options = {}) {
-  return readLiveSnapshot(clientId, routerId, options);
+  try {
+    return await readLiveSnapshot(clientId, routerId, options);
+  } catch (err) {
+    const router = await resolveRouter(clientId, routerId);
+    const previous = await latestStoredSnapshot(clientId, router.id).catch(() => null);
+    if (previous && recentEnough(previous.checked_at || previous.cached_at, 10)) {
+      return {
+        ...previous,
+        source: 'last-good-snapshot',
+        live_error: err.message,
+      };
+    }
+    throw err;
+  }
 }
 
 async function nocHistory(clientId, routerId, range = '6h') {

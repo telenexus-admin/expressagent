@@ -155,10 +155,10 @@ export default function NocOverview() {
   const [tab, setTab] = useState('Interfaces');
   const [error, setError] = useState('');
   const polling = useRef(null);
+  const refreshing = useRef(false);
 
   const selectedRouterId = routerId || routers[0]?.id || '';
   const totalTrend = useMemo(() => history.map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0)), [history]);
-  const cpuTrend = useMemo(() => history.map((row) => row.cpu_load), [history]);
   const healthTrend = useMemo(() => history.map((row) => row.router_health_percent), [history]);
   const interfaces = overview?.interfaces || [];
   const topUsers = overview?.top_users || [];
@@ -172,6 +172,8 @@ export default function NocOverview() {
 
   async function refresh(id = selectedRouterId) {
     if (!id) return;
+    if (refreshing.current) return;
+    refreshing.current = true;
     try {
       setError('');
       const [overviewResult, historyResult] = await Promise.all([
@@ -182,6 +184,8 @@ export default function NocOverview() {
       setHistory(historyResult.data || []);
     } catch (err) {
       setError(err.response?.data?.error || 'NOC data is unavailable from the live router right now.');
+    } finally {
+      refreshing.current = false;
     }
   }
 
@@ -190,7 +194,7 @@ export default function NocOverview() {
   useEffect(() => {
     if (!selectedRouterId) return undefined;
     refresh(selectedRouterId);
-    polling.current = setInterval(() => refresh(selectedRouterId), 3000);
+    polling.current = setInterval(() => refresh(selectedRouterId), 5000);
     return () => clearInterval(polling.current);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRouterId]);
@@ -219,6 +223,11 @@ export default function NocOverview() {
         </header>
 
         {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 theme-dark:border-red-500/30 theme-dark:bg-red-500/10 theme-dark:text-red-200">{error}</div>}
+        {overview?.source === 'last-good-snapshot' || overview?.traffic_source === 'last-good-snapshot' ? (
+          <div className="mt-5 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-bold text-amber-800 theme-dark:border-amber-500/30 theme-dark:bg-amber-500/10 theme-dark:text-amber-100">
+            Showing the last stable NOC reading while the router finishes the next live sample.
+          </div>
+        ) : null}
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
           <MetricCard title="Total Traffic" value={`${formatNumber(overview?.total_traffic_mbps)} Mbps`} helper="Live selected uplink throughput" trend={overview?.wan_interface ? `Uplink ${overview.wan_interface}` : 'Uplink auto-detecting'}>

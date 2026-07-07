@@ -1497,6 +1497,7 @@ async function deleteRouter(clientId, id) {
 
 module.exports = {
   DEFAULT_FEATURES,
+  connectRouter,
   deleteRouter,
   ensureMikrotikTables,
   getRouter,

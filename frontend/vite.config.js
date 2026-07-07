@@ -6,12 +6,21 @@ export default defineConfig({
   plugins: [
     react(),
     VitePWA({
+      strategies: 'injectManifest',
+      srcDir: 'src',
+      filename: 'sw.js',
       registerType: 'autoUpdate',
       includeAssets: [
         'favicon.svg',
         'favicon-16x16.png',
         'favicon-32x32.png',
         'apple-touch-icon.png',
+        'expressnet-favicon-16x16.png',
+        'expressnet-favicon-32x32.png',
+        'expressnet-apple-touch-icon.png',
+        'expressnet-pwa-192x192.png',
+        'expressnet-pwa-512x512.png',
+        'expressnet-manifest.webmanifest',
       ],
       manifest: {
         name: 'Nexa',
@@ -20,7 +29,7 @@ export default defineConfig({
         theme_color: '#0A0A0F',
         background_color: '#E8E9FF',
         display: 'standalone',
-        orientation: 'any',
+        orientation: 'portrait-primary',
         scope: '/',
         start_url: '/dashboard',
         icons: [

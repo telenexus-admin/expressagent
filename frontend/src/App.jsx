@@ -4,14 +4,19 @@ import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
 import ExpressnetLogin from './pages/ExpressnetLogin';
 import SelfOnboarding from './pages/SelfOnboarding';
+import CustomerIntake from './pages/CustomerIntake';
+import RelocationRequest from './pages/RelocationRequest';
+import InstallationWorkOrder from './pages/InstallationWorkOrder';
+import ClientAccess from './pages/ClientAccess';
 import OnboardingLogin from './pages/OnboardingLogin';
 import OnboardingLayout from './pages/onboarding/Layout';
 import OnboardingOverview from './pages/onboarding/Overview';
 import OnboardingClients from './pages/onboarding/Clients';
 import OnboardingClientDetail from './pages/onboarding/ClientDetail';
-import ClientAccess from './pages/onboarding/ClientAccess';
+import OnboardingClientAccess from './pages/onboarding/ClientAccess';
 import EvoClients from './pages/onboarding/EvoClients';
 import NexaWhatsApp from './pages/onboarding/NexaWhatsApp';
+import UpdateContacts from './pages/onboarding/UpdateContacts';
 import Dashboard from './pages/DashboardShell';
 import Conversations from './pages/Conversations';
 import ChatView from './components/ChatView';
@@ -24,14 +29,32 @@ import AdminManagement from './pages/AdminManagement';
 import Employees from './pages/Employees';
 import Workflow from './pages/Workflow';
 import Agent from './pages/Agent';
+import KnowledgeBase from './pages/KnowledgeBase';
+import AiTasks from './pages/AiTasks';
+import NetworkMonitor from './pages/NetworkMonitor';
+import NocOverview from './pages/NocOverview';
+import MikrotikClients from './pages/MikrotikClients';
 import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
 import Complaints from './pages/Complaints';
+import Tickets from './pages/Tickets';
+import InvoiceManagement from './pages/InvoiceManagement';
+import Inventory from './pages/Inventory';
 import Logs from './pages/Logs';
+import Settings from './pages/Settings';
+import Billing from './pages/Billing';
+import Communication from './pages/Communication';
+import Documentation from './pages/Documentation';
 
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
+  'tickets',
+  'invoices',
+  'inventory',
+  'billing',
+  'communication',
+  'documentation',
   'escalations',
   'installations',
   'complaints',
@@ -40,11 +63,15 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'settings',
   'logs',
 ];
 
 function hasPermission(admin, permission) {
   if (!admin) return false;
+  if (permission === 'inventory') return true;
+  if (permission === 'documentation') return true;
+  if (permission === 'settings' || permission === 'billing' || permission === 'communication') return true;
   if (admin.role === 'superadmin') return true;
   if (!Array.isArray(admin.permissions) || admin.permissions.length === 0) return true;
   return admin.permissions.includes(permission);
@@ -55,6 +82,12 @@ function firstAllowedPath(admin) {
   const pathMap = {
     statistics: 'statistics',
     conversations: 'conversations',
+    tickets: 'tickets',
+    invoices: 'invoices',
+    inventory: 'inventory',
+    billing: 'billing',
+    communication: 'communication',
+    documentation: 'documentation',
     escalations: 'escalations',
     installations: 'installations',
     complaints: 'complaints',
@@ -63,6 +96,7 @@ function firstAllowedPath(admin) {
     employees: 'employees',
     workflow: 'workflow',
     agent: 'agent',
+    settings: 'settings',
     logs: 'logs',
   };
   return pathMap[first] || 'statistics';
@@ -119,6 +153,10 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/self-onboarding" element={<SelfOnboarding />} />
+          <Route path="/customer-intake/:clientId" element={<CustomerIntake />} />
+          <Route path="/relocation-request/:clientId" element={<RelocationRequest />} />
+          <Route path="/installation-work-order/:token" element={<InstallationWorkOrder />} />
+          <Route path="/client-access" element={<ClientAccess />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />
@@ -126,15 +164,23 @@ export default function App() {
             <Route index element={<OnboardingOverview />} />
             <Route path="clients" element={<OnboardingClients />} />
             <Route path="clients/:id" element={<OnboardingClientDetail />} />
-            <Route path="client-access" element={<ClientAccess />} />
+            <Route path="client-access" element={<OnboardingClientAccess />} />
             <Route path="evo-clients" element={<EvoClients />} />
             <Route path="nexa-whatsapp" element={<NexaWhatsApp />} />
+            <Route path="update-contacts" element={<UpdateContacts />} />
           </Route>
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
             <Route index element={<DashboardIndexRedirect />} />
             <Route path="conversations" element={<PermissionRoute permission="conversations"><Conversations /></PermissionRoute>}>
               <Route path=":id" element={<ChatView />} />
             </Route>
+            <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
+            <Route path="tickets/:id" element={<PermissionRoute permission="tickets"><Tickets detailMode /></PermissionRoute>} />
+            <Route path="invoices" element={<PermissionRoute permission="invoices"><InvoiceManagement /></PermissionRoute>} />
+            <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
+            <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
+            <Route path="communication" element={<PermissionRoute permission="communication"><Communication /></PermissionRoute>} />
+            <Route path="documentation" element={<PermissionRoute permission="documentation"><Documentation /></PermissionRoute>} />
             <Route path="escalations" element={<PermissionRoute permission="escalations"><Escalations /></PermissionRoute>} />
             <Route path="installations" element={<PermissionRoute permission="installations"><Installations /></PermissionRoute>} />
             <Route path="complaints" element={<PermissionRoute permission="complaints"><Complaints /></PermissionRoute>} />
@@ -147,8 +193,13 @@ export default function App() {
             <Route path="employees" element={<PermissionRoute permission="employees"><Employees /></PermissionRoute>} />
             <Route path="workflow" element={<PermissionRoute permission="workflow"><Workflow /></PermissionRoute>} />
             <Route path="agent" element={<PermissionRoute permission="agent"><Agent /></PermissionRoute>} />
+            <Route path="knowledge-base" element={<PermissionRoute permission="agent"><KnowledgeBase /></PermissionRoute>} />
+            <Route path="ai-tasks" element={<PermissionRoute permission="agent"><AiTasks /></PermissionRoute>} />
+            <Route path="network-monitor" element={<PermissionRoute permission="agent"><NetworkMonitor /></PermissionRoute>} />
+            <Route path="noc" element={<PermissionRoute permission="agent"><NocOverview /></PermissionRoute>} />
+            <Route path="mikrotik-clients" element={<PermissionRoute permission="agent"><MikrotikClients /></PermissionRoute>} />
             <Route path="logs" element={<PermissionRoute permission="logs"><Logs /></PermissionRoute>} />
-            <Route path="settings" element={<Navigate to="../agent" replace />} />
+            <Route path="settings" element={<PermissionRoute permission="settings"><Settings /></PermissionRoute>} />
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>

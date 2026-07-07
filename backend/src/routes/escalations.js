@@ -3,6 +3,8 @@ const router = express.Router();
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { ensureRemarksSchema } = require('../services/clientRemarks');
+const { ensureTicketSchema } = require('../services/tickets');
+const { ensureRelocationSchema } = require('../services/relocationRequests');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -12,6 +14,67 @@ function applyClientScope(req, params, alias) {
     return `${alias}.client_id = $${params.length}`;
   }
   return 'TRUE';
+}
+
+async function ensureEscalationSchema() {
+  await db.query(`
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS type VARCHAR(20) NOT NULL DEFAULT 'human';
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS summary TEXT;
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE CASCADE;
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS customer_email VARCHAR(255);
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS request_email_status VARCHAR(20) NOT NULL DEFAULT 'skipped';
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS request_email_error TEXT;
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS confirmation_email_status VARCHAR(20) NOT NULL DEFAULT 'skipped';
+    ALTER TABLE escalations ADD COLUMN IF NOT EXISTS confirmation_email_error TEXT;
+    ALTER TABLE escalations DROP CONSTRAINT IF EXISTS escalations_type_check;
+    ALTER TABLE escalations ADD CONSTRAINT escalations_type_check CHECK (type IN ('human', 'installation', 'complaint'));
+    ALTER TABLE escalations DROP CONSTRAINT IF EXISTS escalations_notify_status_check;
+    ALTER TABLE escalations ADD CONSTRAINT escalations_notify_status_check CHECK (notify_status IN ('sent', 'failed', 'no_support_number', 'logged'));
+  `);
+}
+
+async function ensureCustomerIntakeTable() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS customer_intake_submissions (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      customer_name VARCHAR(255) NOT NULL,
+      customer_phone VARCHAR(80) NOT NULL,
+      alternate_phone VARCHAR(80),
+      email VARCHAR(255),
+      id_number VARCHAR(80),
+      plan_interest VARCHAR(140),
+      service_type VARCHAR(80),
+      county VARCHAR(120),
+      area VARCHAR(180) NOT NULL,
+      landmark TEXT,
+      building_type VARCHAR(80),
+      house_description TEXT,
+      latitude NUMERIC,
+      longitude NUMERIC,
+      preferred_date VARCHAR(40),
+      preferred_time VARCHAR(40),
+      notes TEXT,
+      consent_accepted BOOLEAN NOT NULL DEFAULT FALSE,
+      identity_mime_type VARCHAR(100),
+      identity_filename VARCHAR(255),
+      identity_document BYTEA,
+      special_package_type VARCHAR(30),
+      special_package_status VARCHAR(30) NOT NULL DEFAULT 'not_requested',
+      special_document_mime_type VARCHAR(100),
+      special_document_filename VARCHAR(255),
+      special_document BYTEA,
+      metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    )
+  `);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_package_type VARCHAR(30)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_package_status VARCHAR(30) NOT NULL DEFAULT 'not_requested'`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document_mime_type VARCHAR(100)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document_filename VARCHAR(255)`);
+  await db.query(`ALTER TABLE customer_intake_submissions ADD COLUMN IF NOT EXISTS special_document BYTEA`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_client ON customer_intake_submissions(client_id, created_at DESC)`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_customer_intake_phone ON customer_intake_submissions(customer_phone)`);
 }
 
 // GET /api/escalations/remarks-summary — customer experience totals.
@@ -86,9 +149,203 @@ router.patch('/remarks/:id/review', async (req, res) => {
   }
 });
 
+// GET /api/escalations/installation-intakes — CRM details submitted through the public intake form.
+router.get('/installation-intakes', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    await ensureTicketSchema();
+    const { status } = req.query;
+
+    const params = [];
+    const conditions = [applyClientScope(req, params, 'i')];
+    if (status === 'open') conditions.push(`COALESCE(t.status, 'open') NOT IN ('resolved', 'closed')`);
+    else if (status === 'resolved') conditions.push(`t.status IN ('resolved', 'closed')`);
+    const condition = conditions.join(' AND ');
+    const result = await db.query(
+      `SELECT
+         i.id, i.client_id, i.customer_name, i.customer_phone, i.alternate_phone,
+         i.email, i.id_number, i.plan_interest, i.service_type, i.county, i.area,
+         i.landmark, i.building_type, i.house_description, i.latitude, i.longitude,
+         i.preferred_date, i.preferred_time, i.notes, i.consent_accepted,
+         i.identity_mime_type, i.identity_filename,
+         (i.identity_document IS NOT NULL) AS has_identity_document,
+         i.special_package_type, i.special_package_status, i.special_document_mime_type,
+         i.special_document_filename, (i.special_document IS NOT NULL) AS has_special_document,
+         i.metadata, i.created_at,
+         t.id AS ticket_id, t.status AS ticket_status, t.priority AS ticket_priority
+       FROM customer_intake_submissions i
+       LEFT JOIN LATERAL (
+         SELECT id, status, priority
+         FROM tickets
+         WHERE client_id = i.client_id
+           AND customer_phone = i.customer_phone
+           AND category = 'installation'
+         ORDER BY updated_at DESC
+         LIMIT 1
+       ) t ON TRUE
+       WHERE ${condition}
+       ORDER BY i.created_at DESC
+       LIMIT 250`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /escalations/installation-intakes error:', err.message);
+    res.status(500).json({ error: 'Failed to load installation intake details' });
+  }
+});
+
+router.get('/relocation-requests', async (req, res) => {
+  try {
+    await ensureRelocationSchema();
+    await ensureTicketSchema();
+    const { status } = req.query;
+
+    const params = [];
+    const conditions = [applyClientScope(req, params, 'r')];
+    if (status === 'open') conditions.push(`COALESCE(t.status, 'open') NOT IN ('resolved', 'closed')`);
+    else if (status === 'resolved') conditions.push(`t.status IN ('resolved', 'closed')`);
+    const condition = conditions.join(' AND ');
+    const result = await db.query(
+      `SELECT
+         r.id, r.client_id, r.customer_name, r.customer_phone, r.alternate_phone,
+         r.email, r.account_number, r.current_location, r.new_location, r.new_landmark,
+         r.house_description, r.latitude, r.longitude, r.preferred_date, r.preferred_time,
+         r.router_available, r.router_condition, r.router_power_adapter, r.ont_available,
+         r.cable_available, r.reason, r.notes, r.consent_accepted, r.photo_mime_type,
+         r.photo_filename, (r.photo IS NOT NULL) AS has_photo, r.status, r.metadata,
+         r.created_at, r.updated_at,
+         t.id AS ticket_id, t.status AS ticket_status, t.priority AS ticket_priority
+       FROM relocation_requests r
+       LEFT JOIN LATERAL (
+         SELECT id, status, priority
+         FROM tickets
+         WHERE client_id = r.client_id
+           AND customer_phone = r.customer_phone
+           AND category = 'installation'
+           AND title ILIKE '%relocation%'
+         ORDER BY updated_at DESC
+         LIMIT 1
+       ) t ON TRUE
+       WHERE ${condition}
+       ORDER BY r.created_at DESC
+       LIMIT 250`,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error('GET /escalations/relocation-requests error:', err.message);
+    res.status(500).json({ error: 'Failed to load relocation requests' });
+  }
+});
+
+router.get('/relocation-requests/:id/photo', async (req, res) => {
+  try {
+    await ensureRelocationSchema();
+    const params = [req.params.id];
+    let where = 'id = $1';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `SELECT photo, photo_mime_type, photo_filename FROM relocation_requests WHERE ${where} LIMIT 1`,
+      params
+    );
+    const row = result.rows[0];
+    if (!row?.photo) return res.status(404).json({ error: 'Relocation photo not found' });
+    res.setHeader('Content-Type', row.photo_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${String(row.photo_filename || 'relocation-photo').replace(/"/g, '')}"`);
+    res.send(row.photo);
+  } catch (err) {
+    console.error('GET relocation photo error:', err.message);
+    res.status(500).json({ error: 'Failed to load relocation photo' });
+  }
+});
+
+router.get('/installation-intakes/:id/special-document', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const params = [req.params.id];
+    let where = 'id = $1';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `SELECT special_document, special_document_mime_type, special_document_filename
+       FROM customer_intake_submissions WHERE ${where} LIMIT 1`,
+      params
+    );
+    const row = result.rows[0];
+    if (!row?.special_document) return res.status(404).json({ error: 'Verification document not found' });
+    res.setHeader('Content-Type', row.special_document_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${String(row.special_document_filename || 'verification-document').replace(/"/g, '')}"`);
+    res.send(row.special_document);
+  } catch (err) {
+    console.error('GET special verification document error:', err.message);
+    res.status(500).json({ error: 'Failed to load verification document' });
+  }
+});
+
+router.patch('/installation-intakes/:id/special-status', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const status = String(req.body.status || '');
+    if (!['pending_review', 'approved', 'more_information', 'declined'].includes(status)) {
+      return res.status(400).json({ error: 'Invalid verification status' });
+    }
+    const params = [status, req.params.id];
+    let where = 'id = $2 AND special_package_type IS NOT NULL';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `UPDATE customer_intake_submissions SET special_package_status = $1 WHERE ${where}
+       RETURNING id, special_package_type, special_package_status`,
+      params
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Special package application not found' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error('PATCH special package status error:', err.message);
+    res.status(500).json({ error: 'Failed to update verification status' });
+  }
+});
+
+// GET /api/escalations/installation-intakes/:id/identity — secure ID document download.
+router.get('/installation-intakes/:id/identity', async (req, res) => {
+  try {
+    await ensureCustomerIntakeTable();
+    const params = [req.params.id];
+    let where = 'id = $1';
+    if (!req.scope.isSuperadmin || req.scope.clientId) {
+      params.push(req.scope.clientId);
+      where += ` AND client_id = $${params.length}`;
+    }
+    const result = await db.query(
+      `SELECT identity_document, identity_mime_type, identity_filename
+       FROM customer_intake_submissions
+       WHERE ${where}
+       LIMIT 1`,
+      params
+    );
+    const row = result.rows[0];
+    if (!row || !row.identity_document) return res.status(404).json({ error: 'Identity document not found' });
+    res.setHeader('Content-Type', row.identity_mime_type || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${String(row.identity_filename || 'identity-document').replace(/"/g, '')}"`);
+    res.send(row.identity_document);
+  } catch (err) {
+    console.error('GET /escalations/installation-intakes/:id/identity error:', err.message);
+    res.status(500).json({ error: 'Failed to load identity document' });
+  }
+});
+
 // GET /api/escalations
 router.get('/', async (req, res) => {
   try {
+    await ensureEscalationSchema();
     const { status, type } = req.query;
     const conditions = [];
     const params = [];

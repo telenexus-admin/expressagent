@@ -9,6 +9,7 @@ router.use(authMiddleware, superadminMiddleware);
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
+  'invoices',
   'escalations',
   'installations',
   'complaints',

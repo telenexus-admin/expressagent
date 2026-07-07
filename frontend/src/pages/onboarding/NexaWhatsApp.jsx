@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../../utils/api';
+import PushNotificationsButton from '../../components/PushNotificationsButton';
 
 const empty = {
   enabled: false,
@@ -11,6 +12,20 @@ const empty = {
   system_prompt: '',
   webhook_url: '',
   evolution_api_key_configured: false,
+  email_provider: 'resend',
+  email_enabled: false,
+  email_from_name: 'Nexa',
+  email_from_address: '',
+  email_reply_to: '',
+  email_smtp_host: 'mail.privateemail.com',
+  email_smtp_port: 465,
+  email_smtp_secure: true,
+  email_smtp_username: '',
+  email_smtp_password: '',
+  email_smtp_password_configured: false,
+  email_resend_api_key: '',
+  email_resend_api_key_configured: false,
+  email_configured_at: null,
 };
 
 const replyModes = [
@@ -60,7 +75,7 @@ function ChatBubble({ message }) {
   const manual = message.role === 'admin';
   return (
     <div className={`flex ${inbound ? 'justify-start' : 'justify-end'}`}>
-      <div className={`max-w-[84%] rounded-[20px] px-4 py-3 text-sm leading-6 shadow-sm ${inbound ? 'rounded-tl-md border border-slate-100 bg-white text-slate-800' : manual ? 'rounded-tr-md bg-[#101027] text-white' : 'rounded-tr-md bg-[#edeaff] text-slate-800'}`}>
+      <div className={`max-w-[88%] rounded-[20px] px-3.5 py-2.5 text-sm leading-6 shadow-sm sm:max-w-[84%] sm:px-4 sm:py-3 ${inbound ? 'rounded-tl-md border border-slate-100 bg-white text-slate-800' : manual ? 'rounded-tr-md bg-[#101027] text-white' : 'rounded-tr-md bg-[#edeaff] text-slate-800'}`}>
         {!inbound && <div className={`mb-1 text-[10px] font-black uppercase tracking-wide ${manual ? 'text-white/55' : 'text-[#3535FF]'}`}>{manual ? 'You' : 'Nexa AI'}</div>}
         <div className="whitespace-pre-wrap break-words">{message.content}</div>
         <div className={`mt-1 text-right text-[10px] ${inbound ? 'text-slate-400' : manual ? 'text-white/50' : 'text-slate-400'}`}>{new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</div>
@@ -74,13 +89,18 @@ export default function NexaWhatsApp() {
   const [form, setForm] = useState(empty);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [liveSaving, setLiveSaving] = useState(false);
   const [connecting, setConnecting] = useState(false);
   const [sending, setSending] = useState(false);
+  const [testingEmail, setTestingEmail] = useState(false);
   const [testPhone, setTestPhone] = useState('');
+  const [testEmail, setTestEmail] = useState('');
+  const [emailTestStatus, setEmailTestStatus] = useState('');
   const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
   const [conversations, setConversations] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [mobileChatOpen, setMobileChatOpen] = useState(false);
   const [chat, setChat] = useState(null);
   const [chatLoading, setChatLoading] = useState(false);
   const [controlSaving, setControlSaving] = useState(false);
@@ -106,8 +126,14 @@ export default function NexaWhatsApp() {
       const [configRes, conversationsRes] = await Promise.all([api.get('/operator-agent/config'), api.get('/operator-agent/conversations')]);
       setForm({ ...empty, ...configRes.data, evolution_api_key: '' });
       const rows = conversationsRes.data || [];
+      const requestedConversationId = Number(new URLSearchParams(window.location.search).get('conversationId'));
       setConversations(rows);
-      if (rows[0]?.id) setSelectedId((current) => current || rows[0].id);
+      if (requestedConversationId && rows.some((row) => row.id === requestedConversationId)) {
+        setSelectedId(requestedConversationId);
+        setMobileChatOpen(true);
+      } else if (rows[0]?.id) {
+        setSelectedId((current) => current || rows[0].id);
+      }
       setError('');
     } catch (err) {
       setError(err.response?.data?.error || 'Could not load Nexa WhatsApp setup.');
@@ -149,17 +175,61 @@ export default function NexaWhatsApp() {
     return conversations.filter((item) => `${item.customer_name || ''} ${item.customer_phone} ${item.last_message || ''}`.toLowerCase().includes(key));
   }, [conversations, search]);
 
+  const buildEmailPayload = () => {
+    const payload = {
+      email_provider: 'resend',
+      email_enabled: Boolean(form.email_enabled),
+      email_from_name: form.email_from_name,
+      email_from_address: form.email_from_address,
+      email_reply_to: form.email_reply_to,
+    };
+    if (form.email_resend_api_key.trim()) payload.email_resend_api_key = form.email_resend_api_key.trim();
+    return payload;
+  };
+
   const save = async () => {
     setSaving(true); setNotice(''); setError('');
     try {
-      const payload = { enabled: Boolean(form.enabled), evolution_base_url: form.evolution_base_url, evolution_instance: form.evolution_instance, agent_name: form.agent_name, owner_phone: form.owner_phone, system_prompt: form.system_prompt };
+      const payload = {
+        enabled: Boolean(form.enabled),
+        evolution_base_url: form.evolution_base_url,
+        evolution_instance: form.evolution_instance,
+        agent_name: form.agent_name,
+        owner_phone: form.owner_phone,
+        system_prompt: form.system_prompt,
+        ...buildEmailPayload(),
+      };
       if (form.evolution_api_key.trim()) payload.evolution_api_key = form.evolution_api_key.trim();
       const { data } = await api.put('/operator-agent/config', payload);
-      setForm((current) => ({ ...current, ...data, evolution_api_key: '' }));
+      setForm((current) => ({ ...current, ...data, evolution_api_key: '', email_smtp_password: '', email_resend_api_key: '' }));
       setNotice(form.enabled ? 'Nexa official WhatsApp configuration saved and enabled.' : 'Configuration saved. Nexa is currently disabled.');
     } catch (err) {
       setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not save configuration.');
     } finally { setSaving(false); }
+  };
+
+  const saveEmail = async () => {
+    setSaving(true); setNotice(''); setError(''); setEmailTestStatus('');
+    try {
+      const { data } = await api.put('/operator-agent/config', buildEmailPayload());
+      setForm((current) => ({ ...current, ...data, evolution_api_key: '', email_smtp_password: '', email_resend_api_key: '' }));
+      const message = 'Official Nexa email configuration saved.';
+      setNotice(message);
+      setEmailTestStatus(message);
+    } catch (err) {
+      setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not save email configuration.');
+    } finally { setSaving(false); }
+  };
+
+  const toggleLive = async (enabled) => {
+    setLiveSaving(true); setNotice(''); setError('');
+    try {
+      const { data } = await api.put('/operator-agent/config', { enabled: Boolean(enabled) });
+      setForm((current) => ({ ...current, ...data, evolution_api_key: '' }));
+      setNotice(enabled ? 'Nexus AI is online. Incoming WhatsApp messages will get replies.' : 'Nexus AI is offline. Incoming messages will be recorded only.');
+    } catch (err) {
+      setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not update Nexus AI status.');
+    } finally { setLiveSaving(false); }
   };
 
   const connectWebhook = async () => {
@@ -176,6 +246,29 @@ export default function NexaWhatsApp() {
     try { await api.post('/operator-agent/test-message', { phone: testPhone }); setNotice(`Test WhatsApp message sent to ${testPhone}.`); }
     catch (err) { setError(err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || 'Could not send test message.'); }
     finally { setSending(false); }
+  };
+
+  const sendEmailTest = async () => {
+    setTestingEmail(true); setNotice(''); setError(''); setEmailTestStatus('Testing Resend delivery...');
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 40000);
+    try {
+      const payload = {
+        ...buildEmailPayload(),
+        to: testEmail,
+        email_enabled: true,
+      };
+      const { data } = await api.post('/operator-agent/email-test', payload, { timeout: 40000, signal: controller.signal });
+      const message = `Success: test email sent to ${testEmail}${data.id ? ` (${data.id})` : ''}.`;
+      setEmailTestStatus(message);
+      setNotice(message);
+    } catch (err) {
+      const message = err.name === 'CanceledError' || err.code === 'ERR_CANCELED'
+        ? 'Email test timed out after 40 seconds. Check the Resend API key, verified domain and sender address.'
+        : (err.response?.data?.errors?.[0]?.msg || err.response?.data?.error || err.message || 'Could not send test email.');
+      setEmailTestStatus(`Failed: ${message}`);
+      setError(message);
+    } finally { clearTimeout(timeout); setTestingEmail(false); }
   };
 
   const copyWebhook = async () => {
@@ -219,7 +312,7 @@ export default function NexaWhatsApp() {
             <p className="mt-1 text-sm text-slate-500">Control AI replies and personally take over any official Nexa conversation.</p>
           </div>
           <div className="flex items-center gap-3">
-            <div className={`rounded-full px-5 py-3 text-xs font-black ${form.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{form.enabled ? '● Nexa is live' : '○ Nexa is offline'}</div>
+            <div className={`rounded-full px-5 py-3 text-xs font-black ${form.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-200 text-slate-500'}`}>{form.enabled ? 'Nexus AI online' : 'Nexus AI offline'}</div>
             <div className="rounded-2xl bg-white p-1 shadow-sm">
               <button onClick={() => setTab('inbox')} className={`rounded-xl px-5 py-2.5 text-xs font-black ${tab === 'inbox' ? 'bg-[#3535FF] text-white' : 'text-slate-500'}`}>Inbox</button>
               <button onClick={() => setTab('setup')} className={`rounded-xl px-5 py-2.5 text-xs font-black ${tab === 'setup' ? 'bg-[#3535FF] text-white' : 'text-slate-500'}`}>Setup</button>
@@ -230,16 +323,51 @@ export default function NexaWhatsApp() {
         {notice && <div className="mb-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-3 text-sm text-emerald-700">{notice}</div>}
         {error && <div className="mb-4 rounded-2xl border border-red-100 bg-red-50 px-5 py-3 text-sm text-red-700">{error}</div>}
 
+        <div className={`mb-5 rounded-[28px] border p-5 shadow-lg sm:p-6 ${form.enabled ? 'border-emerald-100 bg-emerald-50 shadow-emerald-100/50' : 'border-amber-100 bg-amber-50 shadow-amber-100/50'}`}>
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className={`mb-2 inline-flex rounded-full px-3 py-1 text-[10px] font-black uppercase tracking-wide ${form.enabled ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                {form.enabled ? 'Webhook replies active' : 'Webhook replies paused'}
+              </div>
+              <h2 className="text-xl font-black text-slate-950">Nexus AI status</h2>
+              <p className="mt-1 max-w-2xl text-sm leading-6 text-slate-600">
+                {form.enabled
+                  ? 'The official Nexa number is allowed to answer incoming WhatsApp messages.'
+                  : 'Evolution webhooks are arriving, but Nexus is ignoring them until this switch is turned on.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => toggleLive(!form.enabled)}
+              disabled={liveSaving}
+              className={`rounded-2xl px-6 py-3 text-sm font-black text-white shadow-lg disabled:opacity-60 ${form.enabled ? 'bg-slate-950 shadow-slate-200' : 'bg-[#3535FF] shadow-indigo-200'}`}
+            >
+              {liveSaving ? 'Updating...' : form.enabled ? 'Turn Nexus AI Off' : 'Turn Nexus AI On'}
+            </button>
+          </div>
+        </div>
+
         {tab === 'inbox' ? (
-          <div className="grid h-[calc(100vh-250px)] min-h-[640px] grid-cols-1 overflow-hidden rounded-[32px] border border-white bg-white shadow-xl shadow-indigo-100/50 lg:grid-cols-[340px_minmax(420px,1fr)_310px]">
-            <aside className="flex min-h-0 flex-col border-r border-slate-100 bg-white">
+          <div className="space-y-4">
+            <div className="rounded-[24px] border border-white bg-white p-4 shadow-lg shadow-indigo-100/40 sm:hidden">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <h2 className="text-sm font-black text-slate-950">Phone Alerts</h2>
+                  <p className="mt-1 text-xs leading-5 text-slate-500">Get Nexus message alerts with Reply and AI on/off actions.</p>
+                </div>
+                <span className="rounded-full bg-[#ececff] px-3 py-1 text-[10px] font-black text-[#3535FF]">Nexus</span>
+              </div>
+              <PushNotificationsButton variant="light" />
+            </div>
+            <div className="grid h-[calc(100dvh-330px)] min-h-[430px] grid-cols-1 overflow-hidden rounded-[28px] border border-white bg-white shadow-xl shadow-indigo-100/50 sm:h-[calc(100vh-250px)] sm:min-h-[640px] sm:rounded-[32px] lg:grid-cols-[340px_minmax(420px,1fr)_310px]">
+            <aside className={`${mobileChatOpen ? 'hidden lg:flex' : 'flex'} min-h-0 flex-col border-r border-slate-100 bg-white`}>
               <div className="border-b border-slate-100 p-5">
                 <div className="flex items-center justify-between"><h2 className="text-lg font-black text-slate-950">Conversations</h2><span className="rounded-full bg-[#ececff] px-3 py-1 text-[10px] font-black text-[#3535FF]">{conversations.length}</span></div>
                 <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search chats..." className="mt-4 w-full rounded-2xl bg-slate-50 px-4 py-3 text-sm outline-none focus:ring-2 focus:ring-[#3535FF]/20" />
               </div>
               <div className="flex-1 overflow-y-auto p-3">
                 {filteredChats.length === 0 ? <p className="p-5 text-sm text-slate-400">No Nexa chats yet.</p> : filteredChats.map((item) => (
-                  <button key={item.id} onClick={() => setSelectedId(item.id)} className={`mb-2 flex w-full gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? 'bg-[#f1efff]' : 'hover:bg-slate-50'}`}>
+                  <button key={item.id} onClick={() => { setSelectedId(item.id); setMobileChatOpen(true); }} className={`mb-2 flex w-full gap-3 rounded-2xl p-3 text-left transition ${selectedId === item.id ? 'bg-[#f1efff]' : 'hover:bg-slate-50'}`}>
                     <Initial name={item.customer_name || item.customer_phone} />
                     <div className="min-w-0 flex-1"><div className="flex items-center justify-between gap-2"><p className="truncate text-sm font-bold text-slate-900">{item.customer_name || `+${item.customer_phone}`}</p><span className="text-[10px] text-slate-400">{item.last_message_at ? new Date(item.last_message_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</span></div><p className="mt-1 truncate text-xs text-slate-500">{item.last_message || 'No messages'}</p><div className="mt-2 flex items-center gap-2"><span className={`h-2 w-2 rounded-full ${item.ai_enabled ? 'bg-emerald-400' : 'bg-slate-300'}`} /><ModeBadge mode={item.reply_mode} /></div></div>
                   </button>
@@ -247,22 +375,36 @@ export default function NexaWhatsApp() {
               </div>
             </aside>
 
-            <section className="flex min-h-0 flex-col bg-[#faf9ff]">
+            <section className={`${mobileChatOpen ? 'flex' : 'hidden lg:flex'} min-h-0 flex-col bg-[#faf9ff]`}>
               {!chat || chatLoading ? <div className="flex flex-1 items-center justify-center text-sm text-slate-400">{chatLoading ? 'Opening chat...' : 'Select a conversation'}</div> : <>
-                <div className="flex items-center justify-between border-b border-slate-100 bg-white px-5 py-4">
-                  <div className="flex items-center gap-3"><Initial name={chat.conversation.customer_name || chat.conversation.customer_phone} /><div><p className="font-black text-slate-950">{chat.conversation.customer_name || `+${chat.conversation.customer_phone}`}</p><p className="text-xs text-slate-400">+{chat.conversation.customer_phone}</p></div></div>
-                  <div className={`rounded-full px-3 py-2 text-[11px] font-black ${chat.conversation.ai_enabled && chat.conversation.reply_mode !== 'silent' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{chat.conversation.ai_enabled && chat.conversation.reply_mode !== 'silent' ? 'AI ACTIVE' : 'AI PAUSED'}</div>
+                <div className="flex items-center justify-between gap-3 border-b border-slate-100 bg-white px-3.5 py-3 sm:px-5 sm:py-4">
+                  <div className="flex min-w-0 items-center gap-2.5 sm:gap-3">
+                    <button type="button" onClick={() => setMobileChatOpen(false)} className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-slate-100 text-lg font-black text-slate-600 lg:hidden">‹</button>
+                    <Initial name={chat.conversation.customer_name || chat.conversation.customer_phone} />
+                    <div className="min-w-0"><p className="truncate font-black text-slate-950">{chat.conversation.customer_name || `+${chat.conversation.customer_phone}`}</p><p className="truncate text-xs text-slate-400">+{chat.conversation.customer_phone}</p></div>
+                  </div>
+                  <div className={`shrink-0 rounded-full px-3 py-2 text-[10px] font-black sm:text-[11px] ${chat.conversation.ai_enabled && chat.conversation.reply_mode !== 'silent' ? 'bg-emerald-50 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{chat.conversation.ai_enabled && chat.conversation.reply_mode !== 'silent' ? 'AI ACTIVE' : 'AI PAUSED'}</div>
                 </div>
-                <div className="flex-1 space-y-3 overflow-y-auto p-5 sm:p-7">{chat.messages.map((message) => <ChatBubble key={message.id} message={message} />)}<div ref={messagesEndRef} /></div>
-                <div className="border-t border-slate-100 bg-white p-4">
-                  <div className="mb-3 flex gap-2"><button onClick={() => setManualMode('text')} className={`rounded-full px-4 py-2 text-xs font-black ${manualMode === 'text' ? 'bg-[#3535FF] text-white' : 'bg-slate-100 text-slate-500'}`}>Send text</button><button onClick={() => setManualMode('voice')} className={`rounded-full px-4 py-2 text-xs font-black ${manualMode === 'voice' ? 'bg-[#3535FF] text-white' : 'bg-slate-100 text-slate-500'}`}>Send voice note</button></div>
-                  <div className="flex items-end gap-3"><textarea value={composer} onChange={(event) => setComposer(event.target.value)} rows={2} placeholder={manualMode === 'voice' ? 'Type what Nexa should say in the voice note...' : 'Type a manual reply...'} className="flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[#3535FF]" /><button onClick={sendManualReply} disabled={sendingReply || !composer.trim()} className="rounded-2xl bg-[#3535FF] px-5 py-4 text-sm font-black text-white disabled:opacity-50">{sendingReply ? 'Sending...' : 'Send'}</button></div>
+                <div className="border-b border-slate-100 bg-white px-3.5 py-3 lg:hidden">
+                  <div className="flex items-center justify-between gap-3">
+                    <div><p className="text-sm font-black text-slate-900">Nexa replies</p><p className="text-xs text-slate-400">Controls for this chat</p></div>
+                    <Toggle checked={Boolean(chat.conversation.ai_enabled)} disabled={controlSaving} onChange={(value) => updateControls({ ai_enabled: value })} />
+                  </div>
+                  <select value={chat.conversation.reply_mode} onChange={(event) => updateControls({ reply_mode: event.target.value })} disabled={controlSaving} className="mt-3 h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm font-bold text-slate-700 outline-none focus:border-[#3535FF]">
+                    {replyModes.map((mode) => <option key={mode.value} value={mode.value}>{mode.label}</option>)}
+                  </select>
+                </div>
+                <div className="flex-1 space-y-3 overflow-y-auto p-3.5 sm:p-7">{chat.messages.map((message) => <ChatBubble key={message.id} message={message} />)}<div ref={messagesEndRef} /></div>
+                <div className="border-t border-slate-100 bg-white p-3.5 sm:p-4">
+                  <div className="mb-3 flex flex-wrap gap-2"><button onClick={() => setManualMode('text')} className={`rounded-full px-4 py-2 text-xs font-black ${manualMode === 'text' ? 'bg-[#3535FF] text-white' : 'bg-slate-100 text-slate-500'}`}>Send text</button><button onClick={() => setManualMode('voice')} className={`rounded-full px-4 py-2 text-xs font-black ${manualMode === 'voice' ? 'bg-[#3535FF] text-white' : 'bg-slate-100 text-slate-500'}`}>Send voice note</button></div>
+                  <div className="flex items-end gap-2 sm:gap-3"><textarea value={composer} onChange={(event) => setComposer(event.target.value)} rows={2} placeholder={manualMode === 'voice' ? 'Type what Nexus should say...' : 'Type a manual reply...'} className="min-w-0 flex-1 resize-none rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm outline-none focus:border-[#3535FF]" /><button onClick={sendManualReply} disabled={sendingReply || !composer.trim()} className="rounded-2xl bg-[#3535FF] px-4 py-4 text-sm font-black text-white disabled:opacity-50 sm:px-5">{sendingReply ? 'Sending...' : 'Send'}</button></div>
                 </div>
               </>}
             </section>
 
-            <aside className="overflow-y-auto border-l border-slate-100 bg-white p-5">
+            <aside className="hidden overflow-y-auto border-l border-slate-100 bg-white p-5 lg:block">
               {!chat ? <p className="mt-10 text-center text-sm text-slate-400">Choose a chat to control Nexa.</p> : <div className="space-y-5">
+                <div className="rounded-2xl bg-[#f6f7ff] p-4"><p className="text-sm font-black text-slate-900">Phone Alerts</p><p className="mt-1 text-xs text-slate-500">Receive Nexus message notifications with quick actions.</p><PushNotificationsButton variant="light" /></div>
                 <div><h2 className="text-lg font-black text-slate-950">AI Controls</h2><p className="mt-1 text-xs text-slate-400">Changes apply to this customer only.</p></div>
                 <div className="rounded-2xl bg-[#f6f7ff] p-4"><div className="flex items-center justify-between"><div><p className="text-sm font-black text-slate-900">Nexa replies</p><p className="text-xs text-slate-500">Switch AI on or off</p></div><Toggle checked={Boolean(chat.conversation.ai_enabled)} disabled={controlSaving} onChange={(value) => updateControls({ ai_enabled: value })} /></div></div>
                 <div><p className="mb-3 text-xs font-black uppercase tracking-wide text-slate-400">Reply style</p><div className="space-y-2">{replyModes.map((mode) => <button key={mode.value} onClick={() => updateControls({ reply_mode: mode.value })} disabled={controlSaving} className={`w-full rounded-2xl border p-3 text-left ${chat.conversation.reply_mode === mode.value ? 'border-[#3535FF] bg-[#f1efff]' : 'border-slate-100 bg-white hover:bg-slate-50'}`}><div className="text-sm font-black text-slate-900">{mode.label}</div><p className="mt-1 text-[11px] leading-4 text-slate-500">{mode.description}</p></button>)}</div></div>
@@ -270,13 +412,28 @@ export default function NexaWhatsApp() {
               </div>}
             </aside>
           </div>
+          </div>
         ) : (
           <div className="grid grid-cols-1 gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="space-y-6">
             <div className="rounded-[30px] border border-white bg-white p-6 shadow-lg shadow-indigo-100/50 sm:p-7">
-              <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Evolution API connection</h2><p className="mt-1 text-xs text-slate-400">Credentials for the normal WhatsApp number hosting Nexa.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>Live</span><Toggle checked={Boolean(form.enabled)} onChange={(value) => set('enabled', value)} /></label></div>
+              <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Evolution API connection</h2><p className="mt-1 text-xs text-slate-400">Credentials for the normal WhatsApp number hosting Nexa.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>{form.enabled ? 'Online' : 'Offline'}</span><Toggle checked={Boolean(form.enabled)} disabled={liveSaving} onChange={toggleLive} /></label></div>
               <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Input label="Evolution API URL" value={form.evolution_base_url || ''} onChange={(value) => set('evolution_base_url', value)} placeholder="https://evoapi.yourdomain.com" /><Input label="Instance name" value={form.evolution_instance || ''} onChange={(value) => set('evolution_instance', value)} placeholder="nexa-official" /><Input label="API key" type="password" value={form.evolution_api_key || ''} onChange={(value) => set('evolution_api_key', value)} placeholder={form.evolution_api_key_configured ? 'Saved — enter only to change it' : 'Paste Evolution API key'} helper={form.evolution_api_key_configured ? 'An API key is already securely saved.' : ''} /><Input label="Owner phone for alerts" value={form.owner_phone || ''} onChange={(value) => set('owner_phone', value)} placeholder="2547XXXXXXXX" /><Input label="Agent name" value={form.agent_name || ''} onChange={(value) => set('agent_name', value)} placeholder="Nexa" /></div>
               <label className="mt-5 block"><span className="mb-2 block text-xs font-bold text-slate-600">Nexa system prompt</span><textarea value={form.system_prompt || ''} onChange={(event) => set('system_prompt', event.target.value)} rows={8} className="w-full resize-y rounded-2xl border border-slate-200 bg-slate-50 px-4 py-3 text-sm leading-6 text-slate-700 outline-none focus:border-[#3535FF]" /></label>
               <div className="mt-6 flex flex-wrap gap-3"><button onClick={save} disabled={saving} className="rounded-2xl bg-[#3535FF] px-6 py-3 text-sm font-black text-white disabled:opacity-60">{saving ? 'Saving...' : 'Save configuration'}</button><button onClick={connectWebhook} disabled={connecting} className="rounded-2xl bg-[#ececff] px-6 py-3 text-sm font-black text-[#3535FF] disabled:opacity-60">{connecting ? 'Connecting...' : 'Connect webhook'}</button></div>
+            </div>
+            <div className="rounded-[30px] border border-white bg-white p-6 shadow-lg shadow-indigo-100/50 sm:p-7">
+              <div className="mb-6 flex items-center justify-between gap-4"><div><h2 className="text-xl font-black text-slate-950">Official Nexa Email</h2><p className="mt-1 text-xs text-slate-400">Send official Nexa emails through Resend only.</p></div><label className="flex items-center gap-3 text-sm font-bold text-slate-700"><span>{form.email_enabled ? 'Enabled' : 'Disabled'}</span><Toggle checked={Boolean(form.email_enabled)} onChange={(value) => set('email_enabled', value)} /></label></div>
+              <div className="mb-5 rounded-2xl border border-[#3535FF]/15 bg-[#f1efff] px-4 py-3 text-xs font-black uppercase tracking-wide text-[#3535FF]">Resend API delivery</div>
+              <div className="grid grid-cols-1 gap-5 sm:grid-cols-2"><Input label="From name" value={form.email_from_name || ''} onChange={(value) => set('email_from_name', value)} placeholder="Nexa" /><Input label="From email" value={form.email_from_address || ''} onChange={(value) => set('email_from_address', value)} placeholder="support@yourdomain.com" helper="Must be on a domain verified in Resend." /><Input label="Reply-to email" value={form.email_reply_to || ''} onChange={(value) => set('email_reply_to', value)} placeholder="support@yourdomain.com" /><Input label="Resend API key" type="password" value={form.email_resend_api_key || ''} onChange={(value) => set('email_resend_api_key', value)} placeholder={form.email_resend_api_key_configured ? 'Saved - enter only to change it' : 're_...'} helper={form.email_resend_api_key_configured ? 'A Resend API key is already securely saved.' : 'Create this in Resend > API Keys after verifying your domain.'} /></div>
+              <div className="mt-5 rounded-2xl bg-slate-50 p-4 text-xs leading-5 text-slate-500"><strong className="text-slate-700">Resend:</strong> verify your sending domain in Resend, create an API key, enter that key here, then save before sending a test email.</div>
+              <div className="mt-5 flex flex-col gap-3 sm:flex-row sm:items-end">
+                <button onClick={saveEmail} disabled={saving} className="rounded-2xl bg-[#3535FF] px-5 py-3 text-sm font-black text-white shadow-lg shadow-indigo-200 disabled:opacity-60 sm:min-w-52">{saving ? 'Saving...' : 'Save email configuration'}</button>
+                <Input label="Send test email to" value={testEmail} onChange={setTestEmail} placeholder="you@example.com" />
+                <button onClick={sendEmailTest} disabled={testingEmail || !testEmail.trim()} className="rounded-2xl bg-[#101027] px-5 py-3 text-sm font-black text-white disabled:opacity-50 sm:min-w-40">{testingEmail ? 'Testing...' : 'Send test email'}</button>
+              </div>
+              {emailTestStatus && <div className={`mt-3 rounded-2xl px-4 py-3 text-xs font-bold ${emailTestStatus.startsWith('Success') ? 'bg-emerald-50 text-emerald-700' : emailTestStatus.startsWith('Failed') ? 'bg-rose-50 text-rose-700' : 'bg-[#f1efff] text-[#3535FF]'}`}>{emailTestStatus}</div>}
+            </div>
             </div>
             <div className="space-y-6">
               <div className="rounded-[30px] bg-[#101027] p-6 text-white shadow-xl"><h2 className="text-lg font-black">Webhook connection</h2><p className="mb-4 mt-1 text-xs text-white/55">Evolution sends incoming messages to this URL.</p><div className="break-all rounded-2xl border border-white/10 bg-white/10 px-4 py-4 text-xs leading-5 text-white/75">{form.webhook_url || 'Generated after setup loads.'}</div><button onClick={copyWebhook} className="mt-4 rounded-xl bg-white/10 px-4 py-2.5 text-xs font-bold">Copy webhook URL</button></div>

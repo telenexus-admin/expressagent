@@ -3,6 +3,12 @@ import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
 
 const VOICE_OPTIONS = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
+const MIN_META_ACCESS_TOKEN_LENGTH = 50;
+const CONNECTION_OPTIONS = [
+  { value: 'meta', label: 'Meta WhatsApp', description: 'Customer messages come through the official WhatsApp Cloud API.' },
+  { value: 'website', label: 'Website only', description: 'Use the website chat widget without linking a WhatsApp number.' },
+  { value: 'evolution', label: 'Evolution WhatsApp', description: 'For clients connected through the Evolution onboarding flow.' },
+];
 
 const STATUS_STYLES = {
   active: 'bg-emerald-50 text-emerald-700',
@@ -21,6 +27,7 @@ export default function ClientDetail() {
   const [saving, setSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState(null);
   const [saveError, setSaveError] = useState('');
+  const [openingDashboard, setOpeningDashboard] = useState(false);
 
   const [admins, setAdmins] = useState([]);
   const [adminsLoading, setAdminsLoading] = useState(true);
@@ -28,10 +35,21 @@ export default function ClientDetail() {
   const [adminForm, setAdminForm] = useState({ name: '', email: '', password: '' });
   const [adminFormError, setAdminFormError] = useState('');
   const [adminFormLoading, setAdminFormLoading] = useState(false);
+  const [payhero, setPayhero] = useState({
+    enabled: false,
+    channel_id: '',
+    provider: 'm-pesa',
+    has_basic_auth: false,
+  });
+  const [payheroLoading, setPayheroLoading] = useState(true);
+  const [payheroSaving, setPayheroSaving] = useState(false);
+  const [payheroTesting, setPayheroTesting] = useState(false);
+  const [payheroStatus, setPayheroStatus] = useState(null);
 
   useEffect(() => {
     fetchClient();
     fetchAdmins();
+    fetchPayhero();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
 
@@ -45,7 +63,11 @@ export default function ClientDetail() {
         name: data.name || '',
         business_name: data.business_name || '',
         contact_email: data.contact_email || '',
+        official_contact_name: data.official_contact_name || '',
+        official_whatsapp_number: data.official_whatsapp_number || '',
+        update_notifications_enabled: data.update_notifications_enabled !== false,
         status: data.status || 'active',
+        connection_provider: data.connection_provider || 'meta',
         meta_phone_number_id: data.meta_phone_number_id || '',
         meta_business_account_id: data.meta_business_account_id || '',
         meta_verify_token: data.meta_verify_token || '',
@@ -76,7 +98,69 @@ export default function ClientDetail() {
     }
   };
 
+  const fetchPayhero = async () => {
+    setPayheroLoading(true);
+    setPayheroStatus(null);
+    try {
+      const { data } = await api.get(`/settings/payhero?clientId=${id}`);
+      setPayhero((current) => ({ ...current, ...data }));
+    } catch (err) {
+      setPayheroStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to load PayHero settings',
+      });
+    } finally {
+      setPayheroLoading(false);
+    }
+  };
+
   const updateField = (key, value) => setForm((f) => ({ ...f, [key]: value }));
+
+  const updatePayhero = (key, value) => {
+    setPayhero((current) => ({ ...current, [key]: value }));
+    setPayheroStatus(null);
+  };
+
+  const testPayhero = async () => {
+    setPayheroTesting(true);
+    setPayheroStatus(null);
+    try {
+      const { data } = await api.post(`/settings/payhero/test?clientId=${id}`, {
+        channel_id: payhero.channel_id,
+      });
+      const channel = data.channel;
+      setPayheroStatus({
+        type: 'success',
+        message: channel
+          ? `Connected to PayHero channel ${channel.id}${channel.description ? ` (${channel.description})` : ''}.`
+          : `PayHero connected. ${data.channels || 0} active payment channel(s) found.`,
+      });
+    } catch (err) {
+      setPayheroStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'PayHero connection test failed',
+      });
+    } finally {
+      setPayheroTesting(false);
+    }
+  };
+
+  const savePayhero = async () => {
+    setPayheroSaving(true);
+    setPayheroStatus(null);
+    try {
+      const { data } = await api.put(`/settings/payhero?clientId=${id}`, payhero);
+      setPayhero((current) => ({ ...current, ...data }));
+      setPayheroStatus({ type: 'success', message: 'PayHero payment prompting saved for this client.' });
+    } catch (err) {
+      setPayheroStatus({
+        type: 'error',
+        message: err.response?.data?.error || 'Failed to save PayHero settings',
+      });
+    } finally {
+      setPayheroSaving(false);
+    }
+  };
 
   const save = async () => {
     setSaving(true);
@@ -87,7 +171,11 @@ export default function ClientDetail() {
         name: form.name,
         business_name: form.business_name,
         contact_email: form.contact_email,
+        official_contact_name: form.official_contact_name,
+        official_whatsapp_number: form.official_whatsapp_number,
+        update_notifications_enabled: form.update_notifications_enabled,
         status: form.status,
+        connection_provider: form.connection_provider,
         meta_phone_number_id: form.meta_phone_number_id,
         meta_business_account_id: form.meta_business_account_id,
         meta_verify_token: form.meta_verify_token,
@@ -98,8 +186,14 @@ export default function ClientDetail() {
         opening_message: form.opening_message,
         photo_troubleshooting_enabled: form.photo_troubleshooting_enabled,
       };
-      if (form.meta_access_token && form.meta_access_token.trim()) {
-        payload.meta_access_token = form.meta_access_token.trim();
+      const nextMetaToken = form.meta_access_token.trim();
+      if (nextMetaToken) {
+        if (nextMetaToken.length < MIN_META_ACCESS_TOKEN_LENGTH) {
+          setSaveStatus('error');
+          setSaveError('Meta access token looks too short. Paste the full Meta token, or leave it blank to keep the current one.');
+          return;
+        }
+        payload.meta_access_token = nextMetaToken;
       }
       await api.put(`/clients/${id}`, payload);
       setSaveStatus('success');
@@ -129,6 +223,27 @@ export default function ClientDetail() {
       navigate('/onboarding/clients');
     } catch (err) {
       alert(err.response?.data?.error || 'Failed to delete client');
+    }
+  };
+
+  const openClientDashboard = async () => {
+    const tab = window.open('about:blank', '_blank');
+    setOpeningDashboard(true);
+    try {
+      const { data } = await api.post(`/clients/${id}/operator-access`);
+      const encodedAdmin = window.btoa(unescape(encodeURIComponent(JSON.stringify(data.admin))));
+      const url = `/client-access?token=${encodeURIComponent(data.token)}&admin=${encodeURIComponent(encodedAdmin)}&next=${encodeURIComponent('/dashboard/agent')}`;
+      if (tab) {
+        tab.opener = null;
+        tab.location.href = url;
+      } else {
+        window.location.href = url;
+      }
+    } catch (err) {
+      if (tab) tab.close();
+      alert(err.response?.data?.error || 'Failed to open client dashboard');
+    } finally {
+      setOpeningDashboard(false);
     }
   };
 
@@ -217,12 +332,21 @@ export default function ClientDetail() {
                 </span>
               </div>
             </div>
-            <button
-              onClick={deleteClient}
-              className="text-xs font-semibold text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-full"
-            >
-              Delete Client
-            </button>
+            <div className="flex flex-wrap gap-2">
+              <button
+                onClick={openClientDashboard}
+                disabled={openingDashboard}
+                className="text-xs font-semibold text-white bg-[#4B16B5] hover:bg-[#351083] disabled:opacity-50 px-4 py-2 rounded-full"
+              >
+                {openingDashboard ? 'Opening...' : 'Configure Bot'}
+              </button>
+              <button
+                onClick={deleteClient}
+                className="text-xs font-semibold text-red-600 hover:text-red-700 border border-red-200 hover:bg-red-50 px-4 py-2 rounded-full"
+              >
+                Delete Client
+              </button>
+            </div>
           </div>
         </div>
 
@@ -241,6 +365,40 @@ export default function ClientDetail() {
           <Field label="Client / Company Name" value={form.name} onChange={(v) => updateField('name', v)} />
           <Field label="Business Name (shown to customers)" value={form.business_name} onChange={(v) => updateField('business_name', v)} />
           <Field label="Contact Email" value={form.contact_email} onChange={(v) => updateField('contact_email', v)} type="email" />
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50 p-4">
+            <h3 className="text-sm font-black text-gray-900">Official update WhatsApp</h3>
+            <p className="mt-1 text-xs font-semibold leading-5 text-gray-500">
+              This is the client's admin/owner number for Nexa system update announcements. It is separate from the AI agent number.
+            </p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <Field label="Contact name" value={form.official_contact_name} onChange={(v) => updateField('official_contact_name', v)} placeholder="Owner or admin name" />
+              <Field label="Official WhatsApp number" value={form.official_whatsapp_number} onChange={(v) => updateField('official_whatsapp_number', v)} placeholder="2547XXXXXXXX" />
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-xs font-bold text-gray-600">
+              <input
+                type="checkbox"
+                checked={form.update_notifications_enabled}
+                onChange={(event) => updateField('update_notifications_enabled', event.target.checked)}
+                className="h-4 w-4 accent-[#3535FF]"
+              />
+              Receive Nexa system update messages
+            </label>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-700 mb-1.5">Connection Type</label>
+            <select
+              value={form.connection_provider}
+              onChange={(e) => updateField('connection_provider', e.target.value)}
+              className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+            >
+              {CONNECTION_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>{option.label}</option>
+              ))}
+            </select>
+            <p className="mt-1 text-[11px] text-gray-500">
+              {CONNECTION_OPTIONS.find((option) => option.value === form.connection_provider)?.description}
+            </p>
+          </div>
           <div>
             <label className="block text-xs font-semibold text-gray-700 mb-1.5">Status</label>
             <select
@@ -254,6 +412,8 @@ export default function ClientDetail() {
           </div>
         </Card>
 
+        {form.connection_provider === 'meta' && (
+        <>
         <Card title="Meta WhatsApp Credentials">
           <Field label="phone_number_id" value={form.meta_phone_number_id} onChange={(v) => updateField('meta_phone_number_id', v)} mono />
           <Field label="WhatsApp Business Account ID" value={form.meta_business_account_id} onChange={(v) => updateField('meta_business_account_id', v)} mono />
@@ -271,6 +431,7 @@ export default function ClientDetail() {
             type="password"
             mono
             hint="The stored token is never displayed. Type a new value to replace it."
+            autoComplete="new-password"
           />
         </Card>
 
@@ -282,6 +443,18 @@ export default function ClientDetail() {
           <ReadOnlyField label="Verify Token" value={client.meta_verify_token || '(none — set one above and save)'} />
           <ReadOnlyField label="phone_number_id" value={client.meta_phone_number_id || '(not set)'} />
         </Card>
+        </>
+        )}
+
+        {form.connection_provider === 'website' && (
+          <Card
+            title="Website Chat Setup"
+            subtitle="Use this client ID when installing the Nexa chat bubble on their website"
+          >
+            <ReadOnlyField label="Client ID" value={String(client.id)} />
+            <ReadOnlyField label="Public Config URL" value={`${window.location.origin}/api/public/site-chat/${client.id}/config`} />
+          </Card>
+        )}
 
         <Card title="Agent Configuration">
           <Field label="Agent Name" value={form.agent_name} onChange={(v) => updateField('agent_name', v)} />
@@ -346,6 +519,93 @@ export default function ClientDetail() {
               placeholder="Greeting sent on the first message of a new conversation."
             />
           </div>
+        </Card>
+
+        <Card
+          title="Operator Payment Integration"
+          subtitle="PayHero credentials are managed by Nexa operators only. Client admins cannot see or edit this setup."
+        >
+          {payheroLoading ? (
+            <div className="text-sm text-gray-400">Loading PayHero settings...</div>
+          ) : (
+            <div className="space-y-4">
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-gray-100 bg-gray-50 px-4 py-3">
+                <span>
+                  <span className="block text-sm font-bold text-gray-900">Enable M-Pesa prompts</span>
+                  <span className="block text-xs text-gray-500 mt-0.5">
+                    The agent can prompt customers only after a clear payment request and amount confirmation.
+                  </span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={payhero.enabled}
+                  onChange={(e) => updatePayhero('enabled', e.target.checked)}
+                  className="h-5 w-5 accent-[#3535FF]"
+                />
+              </label>
+
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field
+                  label="PayHero Channel ID"
+                  value={payhero.channel_id}
+                  onChange={(v) => updatePayhero('channel_id', v)}
+                  placeholder="e.g. 9010"
+                  mono
+                />
+                <div>
+                  <label className="block text-xs font-semibold text-gray-700 mb-1.5">Provider</label>
+                  <select
+                    value={payhero.provider}
+                    onChange={(e) => updatePayhero('provider', e.target.value)}
+                    className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
+                  >
+                    <option value="m-pesa">M-Pesa</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className={`rounded-2xl border px-4 py-3 text-xs font-semibold leading-5 ${payhero.has_basic_auth ? 'border-emerald-100 bg-emerald-50 text-emerald-700' : 'border-amber-100 bg-amber-50 text-amber-800'}`}>
+                {payhero.has_basic_auth
+                  ? 'Shared PayHero Basic Auth is configured on the server. You only need to choose this client channel.'
+                  : 'Shared PayHero Basic Auth is missing on the server. Add PAYHERO_BASIC_AUTH in the backend .env before enabling prompts.'}
+              </div>
+
+              <div className="rounded-2xl border border-blue-100 bg-blue-50 px-4 py-3 text-xs font-semibold leading-5 text-blue-800">
+                Customer flow: the agent checks the registered billing account, confirms full package amount or custom amount, then sends the STK prompt through this channel.
+              </div>
+
+              <div className="flex flex-wrap justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={testPayhero}
+                  disabled={payheroTesting || !payhero.has_basic_auth}
+                  className="rounded-xl border border-gray-200 bg-white px-4 py-2 text-sm font-bold text-gray-700 disabled:opacity-50"
+                >
+                  {payheroTesting ? 'Testing...' : 'Test PayHero'}
+                </button>
+                <button
+                  type="button"
+                  onClick={savePayhero}
+                  disabled={payheroSaving}
+                  className="rounded-xl bg-[#3535FF] px-4 py-2 text-sm font-bold text-white disabled:opacity-50"
+                >
+                  {payheroSaving ? 'Saving...' : 'Save PayHero'}
+                </button>
+              </div>
+
+              {payheroStatus && (
+                <div
+                  className={`rounded-xl border px-4 py-3 text-sm font-semibold ${
+                    payheroStatus.type === 'success'
+                      ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                      : 'border-red-100 bg-red-50 text-red-700'
+                  }`}
+                >
+                  {payheroStatus.message}
+                </div>
+              )}
+            </div>
+          )}
         </Card>
 
         <div className="sticky bottom-0 bg-white -mx-6 sm:-mx-8 px-6 sm:px-8 py-4 border-t border-gray-100 flex justify-end">
@@ -476,7 +736,7 @@ function Card({ title, subtitle, right, children }) {
   );
 }
 
-function Field({ label, value, onChange, placeholder, type = 'text', mono = false, hint }) {
+function Field({ label, value, onChange, placeholder, type = 'text', mono = false, hint, autoComplete }) {
   return (
     <div>
       <label className="block text-xs font-semibold text-gray-700 mb-1.5">{label}</label>
@@ -485,6 +745,7 @@ function Field({ label, value, onChange, placeholder, type = 'text', mono = fals
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        autoComplete={autoComplete}
         className={`w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white ${mono ? 'font-mono text-xs' : ''}`}
       />
       {hint && <p className="text-[11px] text-gray-500 mt-1">{hint}</p>}

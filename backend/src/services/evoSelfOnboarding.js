@@ -26,6 +26,15 @@ async function ensureEvoOnboardingTable() {
       connected_number VARCHAR(80),
       connection_state VARCHAR(40),
       provider_error TEXT,
+      webhook_secret VARCHAR(120),
+      routing_active BOOLEAN NOT NULL DEFAULT FALSE,
+      phone_otp_hash TEXT,
+      phone_otp_expires_at TIMESTAMP WITH TIME ZONE,
+      phone_otp_sent_at TIMESTAMP WITH TIME ZONE,
+      phone_verified_at TIMESTAMP WITH TIME ZONE,
+      request_type VARCHAR(40) NOT NULL DEFAULT 'new_client',
+      parent_client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL,
+      agent_label VARCHAR(80),
       connected_at TIMESTAMP WITH TIME ZONE,
       reviewed_at TIMESTAMP WITH TIME ZONE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
@@ -34,6 +43,17 @@ async function ensureEvoOnboardingTable() {
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS pairing_code VARCHAR(40);
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS pairing_number VARCHAR(50);
     ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS connection_method VARCHAR(20) DEFAULT 'qr';
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_hash TEXT;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_expires_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_otp_sent_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMP WITH TIME ZONE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS webhook_secret VARCHAR(120);
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS routing_active BOOLEAN NOT NULL DEFAULT FALSE;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS request_type VARCHAR(40) NOT NULL DEFAULT 'new_client';
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS parent_client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL;
+    ALTER TABLE evo_client_onboardings ADD COLUMN IF NOT EXISTS agent_label VARCHAR(80);
+    ALTER TABLE evo_client_onboardings DROP CONSTRAINT IF EXISTS evo_client_onboardings_request_type_check;
+    ALTER TABLE evo_client_onboardings ADD CONSTRAINT evo_client_onboardings_request_type_check CHECK (request_type IN ('new_client', 'additional_agent'));
     ALTER TABLE evo_client_onboardings DROP CONSTRAINT IF EXISTS evo_client_onboardings_connection_method_check;
     ALTER TABLE evo_client_onboardings ADD CONSTRAINT evo_client_onboardings_connection_method_check CHECK (connection_method IN ('qr', 'pairing_code'));
     CREATE INDEX IF NOT EXISTS idx_evo_onboarding_status ON evo_client_onboardings(status, created_at DESC);
@@ -121,6 +141,17 @@ async function requestPairingCode(instanceName, phoneNumber) {
   return createPairingInstance(instanceName, phoneNumber);
 }
 
+async function requestQrReconnect(instanceName) {
+  try {
+    const qr = await fetchQr(instanceName);
+    if (qr) return qr;
+  } catch (err) {
+    console.warn(`Could not fetch reconnect QR for ${instanceName}, recreating instance:`, err.response?.status || err.message);
+  }
+  await removeInstance(instanceName);
+  return createInstance(instanceName);
+}
+
 async function getInstanceState(instanceName) {
   const { baseUrl, headers } = providerConfig();
   const result = await axios.get(`${baseUrl}/instance/connectionState/${encodeURIComponent(instanceName)}`, { headers, timeout: 30000 });
@@ -170,7 +201,9 @@ module.exports = {
   createInstance,
   createPairingInstance,
   requestPairingCode,
+  requestQrReconnect,
   removeInstance,
   refreshOnboarding,
+  getInstanceState,
   cleanProviderError,
 };

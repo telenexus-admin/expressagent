@@ -4,6 +4,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { synthesizeVoice } = require('../services/openai');
+const { testEmailConfig } = require('../services/email');
 const {
   ensureOperatorAgentTables,
   getOperatorSettings,
@@ -16,6 +17,52 @@ router.use(authMiddleware, superadminMiddleware);
 
 function clean(value) {
   return typeof value === 'string' ? value.trim() : value;
+}
+
+function normalizeEmail(value) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function operatorEmailConfig(body = {}, current = {}) {
+  const host = clean(body.email_smtp_host) || current.email_smtp_host || '';
+  const port = Number(body.email_smtp_port || current.email_smtp_port || 465);
+  const fromAddress = normalizeEmail(body.email_from_address || current.email_from_address);
+  const replyTo = normalizeEmail(body.email_reply_to || current.email_reply_to || fromAddress);
+  const username = clean(body.email_smtp_username) || current.email_smtp_username || '';
+  const password = clean(body.email_smtp_password) || '';
+  return {
+    email_provider: 'resend',
+    email_enabled: body.email_enabled === undefined ? current.email_enabled === true : Boolean(body.email_enabled),
+    email_from_name: clean(body.email_from_name) || current.email_from_name || 'Nexa',
+    email_from_address: fromAddress,
+    email_reply_to: replyTo,
+    email_smtp_host: host,
+    email_smtp_port: Number.isInteger(port) ? port : 465,
+    email_smtp_secure: body.email_smtp_secure === undefined ? current.email_smtp_secure !== false : Boolean(body.email_smtp_secure),
+    email_smtp_username: username,
+    email_smtp_password: password,
+    email_resend_api_key: clean(body.email_resend_api_key) || '',
+  };
+}
+
+function validateOperatorEmailConfig(config, hasSavedPassword) {
+  if (!config.email_enabled) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email_from_address)) return 'Enter a valid from email address';
+  if (config.email_reply_to && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(config.email_reply_to)) return 'Enter a valid reply-to email address';
+  if (!config.email_resend_api_key && !hasSavedPassword) return 'Resend API key is required';
+  return null;
+}
+
+function hasSavedEmailSecret(config, current = {}) {
+  return Boolean(current.email_resend_api_key);
+}
+
+function withTimeout(promise, ms, message) {
+  let timeout;
+  const timer = new Promise((_, reject) => {
+    timeout = setTimeout(() => reject(new Error(message)), ms);
+  });
+  return Promise.race([promise, timer]).finally(() => clearTimeout(timeout));
 }
 
 function webhookUrl(req, secret) {
@@ -41,12 +88,26 @@ router.put('/config', [
   body('agent_name').optional().isString().isLength({ max: 80 }),
   body('system_prompt').optional().isString().isLength({ min: 20 }),
   body('owner_phone').optional({ checkFalsy: true }).matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter a valid owner phone number'),
+  body('email_provider').optional().isIn(['smtp', 'resend']),
+  body('email_enabled').optional().isBoolean(),
+  body('email_from_name').optional({ checkFalsy: true }).isString().isLength({ max: 160 }),
+  body('email_from_address').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid from email address'),
+  body('email_reply_to').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid reply-to email address'),
+  body('email_smtp_host').optional({ checkFalsy: true }).isString().isLength({ max: 180 }),
+  body('email_smtp_port').optional({ checkFalsy: true }).isInt({ min: 1, max: 65535 }),
+  body('email_smtp_secure').optional().isBoolean(),
+  body('email_smtp_username').optional({ checkFalsy: true }).isString().isLength({ max: 180 }),
+  body('email_smtp_password').optional({ checkFalsy: true }).isString(),
+  body('email_resend_api_key').optional({ checkFalsy: true }).isString(),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
     await ensureOperatorAgentTables();
     const current = await getOperatorSettings({ includeKey: true });
+    const emailConfig = operatorEmailConfig(req.body, current);
+    const emailValidation = validateOperatorEmailConfig(emailConfig, hasSavedEmailSecret(emailConfig, current));
+    if (emailValidation) return res.status(400).json({ error: emailValidation });
     const values = {
       enabled: req.body.enabled !== undefined ? Boolean(req.body.enabled) : current.enabled,
       evolution_base_url: req.body.evolution_base_url !== undefined ? clean(req.body.evolution_base_url) || null : current.evolution_base_url,
@@ -61,14 +122,63 @@ router.put('/config', [
     }
     await db.query(
       `UPDATE operator_agent_settings SET enabled = $1, evolution_base_url = $2, evolution_instance = $3,
-       evolution_api_key = $4, agent_name = $5, system_prompt = $6, owner_phone = $7, updated_at = NOW() WHERE id = 1`,
-      [values.enabled, values.evolution_base_url, values.evolution_instance, values.evolution_api_key, values.agent_name, values.system_prompt, values.owner_phone]
+       evolution_api_key = $4, agent_name = $5, system_prompt = $6, owner_phone = $7,
+       email_provider = $8, email_enabled = $9, email_from_name = $10, email_from_address = $11, email_reply_to = $12,
+       email_smtp_host = $13, email_smtp_port = $14, email_smtp_secure = $15,
+       email_smtp_username = $16, email_smtp_password = COALESCE(NULLIF($17, ''), email_smtp_password),
+       email_resend_api_key = COALESCE(NULLIF($18, ''), email_resend_api_key),
+       email_configured_at = CASE WHEN $9 THEN NOW() ELSE email_configured_at END,
+       updated_at = NOW() WHERE id = 1`,
+      [
+        values.enabled, values.evolution_base_url, values.evolution_instance, values.evolution_api_key,
+        values.agent_name, values.system_prompt, values.owner_phone,
+        emailConfig.email_provider, emailConfig.email_enabled, emailConfig.email_from_name, emailConfig.email_from_address || null,
+        emailConfig.email_reply_to || null, emailConfig.email_smtp_host || null, emailConfig.email_smtp_port || null,
+        emailConfig.email_smtp_secure, emailConfig.email_smtp_username || null, emailConfig.email_smtp_password,
+        emailConfig.email_resend_api_key,
+      ]
     );
     const saved = await getOperatorSettings();
     res.json({ ...saved, webhook_url: webhookUrl(req, saved.webhook_secret) });
   } catch (err) {
     console.error('PUT /operator-agent/config error:', err.message);
     res.status(500).json({ error: 'Failed to save Nexa WhatsApp configuration' });
+  }
+});
+
+router.post('/email-test', [
+  body('to').isEmail().withMessage('Enter a valid test email address'),
+  body('email_provider').optional().isIn(['smtp', 'resend']),
+  body('email_enabled').optional().isBoolean(),
+  body('email_from_name').optional({ checkFalsy: true }).isString().isLength({ max: 160 }),
+  body('email_from_address').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid from email address'),
+  body('email_reply_to').optional({ checkFalsy: true }).isEmail().withMessage('Enter a valid reply-to email address'),
+  body('email_smtp_host').optional({ checkFalsy: true }).isString().isLength({ max: 180 }),
+  body('email_smtp_port').optional({ checkFalsy: true }).isInt({ min: 1, max: 65535 }),
+  body('email_smtp_secure').optional().isBoolean(),
+  body('email_smtp_username').optional({ checkFalsy: true }).isString().isLength({ max: 180 }),
+  body('email_smtp_password').optional({ checkFalsy: true }).isString(),
+  body('email_resend_api_key').optional({ checkFalsy: true }).isString(),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    const current = await getOperatorSettings({ includeKey: true });
+    const config = operatorEmailConfig({ ...req.body, email_enabled: true }, current);
+    config.email_smtp_password = config.email_smtp_password || current.email_smtp_password;
+    config.email_resend_api_key = config.email_resend_api_key || current.email_resend_api_key;
+    const validation = validateOperatorEmailConfig(config, Boolean(config.email_resend_api_key));
+    if (validation) return res.status(400).json({ error: validation });
+    const result = await withTimeout(
+      testEmailConfig(config, normalizeEmail(req.body.to)),
+      30000,
+      'Email test timed out after 30 seconds. Check the provider settings, API key, domain verification, or network access.'
+    );
+    if (result.status !== 'sent') return res.status(400).json({ error: result.error || 'Test email failed' });
+    res.json({ success: true, status: result.status, id: result.id || null });
+  } catch (err) {
+    console.error('POST /operator-agent/email-test error:', err.message);
+    res.status(500).json({ error: `Email could not be sent: ${err.message}` });
   }
 });
 

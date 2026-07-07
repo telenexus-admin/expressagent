@@ -4,17 +4,12 @@ const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
-const { ensureEvoOnboardingTable, refreshOnboarding } = require('../services/evoSelfOnboarding');
+const { ensureEvoOnboardingTable, refreshOnboarding, makeSessionToken, makeInstanceName, createPairingInstance, cleanProviderError } = require('../services/evoSelfOnboarding');
+const { setClientWebhook } = require('../services/clientEvolution');
+const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 
 const router = express.Router();
 router.use(authMiddleware, superadminMiddleware);
-
-const DEFAULT_SYSTEM_PROMPT = `You are a helpful and professional customer support agent. Your goals are:
-- Answer customer questions accurately and concisely
-- Be polite, empathetic, and solution-focused
-- If you cannot resolve an issue, let the customer know a human agent will follow up soon
-- Never make up information you are unsure about
-- Keep responses brief and easy to read on a mobile device`;
 
 router.get('/', async (_req, res) => {
   try {
@@ -22,11 +17,14 @@ router.get('/', async (_req, res) => {
     const result = await db.query(
       `SELECT e.id, e.business_name, e.owner_name, e.phone, e.email, e.location, e.service_interest,
               e.instance_name, e.status, e.connection_method, e.connection_state, e.connected_number,
-              e.connected_at, e.provider_error, e.created_at, e.updated_at, e.reviewed_at,
+              e.connected_at, e.provider_error, e.routing_active, e.created_at, e.updated_at, e.reviewed_at,
+              e.request_type, e.parent_client_id, e.agent_label,
               c.id AS workspace_client_id, c.agent_name AS workspace_agent_name,
-              c.support_number AS workspace_support_number, a.email AS dashboard_admin_email
+              c.support_number AS workspace_support_number, a.email AS dashboard_admin_email,
+              pc.business_name AS parent_business_name
        FROM evo_client_onboardings e
        LEFT JOIN clients c ON c.connection_provider = 'evolution' AND c.evolution_instance_name = e.instance_name
+       LEFT JOIN clients pc ON pc.id = e.parent_client_id
        LEFT JOIN LATERAL (
          SELECT email FROM admins WHERE client_id = c.id AND role = 'admin' ORDER BY created_at ASC LIMIT 1
        ) a ON TRUE
@@ -60,6 +58,63 @@ router.get('/summary', async (_req, res) => {
   }
 });
 
+router.post(
+  '/auto-onboard',
+  [
+    body('business_name').trim().isLength({ min: 2, max: 255 }).withMessage('Business name is required'),
+    body('owner_name').trim().isLength({ min: 2, max: 255 }).withMessage('Owner/admin name is required'),
+    body('phone').trim().matches(/^\+?[0-9][0-9\s\-()]{6,19}$/).withMessage('Enter the WhatsApp number with country code'),
+    body('email').isEmail().normalizeEmail().withMessage('A valid email is required'),
+    body('location').optional({ checkFalsy: true }).trim().isLength({ max: 255 }),
+    body('service_interest').optional({ checkFalsy: true }).trim().isLength({ max: 80 }),
+  ],
+  async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+    try {
+      await ensureEvoOnboardingTable();
+      const businessName = req.body.business_name.trim();
+      const ownerName = req.body.owner_name.trim();
+      const phone = String(req.body.phone || '').trim();
+      const email = req.body.email;
+      const location = String(req.body.location || '').trim();
+      const serviceInterest = String(req.body.service_interest || 'customer_support').trim() || 'customer_support';
+      const instanceName = makeInstanceName(businessName);
+      const paired = await createPairingInstance(instanceName, phone);
+      const result = await db.query(
+        `INSERT INTO evo_client_onboardings (
+          business_name, owner_name, phone, email, location, service_interest,
+          consent_accepted, session_token, instance_name, status, pairing_code,
+          pairing_number, connection_method, connection_state, phone_verified_at, request_type
+        ) VALUES ($1, $2, $3, $4, $5, $6, TRUE, $7, $8, 'pending_qr', $9, $10, 'pairing_code', 'waiting_pairing_code', NOW(), 'new_client')
+        RETURNING *`,
+        [
+          businessName,
+          ownerName,
+          phone,
+          email,
+          location || null,
+          serviceInterest,
+          makeSessionToken(),
+          instanceName,
+          paired.pairingCode,
+          paired.number,
+        ]
+      );
+      res.status(201).json({
+        ...result.rows[0],
+        pairing_code: paired.pairingCode,
+        pairing_number: paired.number,
+        message: 'Pairing code generated. Send it to the client so they can link their WhatsApp number.',
+      });
+    } catch (err) {
+      const detail = cleanProviderError(err);
+      console.error('POST /evo-clients/auto-onboard error:', detail);
+      res.status(502).json({ error: `Could not create pairing code onboarding: ${detail}` });
+    }
+  }
+);
+
 router.post('/:id/refresh', async (req, res) => {
   try {
     await ensureEvoOnboardingTable();
@@ -78,9 +133,29 @@ router.patch('/:id/status', [body('status').isIn(['reviewed', 'active', 'archive
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
     await ensureEvoOnboardingTable();
+    const currentResult = await db.query(`SELECT * FROM evo_client_onboardings WHERE id = $1 LIMIT 1`, [req.params.id]);
+    const current = currentResult.rows[0];
+    if (!current) return res.status(404).json({ error: 'Evolution client not found' });
+    let webhookSecret = current.webhook_secret;
+    let routingActive = current.routing_active;
+    if (req.body.status === 'active' && current.request_type === 'additional_agent') {
+      if (!current.parent_client_id) return res.status(400).json({ error: 'This additional agent is missing the parent dashboard.' });
+      const parentResult = await db.query(`SELECT * FROM clients WHERE id = $1 AND status = 'active' LIMIT 1`, [current.parent_client_id]);
+      const parent = parentResult.rows[0];
+      if (!parent) return res.status(404).json({ error: 'Parent dashboard client was not found.' });
+      webhookSecret = webhookSecret || crypto.randomBytes(32).toString('hex');
+      await setClientWebhook(parent, {
+        instanceName: current.instance_name,
+        token: webhookSecret,
+        agentId: current.id,
+      });
+      routingActive = true;
+    }
     const result = await db.query(
       `UPDATE evo_client_onboardings
        SET status = $1::varchar,
+           webhook_secret = COALESCE($3, webhook_secret),
+           routing_active = CASE WHEN $4::boolean IS NULL THEN routing_active ELSE $4::boolean END,
            reviewed_at = CASE
              WHEN $1::varchar IN ('reviewed', 'active') THEN COALESCE(reviewed_at, NOW())
              ELSE reviewed_at
@@ -88,13 +163,13 @@ router.patch('/:id/status', [body('status').isIn(['reviewed', 'active', 'archive
            updated_at = NOW()
        WHERE id = $2
        RETURNING *`,
-      [req.body.status, req.params.id]
+      [req.body.status, req.params.id, webhookSecret || null, routingActive]
     );
-    if (!result.rows[0]) return res.status(404).json({ error: 'Evolution client not found' });
     res.json(result.rows[0]);
   } catch (err) {
-    console.error('PATCH /evo-clients/:id/status error:', err.message);
-    res.status(500).json({ error: 'Failed to update Evolution client status' });
+    const detail = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
+    console.error('PATCH /evo-clients/:id/status error:', detail);
+    res.status(500).json({ error: 'Failed to update Evolution client status or connect its webhook.' });
   }
 });
 
@@ -151,7 +226,7 @@ router.post(
           String(req.body.system_prompt || '').trim() || DEFAULT_SYSTEM_PROMPT,
           req.body.agent_name.trim(),
           String(req.body.opening_message || '').trim() || null,
-          req.body.photo_troubleshooting_enabled === true,
+          req.body.photo_troubleshooting_enabled !== false,
         ]
       );
       const client = insertedClient.rows[0];

@@ -10,17 +10,12 @@ import {
   CloseIcon,
   DotsVerticalIcon,
 } from '../../components/Icons';
+import InstallAppButton from '../../components/InstallAppButton';
+import PushNotificationsButton from '../../components/PushNotificationsButton';
+import nexusLogo from '../../assets/nexus-logo.png';
 
 const NEXA_MARK = (
-  <svg viewBox="0 0 24 24" className="w-5 h-5 text-[#3535FF]" fill="none">
-    <path
-      d="M5 19V5l14 14V5"
-      stroke="currentColor"
-      strokeWidth="2.4"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    />
-  </svg>
+  <img src={nexusLogo} alt="Nexus" className="h-full w-full object-contain" />
 );
 
 const NAV_ITEMS = [
@@ -29,6 +24,7 @@ const NAV_ITEMS = [
   { to: '/onboarding/evo-clients', label: 'Evo Clients', Icon: BuildingIcon },
   { to: '/onboarding/client-access', label: 'Open Client Dashboard', Icon: AgentIcon },
   { to: '/onboarding/nexa-whatsapp', label: 'Nexa Official WhatsApp', Icon: AgentIcon },
+  { to: '/onboarding/update-contacts', label: 'Client Update Contacts', Icon: AgentIcon },
 ];
 
 export default function OnboardingLayout() {
@@ -38,6 +34,44 @@ export default function OnboardingLayout() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
+
+  useEffect(() => {
+    const manifest = document.querySelector('link[rel="manifest"]');
+    const previousManifest = manifest?.getAttribute('href');
+    const appleIcon = document.querySelector('link[rel="apple-touch-icon"]');
+    const previousAppleIcon = appleIcon?.getAttribute('href');
+    const appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+    const previousAppleTitle = appleTitle?.getAttribute('content');
+    const previousTitle = document.title;
+
+    if (manifest) manifest.setAttribute('href', '/nexus-manifest.webmanifest');
+    if (appleIcon) appleIcon.setAttribute('href', '/nexus-apple-touch-icon.png');
+    if (appleTitle) appleTitle.setAttribute('content', 'Nexus');
+    document.title = 'Nexus';
+
+    return () => {
+      if (manifest && previousManifest) manifest.setAttribute('href', previousManifest);
+      if (appleIcon && previousAppleIcon) appleIcon.setAttribute('href', previousAppleIcon);
+      if (appleTitle && previousAppleTitle) appleTitle.setAttribute('content', previousAppleTitle);
+      document.title = previousTitle;
+    };
+  }, []);
+
+  useEffect(() => {
+    const lockPortrait = async () => {
+      try {
+        if (window.matchMedia?.('(display-mode: standalone)').matches && screen.orientation?.lock) {
+          await screen.orientation.lock('portrait-primary');
+        }
+      } catch (_err) {
+        // Some mobile browsers only honor the manifest orientation setting.
+      }
+    };
+
+    lockPortrait();
+    window.addEventListener('orientationchange', lockPortrait);
+    return () => window.removeEventListener('orientationchange', lockPortrait);
+  }, []);
 
   useEffect(() => {
     if (!drawerOpen && !menuOpen) return undefined;
@@ -69,6 +103,7 @@ export default function OnboardingLayout() {
 
   const currentLabel = (() => {
     if (location.pathname.startsWith('/onboarding/nexa-whatsapp')) return 'Nexa Official WhatsApp';
+    if (location.pathname.startsWith('/onboarding/update-contacts')) return 'Client Update Contacts';
     if (location.pathname.startsWith('/onboarding/client-access')) return 'Open Client Dashboard';
     if (location.pathname.startsWith('/onboarding/evo-clients')) return 'Evo Clients';
     if (location.pathname.startsWith('/onboarding/clients')) return 'Meta Clients';
@@ -87,7 +122,7 @@ export default function OnboardingLayout() {
             <MenuIcon className="w-6 h-6" />
           </button>
           <div className="flex items-center gap-2 min-w-0">
-            <div className="w-8 h-8 bg-white rounded-xl flex items-center justify-center shrink-0">
+            <div className="w-8 h-8 flex items-center justify-center shrink-0">
               {NEXA_MARK}
             </div>
             <div className="min-w-0 leading-tight">
@@ -110,6 +145,10 @@ export default function OnboardingLayout() {
               <div className="px-4 py-2.5 border-b border-gray-100">
                 <div className="text-sm font-semibold text-gray-900 truncate">{admin?.name}</div>
                 <div className="text-xs text-gray-500 capitalize">{admin?.role}</div>
+              </div>
+              <div className="px-3 py-2 bg-[#0A0A0F]">
+                <InstallAppButton />
+                <PushNotificationsButton />
               </div>
               <button
                 onClick={() => {
@@ -147,7 +186,7 @@ export default function OnboardingLayout() {
         <div className="px-5 pt-5 pb-4 border-b border-white/5">
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2.5">
-              <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shrink-0">
+              <div className="w-10 h-10 flex items-center justify-center shrink-0">
                 {NEXA_MARK}
               </div>
               <div className="min-w-0 leading-tight">
@@ -190,9 +229,11 @@ export default function OnboardingLayout() {
         </nav>
 
         <div className="px-3 pt-3 pb-4 border-t border-white/5">
+          <InstallAppButton />
+          <PushNotificationsButton />
           <button
             onClick={handleLogout}
-            className="w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold bg-[#3535FF] hover:bg-[#2828DD] text-white transition-colors"
+            className="mt-2 w-full flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl text-sm font-semibold bg-[#3535FF] hover:bg-[#2828DD] text-white transition-colors"
           >
             <LogoutIcon className="w-4 h-4" />
             <span>Sign Out</span>

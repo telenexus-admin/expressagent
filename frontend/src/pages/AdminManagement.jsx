@@ -10,6 +10,11 @@ const ROLE_STYLES = {
 const PERMISSION_OPTIONS = [
   { key: 'statistics', label: 'Dashboard' },
   { key: 'conversations', label: 'Conversations' },
+  { key: 'tickets', label: 'Tickets' },
+  { key: 'invoices', label: 'Invoice Management' },
+  { key: 'inventory', label: 'Inventory' },
+  { key: 'billing', label: 'Billing' },
+  { key: 'communication', label: 'Communication' },
   { key: 'escalations', label: 'Human Handover' },
   { key: 'installations', label: 'Installations' },
   { key: 'complaints', label: 'Complaints' },
@@ -18,9 +23,10 @@ const PERMISSION_OPTIONS = [
   { key: 'employees', label: 'Employees' },
   { key: 'workflow', label: 'Workflow' },
   { key: 'agent', label: 'Agent' },
+  { key: 'settings', label: 'Settings' },
 ];
 
-const DEFAULT_PERMISSIONS = ['statistics', 'conversations'];
+const DEFAULT_PERMISSIONS = ['statistics', 'conversations', 'tickets'];
 
 function permissionLabel(key) {
   return PERMISSION_OPTIONS.find((p) => p.key === key)?.label || key;
@@ -28,6 +34,9 @@ function permissionLabel(key) {
 
 export default function AdminManagement() {
   const { admin: currentAdmin } = useAuth();
+  const permissionOptions = Number(currentAdmin?.client_id) === 1
+    ? PERMISSION_OPTIONS.filter((option) => !['billing', 'communication'].includes(option.key))
+    : PERMISSION_OPTIONS;
   const [admins, setAdmins] = useState([]);
   const [showModal, setShowModal] = useState(false);
   const [form, setForm] = useState({
@@ -70,7 +79,7 @@ export default function AdminManagement() {
   };
 
   const selectAllPermissions = () => {
-    setForm((prev) => ({ ...prev, permissions: PERMISSION_OPTIONS.map((p) => p.key) }));
+    setForm((prev) => ({ ...prev, permissions: permissionOptions.map((p) => p.key) }));
   };
 
   const clearPermissions = () => {
@@ -149,7 +158,8 @@ export default function AdminManagement() {
               </thead>
               <tbody className="divide-y divide-purple-50">
                 {admins.map((a) => {
-                  const permissions = Array.isArray(a.permissions) ? a.permissions : [];
+                  const permissions = (Array.isArray(a.permissions) ? a.permissions : [])
+                    .filter((permission) => permissionOptions.some((option) => option.key === permission));
                   return (
                     <tr key={a.id} className="hover:bg-[#fbfaff] transition-colors">
                       <td className="px-5 py-4">
@@ -263,7 +273,7 @@ export default function AdminManagement() {
                   <label className="block text-xs font-bold text-gray-700 mb-1.5">Role</label>
                   <select
                     value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value, permissions: e.target.value === 'superadmin' ? PERMISSION_OPTIONS.map((p) => p.key) : form.permissions })}
+                    onChange={(e) => setForm({ ...form, role: e.target.value, permissions: e.target.value === 'superadmin' ? permissionOptions.map((p) => p.key) : form.permissions })}
                     className="w-full bg-gray-50 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#3535FF] focus:bg-white"
                   >
                     <option value="admin">Admin</option>
@@ -285,7 +295,7 @@ export default function AdminManagement() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    {PERMISSION_OPTIONS.map((option) => {
+                    {permissionOptions.map((option) => {
                       const checked = form.permissions.includes(option.key);
                       return (
                         <label

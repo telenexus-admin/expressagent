@@ -9,6 +9,13 @@ const INTENTS = [
     department: 'Sales / Field Team',
   },
   {
+    key: 'relocation_request',
+    label: 'Relocation / Transfer Request',
+    description: 'Existing customer wants to move their internet service to a new house, office or location.',
+    examples: ['I want to relocate', 'Transfer my internet to another house', 'I am moving and need WiFi moved'],
+    department: 'Field Team / Technical Support',
+  },
+  {
     key: 'payment_billing',
     label: 'Payment or Billing Issue',
     description: 'Payment problems, overcharges, refunds, M-Pesa, invoices, late bills.',
@@ -21,6 +28,20 @@ const INTENTS = [
     description: 'Internet down, slow speeds, equipment broken, red lights on router.',
     examples: ['My internet is not working', 'Speeds are too slow', 'Red light on my router'],
     department: 'Technical Support',
+  },
+  {
+    key: 'router_management',
+    label: 'Router Management',
+    description: 'Admin-only MikroTik questions such as router uptime, logs, interfaces, active users and diagnostics.',
+    examples: ['Check MikroTik logs', 'What is HOMELAND uptime?', 'Show active PPPoE users on the router'],
+    department: 'Network Admin / NOC',
+  },
+  {
+    key: 'router_alerts',
+    label: 'Router Alerts & Attention',
+    description: 'Where Nexa sends automatic router error, outage, offline, high-risk or needs-attention notifications.',
+    examples: ['Router offline alert', 'High CPU detected', 'Unknown DHCP server found'],
+    department: 'Network Admin / NOC',
   },
   {
     key: 'human_request',

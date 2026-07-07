@@ -6,10 +6,52 @@
     <meta name="theme-color" content="#0A0A0F" />
     <meta name="description" content="Nexa — AI support dashboard for WhatsApp." />
 
-    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
-    <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
-    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script>
+      (function () {
+        var isOperator = window.location.pathname.indexOf('/onboarding') === 0;
+        var isExpressNet = /express/i.test(window.location.hostname);
+        var manifest = document.createElement('link');
+        manifest.rel = 'manifest';
+        manifest.href = isOperator ? '/nexus-manifest.webmanifest' : (isExpressNet ? '/expressnet-manifest.webmanifest' : '/manifest.webmanifest');
+        document.head.appendChild(manifest);
+
+        if (isExpressNet && !isOperator) {
+          document.title = 'ExpressNet Agent';
+          var appleTitle = document.querySelector('meta[name="apple-mobile-web-app-title"]');
+          if (appleTitle) appleTitle.setAttribute('content', 'ExpressNet');
+          window.__applyExpressNetIcons = function () {
+            var primaryIcon = document.getElementById('primary-favicon');
+            var icon32 = document.getElementById('favicon-32');
+            var icon16 = document.getElementById('favicon-16');
+            var appleIcon = document.getElementById('apple-touch-icon');
+            if (primaryIcon) {
+              primaryIcon.setAttribute('href', '/expressnet-favicon-32x32.png');
+              primaryIcon.setAttribute('type', 'image/png');
+              primaryIcon.setAttribute('sizes', '32x32');
+            }
+            if (icon32) icon32.setAttribute('href', '/expressnet-favicon-32x32.png');
+            if (icon16) icon16.setAttribute('href', '/expressnet-favicon-16x16.png');
+            if (appleIcon) appleIcon.setAttribute('href', '/expressnet-apple-touch-icon.png');
+          };
+          window.addEventListener('DOMContentLoaded', window.__applyExpressNetIcons);
+        }
+
+        window.__nexaInstallPrompt = null;
+        window.addEventListener('beforeinstallprompt', function (event) {
+          event.preventDefault();
+          window.__nexaInstallPrompt = event;
+          window.dispatchEvent(new Event('nexa-install-prompt-ready'));
+        });
+      })();
+    </script>
+
+    <link id="primary-favicon" rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link id="favicon-32" rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png" />
+    <link id="favicon-16" rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png" />
+    <link id="apple-touch-icon" rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <script>
+      if (window.__applyExpressNetIcons) window.__applyExpressNetIcons();
+    </script>
 
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />

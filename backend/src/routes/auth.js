@@ -8,6 +8,10 @@ const db = require('../db');
 const ALL_PERMISSIONS = [
   'statistics',
   'conversations',
+  'tickets',
+  'invoices',
+  'billing',
+  'communication',
   'escalations',
   'installations',
   'complaints',
@@ -16,6 +20,7 @@ const ALL_PERMISSIONS = [
   'employees',
   'workflow',
   'agent',
+  'settings',
   'logs',
 ];
 

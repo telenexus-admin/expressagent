@@ -68,7 +68,7 @@ router.put('/', async (req, res) => {
       : String(sms_partner_id || '').trim();
 
     if (!SMS_PROVIDERS.includes(provider)) {
-      return res.status(400).json({ error: 'SMS provider must be blessed or savvy' });
+      return res.status(400).json({ error: 'SMS provider must be Blessed Text, Savvy or Talk Sasa' });
     }
 
     if (provider === 'savvy') {
@@ -89,6 +89,15 @@ router.put('/', async (req, res) => {
       }
       if (!senderId && !process.env.BLESSED_SENDER_ID) {
         return res.status(400).json({ error: 'Blessed Text Sender ID is required' });
+      }
+    }
+
+    if (provider === 'talksasa') {
+      if (!apiKey && !process.env.TALK_SASA_API_TOKEN && !process.env.TALKSASA_API_TOKEN) {
+        return res.status(400).json({ error: 'Talk Sasa API token is required' });
+      }
+      if (!senderId && !process.env.TALK_SASA_SENDER_ID && !process.env.TALKSASA_SENDER_ID) {
+        return res.status(400).json({ error: 'Talk Sasa Sender ID is required' });
       }
     }
 

@@ -11,6 +11,10 @@ async function ensureDailyReportTables() {
   await ensureSmsSchema();
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_report_enabled BOOLEAN NOT NULL DEFAULT FALSE`);
   await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS daily_report_phone VARCHAR(50)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_provider VARCHAR(40)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_api_key TEXT`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_sender_id VARCHAR(80)`);
+  await db.query(`ALTER TABLE clients ADD COLUMN IF NOT EXISTS sms_configured_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS daily_reports (
       id SERIAL PRIMARY KEY,

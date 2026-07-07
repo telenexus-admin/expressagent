@@ -1,23 +1,133 @@
 const OpenAI = require('openai');
 const { toFile } = require('openai/uploads');
+const axios = require('axios');
+const FormData = require('form-data');
+const { withIspKnowledge } = require('./ispKnowledge');
 
 let client = null;
+let clientKeyFingerprint = null;
+
+function openAIKey() {
+  return process.env.EXPRESS_OPENAI_API_KEY || process.env.OPENAI_API_KEY || '';
+}
+
+function keyFingerprint(value = openAIKey()) {
+  const key = String(value || '').trim();
+  if (!key) return { configured: false, length: 0 };
+  return {
+    configured: true,
+    start: key.slice(0, 10),
+    end: key.slice(-6),
+    length: key.length,
+    source: process.env.EXPRESS_OPENAI_API_KEY ? 'EXPRESS_OPENAI_API_KEY' : 'OPENAI_API_KEY',
+  };
+}
+
+function fingerprintString(value = openAIKey()) {
+  const fp = keyFingerprint(value);
+  return fp.configured ? `${fp.start}...${fp.end}:${fp.length}:${fp.source}` : 'missing';
+}
 
 function getClient() {
-  if (!client) {
-    client = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+  const apiKey = openAIKey();
+  const fingerprint = fingerprintString(apiKey);
+  if (!client || clientKeyFingerprint !== fingerprint) {
+    client = new OpenAI({ apiKey });
+    clientKeyFingerprint = fingerprint;
   }
   return client;
 }
 
+function openaiTimeoutMs() {
+  const parsed = Number.parseInt(process.env.OPENAI_TIMEOUT_MS || '20000', 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : 20000;
+}
+
+function chatModel() {
+  return process.env.OPENAI_MODEL || 'gpt-4o-mini';
+}
+
+function visionModel() {
+  return process.env.OPENAI_VISION_MODEL || chatModel();
+}
+
+function openAIModelSummary() {
+  return {
+    key: keyFingerprint(),
+    chatModel: chatModel(),
+    visionModel: visionModel(),
+    transcriptionModel: transcriptionModel(),
+    transcriptionTransport: transcriptionTransport(),
+  };
+}
+
+function transcriptionModel() {
+  return process.env.OPENAI_TRANSCRIPTION_MODEL || 'whisper-1';
+}
+
+function transcriptionTransport() {
+  return String(process.env.OPENAI_TRANSCRIPTION_TRANSPORT || 'http').toLowerCase();
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableOpenAIError(err) {
+  const status = Number(err?.status || err?.response?.status || 0);
+  const message = String(err?.message || '').toLowerCase();
+  const code = String(err?.code || err?.error?.code || err?.response?.data?.error?.code || '').toLowerCase();
+  if (code === 'insufficient_quota' || message.includes('insufficient_quota') || message.includes('exceeded your current quota')) {
+    return false;
+  }
+  return status === 408 || status === 409 || status === 429 || status >= 500 || message.includes('connection');
+}
+
+async function withOpenAIRetry(label, task, attempts = 3) {
+  let lastError;
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await task();
+    } catch (err) {
+      lastError = err;
+      if (attempt >= attempts || !isRetryableOpenAIError(err)) throw err;
+      console.warn(`${label} failed on attempt ${attempt}/${attempts}: ${err.message}. Retrying...`);
+      await sleep(600 * attempt);
+    }
+  }
+  throw lastError;
+}
+
+async function transcribeAudioViaHttp(buffer, filename, contentType) {
+  const form = new FormData();
+  form.append('file', buffer, {
+    filename,
+    contentType,
+    knownLength: buffer.length,
+  });
+  form.append('model', transcriptionModel());
+
+  const response = await axios.post('https://api.openai.com/v1/audio/transcriptions', form, {
+    headers: {
+      ...form.getHeaders(),
+      Authorization: `Bearer ${openAIKey()}`,
+    },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
+    timeout: openaiTimeoutMs() * 2,
+  });
+  return response.data;
+}
+
 async function generateAIResponse(systemPrompt, messageHistory) {
+  const hardenedPrompt = withIspKnowledge(systemPrompt);
   const continuityInstruction =
     `\n\nVISUAL SUPPORT CONTINUITY:\n` +
     `If the earlier conversation includes a reply about a customer photo, treat the visible device names, labels, lights and cable observations already stated in that reply as available context for follow-up questions. ` +
     `For example, if an earlier photo reply identified a MikroTik RouterBOARD hEX, answer a later question about the router using that recorded identification. ` +
     `Do not claim you cannot identify a device simply because the customer asks about it after the image message. Never invent details that were not previously observed.`;
   const messages = [
-    { role: 'system', content: `${systemPrompt}${continuityInstruction}` },
+    { role: 'system', content: `${hardenedPrompt}${continuityInstruction}` },
     ...messageHistory.map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
@@ -25,11 +135,11 @@ async function generateAIResponse(systemPrompt, messageHistory) {
   ];
 
   const response = await getClient().chat.completions.create({
-    model: 'gpt-4o',
+    model: chatModel(),
     messages,
     max_tokens: 1024,
     temperature: 0.45,
-  });
+  }, { timeout: openaiTimeoutMs() });
 
   return response.choices[0].message.content;
 }
@@ -57,7 +167,7 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
     `Use a natural, confident and helpful tone; do not say you cannot identify models through photos when a visible label allows identification.`;
 
   const messages = [
-    { role: 'system', content: systemPrompt },
+    { role: 'system', content: withIspKnowledge(systemPrompt) },
     ...messageHistory.map((msg) => ({
       role: msg.role === 'user' ? 'user' : 'assistant',
       content: msg.content,
@@ -72,22 +182,68 @@ async function analyzeSupportImage(systemPrompt, messageHistory, imageBuffer, mi
   ];
 
   const response = await getClient().chat.completions.create({
-    model: 'gpt-4o',
+    model: visionModel(),
     messages,
     max_tokens: 1200,
     temperature: 0.2,
-  });
+  }, { timeout: openaiTimeoutMs() });
 
   return response.choices[0].message.content;
 }
 
+function audioMimeFromFilename(filename) {
+  const value = String(filename || '').toLowerCase();
+  if (value.endsWith('.mp3')) return 'audio/mpeg';
+  if (value.endsWith('.mp4')) return 'audio/mp4';
+  if (value.endsWith('.m4a')) return 'audio/mp4';
+  if (value.endsWith('.wav')) return 'audio/wav';
+  if (value.endsWith('.webm')) return 'audio/webm';
+  if (value.endsWith('.ogg') || value.endsWith('.oga') || value.endsWith('.opus')) return 'audio/ogg';
+  return 'application/octet-stream';
+}
+
+function normalizeAudioFilename(filename, mimeType) {
+  const clean = String(filename || '').replace(/[^\w.-]/g, '');
+  if (clean && clean.includes('.')) return clean;
+  const mime = String(mimeType || '').toLowerCase();
+  if (mime.includes('mp4') || mime.includes('m4a')) return 'audio.mp4';
+  if (mime.includes('mpeg') || mime.includes('mp3')) return 'audio.mp3';
+  if (mime.includes('wav')) return 'audio.wav';
+  if (mime.includes('webm')) return 'audio.webm';
+  if (mime.includes('ogg') || mime.includes('opus')) return 'audio.ogg';
+  return 'audio.ogg';
+}
+
 // Transcribe an audio buffer to text via Whisper.
-async function transcribeAudio(buffer, filename = 'audio.ogg') {
-  const file = await toFile(buffer, filename);
-  const result = await getClient().audio.transcriptions.create({
-    file,
-    model: 'whisper-1',
-  });
+async function transcribeAudio(buffer, filename = 'audio.ogg', mimeType = '') {
+  if (!Buffer.isBuffer(buffer) || buffer.length === 0) {
+    throw new Error('Audio buffer is empty.');
+  }
+  const safeFilename = normalizeAudioFilename(filename, mimeType);
+  const contentType = mimeType || audioMimeFromFilename(safeFilename);
+  let result;
+  if (transcriptionTransport() === 'http') {
+    result = await withOpenAIRetry('Audio transcription HTTP', () =>
+      transcribeAudioViaHttp(buffer, safeFilename, contentType)
+    );
+    return result.text;
+  }
+
+  const file = await toFile(buffer, safeFilename, { type: contentType });
+  try {
+    result = await withOpenAIRetry('Audio transcription', () =>
+      getClient().audio.transcriptions.create({
+        file,
+        model: transcriptionModel(),
+      }, { timeout: openaiTimeoutMs() * 2 })
+    );
+  } catch (err) {
+    if (!isRetryableOpenAIError(err)) throw err;
+    console.warn(`Audio transcription SDK failed after retries: ${err.message}. Trying direct HTTP upload...`);
+    result = await withOpenAIRetry('Audio transcription HTTP fallback', () =>
+      transcribeAudioViaHttp(buffer, safeFilename, contentType)
+    );
+  }
   return result.text;
 }
 
@@ -155,8 +311,11 @@ async function classifyIntent(userMessage) {
     `You classify customer WhatsApp messages for a Kenyan ISP into ONE workflow category.\n\n` +
     `Categories:\n` +
     `- new_installation: wants to sign up / install fibre / subscribe / get connected for the first time\n` +
+    `- relocation_request: existing customer wants to relocate, transfer, move or shift their internet/router/service to a new location\n` +
     `- payment_billing: payment problem, refund, overcharge, M-Pesa issue, invoice or bill question\n` +
     `- technical_issue: internet down, slow, router red lights, equipment broken, frequent disconnects\n` +
+    `- router_management: admin asks for MikroTik/RouterOS uptime, logs, interfaces, active users, diagnostics or reports\n` +
+    `- router_alerts: automatic router error/attention/outage alert routing, not normal customer support\n` +
     `- human_request: explicitly asks for a person/agent/human, or is angry/frustrated\n` +
     `- compliment_feedback: positive feedback, thanks, suggestions worth flagging to a manager\n` +
     `- general_inquiry: pricing questions, hours, coverage area, plans, greetings, anything else\n\n` +
@@ -184,4 +343,4 @@ async function classifyIntent(userMessage) {
   }
 }
 
-module.exports = { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent };
+module.exports = { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent, openAIModelSummary };

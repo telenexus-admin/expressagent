@@ -177,7 +177,7 @@ export default function NocOverview() {
   }, [selectedRouterId]);
 
   return (
-    <div className="min-h-full rounded-[34px] border border-[#dce3f4] bg-[#f7f8ff] p-4 text-[#0b1026] theme-dark:border-white/10 theme-dark:bg-[#05070c] theme-dark:text-white sm:p-6">
+    <div className="h-full overflow-y-auto rounded-[34px] border border-[#dce3f4] bg-[#f7f8ff] p-4 pb-10 text-[#0b1026] theme-dark:border-white/10 theme-dark:bg-[#05070c] theme-dark:text-white sm:p-6 sm:pb-12">
       <div className="mx-auto max-w-[1180px]">
         <header className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex items-center gap-4">

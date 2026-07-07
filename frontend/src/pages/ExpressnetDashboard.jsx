@@ -171,6 +171,7 @@ export default function ExpressnetDashboard() {
 
   const title = nav.find((item) => active(item[0]))?.[1] || 'Dashboard';
   const showConversationSearch = location.pathname.startsWith('/dashboard/conversations');
+  const contentCanScroll = location.pathname.startsWith('/dashboard/noc');
   const signOut = () => { logout(); navigate('/login'); };
   const toggleGroup = (key) => setExpandedGroups((current) => ({ ...current, [key]: !current[key] }));
   const itemButton = (item, mobile = false) => {
@@ -221,7 +222,7 @@ export default function ExpressnetDashboard() {
             </div>
             <div className="flex items-center gap-4">{showConversationSearch && <GlobalConversationSearch />}<div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-11 h-11 rounded-2xl bg-white shadow-sm flex items-center justify-center text-slate-500"><DotsVerticalIcon className="w-5 h-5" /></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div></div>
           </header>
-          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-9 pb-7 overflow-hidden"><div className="dashboard-content h-full min-h-0 rounded-[34px] overflow-hidden bg-white shadow-2xl shadow-slate-200/70 border border-white flex flex-col"><Outlet /></div></main>
+          <main className="flex-1 min-h-0 px-4 sm:px-7 lg:px-9 pb-7 overflow-hidden"><div className={`dashboard-content h-full min-h-0 rounded-[34px] bg-white shadow-2xl shadow-slate-200/70 border border-white flex flex-col ${contentCanScroll ? 'overflow-y-auto' : 'overflow-hidden'}`}><Outlet /></div></main>
           <DashboardHelpBot />
         </section>
       </div>

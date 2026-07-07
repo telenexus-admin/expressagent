@@ -4,6 +4,7 @@ import { ChartIcon, CogIcon, PulseIcon, UsersIcon, WarningIcon } from '../compon
 
 const purple = '#7c3aed';
 const cyan = '#22d3ee';
+const rose = '#fb7185';
 
 function formatNumber(value, suffix = '') {
   if (value === null || value === undefined || value === '') return '--';
@@ -12,9 +13,17 @@ function formatNumber(value, suffix = '') {
   return `${n >= 1000 ? n.toLocaleString(undefined, { maximumFractionDigits: 1 }) : n.toLocaleString(undefined, { maximumFractionDigits: 1 })}${suffix}`;
 }
 
+function statusTone(value) {
+  const n = Number(value || 0);
+  if (n >= 85) return 'Healthy';
+  if (n >= 65) return 'Watch';
+  if (n > 0) return 'Attention';
+  return 'Offline';
+}
+
 function MiniLine({ points = [], height = 44, color = purple }) {
   const clean = points.map(Number).filter((n) => Number.isFinite(n));
-  if (clean.length < 2) return <div className="h-11 rounded-xl bg-white/5" />;
+  if (clean.length < 2) return <div className="h-11 rounded-xl bg-slate-100 theme-dark:bg-white/5" />;
   const min = Math.min(...clean);
   const max = Math.max(...clean);
   const span = max - min || 1;
@@ -39,21 +48,21 @@ function Bars({ values = [], color = purple }) {
         <span
           key={index}
           className="w-full rounded-t-md"
-          style={{ height: `${Math.max(12, (value / max) * 48)}px`, background: `linear-gradient(180deg, ${color}, rgba(124,58,237,0.18))` }}
+          style={{ height: `${Math.max(10, (value / max) * 48)}px`, background: `linear-gradient(180deg, ${color}, rgba(124,58,237,0.16))` }}
         />
       ))}
     </div>
   );
 }
 
-function Donut({ value }) {
+function Donut({ value, label = 'CPU' }) {
   const radius = 42;
   const circumference = 2 * Math.PI * radius;
   const safe = Math.max(0, Math.min(100, Number(value || 0)));
   return (
     <div className="relative mx-auto h-32 w-32">
       <svg viewBox="0 0 110 110" className="-rotate-90">
-        <circle cx="55" cy="55" r={radius} fill="none" stroke="rgba(148,163,184,.2)" strokeWidth="13" />
+        <circle cx="55" cy="55" r={radius} fill="none" stroke="rgba(148,163,184,.18)" strokeWidth="13" />
         <circle
           cx="55"
           cy="55"
@@ -71,7 +80,10 @@ function Donut({ value }) {
           </linearGradient>
         </defs>
       </svg>
-      <div className="absolute inset-0 flex items-center justify-center text-2xl font-black text-[#0b1026] theme-dark:text-white">{formatNumber(safe, '%')}</div>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <span className="text-2xl font-black text-[#0b1026] theme-dark:text-white">{formatNumber(safe, '%')}</span>
+        <span className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7a849f] theme-dark:text-slate-500">{label}</span>
+      </div>
     </div>
   );
 }
@@ -80,25 +92,24 @@ function TrafficChart({ history, mode }) {
   const rows = history.slice(-80);
   const values = rows.map((row) => {
     if (mode === 'CPU') return Number(row.cpu_load || 0);
-    if (mode === 'PPPoE') return Number(row.pppoe_count || 0);
-    if (mode === 'Hotspot') return Number(row.hotspot_count || 0);
-    if (mode === 'Queues') return Number(row.router_health_percent || 0);
-    return Number(row.download_mbps || 0);
+    if (mode === 'Memory') return Number(row.memory_used_percent || 0);
+    if (mode === 'Health') return Number(row.router_health_percent || 0);
+    return Number(row.download_mbps || 0) + Number(row.upload_mbps || 0);
   });
   const upload = rows.map((row) => Number(row.upload_mbps || 0));
-  const max = Math.max(1, ...values, ...(mode === 'WAN' ? upload : []));
+  const max = Math.max(1, ...values, ...(mode === 'Interfaces' ? upload : []));
   const line = (items, h = 260) => items.map((value, index) => {
     const x = rows.length <= 1 ? 0 : (index / (rows.length - 1)) * 1000;
     const y = h - (Number(value || 0) / max) * (h - 24) - 12;
     return `${index === 0 ? 'M' : 'L'} ${x.toFixed(1)} ${y.toFixed(1)}`;
   }).join(' ');
   return (
-    <div className="relative h-[320px] overflow-hidden rounded-[28px] border border-[#dce3f4] bg-white/70 p-4 shadow-sm theme-dark:border-white/10 theme-dark:bg-[#0d111a]">
+    <div className="relative h-[300px] overflow-hidden rounded-[28px] border border-[#dce3f4] bg-white/70 p-4 shadow-sm theme-dark:border-white/10 theme-dark:bg-[#0a0f18]">
       <svg viewBox="0 0 1000 300" className="h-full w-full">
         {[60, 120, 180, 240].map((y) => <line key={y} x1="0" x2="1000" y1={y} y2={y} stroke="currentColor" className="text-slate-200 theme-dark:text-white/10" strokeDasharray="8 8" />)}
         <path d={`${line(values)} L 1000 300 L 0 300 Z`} fill="url(#noc-area)" opacity="0.34" />
         <path d={line(values)} fill="none" stroke={purple} strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
-        {mode === 'WAN' && <path d={line(upload)} fill="none" stroke={cyan} strokeWidth="4" strokeDasharray="12 10" strokeLinecap="round" strokeLinejoin="round" />}
+        {mode === 'Interfaces' && <path d={line(upload)} fill="none" stroke={cyan} strokeWidth="4" strokeDasharray="12 10" strokeLinecap="round" strokeLinejoin="round" />}
         <defs>
           <linearGradient id="noc-area" x1="0" x2="0" y1="0" y2="1">
             <stop stopColor={purple} />
@@ -127,21 +138,31 @@ function MetricCard({ title, value, helper, children, trend }) {
   );
 }
 
+function ProgressBar({ value, color = purple }) {
+  const safe = Math.max(0, Math.min(100, Number(value || 0)));
+  return (
+    <div className="h-2 overflow-hidden rounded-full bg-slate-100 theme-dark:bg-white/10">
+      <span className="block h-full rounded-full" style={{ width: `${safe}%`, background: color }} />
+    </div>
+  );
+}
+
 export default function NocOverview() {
   const [routers, setRouters] = useState([]);
   const [routerId, setRouterId] = useState('');
   const [overview, setOverview] = useState(null);
   const [history, setHistory] = useState([]);
-  const [statusRows, setStatusRows] = useState([]);
-  const [tab, setTab] = useState('WAN');
+  const [tab, setTab] = useState('Interfaces');
   const [error, setError] = useState('');
   const polling = useRef(null);
 
   const selectedRouterId = routerId || routers[0]?.id || '';
   const totalTrend = useMemo(() => history.map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0)), [history]);
-  const pppTrend = useMemo(() => history.map((row) => row.pppoe_count), [history]);
-  const hotspotTrend = useMemo(() => history.map((row) => row.hotspot_count), [history]);
+  const cpuTrend = useMemo(() => history.map((row) => row.cpu_load), [history]);
   const healthTrend = useMemo(() => history.map((row) => row.router_health_percent), [history]);
+  const interfaces = overview?.interfaces || [];
+  const topUsers = overview?.top_users || [];
+  const onlineSessions = Number(overview?.active_pppoe || 0) + Number(overview?.active_hotspot || 0);
 
   async function loadRouters() {
     const { data } = await api.get('/noc/routers');
@@ -153,14 +174,12 @@ export default function NocOverview() {
     if (!id) return;
     try {
       setError('');
-      const [overviewResult, historyResult, statusResult] = await Promise.all([
+      const [overviewResult, historyResult] = await Promise.all([
         api.get('/noc/overview', { params: { router_id: id } }),
         api.get('/noc/traffic/history', { params: { router_id: id, range: '6h' } }),
-        api.get('/noc/status', { params: { router_id: id } }),
       ]);
       setOverview(overviewResult.data);
       setHistory(historyResult.data || []);
-      setStatusRows(statusResult.data || []);
     } catch (err) {
       setError(err.response?.data?.error || 'NOC data is unavailable from the live router right now.');
     }
@@ -186,7 +205,7 @@ export default function NocOverview() {
             </div>
             <div>
               <h1 className="text-3xl font-black tracking-normal sm:text-4xl">NOC Overview</h1>
-              <p className="mt-1 text-sm font-semibold text-[#657194] theme-dark:text-slate-400">Real-time MikroTik traffic, clients, and network health</p>
+              <p className="mt-1 text-sm font-semibold text-[#657194] theme-dark:text-slate-400">Live MikroTik uplink traffic, router health, interfaces, and top bandwidth users.</p>
             </div>
           </div>
           <div className="flex gap-3">
@@ -202,25 +221,37 @@ export default function NocOverview() {
         {error && <div className="mt-5 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-bold text-red-700 theme-dark:border-red-500/30 theme-dark:bg-red-500/10 theme-dark:text-red-200">{error}</div>}
 
         <section className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
-          <MetricCard title="Total Traffic" value={`${formatNumber(overview?.total_traffic_mbps)} Mbps`} helper="Current WAN Throughput" trend={overview?.wan_interface ? `WAN ${overview.wan_interface}` : 'WAN not configured'}>
+          <MetricCard title="Total Traffic" value={`${formatNumber(overview?.total_traffic_mbps)} Mbps`} helper="Live selected uplink throughput" trend={overview?.wan_interface ? `Uplink ${overview.wan_interface}` : 'Uplink auto-detecting'}>
             <MiniLine points={totalTrend} />
           </MetricCard>
-          <MetricCard title="Active PPPoE" value={formatNumber(overview?.active_pppoe)} helper="Online Homes">
-            <Donut value={statusRows.find((row) => row.item === 'PPPoE Sessions')?.status === 'Active' ? 86 : 0} />
+          <MetricCard title="Router CPU" value={`${formatNumber(overview?.cpu_load)}%`} helper="Live RouterOS processor load" trend={overview?.cpu_load === null || overview?.cpu_load === undefined ? 'CPU unavailable' : statusTone(100 - Number(overview.cpu_load || 0))}>
+            <Donut value={overview?.cpu_load} />
           </MetricCard>
-          <MetricCard title="Hotspot Users" value={formatNumber(overview?.active_hotspot)} helper="Live Sessions" trend={history.length ? 'Live RouterOS active sessions' : 'No history yet'}>
-            <MiniLine points={hotspotTrend} color={cyan} />
+          <MetricCard title="Memory / Storage" value={`${formatNumber(overview?.memory_used_percent)}%`} helper={`Storage ${formatNumber(overview?.storage_used_percent)}% used`}>
+            <div className="space-y-3">
+              <div>
+                <div className="mb-1 flex justify-between text-xs font-black text-[#657194] theme-dark:text-slate-400"><span>Memory</span><span>{formatNumber(overview?.memory_used_percent)}%</span></div>
+                <ProgressBar value={overview?.memory_used_percent} color={cyan} />
+              </div>
+              <div>
+                <div className="mb-1 flex justify-between text-xs font-black text-[#657194] theme-dark:text-slate-400"><span>Storage</span><span>{formatNumber(overview?.storage_used_percent)}%</span></div>
+                <ProgressBar value={overview?.storage_used_percent} color={rose} />
+              </div>
+            </div>
           </MetricCard>
-          <MetricCard title="Router Health" value={`${formatNumber(overview?.router_health_percent)}%`} helper="System Availability" trend={overview?.wan_status || 'No status'}>
+          <MetricCard title="Online Sessions" value={formatNumber(onlineSessions)} helper={`PPPoE ${formatNumber(overview?.active_pppoe)} / Hotspot ${formatNumber(overview?.active_hotspot)}`} trend="Read directly from MikroTik">
             <Bars values={healthTrend} />
           </MetricCard>
         </section>
 
         <section className="mt-5 rounded-[30px] border border-[#dce3f4] bg-white/80 p-5 shadow-sm theme-dark:border-white/10 theme-dark:bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025))]">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-            <h2 className="text-2xl font-black">Traffic Trends</h2>
+            <div>
+              <h2 className="text-2xl font-black">Traffic Trends</h2>
+              <p className="mt-1 text-sm font-semibold text-[#657194] theme-dark:text-slate-400">Interface-first view. Uplink values are live RouterOS monitor-traffic samples.</p>
+            </div>
             <div className="flex flex-wrap gap-2">
-              {['WAN', 'PPPoE', 'Hotspot', 'Queues', 'CPU'].map((item) => (
+              {['Interfaces', 'CPU', 'Memory', 'Health'].map((item) => (
                 <button key={item} type="button" onClick={() => setTab(item)} className={`rounded-2xl px-4 py-2 text-sm font-black transition ${tab === item ? 'bg-[#7c3aed] text-white shadow-lg shadow-purple-500/25' : 'border border-[#dce3f4] text-[#657194] theme-dark:border-white/10 theme-dark:text-slate-300'}`}>
                   {item}
                 </button>
@@ -231,39 +262,96 @@ export default function NocOverview() {
             <TrafficChart history={history} mode={tab} />
           </div>
           <div className="mt-4 flex flex-wrap gap-5 text-xs font-bold text-[#657194] theme-dark:text-slate-400">
-            <span><span className="mr-2 inline-block h-1.5 w-8 rounded-full bg-[#7c3aed]" />Download / primary metric</span>
-            <span><span className="mr-2 inline-block h-1.5 w-8 rounded-full bg-[#22d3ee]" />Upload on WAN</span>
-            <span>Download uses WAN RX. Upload uses WAN TX.</span>
+            <span><span className="mr-2 inline-block h-1.5 w-8 rounded-full bg-[#7c3aed]" />Primary metric</span>
+            <span><span className="mr-2 inline-block h-1.5 w-8 rounded-full bg-[#22d3ee]" />Upload when viewing interfaces</span>
+            <span>Selected uplink: {overview?.wan_interface || 'auto-detecting'}</span>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {interfaces.slice(0, 6).map((item) => {
+              const total = Number(item.total_mbps || 0);
+              const max = Math.max(1, ...interfaces.map((row) => Number(row.total_mbps || 0)));
+              return (
+                <div key={item.name} className="rounded-2xl border border-[#e6ebf6] bg-white/70 p-4 theme-dark:border-white/10 theme-dark:bg-[#0a0f18]">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-black">{item.name}</p>
+                      <p className="text-xs font-bold text-[#657194] theme-dark:text-slate-400">{item.type || 'interface'} - {item.status || 'unknown'}{item.link_speed ? ` - ${item.link_speed}` : ''}</p>
+                    </div>
+                    <span className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${item.status === 'running' ? 'bg-emerald-100 text-emerald-700 theme-dark:bg-emerald-500/15 theme-dark:text-emerald-200' : 'bg-slate-100 text-slate-600 theme-dark:bg-white/10 theme-dark:text-slate-300'}`}>{item.status || 'unknown'}</span>
+                  </div>
+                  <div className="mt-4">
+                    <div className="mb-2 flex justify-between text-xs font-black text-[#657194] theme-dark:text-slate-400"><span>Total</span><span>{formatNumber(total)} Mbps</span></div>
+                    <ProgressBar value={(total / max) * 100} />
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-xs font-bold text-[#657194] theme-dark:text-slate-400">
+                    <span>RX {formatNumber(item.rx_mbps)} Mbps</span>
+                    <span>TX {formatNumber(item.tx_mbps)} Mbps</span>
+                  </div>
+                </div>
+              );
+            })}
+            {!interfaces.length && <div className="rounded-2xl border border-[#e6ebf6] p-5 text-sm font-bold text-[#657194] theme-dark:border-white/10 theme-dark:text-slate-400">No live interface samples returned yet.</div>}
           </div>
         </section>
 
         <section className="mt-5 rounded-[30px] border border-[#dce3f4] bg-white/80 p-5 shadow-sm theme-dark:border-white/10 theme-dark:bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025))]">
-          <div className="flex items-center justify-between">
-            <h2 className="text-2xl font-black">NOC Status</h2>
-            <span className="rounded-2xl border border-[#dce3f4] px-4 py-2 text-xs font-black text-[#657194] theme-dark:border-white/10 theme-dark:text-slate-300">Live check</span>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-black">Top Users & Bandwidth Usage</h2>
+              <p className="mt-1 text-sm font-semibold text-[#657194] theme-dark:text-slate-400">Pulled from MikroTik queue rate data. No estimated/mock users are shown.</p>
+            </div>
+            <span className="rounded-2xl border border-[#dce3f4] px-4 py-2 text-xs font-black text-[#657194] theme-dark:border-white/10 theme-dark:text-slate-300">Live queues</span>
           </div>
-          <div className="mt-4 divide-y divide-[#e6ebf6] overflow-hidden rounded-2xl border border-[#e6ebf6] theme-dark:divide-white/10 theme-dark:border-white/10">
-            {statusRows.length === 0 ? (
-              <div className="p-5 text-sm font-bold text-[#657194] theme-dark:text-slate-400">No NOC status rows yet. Link and test a MikroTik router first.</div>
-            ) : statusRows.map((row) => (
-              <div key={row.item} className="grid gap-4 p-4 sm:grid-cols-[1.1fr_1fr_.8fr_1.2fr] sm:items-center">
-                <div className="flex items-center gap-3">
-                  <div className="flex h-11 w-11 items-center justify-center rounded-full border border-[#dce3f4] bg-white text-[#7c3aed] theme-dark:border-white/10 theme-dark:bg-white/5">
-                    {row.item.includes('PPPoE') || row.item.includes('Hotspot') ? <UsersIcon className="h-5 w-5" /> : row.status === 'Attention' ? <WarningIcon className="h-5 w-5" /> : <PulseIcon className="h-5 w-5" />}
+          <div className="mt-4 overflow-hidden rounded-2xl border border-[#e6ebf6] theme-dark:border-white/10">
+            {topUsers.length === 0 ? (
+              <div className="p-5 text-sm font-bold text-[#657194] theme-dark:text-slate-400">Top users unavailable. Enable simple queue rate stats on MikroTik, or wait for active queue traffic.</div>
+            ) : topUsers.map((user, index) => {
+              const max = Math.max(1, ...topUsers.map((row) => Number(row.total_mbps || 0)));
+              return (
+                <div key={`${user.name}-${index}`} className="grid gap-4 border-b border-[#e6ebf6] p-4 last:border-b-0 theme-dark:border-white/10 md:grid-cols-[2fr_1fr_1fr_1.5fr] md:items-center">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#f0e9ff] text-sm font-black text-[#7c3aed] theme-dark:bg-[#7c3aed]/20 theme-dark:text-[#c4b5fd]">{index + 1}</div>
+                    <div>
+                      <p className="font-black">{user.name}</p>
+                      <p className="text-xs font-bold text-[#657194] theme-dark:text-slate-400">{user.target || user.service || 'queue target'}</p>
+                    </div>
                   </div>
-                  <p className="font-black">{row.item}</p>
+                  <p className="text-sm font-black">Down {formatNumber(user.download_mbps)} Mbps</p>
+                  <p className="text-sm font-black">Up {formatNumber(user.upload_mbps)} Mbps</p>
+                  <div>
+                    <div className="mb-2 flex justify-between text-xs font-black text-[#657194] theme-dark:text-slate-400"><span>Total</span><span>{formatNumber(user.total_mbps)} Mbps</span></div>
+                    <ProgressBar value={(Number(user.total_mbps || 0) / max) * 100} />
+                  </div>
                 </div>
-                <div>
-                  <p className="text-sm font-black">{row.metric}</p>
-                  <MiniLine points={row.trend || []} height={30} />
-                </div>
-                <div className="flex items-center gap-2 text-sm font-black">
-                  <span className={`h-2.5 w-2.5 rounded-full ${row.status === 'Healthy' || row.status === 'Stable' || row.status === 'Active' || row.status === 'Optimized' ? 'bg-emerald-400' : 'bg-amber-400'}`} />
-                  {row.status}
-                </div>
-                <p className="text-sm font-semibold text-[#657194] theme-dark:text-slate-400">{row.note}</p>
+              );
+            })}
+          </div>
+        </section>
+
+        <section className="mt-5 rounded-[30px] border border-[#dce3f4] bg-white/80 p-5 shadow-sm theme-dark:border-white/10 theme-dark:bg-[linear-gradient(145deg,rgba(255,255,255,.07),rgba(255,255,255,.025))]">
+          <div className="grid gap-4 md:grid-cols-3">
+            <div className="flex items-center gap-3 rounded-2xl border border-[#e6ebf6] p-4 theme-dark:border-white/10">
+              <PulseIcon className="h-6 w-6 text-[#7c3aed]" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#7a849f] theme-dark:text-slate-400">Router</p>
+                <p className="font-black">{overview?.identity || overview?.router_name || '--'}</p>
               </div>
-            ))}
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-[#e6ebf6] p-4 theme-dark:border-white/10">
+              <UsersIcon className="h-6 w-6 text-[#22d3ee]" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#7a849f] theme-dark:text-slate-400">Uptime</p>
+                <p className="font-black">{overview?.uptime || '--'}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3 rounded-2xl border border-[#e6ebf6] p-4 theme-dark:border-white/10">
+              <WarningIcon className="h-6 w-6 text-[#fb7185]" />
+              <div>
+                <p className="text-xs font-black uppercase tracking-[0.14em] text-[#7a849f] theme-dark:text-slate-400">Alerts</p>
+                <p className="font-black">{formatNumber(overview?.active_alerts)} recent warning log(s)</p>
+              </div>
+            </div>
           </div>
         </section>
       </div>

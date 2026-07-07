@@ -23,6 +23,19 @@ function mbps(value) {
   return Number((bitsPerSecond(value) / 1000000).toFixed(2));
 }
 
+function mbpsFromBits(value) {
+  const parsed = Number(value || 0);
+  return Number((parsed / 1000000).toFixed(2));
+}
+
+function parseRatePair(value) {
+  const parts = String(value || '').split('/').map((item) => bitsPerSecond(item));
+  return {
+    tx_bps: parts[0] || 0,
+    rx_bps: parts[1] || 0,
+  };
+}
+
 function percent(value, fallback = null) {
   const parsed = num(value);
   if (parsed === null) return fallback;
@@ -45,14 +58,16 @@ function trafficInterfaceCandidate(row = {}) {
 
 function chooseWanInterface(interfaces = [], preferred = '') {
   const target = String(preferred || '').trim().toLowerCase();
-  const usable = interfaces.filter((row) => trafficInterfaceCandidate(row) && row.disabled !== 'true');
+  const usable = interfaces.filter((row) => trafficInterfaceCandidate(row) && row.disabled !== 'true' && row.disabled !== true);
   if (target) {
     const match = usable.find((row) => String(row.name || '').toLowerCase() === target);
     if (match) return match;
   }
   const namedWan = usable.find((row) => /\b(wan|internet|uplink|provider|backhaul)\b/i.test(`${row.name || ''} ${row.comment || ''}`));
   if (namedWan) return namedWan;
-  const running = usable.filter((row) => row.running === 'true');
+  const running = usable
+    .filter((row) => row.running === 'true' || row.running === true)
+    .sort((a, b) => ((b.rx_bps || 0) + (b.tx_bps || 0)) - ((a.rx_bps || 0) + (a.tx_bps || 0)));
   return running[0] || usable[0] || {};
 }
 
@@ -76,6 +91,62 @@ function statusFromHealth(value) {
 
 function trendFromRows(rows, key) {
   return rows.map((row) => Number(row[key] || 0)).filter((value) => Number.isFinite(value));
+}
+
+async function interfaceTrafficRows(client, interfaceRows = []) {
+  const candidates = interfaceRows
+    .filter(trafficInterfaceCandidate)
+    .slice(0, 32);
+
+  const rows = await Promise.all(candidates.map(async (row) => {
+    const traffic = row.disabled === 'true'
+      ? {}
+      : (await client.command('/interface/monitor-traffic', { interface: row.name, once: '' }).catch(() => []))[0] || {};
+    const ethernet = row.type === 'ether'
+      ? (await client.command('/interface/ethernet/monitor', { numbers: row.name, once: '' }).catch(() => []))[0] || {}
+      : {};
+    const rxBps = bitsPerSecond(traffic['rx-bits-per-second']);
+    const txBps = bitsPerSecond(traffic['tx-bits-per-second']);
+    return {
+      name: row.name || '',
+      type: row.type || '',
+      running: row.running === 'true',
+      disabled: row.disabled === 'true',
+      comment: row.comment || '',
+      rx_bps: rxBps,
+      tx_bps: txBps,
+      rx_mbps: mbpsFromBits(rxBps),
+      tx_mbps: mbpsFromBits(txBps),
+      total_mbps: mbpsFromBits(rxBps + txBps),
+      link_speed: ethernet.rate || row['actual-speed'] || row.speed || row['link-speed'] || '',
+      full_duplex: ethernet['full-duplex'] || '',
+      status: row.disabled === 'true' ? 'disabled' : row.running === 'true' ? 'running' : 'down',
+    };
+  }));
+
+  return rows.sort((a, b) => (b.total_mbps || 0) - (a.total_mbps || 0));
+}
+
+function topUsersFromQueues(queueRows = []) {
+  return queueRows
+    .filter((row) => row.disabled !== 'true' && row.disabled !== true)
+    .map((row) => {
+      const rate = parseRatePair(row.rate || row['rate'] || row['actual-rate'] || '');
+      const totalBps = rate.tx_bps + rate.rx_bps;
+      return {
+        name: row.name || row.target || row.comment || 'Queue user',
+        target: row.target || '',
+        service: row.comment || row.parent || 'queue',
+        download_mbps: mbpsFromBits(rate.rx_bps),
+        upload_mbps: mbpsFromBits(rate.tx_bps),
+        total_mbps: mbpsFromBits(totalBps),
+        raw_rate: row.rate || row['actual-rate'] || '',
+        disabled: row.disabled === 'true' || row.disabled === true,
+      };
+    })
+    .filter((row) => row.total_mbps > 0)
+    .sort((a, b) => b.total_mbps - a.total_mbps)
+    .slice(0, 12);
 }
 
 async function ensureNocTables() {
@@ -129,26 +200,22 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
       router.features?.interfaces === false ? Promise.resolve([]) : client.command('/interface/print').catch(() => []),
       router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
       router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
-      client.command('/queue/simple/print').catch(() => []),
+      client.command('/queue/simple/print', { stats: '' }).catch(() => client.command('/queue/simple/print').catch(() => [])),
       router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
     ]);
 
     const resource = resourceRows[0] || {};
-    const wan = chooseWanInterface(interfaceRows, options.wan_interface);
-    const traffic = wan.name
-      ? (await client.command('/interface/monitor-traffic', { interface: wan.name, once: '' }).catch(() => []))[0] || {}
-      : {};
-    const ethernet = wan.name
-      ? (await client.command('/interface/ethernet/monitor', { numbers: wan.name, once: '' }).catch(() => []))[0] || {}
-      : {};
+    const interfaces = await interfaceTrafficRows(client, interfaceRows);
+    const wan = chooseWanInterface(interfaces, options.wan_interface);
+    const topUsers = topUsersFromQueues(queueRows);
 
-    const downloadMbps = mbps(traffic['rx-bits-per-second']);
-    const uploadMbps = mbps(traffic['tx-bits-per-second']);
+    const downloadMbps = mbpsFromBits(wan.rx_bps || 0);
+    const uploadMbps = mbpsFromBits(wan.tx_bps || 0);
     const cpuLoad = percent(resource['cpu-load']);
     const memoryUsedPercent = bytesPercent(resource['free-memory'], resource['total-memory']);
     const storageUsedPercent = bytesPercent(resource['free-hdd-space'] || resource['free-disk-space'], resource['total-hdd-space'] || resource['total-disk-space']);
     const health = routerHealth({ cpuLoad, memoryUsedPercent, storageUsedPercent, ok: true });
-    const activeQueues = queueRows.filter((row) => row.disabled !== 'true').length;
+    const activeQueues = queueRows.filter((row) => row.disabled !== 'true' && row.disabled !== true).length;
     const queueHealth = queueRows.length ? Number(((activeQueues / queueRows.length) * 100).toFixed(1)) : null;
     const warningLogs = logRows.filter((row) => /error|critical|warning|failed|failure|attack|dhcp alert/i.test(`${row.topics || ''} ${row.message || ''}`)).slice(-10);
 
@@ -170,11 +237,12 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
       storage_used_percent: storageUsedPercent,
       router_health_percent: health,
       wan_interface: wan.name || '',
-      wan_link_speed: ethernet.rate || wan['actual-speed'] || wan.speed || wan['link-speed'] || '',
-      wan_status: wan.name ? (wan.running === 'true' ? 'stable' : 'down') : 'unknown',
+      wan_link_speed: wan.link_speed || '',
+      wan_status: wan.name ? (wan.running ? 'stable' : 'down') : 'unknown',
       queue_health_percent: queueHealth,
       total_queues: queueRows.length,
       active_queues: activeQueues,
+      top_users: topUsers,
       active_alerts: warningLogs.length,
       critical_alerts: warningLogs.filter((row) => /critical/i.test(`${row.topics || ''} ${row.message || ''}`)).length,
       warning_alerts: warningLogs.length,
@@ -183,16 +251,7 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
         topics: row.topics || '',
         message: row.message || '',
       })),
-      interfaces: interfaceRows
-        .filter(trafficInterfaceCandidate)
-        .slice(0, 40)
-        .map((row) => ({
-          name: row.name || '',
-          type: row.type || '',
-          running: row.running === 'true',
-          disabled: row.disabled === 'true',
-          comment: row.comment || '',
-        })),
+      interfaces,
       checked_at: new Date().toISOString(),
       source: 'mikrotik-live',
     };
@@ -257,7 +316,7 @@ async function nocHistory(clientId, routerId, range = '6h') {
   const router = await resolveRouter(clientId, routerId);
   const hours = range === '24h' ? 24 : range === '1h' ? 1 : 6;
   const result = await db.query(
-    `SELECT created_at, download_mbps, upload_mbps, cpu_load, active_pppoe, active_hotspot, router_health_percent
+    `SELECT created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent, storage_used_percent, active_pppoe, active_hotspot, router_health_percent
      FROM noc_router_snapshots
      WHERE client_id = $1 AND router_id = $2 AND created_at >= NOW() - ($3::text)::interval
      ORDER BY created_at ASC`,
@@ -268,6 +327,8 @@ async function nocHistory(clientId, routerId, range = '6h') {
     download_mbps: Number(row.download_mbps || 0),
     upload_mbps: Number(row.upload_mbps || 0),
     cpu_load: row.cpu_load === null ? null : Number(row.cpu_load),
+    memory_used_percent: row.memory_used_percent === null ? null : Number(row.memory_used_percent),
+    storage_used_percent: row.storage_used_percent === null ? null : Number(row.storage_used_percent),
     pppoe_count: row.active_pppoe === null ? null : Number(row.active_pppoe),
     hotspot_count: row.active_hotspot === null ? null : Number(row.active_hotspot),
     router_health_percent: row.router_health_percent === null ? null : Number(row.router_health_percent),

@@ -302,6 +302,13 @@ function isRouterStatusQuestion(text) {
   return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
 }
 
+function isRouterAdminFollowupQuestion(text) {
+  const value = String(text || '').toLowerCase().trim();
+  if (!value) return false;
+  if (/\b(account|invoice|payment|pay|billing|expire|expiry|package|password|subscription|balance)\b/.test(value)) return false;
+  return /\b(status|health|report|overview|logs?|alerts?|errors?|cpu|processor|memory|storage|disk|uptime|interfaces?|ports?|ethernet|sfp|traffic|bandwidth|queues?|wan|uplink|link|offline|online)\b/.test(value);
+}
+
 function classifyComplaintLocal(text) {
   const value = String(text || '').toLowerCase();
   if (/\b(slow|speed|buffer|lag|hanging)\b/.test(value)) {
@@ -1034,23 +1041,29 @@ router.post('/', async (req, res) => {
       : messageText;
     const preReplyIntent = inboundIsImage ? null : classifyIntentLocal(classificationText);
     let routerAdminContext = '';
-    if (preReplyIntent?.intent === 'router_management') {
+    const explicitRouterAdminQuestion = preReplyIntent?.intent === 'router_management';
+    const possibleRouterAdminFollowup = !inboundIsImage && isRouterAdminFollowupQuestion(classificationText);
+    if (explicitRouterAdminQuestion || possibleRouterAdminFollowup) {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
       if (!allowedRouterAdmin) {
+        if (!explicitRouterAdminQuestion) {
+          console.log(`[client ${client.id}] Router-admin-like follow-up from ${phoneNumber} treated as normal customer text because the number is not authorized.`);
+        } else {
         console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
         const safeReply = 'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.';
         await deliverReply(client, phoneNumber, safeReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, safeReply);
         return;
-      }
-      if (isRouterStatusQuestion(classificationText)) {
+        }
+      } else if (isRouterStatusQuestion(classificationText) || /^\s*(status|health|report|overview|router status|mikrotik status)\s*[?.!]*\s*$/i.test(classificationText)) {
         const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
         await deliverReply(client, phoneNumber, statusReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, statusReply);
         console.log(`[client ${client.id}] Deterministic router status reply sent to ${phoneNumber}.`);
         return;
+      } else {
+        routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
       }
-      routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
     }
 
     if (!inboundIsImage) {

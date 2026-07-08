@@ -189,6 +189,13 @@ function isRouterStatusQuestion(text) {
   return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
 }
 
+function isRouterAdminFollowupQuestion(text) {
+  const value = String(text || '').toLowerCase().trim();
+  if (!value) return false;
+  if (/\b(account|invoice|payment|pay|billing|expire|expiry|package|password|subscription|balance)\b/.test(value)) return false;
+  return /\b(status|health|report|overview|logs?|alerts?|errors?|cpu|processor|memory|storage|disk|uptime|interfaces?|ports?|ethernet|sfp|traffic|bandwidth|queues?|wan|uplink|link|offline|online)\b/.test(value);
+}
+
 async function canAnswerRouterManagement(clientId, phoneNumber) {
   await db.query(`ALTER TABLE workflow_routes ADD COLUMN IF NOT EXISTS allowed_phone_numbers JSONB NOT NULL DEFAULT '[]'::jsonb`);
   const result = await db.query(
@@ -567,9 +574,14 @@ router.post('/client/:clientId', async (req, res) => {
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
 
     const preReplyIntent = incoming.isImage ? null : classifyIntentLocal(userText);
-    if (preReplyIntent?.intent === 'router_management') {
+    const explicitRouterAdminQuestion = preReplyIntent?.intent === 'router_management';
+    const possibleRouterAdminFollowup = !incoming.isImage && isRouterAdminFollowupQuestion(userText);
+    if (explicitRouterAdminQuestion || possibleRouterAdminFollowup) {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, incoming.phone);
       if (!allowedRouterAdmin) {
+        if (!explicitRouterAdminQuestion) {
+          console.log(`[evo client ${client.id}] Router-admin-like follow-up from ${incoming.phone} treated as normal customer text because the number is not authorized.`);
+        } else {
         console.warn(`[evo client ${client.id}] Router admin question ignored from unauthorized number ${incoming.phone}.`);
         await reply(
           client,
@@ -579,41 +591,42 @@ router.post('/client/:clientId', async (req, res) => {
           replyAsVoice
         );
         return;
-      }
+        }
+      } else {
+        if (isRouterStatusQuestion(userText) || /^\s*(status|health|report|overview|router status|mikrotik status)\s*[?.!]*\s*$/i.test(userText)) {
+          const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
+          await reply(client, conversation.id, incoming.phone, statusReply, replyAsVoice);
+          console.log(`[evo client ${client.id}] Deterministic router status reply sent to ${incoming.phone}.`);
+          return;
+        }
 
-      if (isRouterStatusQuestion(userText)) {
-        const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
-        await reply(client, conversation.id, incoming.phone, statusReply, replyAsVoice);
-        console.log(`[evo client ${client.id}] Deterministic router status reply sent to ${incoming.phone}.`);
+        const routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: userText });
+        const routerPrompt =
+          `${client.agent_name ? `Your name is ${client.agent_name}. ` : ''}` +
+          `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
+          `Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly.\n` +
+          `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context.\n` +
+          `For interface, ethernet, SFP, link or port questions, explain which ports are connected/running, which are not linked or disabled, and include TX/RX rates and packet rates when present.\n` +
+          `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.\n` +
+          routerAdminContext;
+        const recent = await db.query(
+          `SELECT role, content FROM (
+             SELECT role, content, timestamp FROM messages
+             WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 8
+           ) history ORDER BY timestamp ASC`,
+          [conversation.id]
+        );
+        let routerReply;
+        try {
+          routerReply = await generateAIResponse(routerPrompt, recent.rows);
+        } catch (err) {
+          console.error(`[evo client ${client.id}] Router admin AI reply failed for ${incoming.phone}:`, safeError(err));
+          routerReply = 'I checked the router management context, but I could not prepare the answer right now. Please try again shortly.';
+        }
+        await reply(client, conversation.id, incoming.phone, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
+        console.log(`[evo client ${client.id}] Router admin reply sent to ${incoming.phone}.`);
         return;
       }
-
-      const routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: userText });
-      const routerPrompt =
-        `${client.agent_name ? `Your name is ${client.agent_name}. ` : ''}` +
-        `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
-        `Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly.\n` +
-        `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context.\n` +
-        `For interface, ethernet, SFP, link or port questions, explain which ports are connected/running, which are not linked or disabled, and include TX/RX rates and packet rates when present.\n` +
-        `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.\n` +
-        routerAdminContext;
-      const recent = await db.query(
-        `SELECT role, content FROM (
-           SELECT role, content, timestamp FROM messages
-           WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 8
-         ) history ORDER BY timestamp ASC`,
-        [conversation.id]
-      );
-      let routerReply;
-      try {
-        routerReply = await generateAIResponse(routerPrompt, recent.rows);
-      } catch (err) {
-        console.error(`[evo client ${client.id}] Router admin AI reply failed for ${incoming.phone}:`, safeError(err));
-        routerReply = 'I checked the router management context, but I could not prepare the answer right now. Please try again shortly.';
-      }
-      await reply(client, conversation.id, incoming.phone, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
-      console.log(`[evo client ${client.id}] Router admin reply sent to ${incoming.phone}.`);
-      return;
     }
 
     if (!incoming.isImage && /^pay now$/i.test(userText.trim())) {

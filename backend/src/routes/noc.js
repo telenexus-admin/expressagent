@@ -1,6 +1,6 @@
 const express = require('express');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');
+const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -54,6 +54,17 @@ router.get('/status', async (req, res) => {
   } catch (err) {
     console.error('GET /noc/status error:', err.message);
     res.status(400).json({ error: err.message || 'Failed to load NOC status' });
+  }
+});
+
+router.get('/analysis', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json(await nocAnalysis(clientId, req.query.router_id));
+  } catch (err) {
+    console.error('GET /noc/analysis error:', err.message);
+    res.status(400).json({ error: err.message || 'Failed to analyze NOC events' });
   }
 });
 

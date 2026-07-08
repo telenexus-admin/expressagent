@@ -116,6 +116,127 @@ function trendFromRows(rows, key) {
   return rows.map((row) => Number(row[key] || 0)).filter((value) => Number.isFinite(value));
 }
 
+function severityRank(severity) {
+  return { critical: 4, warning: 3, watch: 2, info: 1 }[severity] || 0;
+}
+
+function pushFinding(findings, severity, title, detail, recommendation = '') {
+  findings.push({ severity, title, detail, recommendation });
+}
+
+function analyzeSecurityLogs(alerts = []) {
+  const sshFailures = alerts.filter((row) => /login failure|failed login/i.test(`${row.topics || ''} ${row.message || ''}`) && /ssh/i.test(`${row.topics || ''} ${row.message || ''}`));
+  const dhcpAlerts = alerts.filter((row) => /dhcp alert|unknown dhcp/i.test(`${row.topics || ''} ${row.message || ''}`));
+  const critical = alerts.filter((row) => /critical/i.test(`${row.topics || ''} ${row.message || ''}`));
+  return { sshFailures, dhcpAlerts, critical };
+}
+
+function buildNocAnalysis(snapshot, history = []) {
+  const findings = [];
+  const alerts = Array.isArray(snapshot?.latest_alerts) ? snapshot.latest_alerts : [];
+  const security = analyzeSecurityLogs(alerts);
+  const cpu = Number(snapshot?.cpu_load);
+  const memory = Number(snapshot?.memory_used_percent);
+  const storage = Number(snapshot?.storage_used_percent);
+  const interfaces = Array.isArray(snapshot?.interfaces) ? snapshot.interfaces : [];
+  const runningTrafficInterfaces = interfaces.filter((row) => row.status === 'running' && Number(row.total_mbps || 0) > 0);
+  const downNamedUplinks = interfaces.filter((row) =>
+    row.status !== 'running' &&
+    /\b(wan|internet|uplink|provider|backhaul)\b/i.test(`${row.name || ''} ${row.comment || ''}`)
+  );
+
+  if (snapshot?.live_error || snapshot?.source === 'last-good-snapshot') {
+    pushFinding(
+      findings,
+      'critical',
+      'Router live check is unstable',
+      snapshot.live_error || 'The NOC is showing the last good snapshot because the latest live read did not complete cleanly.',
+      'Confirm WireGuard reachability, RouterOS API access, and that the nexa user still has read,test,api permissions.'
+    );
+  }
+
+  if (Number.isFinite(cpu)) {
+    if (cpu >= 85) {
+      pushFinding(findings, 'critical', 'CPU load is very high', `CPU is currently ${cpu}%.`, 'Check queues, firewall rules, traffic spikes and any looping/broadcast issue. Plan action before customers experience slow browsing.');
+    } else if (cpu >= 70) {
+      pushFinding(findings, 'warning', 'CPU load is high', `CPU is currently ${cpu}%.`, 'Watch this router closely during peak hours and inspect top traffic users or heavy queues.');
+    } else if (cpu >= 50) {
+      pushFinding(findings, 'watch', 'CPU is active but controlled', `CPU is currently ${cpu}%.`, 'No urgent action, but keep watching if complaints are coming in.');
+    }
+  } else {
+    pushFinding(findings, 'watch', 'CPU value not returned', 'RouterOS did not return CPU load in this sample.', 'Refresh again or confirm the API user can read system resources.');
+  }
+
+  if (Number.isFinite(memory) && memory >= 85) {
+    pushFinding(findings, 'warning', 'Memory usage is high', `Memory usage is ${memory}%.`, 'Check long-running services, logs, and whether the router needs a controlled maintenance reboot.');
+  }
+  if (Number.isFinite(storage) && storage >= 85) {
+    pushFinding(findings, 'warning', 'Storage usage is high', `Storage usage is ${storage}%.`, 'Remove old backups/log exports and confirm there is enough disk space for RouterOS stability.');
+  }
+
+  if (security.sshFailures.length >= 3) {
+    const latest = security.sshFailures[0]?.message || 'Multiple SSH login failures were seen.';
+    pushFinding(findings, 'critical', 'Possible SSH brute-force attack', `${security.sshFailures.length} SSH login failure log(s) were detected. Latest: ${latest}`, 'Restrict SSH/Winbox to VPN/trusted IPs, disable public SSH if not needed, and use strong unique admin credentials.');
+  }
+  if (security.dhcpAlerts.length > 0) {
+    pushFinding(findings, 'warning', 'Unknown DHCP server detected', `${security.dhcpAlerts.length} DHCP alert log(s) were detected.`, 'Check bridges/APs/customer routers. Rogue DHCP can give clients wrong gateways and cause widespread internet failures.');
+  }
+  if (security.critical.length > 0 && security.sshFailures.length < 3) {
+    pushFinding(findings, 'warning', 'Critical router logs present', `${security.critical.length} critical log item(s) were returned by RouterOS.`, 'Open the latest logs and confirm whether the issue is repeated or already resolved.');
+  }
+
+  if (downNamedUplinks.length > 0) {
+    pushFinding(findings, 'critical', 'Named uplink interface is down', `${downNamedUplinks.map((row) => row.name).join(', ')} is not running.`, 'Check fibre/radio/ISP handoff, SFP, power and patch cable before blaming customer-side equipment.');
+  }
+  if (interfaces.length > 0 && runningTrafficInterfaces.length === 0) {
+    pushFinding(findings, 'warning', 'No interface traffic seen', 'Interfaces were returned, but none showed live RX/TX traffic in this sample.', 'Refresh and verify the selected router is the active edge/core router. If true, check uplink and bridge forwarding.');
+  }
+
+  const recentTraffic = history.slice(-12).map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0));
+  if (recentTraffic.length >= 4) {
+    const latest = recentTraffic[recentTraffic.length - 1];
+    const previousAvg = recentTraffic.slice(0, -1).reduce((sum, value) => sum + value, 0) / (recentTraffic.length - 1);
+    if (previousAvg > 10 && latest < previousAvg * 0.25) {
+      pushFinding(findings, 'warning', 'Traffic dropped sharply', `Current total traffic is ${latest.toFixed(1)} Mbps against a recent average of ${previousAvg.toFixed(1)} Mbps.`, 'Check uplink, PPPoE/hotspot services and customer complaints before assuming normal off-peak drop.');
+    }
+  }
+
+  if (findings.length === 0) {
+    pushFinding(findings, 'info', 'No major issue detected', 'The latest live router sample does not show critical CPU, memory, storage, uplink or security-log problems.', 'Keep monitoring. Nexa will surface changes when RouterOS logs or live metrics show risk.');
+  }
+
+  findings.sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+  const topSeverity = findings[0]?.severity || 'info';
+  const summary = topSeverity === 'critical'
+    ? 'Nexa found issues that need attention.'
+    : topSeverity === 'warning'
+    ? 'Nexa found items worth checking.'
+    : topSeverity === 'watch'
+    ? 'Nexa is watching minor signals.'
+    : 'Nexa does not see a major issue right now.';
+
+  return {
+    generated_at: new Date().toISOString(),
+    router_id: snapshot?.router_id,
+    router_name: snapshot?.identity || snapshot?.router_name || 'MikroTik',
+    summary,
+    severity: topSeverity,
+    live_source: snapshot?.source || 'mikrotik-live',
+    findings,
+    latest_events: alerts.slice(0, 10),
+    metrics: {
+      cpu_load: snapshot?.cpu_load,
+      memory_used_percent: snapshot?.memory_used_percent,
+      storage_used_percent: snapshot?.storage_used_percent,
+      uptime: snapshot?.uptime,
+      routeros_version: snapshot?.routeros_version,
+      total_traffic_mbps: snapshot?.total_traffic_mbps,
+      running_traffic_interfaces: runningTrafficInterfaces.length,
+      total_interfaces: interfaces.length,
+    },
+  };
+}
+
 async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') {
   const candidates = orderInterfaceCandidates(interfaceRows, preferred);
   const rows = [];
@@ -483,7 +604,14 @@ async function nocStatus(clientId, routerId) {
   ];
 }
 
+async function nocAnalysis(clientId, routerId) {
+  const snapshot = await nocOverview(clientId, routerId);
+  const history = await nocHistory(clientId, snapshot.router_id, '1h').catch(() => []);
+  return buildNocAnalysis(snapshot, history);
+}
+
 module.exports = {
+  nocAnalysis,
   nocHistory,
   nocOverview,
   nocRouters,

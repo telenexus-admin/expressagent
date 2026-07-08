@@ -25,6 +25,13 @@ function statusColor(status) {
   return red;
 }
 
+function severityColor(severity) {
+  if (severity === 'critical') return red;
+  if (severity === 'warning') return amber;
+  if (severity === 'watch') return purple;
+  return green;
+}
+
 function textMuted() {
   return 'text-slate-500 theme-dark:text-white/45';
 }
@@ -307,15 +314,104 @@ function InterfacePanel({ interfaces }) {
   );
 }
 
+function AnalysisPanel({ analysis, onRefresh }) {
+  const findings = analysis?.findings || [];
+  const events = analysis?.latest_events || [];
+  return (
+    <section className="space-y-3">
+      <div className="rounded-[10px] border border-slate-200 bg-white p-4 shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d]">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.18em] text-[#7c3aed] theme-dark:text-[#c084fc]">Nexa Analysis</p>
+            <h2 className="mt-1 text-xl font-black text-slate-950 theme-dark:text-white">{analysis?.summary || 'Waiting for live router analysis...'}</h2>
+            <p className={`mt-1 text-xs font-semibold ${textMuted()}`}>
+              Router: {analysis?.router_name || '--'} • Source: {analysis?.live_source || '--'} • Generated {analysis?.generated_at ? new Date(analysis.generated_at).toLocaleTimeString() : '--'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={onRefresh}
+            className="rounded-lg bg-[#3535FF] px-4 py-2 text-xs font-black text-white shadow-lg shadow-purple-500/20"
+          >
+            Refresh analysis
+          </button>
+        </div>
+        <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            ['CPU', analysis?.metrics?.cpu_load === null || analysis?.metrics?.cpu_load === undefined ? '--' : `${analysis.metrics.cpu_load}%`],
+            ['Memory', analysis?.metrics?.memory_used_percent === null || analysis?.metrics?.memory_used_percent === undefined ? '--' : `${analysis.metrics.memory_used_percent}%`],
+            ['Storage', analysis?.metrics?.storage_used_percent === null || analysis?.metrics?.storage_used_percent === undefined ? '--' : `${analysis.metrics.storage_used_percent}%`],
+            ['Traffic', analysis?.metrics?.total_traffic_mbps === null || analysis?.metrics?.total_traffic_mbps === undefined ? '--' : `${analysis.metrics.total_traffic_mbps} Mbps`],
+          ].map(([label, value]) => (
+            <div key={label} className="rounded-lg border border-slate-200 bg-slate-50 p-3 theme-dark:border-white/10 theme-dark:bg-white/[0.035]">
+              <p className={`text-[10px] font-black uppercase tracking-[0.14em] ${textMuted()}`}>{label}</p>
+              <p className="mt-1 text-lg font-black text-slate-950 theme-dark:text-white">{value}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="grid gap-3 xl:grid-cols-[1.05fr_.95fr]">
+        <section className="rounded-[10px] border border-slate-200 bg-white shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d]">
+          <div className="border-b border-slate-200 px-4 py-3 theme-dark:border-white/10">
+            <h3 className="text-sm font-black text-slate-950 theme-dark:text-white">Findings</h3>
+          </div>
+          <div className="divide-y divide-slate-100 theme-dark:divide-white/10">
+            {findings.length ? findings.map((item, index) => (
+              <div key={`${item.title}-${index}`} className="p-4">
+                <div className="flex items-start gap-3">
+                  <span className="mt-1 h-2.5 w-2.5 rounded-full" style={{ background: severityColor(item.severity) }} />
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h4 className="font-black text-slate-950 theme-dark:text-white">{item.title}</h4>
+                      <span className="rounded-md px-2 py-1 text-[9px] font-black uppercase" style={{ background: `${severityColor(item.severity)}22`, color: severityColor(item.severity) }}>{item.severity}</span>
+                    </div>
+                    <p className="mt-1 text-sm font-semibold leading-6 text-slate-600 theme-dark:text-white/70">{item.detail}</p>
+                    {item.recommendation && <p className="mt-2 rounded-lg bg-slate-50 p-3 text-xs font-bold leading-5 text-slate-600 theme-dark:bg-white/[0.035] theme-dark:text-white/65">{item.recommendation}</p>}
+                  </div>
+                </div>
+              </div>
+            )) : (
+              <p className={`p-5 text-center text-sm font-bold ${textMuted()}`}>No analysis findings yet.</p>
+            )}
+          </div>
+        </section>
+
+        <section className="rounded-[10px] border border-slate-200 bg-white shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d]">
+          <div className="border-b border-slate-200 px-4 py-3 theme-dark:border-white/10">
+            <h3 className="text-sm font-black text-slate-950 theme-dark:text-white">Latest Router Events</h3>
+          </div>
+          <div className="divide-y divide-slate-100 theme-dark:divide-white/10">
+            {events.length ? events.map((event, index) => (
+              <div key={`${event.time}-${index}`} className="p-4 text-xs">
+                <div className="flex items-center justify-between gap-3">
+                  <span className="font-black text-slate-950 theme-dark:text-white">{event.time || 'Router log'}</span>
+                  <span className="rounded bg-slate-100 px-2 py-1 font-black text-slate-500 theme-dark:bg-white/10 theme-dark:text-white/55">{event.topics || 'event'}</span>
+                </div>
+                <p className="mt-2 font-semibold leading-5 text-slate-600 theme-dark:text-white/70">{event.message || '--'}</p>
+              </div>
+            )) : (
+              <p className={`p-5 text-center text-sm font-bold ${textMuted()}`}>No warning or critical MikroTik logs returned in this sample.</p>
+            )}
+          </div>
+        </section>
+      </div>
+    </section>
+  );
+}
+
 export default function NocOverview() {
   const [routers, setRouters] = useState([]);
   const [routerId, setRouterId] = useState('');
   const [overview, setOverview] = useState(null);
   const [history, setHistory] = useState([]);
+  const [analysis, setAnalysis] = useState(null);
+  const [activeTab, setActiveTab] = useState('live');
   const [error, setError] = useState('');
   const polling = useRef(null);
   const refreshing = useRef(false);
   const historyFetchedAt = useRef(0);
+  const analysisFetchedAt = useRef(0);
 
   const selectedRouterId = routerId || routers[0]?.id || '';
   const interfaces = useMemo(() => overview?.interfaces || [], [overview]);
@@ -357,6 +453,12 @@ export default function NocOverview() {
           return [...current.slice(-47), liveRow];
         });
       }
+      const shouldFetchAnalysis = !analysisFetchedAt.current || Date.now() - analysisFetchedAt.current > 30000;
+      if (shouldFetchAnalysis) {
+        const analysisResult = await api.get('/noc/analysis', { params: { router_id: id } });
+        setAnalysis(analysisResult.data);
+        analysisFetchedAt.current = Date.now();
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'NOC data is unavailable from the live router right now.');
     } finally {
@@ -374,6 +476,14 @@ export default function NocOverview() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRouterId]);
 
+  useEffect(() => {
+    if (activeTab === 'analysis' && selectedRouterId) {
+      analysisFetchedAt.current = 0;
+      refresh(selectedRouterId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, selectedRouterId]);
+
   return (
     <div className="min-h-full rounded-[24px] border border-slate-200 bg-white p-3 pb-10 text-slate-950 shadow-sm theme-dark:border-white/10 theme-dark:bg-[#020305] theme-dark:text-white theme-dark:shadow-[0_0_50px_rgba(0,0,0,.55)] sm:p-4">
       <div className="mx-auto max-w-[1180px] space-y-3">
@@ -388,7 +498,7 @@ export default function NocOverview() {
             </div>
           </div>
           <div className="flex gap-2">
-            <select value={selectedRouterId} onChange={(event) => { historyFetchedAt.current = 0; setRouterId(event.target.value); }} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-950 outline-none theme-dark:border-white/10 theme-dark:bg-[#0b0f17] theme-dark:text-white">
+            <select value={selectedRouterId} onChange={(event) => { historyFetchedAt.current = 0; analysisFetchedAt.current = 0; setRouterId(event.target.value); }} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-950 outline-none theme-dark:border-white/10 theme-dark:bg-[#0b0f17] theme-dark:text-white">
               {routers.map((router) => <option key={router.id} value={router.id}>{router.name}</option>)}
             </select>
             <button type="button" onClick={() => refresh(selectedRouterId)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#7c3aed] theme-dark:border-white/10 theme-dark:bg-[#0b0f17] theme-dark:text-[#a78bfa]">
@@ -404,12 +514,38 @@ export default function NocOverview() {
           </div>
         ) : null}
 
-        <TrafficTrendChart history={history} overview={overview} />
-        <NocStatusTable overview={overview} history={history} interfaces={interfaces} />
-        <div className="grid gap-3 xl:grid-cols-[1.15fr_.85fr]">
-          <TopUsersPanel topUsers={topUsers} />
-          <InterfacePanel interfaces={interfaces} />
+        <div className="flex flex-wrap gap-2">
+          {[
+            ['live', 'Live Overview'],
+            ['analysis', 'Analysis'],
+          ].map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key)}
+              className={`rounded-lg px-4 py-2 text-xs font-black transition ${
+                activeTab === key
+                  ? 'bg-[#3535FF] text-white shadow-lg shadow-purple-500/20'
+                  : 'border border-slate-200 bg-white text-slate-600 theme-dark:border-white/10 theme-dark:bg-[#07090d] theme-dark:text-white/70'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
         </div>
+
+        {activeTab === 'analysis' ? (
+          <AnalysisPanel analysis={analysis} onRefresh={() => { analysisFetchedAt.current = 0; refresh(selectedRouterId); }} />
+        ) : (
+          <>
+            <TrafficTrendChart history={history} overview={overview} />
+            <NocStatusTable overview={overview} history={history} interfaces={interfaces} />
+            <div className="grid gap-3 xl:grid-cols-[1.15fr_.85fr]">
+              <TopUsersPanel topUsers={topUsers} />
+              <InterfacePanel interfaces={interfaces} />
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

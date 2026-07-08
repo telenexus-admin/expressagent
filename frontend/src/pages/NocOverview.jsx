@@ -25,6 +25,10 @@ function statusColor(status) {
   return red;
 }
 
+function textMuted() {
+  return 'text-slate-500 theme-dark:text-white/45';
+}
+
 function Sparkline({ points = [], color = purple, bars = false }) {
   const clean = points.map(Number).filter((n) => Number.isFinite(n)).slice(-24);
   if (bars) {
@@ -37,7 +41,7 @@ function Sparkline({ points = [], color = purple, bars = false }) {
       </div>
     );
   }
-  if (clean.length < 2) return <div className="h-8 rounded bg-white/[0.03]" />;
+  if (clean.length < 2) return <div className="h-8 rounded bg-slate-100 theme-dark:bg-white/[0.03]" />;
   const min = Math.min(...clean);
   const max = Math.max(...clean);
   const span = max - min || 1;
@@ -54,7 +58,7 @@ function Sparkline({ points = [], color = purple, bars = false }) {
 }
 
 function TrafficTrendChart({ history = [], overview }) {
-  const rows = history.slice(-80);
+  const rows = history.slice(-48);
   const download = rows.map((row) => Number(row.download_mbps || 0));
   const upload = rows.map((row) => Number(row.upload_mbps || 0));
   const total = rows.map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0));
@@ -69,28 +73,28 @@ function TrafficTrendChart({ history = [], overview }) {
   const latestTotal = Number(overview?.total_traffic_mbps || 0);
 
   return (
-    <section className="rounded-[10px] border border-white/10 bg-[#07090d] shadow-[0_0_35px_rgba(0,0,0,.45)]">
-      <div className="flex flex-col gap-3 border-b border-white/10 px-4 py-3 md:flex-row md:items-center md:justify-between">
+    <section className="rounded-[10px] border border-slate-200 bg-white shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d] theme-dark:shadow-[0_0_35px_rgba(0,0,0,.45)]">
+      <div className="flex flex-col gap-3 border-b border-slate-200 px-4 py-3 theme-dark:border-white/10 md:flex-row md:items-center md:justify-between">
         <div>
-          <h2 className="text-sm font-black text-white">Traffic Trends (Live) <span className="text-white/40">i</span></h2>
-          <p className="mt-1 text-[11px] font-semibold text-white/45">Real sampled bandwidth currently consumed across live MikroTik interfaces.</p>
+          <h2 className="text-sm font-black text-slate-950 theme-dark:text-white">Traffic Trends (Live) <span className="text-slate-400 theme-dark:text-white/40">i</span></h2>
+          <p className={`mt-1 text-[11px] font-semibold ${textMuted()}`}>Real sampled bandwidth currently consumed across live MikroTik interfaces.</p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px] font-bold">
-          <span className="rounded bg-[#160b24] px-2 py-1 text-[#c084fc]">Download {formatNumber(latestDownload)} Mbps</span>
-          <span className="rounded bg-[#160b24] px-2 py-1 text-[#f0abfc]">Upload {formatNumber(latestUpload)} Mbps</span>
-          <span className="rounded bg-[#111827] px-2 py-1 text-white">Total {formatNumber(latestTotal)} Mbps</span>
+          <span className="rounded bg-purple-50 px-2 py-1 text-[#7c3aed] theme-dark:bg-[#160b24] theme-dark:text-[#c084fc]">Download {formatNumber(latestDownload)} Mbps</span>
+          <span className="rounded bg-fuchsia-50 px-2 py-1 text-[#a21caf] theme-dark:bg-[#160b24] theme-dark:text-[#f0abfc]">Upload {formatNumber(latestUpload)} Mbps</span>
+          <span className="rounded bg-slate-100 px-2 py-1 text-slate-900 theme-dark:bg-[#111827] theme-dark:text-white">Total {formatNumber(latestTotal)} Mbps</span>
         </div>
       </div>
       <div className="grid gap-0 lg:grid-cols-[1fr_210px]">
-        <div className="relative min-h-[290px] p-4">
-          <svg viewBox="0 0 900 280" className="h-[280px] w-full">
-            {[0, 70, 140, 210, 280].map((y) => (
-              <line key={y} x1="0" x2="900" y1={y} y2={y} stroke="rgba(255,255,255,.08)" strokeDasharray="6 6" />
+        <div className="relative min-h-[260px] p-4">
+          <svg viewBox="0 0 900 260" className="h-[260px] w-full">
+            {[0, 65, 130, 195, 260].map((y) => (
+              <line key={y} x1="0" x2="900" y1={y} y2={y} stroke="currentColor" className="text-slate-200 theme-dark:text-white/10" strokeDasharray="6 6" />
             ))}
-            <path d={`${line(download)} L 900 280 L 0 280 Z`} fill="url(#noc-download-area)" opacity="0.34" />
-            <path d={`${line(upload)} L 900 280 L 0 280 Z`} fill="url(#noc-upload-area)" opacity="0.22" />
-            <path d={line(download)} fill="none" stroke={purple} strokeWidth="3.2" strokeLinecap="round" strokeLinejoin="round" />
-            <path d={line(upload)} fill="none" stroke={violet} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={`${line(download, 240)} L 900 260 L 0 260 Z`} fill="url(#noc-download-area)" opacity="0.30" />
+            <path d={`${line(upload, 240)} L 900 260 L 0 260 Z`} fill="url(#noc-upload-area)" opacity="0.18" />
+            <path d={line(download, 240)} fill="none" stroke={purple} strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" />
+            <path d={line(upload, 240)} fill="none" stroke={violet} strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
             <defs>
               <linearGradient id="noc-download-area" x1="0" x2="0" y1="0" y2="1">
                 <stop stopColor={purple} />
@@ -103,18 +107,18 @@ function TrafficTrendChart({ history = [], overview }) {
             </defs>
           </svg>
           {!rows.length && (
-            <div className="absolute inset-0 flex items-center justify-center px-6 text-center text-xs font-bold text-white/45">
+            <div className={`absolute inset-0 flex items-center justify-center px-6 text-center text-xs font-bold ${textMuted()}`}>
               Waiting for live MikroTik samples. No mock traffic is shown.
             </div>
           )}
         </div>
-        <aside className="border-t border-white/10 bg-white/[0.015] p-4 lg:border-l lg:border-t-0">
-          <p className="text-[11px] font-bold text-white/50">{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
+        <aside className="border-t border-slate-200 bg-slate-50 p-4 theme-dark:border-white/10 theme-dark:bg-white/[0.015] lg:border-l lg:border-t-0">
+          <p className={`text-[11px] font-bold ${textMuted()}`}>{new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</p>
           <div className="mt-3 space-y-3 text-xs">
-            <p className="font-black text-[#c084fc]">Download<br /><span className="text-lg text-white">{formatNumber(latestDownload)} Mbps</span></p>
-            <p className="font-black text-[#f0abfc]">Upload<br /><span className="text-lg text-white">{formatNumber(latestUpload)} Mbps</span></p>
-            <p className="font-black text-white/70">Total<br /><span className="text-lg text-white">{formatNumber(latestTotal)} Mbps</span></p>
-            <div className="border-t border-white/10 pt-3 text-[11px] font-bold text-white/45">
+            <p className="font-black text-[#7c3aed] theme-dark:text-[#c084fc]">Download<br /><span className="text-lg text-slate-950 theme-dark:text-white">{formatNumber(latestDownload)} Mbps</span></p>
+            <p className="font-black text-[#a21caf] theme-dark:text-[#f0abfc]">Upload<br /><span className="text-lg text-slate-950 theme-dark:text-white">{formatNumber(latestUpload)} Mbps</span></p>
+            <p className="font-black text-slate-600 theme-dark:text-white/70">Total<br /><span className="text-lg text-slate-950 theme-dark:text-white">{formatNumber(latestTotal)} Mbps</span></p>
+            <div className={`border-t border-slate-200 pt-3 text-[11px] font-bold theme-dark:border-white/10 ${textMuted()}`}>
               <p>Source: <span className="text-[#c084fc]">{overview?.bandwidth?.source || 'live interfaces'}</span></p>
               <p>Peak (1h): <span className="text-[#c084fc]">{formatNumber(Math.max(0, ...total))} Mbps</span></p>
               <p>Average: <span className="text-[#f0abfc]">{formatNumber(total.length ? total.reduce((sum, value) => sum + value, 0) / total.length : 0)} Mbps</span></p>
@@ -187,13 +191,13 @@ function NocStatusTable({ overview, history, interfaces }) {
   ];
 
   return (
-    <section className="rounded-[10px] border border-white/10 bg-[#07090d]">
-      <div className="border-b border-white/10 px-4 py-3">
-        <h2 className="text-sm font-black text-white">NOC Status</h2>
+    <section className="rounded-[10px] border border-slate-200 bg-white shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d]">
+      <div className="border-b border-slate-200 px-4 py-3 theme-dark:border-white/10">
+        <h2 className="text-sm font-black text-slate-950 theme-dark:text-white">NOC Status</h2>
       </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[850px] text-left text-xs">
-          <thead className="bg-white/[0.025] text-[10px] uppercase tracking-[0.14em] text-white/35">
+          <thead className="bg-slate-50 text-[10px] uppercase tracking-[0.14em] text-slate-400 theme-dark:bg-white/[0.025] theme-dark:text-white/35">
             <tr>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3">Metric</th>
@@ -202,18 +206,18 @@ function NocStatusTable({ overview, history, interfaces }) {
               <th className="px-4 py-3 text-right">State</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/10">
+          <tbody className="divide-y divide-slate-100 theme-dark:divide-white/10">
             {rows.map((row) => (
-              <tr key={row.item} className="text-white/85">
+              <tr key={row.item} className="text-slate-700 theme-dark:text-white/85">
                 <td className="px-4 py-3">
                   <div className="flex items-center gap-3">
-                    <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04]" style={{ color: statusColor(row.status) }}>{row.icon}</span>
-                    <span><b className="block text-white">{row.item}</b><span className="text-white/45">{row.subtitle}</span></span>
+                    <span className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 theme-dark:border-white/10 theme-dark:bg-white/[0.04]" style={{ color: statusColor(row.status) }}>{row.icon}</span>
+                    <span><b className="block text-slate-950 theme-dark:text-white">{row.item}</b><span className="text-slate-500 theme-dark:text-white/45">{row.subtitle}</span></span>
                   </div>
                 </td>
                 <td className="px-4 py-3 font-black">{row.metric}</td>
                 <td className="px-4 py-3"><Sparkline points={row.trend} color={statusColor(row.status)} bars={row.bars} /></td>
-                <td className="px-4 py-3 text-white/65">{row.details}</td>
+                <td className="px-4 py-3 text-slate-500 theme-dark:text-white/65">{row.details}</td>
                 <td className="px-4 py-3 text-right">
                   <span className="rounded-md px-2 py-1 text-[10px] font-black" style={{ background: `${statusColor(row.status)}22`, color: statusColor(row.status) }}>{row.status}</span>
                 </td>
@@ -228,9 +232,9 @@ function NocStatusTable({ overview, history, interfaces }) {
 
 function DataPanel({ title, live, children }) {
   return (
-    <section className="rounded-[10px] border border-white/10 bg-[#07090d]">
-      <div className="flex items-center justify-between border-b border-white/10 px-4 py-3">
-        <h2 className="text-sm font-black text-white">{title} {live && <span className="text-white/35">(Live)</span>}</h2>
+    <section className="rounded-[10px] border border-slate-200 bg-white shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d]">
+      <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 theme-dark:border-white/10">
+        <h2 className="text-sm font-black text-slate-950 theme-dark:text-white">{title} {live && <span className="text-slate-400 theme-dark:text-white/35">(Live)</span>}</h2>
       </div>
       {children}
     </section>
@@ -242,7 +246,7 @@ function TopUsersPanel({ topUsers }) {
     <DataPanel title="Top Bandwidth Users" live>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[560px] text-left text-[11px]">
-          <thead className="text-[9px] uppercase tracking-[0.14em] text-white/35">
+          <thead className="text-[9px] uppercase tracking-[0.14em] text-slate-400 theme-dark:text-white/35">
             <tr>
               <th className="px-3 py-2">Rank</th>
               <th className="px-3 py-2">User / IP</th>
@@ -252,18 +256,18 @@ function TopUsersPanel({ topUsers }) {
               <th className="px-3 py-2">Package</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/10 text-white/80">
+          <tbody className="divide-y divide-slate-100 text-slate-700 theme-dark:divide-white/10 theme-dark:text-white/80">
             {topUsers.length ? topUsers.slice(0, 6).map((user, index) => (
               <tr key={`${user.name}-${index}`}>
-                <td className="px-3 py-2"><span className="rounded bg-white/10 px-2 py-1 font-black">{index + 1}</span></td>
-                <td className="px-3 py-2"><b className="block text-white">{user.name}</b><span className="text-white/40">{user.target || user.service || '--'}</span></td>
+                <td className="px-3 py-2"><span className="rounded bg-slate-100 px-2 py-1 font-black theme-dark:bg-white/10">{index + 1}</span></td>
+                <td className="px-3 py-2"><b className="block text-slate-950 theme-dark:text-white">{user.name}</b><span className="text-slate-400 theme-dark:text-white/40">{user.target || user.service || '--'}</span></td>
                 <td className="px-3 py-2 font-black">{formatNumber(user.download_mbps)} Mbps</td>
                 <td className="px-3 py-2 font-black">{formatNumber(user.upload_mbps)} Mbps</td>
                 <td className="px-3 py-2 font-black">{formatNumber(user.total_mbps)} Mbps</td>
-                <td className="px-3 py-2 text-white/50">{user.service || '--'}</td>
+                <td className="px-3 py-2 text-slate-400 theme-dark:text-white/50">{user.service || '--'}</td>
               </tr>
             )) : (
-              <tr><td colSpan="6" className="px-4 py-5 text-center font-bold text-white/45">No live queue rate data returned yet.</td></tr>
+              <tr><td colSpan="6" className={`px-4 py-5 text-center font-bold ${textMuted()}`}>No live queue rate data returned yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -277,7 +281,7 @@ function InterfacePanel({ interfaces }) {
     <DataPanel title="Interface Traffic" live>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-left text-[11px]">
-          <thead className="text-[9px] uppercase tracking-[0.14em] text-white/35">
+          <thead className="text-[9px] uppercase tracking-[0.14em] text-slate-400 theme-dark:text-white/35">
             <tr>
               <th className="px-3 py-2">Interface</th>
               <th className="px-3 py-2">RX</th>
@@ -285,16 +289,16 @@ function InterfacePanel({ interfaces }) {
               <th className="px-3 py-2">Status</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-white/10 text-white/80">
+          <tbody className="divide-y divide-slate-100 text-slate-700 theme-dark:divide-white/10 theme-dark:text-white/80">
             {interfaces.length ? interfaces.slice(0, 8).map((item) => (
               <tr key={item.name}>
-                <td className="px-3 py-2"><b className="text-white">{item.name}</b><span className="ml-2 text-white/35">{item.link_speed || item.type || ''}</span></td>
+                <td className="px-3 py-2"><b className="text-slate-950 theme-dark:text-white">{item.name}</b><span className="ml-2 text-slate-400 theme-dark:text-white/35">{item.link_speed || item.type || ''}</span></td>
                 <td className="px-3 py-2 font-black">{formatNumber(item.rx_mbps)} Mbps</td>
                 <td className="px-3 py-2 font-black">{formatNumber(item.tx_mbps)} Mbps</td>
                 <td className="px-3 py-2"><span className="inline-flex items-center gap-2 font-black" style={{ color: item.status === 'running' ? green : amber }}><span className="h-2 w-2 rounded-full" style={{ background: item.status === 'running' ? green : amber }} />{item.status === 'running' ? 'Up' : item.status || 'Unknown'}</span></td>
               </tr>
             )) : (
-              <tr><td colSpan="4" className="px-4 py-5 text-center font-bold text-white/45">No interface traffic samples returned yet.</td></tr>
+              <tr><td colSpan="4" className={`px-4 py-5 text-center font-bold ${textMuted()}`}>No interface traffic samples returned yet.</td></tr>
             )}
           </tbody>
         </table>
@@ -311,6 +315,7 @@ export default function NocOverview() {
   const [error, setError] = useState('');
   const polling = useRef(null);
   const refreshing = useRef(false);
+  const historyFetchedAt = useRef(0);
 
   const selectedRouterId = routerId || routers[0]?.id || '';
   const interfaces = useMemo(() => overview?.interfaces || [], [overview]);
@@ -327,12 +332,31 @@ export default function NocOverview() {
     refreshing.current = true;
     try {
       setError('');
-      const [overviewResult, historyResult] = await Promise.all([
-        api.get('/noc/overview', { params: { router_id: id } }),
-        api.get('/noc/traffic/history', { params: { router_id: id, range: '6h' } }),
-      ]);
+      const shouldFetchHistory = !historyFetchedAt.current || Date.now() - historyFetchedAt.current > 30000;
+      const overviewResult = await api.get('/noc/overview', { params: { router_id: id } });
       setOverview(overviewResult.data);
-      setHistory(historyResult.data || []);
+      if (shouldFetchHistory) {
+        const historyResult = await api.get('/noc/traffic/history', { params: { router_id: id, range: '6h' } });
+        setHistory(historyResult.data || []);
+        historyFetchedAt.current = Date.now();
+      } else {
+        const liveRow = {
+          timestamp: overviewResult.data?.checked_at || new Date().toISOString(),
+          download_mbps: Number(overviewResult.data?.download_mbps || 0),
+          upload_mbps: Number(overviewResult.data?.upload_mbps || 0),
+          cpu_load: overviewResult.data?.cpu_load,
+          memory_used_percent: overviewResult.data?.memory_used_percent,
+          storage_used_percent: overviewResult.data?.storage_used_percent,
+          pppoe_count: overviewResult.data?.active_pppoe,
+          hotspot_count: overviewResult.data?.active_hotspot,
+          router_health_percent: overviewResult.data?.router_health_percent,
+        };
+        setHistory((current) => {
+          const last = current[current.length - 1];
+          if (last?.timestamp === liveRow.timestamp) return current;
+          return [...current.slice(-47), liveRow];
+        });
+      }
     } catch (err) {
       setError(err.response?.data?.error || 'NOC data is unavailable from the live router right now.');
     } finally {
@@ -351,23 +375,23 @@ export default function NocOverview() {
   }, [selectedRouterId]);
 
   return (
-    <div className="min-h-full rounded-[24px] border border-white/10 bg-[#020305] p-3 pb-10 text-white shadow-[0_0_50px_rgba(0,0,0,.55)] sm:p-4">
+    <div className="min-h-full rounded-[24px] border border-slate-200 bg-white p-3 pb-10 text-slate-950 shadow-sm theme-dark:border-white/10 theme-dark:bg-[#020305] theme-dark:text-white theme-dark:shadow-[0_0_50px_rgba(0,0,0,.55)] sm:p-4">
       <div className="mx-auto max-w-[1180px] space-y-3">
-        <header className="flex flex-col gap-3 rounded-[10px] border border-white/10 bg-[#07090d] px-4 py-3 md:flex-row md:items-center md:justify-between">
+        <header className="flex flex-col gap-3 rounded-[10px] border border-slate-200 bg-white px-4 py-3 shadow-sm theme-dark:border-white/10 theme-dark:bg-[#07090d] md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-3">
-            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-white/10 bg-white/[0.04] text-[#a78bfa]">
+            <div className="flex h-11 w-11 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-[#7c3aed] theme-dark:border-white/10 theme-dark:bg-white/[0.04] theme-dark:text-[#a78bfa]">
               <ChartIcon className="h-6 w-6" />
             </div>
             <div>
               <h1 className="text-2xl font-black">NOC Overview</h1>
-              <p className="text-xs font-semibold text-white/45">Live bandwidth consumption, router status, interfaces, and top users</p>
+              <p className={`text-xs font-semibold ${textMuted()}`}>Live bandwidth consumption, router status, interfaces, and top users</p>
             </div>
           </div>
           <div className="flex gap-2">
-            <select value={selectedRouterId} onChange={(event) => setRouterId(event.target.value)} className="h-10 rounded-lg border border-white/10 bg-[#0b0f17] px-3 text-xs font-black text-white outline-none">
+            <select value={selectedRouterId} onChange={(event) => { historyFetchedAt.current = 0; setRouterId(event.target.value); }} className="h-10 rounded-lg border border-slate-200 bg-white px-3 text-xs font-black text-slate-950 outline-none theme-dark:border-white/10 theme-dark:bg-[#0b0f17] theme-dark:text-white">
               {routers.map((router) => <option key={router.id} value={router.id}>{router.name}</option>)}
             </select>
-            <button type="button" onClick={() => refresh(selectedRouterId)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-white/10 bg-[#0b0f17] text-[#a78bfa]">
+            <button type="button" onClick={() => refresh(selectedRouterId)} className="flex h-10 w-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-[#7c3aed] theme-dark:border-white/10 theme-dark:bg-[#0b0f17] theme-dark:text-[#a78bfa]">
               <CogIcon className="h-5 w-5" />
             </button>
           </div>

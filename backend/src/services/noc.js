@@ -7,7 +7,7 @@ const {
 } = require('./mikrotik');
 
 const SNAPSHOT_LIMIT = 1200;
-const LIVE_INTERFACE_LIMIT = 14;
+const LIVE_INTERFACE_LIMIT = 8;
 
 function num(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -123,9 +123,6 @@ async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') 
     const traffic = row.disabled === 'true'
       ? {}
       : (await client.command('/interface/monitor-traffic', { interface: row.name, once: '' }).catch(() => []))[0] || {};
-    const ethernet = row.type === 'ether'
-      ? (await client.command('/interface/ethernet/monitor', { numbers: row.name, once: '' }).catch(() => []))[0] || {}
-      : {};
     const rxBps = bitsPerSecond(traffic['rx-bits-per-second']);
     const txBps = bitsPerSecond(traffic['tx-bits-per-second']);
     rows.push({
@@ -139,8 +136,8 @@ async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') 
       rx_mbps: mbpsFromBits(rxBps),
       tx_mbps: mbpsFromBits(txBps),
       total_mbps: mbpsFromBits(rxBps + txBps),
-      link_speed: ethernet.rate || row['actual-speed'] || row.speed || row['link-speed'] || '',
-      full_duplex: ethernet['full-duplex'] || '',
+      link_speed: row['actual-speed'] || row.speed || row['link-speed'] || row['default-name'] || '',
+      full_duplex: row['full-duplex'] || '',
       status: row.disabled === 'true' ? 'disabled' : row.running === 'true' ? 'running' : 'down',
     });
   }

@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const db = require('../db');
+const { createNocLiveUrl } = require('./nocPublicLinks');
 
 const execFileAsync = promisify(execFile);
 
@@ -939,6 +940,10 @@ async function buildMikrotikStatusReply({ clientId }) {
     const securitySection = security.hasIssue
       ? `\n\nSecurity check:\n${security.summary}\n${security.lines.map((line) => `- ${line}`).join('\n')}\nRecommendation: restrict or disable public SSH/FTP/Winbox access, allow management only through trusted IPs or VPN, and keep the Nexa API limited to WireGuard.`
       : `\n\nSecurity check:\n${security.summary}`;
+    const nocLink = createNocLiveUrl({ clientId, routerId: router.id, ttlHours: 12 });
+    const nocSection = nocLink
+      ? `\n\nLive NOC view:\n${nocLink}\nThis link shows the live graph, interface traffic, top bandwidth users and the current router template for the next 12 hours.`
+      : '';
 
     return `Sir, your router ${identity} ${servingLine}.
 
@@ -954,7 +959,7 @@ ${cpuMessage}
 Uptime check:
 ${uptimeMessage}
 
-Overall network view: ${routerStatus}${securitySection}`;
+Overall network view: ${routerStatus}${securitySection}${nocSection}`;
 
   } catch (err) {
     return `Sir, I could not complete the live router status check right now.

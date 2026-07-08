@@ -33,6 +33,7 @@ import KnowledgeBase from './pages/KnowledgeBase';
 import AiTasks from './pages/AiTasks';
 import NetworkMonitor from './pages/NetworkMonitor';
 import NocOverview from './pages/NocOverview';
+import PublicNocLive from './pages/PublicNocLive';
 import MikrotikClients from './pages/MikrotikClients';
 import Escalations from './pages/Escalations';
 import Installations from './pages/Installations';
@@ -156,6 +157,7 @@ export default function App() {
           <Route path="/customer-intake/:clientId" element={<CustomerIntake />} />
           <Route path="/relocation-request/:clientId" element={<RelocationRequest />} />
           <Route path="/installation-work-order/:token" element={<InstallationWorkOrder />} />
+          <Route path="/public/noc/:token" element={<PublicNocLive />} />
           <Route path="/client-access" element={<ClientAccess />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />

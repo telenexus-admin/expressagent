@@ -31,6 +31,7 @@ const relocationRequestRoutes = require('./routes/relocationRequests');
 const installationWorkOrderRoutes = require('./routes/installationWorkOrders');
 const payheroRoutes = require('./routes/payhero');
 const siteChatRoutes = require('./routes/siteChat');
+const publicNocRoutes = require('./routes/publicNoc');
 const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
 const operatorUpdateContactRoutes = require('./routes/operatorUpdateContacts');
@@ -81,14 +82,14 @@ function isAllowedCorsOrigin(origin) {
 }
 
 app.use((req, res, next) => {
-  const isPublicSiteChat = req.path.startsWith('/api/public/site-chat');
+  const isPublicApi = req.path.startsWith('/api/public/site-chat') || req.path.startsWith('/api/public/noc');
   return cors({
     origin(origin, callback) {
-      if (isPublicSiteChat) return callback(null, true);
+      if (isPublicApi) return callback(null, true);
       if (isAllowedCorsOrigin(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));
     },
-    credentials: !isPublicSiteChat,
+    credentials: !isPublicApi,
   })(req, res, next);
 });
 
@@ -102,6 +103,7 @@ app.use('/api/public/relocation-request', relocationRequestRoutes);
 app.use('/api/public/installation-work-orders', installationWorkOrderRoutes);
 app.use('/api/public/payhero', payheroRoutes);
 app.use('/api/public/site-chat', siteChatRoutes);
+app.use('/api/public/noc', publicNocRoutes);
 app.get('/api/public/invoices/:token', invoiceRoutes.publicInvoiceHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);

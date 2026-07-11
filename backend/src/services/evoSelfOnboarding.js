@@ -73,6 +73,10 @@ function cleanPhone(number) {
   return String(number || '').replace(/[^0-9]/g, '');
 }
 
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function makeSessionToken() {
   return crypto.randomBytes(32).toString('hex');
 }
@@ -89,7 +93,19 @@ function findQr(payload) {
 }
 
 function findPairingCode(payload) {
-  return payload?.pairingCode || payload?.pairing_code || payload?.data?.pairingCode || payload?.data?.pairing_code || null;
+  return (
+    payload?.pairingCode ||
+    payload?.pairing_code ||
+    payload?.code ||
+    payload?.data?.pairingCode ||
+    payload?.data?.pairing_code ||
+    payload?.data?.code ||
+    payload?.instance?.pairingCode ||
+    payload?.instance?.pairing_code ||
+    payload?.data?.instance?.pairingCode ||
+    payload?.data?.instance?.pairing_code ||
+    null
+  );
 }
 
 function findConnectionState(payload) {
@@ -108,22 +124,54 @@ async function createInstance(instanceName) {
   return findQr(result.data) || fetchQr(instanceName);
 }
 
+async function requestPairingFromExistingInstance(instanceName, number) {
+  const { baseUrl, headers } = providerConfig();
+  const encoded = encodeURIComponent(instanceName);
+  const attempts = [
+    () => axios.get(`${baseUrl}/instance/connect/${encoded}`, { headers, params: { number }, timeout: 30000 }),
+    () => axios.post(`${baseUrl}/instance/connect/${encoded}`, { number }, { headers, timeout: 30000 }),
+    () => axios.post(`${baseUrl}/instance/connect/${encoded}`, { phoneNumber: number }, { headers, timeout: 30000 }),
+  ];
+  let lastError = null;
+  for (const attempt of attempts) {
+    try {
+      const result = await attempt();
+      const pairingCode = findPairingCode(result.data);
+      if (pairingCode) return String(pairingCode);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
 async function createPairingInstance(instanceName, phoneNumber) {
   const { baseUrl, headers } = providerConfig();
   const number = cleanPhone(phoneNumber);
   if (!number || number.length < 8) throw new Error('A valid WhatsApp number with country code is required.');
-  const created = await axios.post(
-    `${baseUrl}/instance/create`,
-    { instanceName, qrcode: false, number, integration: 'WHATSAPP-BAILEYS' },
-    { headers, timeout: 30000 }
-  );
-  let pairingCode = findPairingCode(created.data);
-  if (!pairingCode) {
-    const connected = await axios.get(`${baseUrl}/instance/connect/${encodeURIComponent(instanceName)}`, { headers, params: { number }, timeout: 30000 });
-    pairingCode = findPairingCode(connected.data);
+
+  let lastError = null;
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    try {
+      const created = await axios.post(
+        `${baseUrl}/instance/create`,
+        { instanceName, qrcode: false, number, integration: 'WHATSAPP-BAILEYS' },
+        { headers, timeout: 30000 }
+      );
+      const pairingCode = findPairingCode(created.data) || await requestPairingFromExistingInstance(instanceName, number);
+      if (pairingCode) return { pairingCode: String(pairingCode), number };
+    } catch (err) {
+      lastError = err;
+      const status = err.response?.status;
+      const message = cleanProviderError(err).toLowerCase();
+      const canRetry = status === 409 || status === 423 || status === 429 || status >= 500 || message.includes('already') || message.includes('exists') || message.includes('closed');
+      if (!canRetry || attempt === 2) break;
+      await delay(1200 * (attempt + 1));
+    }
   }
-  if (!pairingCode) throw new Error('Evolution did not return a pairing code after creating a phone-pairing instance.');
-  return { pairingCode: String(pairingCode), number };
+  const detail = lastError ? cleanProviderError(lastError) : 'Evolution did not return a pairing code.';
+  throw new Error(`Evolution did not return a pairing code after creating a phone-pairing instance. ${detail}`);
 }
 
 async function removeInstance(instanceName) {
@@ -137,8 +185,22 @@ async function removeInstance(instanceName) {
 }
 
 async function requestPairingCode(instanceName, phoneNumber) {
+  const number = cleanPhone(phoneNumber);
+  if (!number || number.length < 8) throw new Error('A valid WhatsApp number with country code is required.');
+
+  try {
+    const pairingCode = await requestPairingFromExistingInstance(instanceName, number);
+    if (pairingCode) return { pairingCode, number };
+  } catch (err) {
+    const status = err.response?.status;
+    if (status && status !== 404 && status !== 400) {
+      console.warn(`Could not get pairing code from existing Evolution instance ${instanceName}:`, cleanProviderError(err));
+    }
+  }
+
   await removeInstance(instanceName);
-  return createPairingInstance(instanceName, phoneNumber);
+  await delay(1500);
+  return createPairingInstance(instanceName, number);
 }
 
 async function requestQrReconnect(instanceName) {

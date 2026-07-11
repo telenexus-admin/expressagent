@@ -9,6 +9,7 @@ const {
   makeInstanceName,
   createInstance,
   requestPairingCode,
+  removeInstance,
   refreshOnboarding,
   cleanProviderError,
 } = require('../services/evoSelfOnboarding');
@@ -274,13 +275,15 @@ router.post(
       if (!row.phone_verified_at) {
         return res.status(403).json({ error: 'Confirm your WhatsApp number before requesting a pairing code.' });
       }
-      const paired = await requestPairingCode(row.instance_name, req.body.phone);
+      const pairingInstanceName = makeInstanceName(row.business_name);
+      await removeInstance(row.instance_name);
+      const paired = await requestPairingCode(pairingInstanceName, req.body.phone, { forceFresh: true });
       const updated = await db.query(
         `UPDATE evo_client_onboardings
-         SET pairing_code = $1, pairing_number = $2, connection_method = 'pairing_code',
+         SET instance_name = $1, pairing_code = $2, pairing_number = $3, connection_method = 'pairing_code',
              status = 'pending_qr', connection_state = 'waiting_pairing_code', provider_error = NULL, updated_at = NOW()
-         WHERE id = $3 RETURNING *`,
-        [paired.pairingCode, paired.number, row.id]
+         WHERE id = $4 RETURNING *`,
+        [pairingInstanceName, paired.pairingCode, paired.number, row.id]
       );
       return res.json(publicView(updated.rows[0]));
     } catch (err) {

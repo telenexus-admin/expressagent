@@ -524,7 +524,7 @@ router.post('/agents/:agentId/reconnect', async (req, res) => {
 
     if (method === 'pairing_code') {
       const phone = String(req.body.phone || '').trim();
-      const paired = await requestPairingCode(instanceName, phone);
+      const paired = await requestPairingCode(instanceName, phone, { forceFresh: true });
       await setClientWebhook(parent, { instanceName, token: webhookToken, agentId: webhookAgentId });
       if (row) {
         const updated = await db.query(

@@ -41,6 +41,7 @@ const customerSurveyRoutes = require('./routes/feedbackWebhook');
 const webhookRoutes = require('./routes/webhook');
 const evolutionWebhookRoutes = require('./routes/evolutionWebhook');
 const clientEvolutionWebhookRoutes = require('./routes/clientEvolutionWebhook');
+const { normalizeClientEvolutionRecipient } = require('./middleware/evolutionInboundRecipient');
 const { startDailyReportScheduler } = require('./services/dailyReports');
 const { startOperatorFollowUpScheduler } = require('./services/evolution');
 const { startHumanTakeoverRecoveryScheduler } = require('./services/humanTakeoverRecovery');
@@ -93,6 +94,7 @@ app.use((req, res, next) => {
 });
 
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
+app.use('/webhook/evolution/client', express.json(), normalizeClientEvolutionRecipient);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);
 
 app.use(express.json({ limit: '12mb' }));

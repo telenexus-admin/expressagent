@@ -10,7 +10,9 @@ function providerConfig() {
 }
 
 function cleanNumber(number) {
-  return String(number || '').replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
+  const recipient = String(number || '').trim();
+  if (/^[0-9]+@(s\.whatsapp\.net|lid)$/i.test(recipient)) return recipient;
+  return recipient.replace(/[^0-9]/g, '');
 }
 
 function clientSettings(client) {
@@ -181,3 +183,4 @@ async function downloadClientImage(client, messageKey) {
 }
 
 module.exports = { setClientWebhook, sendClientText, sendClientButtons, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };
+

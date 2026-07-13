@@ -420,7 +420,25 @@ async function reply(client, conversationId, phone, text, asVoice = false) {
     }
   }
   try {
-    await sendClientText(client, phone, text);
+    const sendResponse = await sendClientText(client, phone, text);
+    const sendData = sendResponse?.data || {};
+    const providerState =
+      sendData?.status ||
+      sendData?.message?.status ||
+      sendData?.key?.status ||
+      'unknown';
+    const providerMessageId =
+      sendData?.key?.id ||
+      sendData?.message?.key?.id ||
+      sendData?.id ||
+      'unknown';
+
+    console.log(
+      `[evo client ${client.id}] Evolution send result: ` +
+      `instance=${client.evolution_instance_name} ` +
+      `http=${sendResponse?.status || 'unknown'} ` +
+      `state=${providerState} id=${providerMessageId} target=${phone}`
+    );
   } catch (err) {
     console.error(`[evo client ${client.id}] Text reply failed to ${phone}:`, safeError(err));
     throw err;
@@ -472,8 +490,11 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
 
-    const inboundLid = String(incoming.messageKey?.remoteJid || incoming.replyJid || '');
-    const replyTarget = incoming.replyJid || incoming.phone;
+    const inboundLid = String(incoming.messageKey?.remoteJid || incoming.replyJid || '').trim();
+    const exactInboundJid = /^[0-9]+@(s\.whatsapp\.net|lid)$/i.test(inboundLid)
+      ? inboundLid
+      : '';
+    const replyTarget = incoming.replyJid || exactInboundJid || incoming.phone;
     const jidType = (value) => String(value || 'none').replace(/^\d+/, 'number');
 
     console.log(`[evo client ${client.id}] Reply routing: key=${jidType(inboundLid)} parsed=${jidType(incoming.replyJid)} target=${jidType(replyTarget)} fields=${Object.keys(incoming.messageKey || {}).join(',')}`);

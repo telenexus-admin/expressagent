@@ -85,7 +85,8 @@ async function downloadClientMedia(client, messageKey, { convertToMp4 = false } 
   const { baseUrl, headers, instance } = clientSettings(client);
   if (!messageKey?.id) throw new Error('Incoming media message has no message id.');
   const key = { id: messageKey.id };
-  if (messageKey.remoteJid) key.remoteJid = messageKey.remoteJid;
+  const mediaRemoteJid = messageKey.remoteJidLid || messageKey.remoteJid;
+  if (mediaRemoteJid) key.remoteJid = mediaRemoteJid;
   if (typeof messageKey.fromMe === 'boolean') key.fromMe = messageKey.fromMe;
   const response = await axios.post(
     `${baseUrl}/chat/getBase64FromMediaMessage/${encodeURIComponent(instance)}`,

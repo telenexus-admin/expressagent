@@ -22,7 +22,7 @@ const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
 const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
-const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
+const HUMAN_RE = /\b(?:talk|speak|chat|connect|transfer|refer|forward|need|want)\s+(?:(?:me\s+)?(?:to|with)\s+)?(?:a\s+|an\s+)?(?:human|agent|person|representative)\b|\b(?:human|agent|representative|mwakilishi)\s+(?:please|now|tafadhali)\b|\b(?:nataka|naomba|nahitaji)\s+(?:mtu|mwakilishi|msaada)\b/i;
 const INSTALL_RE = /\b(want|need|looking for|book|schedule|please|can\s*(?:you|i)|how\s*(?:do|to))\b[^.?!]{0,40}\b(install|installation|new\s+connection|get\s+connected|connect\s+me|fibre|fiber|subscribe|register|sign\s*up)\b|\b(install|installation|new\s+connection|get\s+connected|connect\s+me|subscribe|register|sign\s*up)\b|\b(nataka|naomba|nahitaji|tafadhali)\b[^.?!]{0,40}\b(installation|kuunganishwa|usajili)\b|\bniunganish(e|wa|ie|ieni|eni)\b/i;
 const RELOCATION_RE = /\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b[^.?!]{0,60}\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b|\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b[^.?!]{0,60}\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b|\b(nahama|kuhama|hamisha|kuhamisha)\b[^.?!]{0,60}\b(internet|wifi|router|network)\b/i;
 const CONNECTION_PROBLEM_RE = /\b(problem|issue|trouble|fault|slow|down|offline|unstable|disconnect|disconnecting|not\s+working|no\s+internet|no\s+network|no\s+connection|cannot\s+connect|can't\s+connect|connected\s+without\s+internet)\b/i;
@@ -378,99 +378,8 @@ async function findOrCreateConversation(clientId, phone, name, instanceName = nu
     [clientId, phone, instanceName, allowUnassignedMatch]
   );
   if (existing.rows[0]) {
-    if ((name && name !== existing.rows[0].customer_name) || (instanceName && !existing.rows[0].source_instance_name)) {
-      const updated = await db.query(
-        `UPDATE conversations
-         SET customer_name = COALESCE($1, customer_name),
-             source_instance_name = COALESCE(source_instance_name, $2),
-             updated_at = NOW()
-         WHERE id = $3 RETURNING *`,
-        [name || null, instanceName, existing.rows[0].id]
-      );
-      return { conversation: updated.rows[0], isNewNumber: false };
-    }
-    return { conversation: existing.rows[0], isNewNumber: false };
-  }
-  const inserted = await db.query(
-    `INSERT INTO conversations (customer_phone, customer_name, status, client_id, source_instance_name)
-     VALUES ($1, $2, 'active', $3, $4) RETURNING *`,
-    [phone, name || null, clientId, instanceName]
-  );
-  return { conversation: inserted.rows[0], isNewNumber };
-}
-
-async function saveMessage(conversationId, role, content) {
-  const inserted = await db.query(
-    `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, $2, $3, NOW()) RETURNING id`,
-    [conversationId, role, content]
-  );
-  await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
-  return inserted.rows[0];
-}
-
-async function reply(client, conversationId, phone, text, asVoice = false) {
-  if (asVoice) {
-    try {
-      const audio = await synthesizeVoice(text, client.voice_id || 'alloy');
-      await sendClientVoiceNote(client, phone, audio);
-      await saveMessage(conversationId, 'assistant', text);
-      return;
-    } catch (err) {
-      console.error(`[evo client ${client.id}] Voice reply failed, falling back to text:`, safeError(err));
-    }
-  }
-  try {
-    await sendClientText(client, phone, text);
-  } catch (err) {
-    console.error(`[evo client ${client.id}] Text reply failed to ${phone}:`, safeError(err));
-    throw err;
-  }
-  await saveMessage(conversationId, 'assistant', text);
-}
-
-async function sendMatchedMedia(client, conversationId, phone, text) {
-  const tagged = await mediaByTags(client.id, text);
-  const matches = await matchingMedia(client.id, text);
-  for (const item of uniqueMediaItems(tagged, matches)) {
-    try {
-      await sendClientMedia(client, phone, item);
-      await saveMessage(conversationId, 'assistant', `[Sent ${item.media_type}: ${item.title}]`);
-      console.log(`[evo client ${client.id}] Sent media "${item.title}" to ${phone}.`);
-    } catch (err) {
-      console.error(`[evo client ${client.id}] Media send failed:`, safeError(err));
-    }
-  }
-}
-
-async function sendWelcomeMedia(client, conversationId, phone) {
-  if (!await claimWelcomeMediaRecipient(client.id, phone)) return;
-  for (const item of await welcomeMedia(client.id)) {
-    try {
-      await sendClientMedia(client, phone, item);
-      await saveMessage(conversationId, 'assistant', `[Sent ${item.media_type}: ${item.title}]`);
-      console.log(`[evo client ${client.id}] Sent welcome media "${item.title}" to new number ${phone}.`);
-    } catch (err) {
-      console.error(`[evo client ${client.id}] Welcome media send failed:`, safeError(err));
-    }
-  }
-}
-
-router.post('/client/:clientId', async (req, res) => {
-  res.status(200).json({ received: true });
-  try {
-    const token = String(req.query.token || req.headers['x-webhook-token'] || '');
-    const client = await loadClient(req.params.clientId, token, req.query.agent || null);
-    if (!client) {
-      console.warn(`Evolution client webhook ignored for client ${req.params.clientId}: invalid token or routing inactive.`);
-      return;
-    }
-
-    const parseDiagnostics = {};
-    const incoming = parseEvolutionInbound(req.body, parseDiagnostics);
-    if (!incoming || !incoming.phone) {
-      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed. Reason: ${JSON.stringify(parseDiagnostics)} Shape: ${payloadShape(req.body)}`);
-      return;
-    }
+    if ((name && name !== existing.rows[0].customer_name) || (instanceName && !exist…1050 tokens truncated…eplace(/^\d+/, 'number');
+    console.log(`[evo client ${client.id}] Reply routing: key=${jidType(inboundLid)} parsed=${jidType(incoming.replyJid)} target=${jidType(replyTarget)} fields=${Object.keys(incoming.messageKey || {}).join(',')}`);
 
     const { conversation, isNewNumber } = await findOrCreateConversation(
       client.id,
@@ -480,7 +389,7 @@ router.post('/client/:clientId', async (req, res) => {
       { allowUnassignedMatch: !client.routed_agent_id }
     );
     if (isNewNumber) {
-      await sendWelcomeMedia(client, conversation.id, incoming.phone);
+      await sendWelcomeMedia(client, conversation.id, replyTarget);
     }
 
     let userText = String(incoming.text || '').trim();
@@ -494,7 +403,7 @@ router.post('/client/:clientId', async (req, res) => {
         storedText = `[Voice note] ${userText}`;
       } catch (err) {
         console.error(`[evo client ${client.id}] Voice transcription failed:`, safeError(err));
-        await sendClientText(client, incoming.phone, "Sorry, I had trouble processing that voice note. Please send it again or type your message.");
+        await sendClientText(client, replyTarget, "Sorry, I had trouble processing that voice note. Please send it again or type your message.");
         return;
       }
     }
@@ -550,7 +459,7 @@ router.post('/client/:clientId', async (req, res) => {
     const normalized = userText.toLowerCase();
     if (conversation.opted_out_at && RESUME.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NULL WHERE id = $1`, [conversation.id]);
-      await reply(client, conversation.id, incoming.phone, "You're resubscribed. How can I help you today?");
+      await reply(client, conversation.id, replyTarget, "You're resubscribed. How can I help you today?");
       return;
     }
     if (conversation.opted_out_at) {
@@ -559,7 +468,7 @@ router.post('/client/:clientId', async (req, res) => {
     }
     if (OPT_OUT.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
-      await reply(client, conversation.id, incoming.phone, "You've been unsubscribed. Reply START at any time to resume.");
+      await reply(client, conversation.id, replyTarget, "You've been unsubscribed. Reply START at any time to resume.");
       return;
     }
     if (conversation.status === 'human_takeover') {
@@ -586,7 +495,7 @@ router.post('/client/:clientId', async (req, res) => {
         await reply(
           client,
           conversation.id,
-          incoming.phone,
+          replyTarget,
           'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.',
           replyAsVoice
         );
@@ -595,7 +504,7 @@ router.post('/client/:clientId', async (req, res) => {
       } else {
         if (isRouterStatusQuestion(userText) || /^\s*(status|health|report|overview|router status|mikrotik status)\s*[?.!]*\s*$/i.test(userText)) {
           const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
-          await reply(client, conversation.id, incoming.phone, statusReply, replyAsVoice);
+          await reply(client, conversation.id, replyTarget, statusReply, replyAsVoice);
           console.log(`[evo client ${client.id}] Deterministic router status reply sent to ${incoming.phone}.`);
           return;
         }
@@ -623,7 +532,7 @@ router.post('/client/:clientId', async (req, res) => {
           console.error(`[evo client ${client.id}] Router admin AI reply failed for ${incoming.phone}:`, safeError(err));
           routerReply = 'I checked the router management context, but I could not prepare the answer right now. Please try again shortly.';
         }
-        await reply(client, conversation.id, incoming.phone, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
+        await reply(client, conversation.id, replyTarget, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
         console.log(`[evo client ${client.id}] Router admin reply sent to ${incoming.phone}.`);
         return;
       }
@@ -635,12 +544,12 @@ router.post('/client/:clientId', async (req, res) => {
         conversationId: conversation.id,
         customerPhone: incoming.phone,
       });
-      await reply(client, conversation.id, incoming.phone, answer, false);
+      await reply(client, conversation.id, replyTarget, answer, false);
       return;
     }
 
     if (!incoming.isImage && /^pay later$/i.test(userText.trim())) {
-      await reply(client, conversation.id, incoming.phone, 'No problem. You can pay later using the invoice PDF when ready.', false);
+      await reply(client, conversation.id, replyTarget, 'No problem. You can pay later using the invoice PDF when ready.', false);
       return;
     }
 
@@ -653,7 +562,7 @@ router.post('/client/:clientId', async (req, res) => {
         messageText: userText,
       });
       if (paymentPromptReply) {
-        await reply(client, conversation.id, incoming.phone, paymentPromptReply, false);
+        await reply(client, conversation.id, replyTarget, paymentPromptReply, false);
         return;
       }
     }
@@ -665,7 +574,7 @@ router.post('/client/:clientId', async (req, res) => {
           `Sure, I can help you request a network relocation.\n\n` +
           `Please complete this relocation form:\n${relocationUrl}\n\n` +
           `It captures your new location, preferred visit time, router condition and equipment availability so the field team can prepare well.`;
-        await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        await reply(client, conversation.id, replyTarget, answer, replyAsVoice);
         console.log(`[evo client ${client.id}] Relocation form link sent to ${incoming.phone}.`);
         runAfterReply('Evolution relocation workflow dispatch', () => dispatchWorkflowToEmployees({
           client,
@@ -697,7 +606,7 @@ router.post('/client/:clientId', async (req, res) => {
         const answer =
           `Please complete this installation form:\n${intakeUrl}\n\n` +
           `It collects your ID scan, location and contact details for the setup team.`;
-        await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        await reply(client, conversation.id, replyTarget, answer, replyAsVoice);
         console.log(`[evo client ${client.id}] Installation intake form link sent to ${incoming.phone}.`);
         runAfterReply('Evolution installation ticket creation', () => createOrUpdateTicket({
           clientId: client.id,
@@ -725,10 +634,10 @@ router.post('/client/:clientId', async (req, res) => {
           messageText: userText,
           req,
         });
-        if (result.reply) await reply(client, conversation.id, incoming.phone, result.reply, replyAsVoice);
+        if (result.reply) await reply(client, conversation.id, replyTarget, result.reply, replyAsVoice);
       } catch (err) {
         console.error(`[evo client ${client.id}] Invoice auto-generation failed for ${incoming.phone}:`, safeError(err));
-        await reply(client, conversation.id, incoming.phone, 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.', replyAsVoice);
+        await reply(client, conversation.id, replyTarget, 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.', replyAsVoice);
       }
       return;
     }
@@ -744,8 +653,8 @@ router.post('/client/:clientId', async (req, res) => {
       if (billingReply) {
         const mediaText = `${userText}\n${billingReply}`;
         billingReply = stripMediaTags(billingReply) || 'Here is the media I found for you.';
-        await reply(client, conversation.id, incoming.phone, billingReply, replyAsVoice);
-        await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
+        await reply(client, conversation.id, replyTarget, billingReply, replyAsVoice);
+        await sendMatchedMedia(client, conversation.id, replyTarget, mediaText);
         console.log(`[evo client ${client.id}] Billing reply sent to ${incoming.phone}.`);
         return;
       }
@@ -780,9 +689,9 @@ router.post('/client/:clientId', async (req, res) => {
         messageText: userText,
       }));
       const answer = client.support_number
-        ? `Thanks — I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
-        : "Thanks — I've flagged your request for the support team. Someone will follow up shortly.";
-      await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        ? `Thanks â€” I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
+        : "Thanks â€” I've flagged your request for the support team. Someone will follow up shortly.";
+      await reply(client, conversation.id, replyTarget, answer, replyAsVoice);
       return;
     }
 
@@ -837,9 +746,9 @@ router.post('/client/:clientId', async (req, res) => {
     const mediaText = `${userText}\n${aiReply}`;
     const cleanReply = stripMediaTags(aiReply).trim() || 'Here is the media I found for you.';
     console.log(`[evo client ${client.id}] Sending AI reply to ${incoming.phone}.`);
-    await reply(client, conversation.id, incoming.phone, cleanReply, replyAsVoice);
-    if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
-    else await sendMatchedMedia(client, conversation.id, incoming.phone, aiReply);
+    await reply(client, conversation.id, replyTarget, cleanReply, replyAsVoice);
+    if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, replyTarget, mediaText);
+    else await sendMatchedMedia(client, conversation.id, replyTarget, aiReply);
     await recordAiTaskRecipientReply({
       clientId: client.id,
       phone: incoming.phone,
@@ -877,3 +786,4 @@ router.post('/client/:clientId', async (req, res) => {
 });
 
 module.exports = router;
+

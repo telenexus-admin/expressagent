@@ -227,7 +227,7 @@ export default function ExpressnetDashboard() {
         </section>
       </div>
       <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
-      <aside className={`fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] bg-white text-[#0d1438] flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[min(19rem,82vw)] max-w-[82vw] bg-white text-[#0d1438] flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-3 border-b border-[#e2e7f4] flex items-center justify-between gap-3"><ExpressnetBrand compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center text-[#263150]"><CloseIcon className="w-5 h-5" /></button></div>
         <nav className="flex-1 overflow-y-auto px-4 py-3 pb-6 pr-2">{navList(true)}</nav>
       </aside>

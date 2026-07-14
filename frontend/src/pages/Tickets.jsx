@@ -335,7 +335,7 @@ export default function Tickets({ detailMode = false }) {
   const [ticketForm, setTicketForm] = useState(EMPTY_TICKET);
   const [formError, setFormError] = useState('');
   const [summary, setSummary] = useState({ active: 0, open: 0, priority: 0, closed: 0, avg_resolution_seconds: 0 });
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState(() => (typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches ? 'grid' : 'list'));
 
   const params = useMemo(() => {
     const query = { status, category, priority };
@@ -503,32 +503,7 @@ export default function Tickets({ detailMode = false }) {
                       <div><span className="font-black text-slate-700">Opened:</span> {formatDate(ticket.opened_at)}</div>
                       <div><span className="font-black text-slate-700">Updated:</span> {formatDate(ticket.updated_at)}</div>
                     </div>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {ticket.conversation_id && (
-                      <button onClick={() => navigate(`/dashboard/conversations/${ticket.conversation_id}`)} className="rounded-xl bg-[#3535FF] px-4 py-2 text-xs font-black text-white hover:bg-[#2828DD]">
-                        Open conversation
-                      </button>
-                    )}
-                    <select value={ticket.status} disabled={saving} onChange={(event) => updateTicket({ status: event.target.value })} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">
-                      {STATUS_OPTIONS.filter(([key]) => !['active', 'all'].includes(key)).map(([key, text]) => <option key={key} value={key}>{text}</option>)}
-                    </select>
-                    <select value={ticket.priority} disabled={saving} onChange={(event) => updateTicket({ priority: event.target.value })} className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700">
-                      {PRIORITY_OPTIONS.filter(([key]) => key !== 'all').map(([key, text]) => <option key={key} value={key}>{text}</option>)}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              <div className="rounded-2xl border border-slate-100 bg-white p-5 shadow-sm">
-                <h4 className="text-sm font-black text-slate-950">Activity</h4>
-                <div className="mt-4 space-y-3">
-                  {(detail?.events || []).map((event) => (
-                    <div key={event.id} className="rounded-xl bg-slate-50 px-4 py-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] font-black uppercase text-slate-400">
-                        <span>{event.event_type.replace('_', ' ')}</span>
-                        <span>{formatDate(event.created_at)}</span>
-                      </div>
+     …500 tokens truncated…   </div>
                       {event.actor_name && <div className="mt-1 text-xs font-bold text-slate-600">{event.actor_name}</div>}
                       {event.body && <p className="mt-2 text-sm leading-relaxed text-slate-700">{event.body}</p>}
                     </div>

@@ -378,126 +378,13 @@ async function findOrCreateConversation(clientId, phone, name, instanceName = nu
     [clientId, phone, instanceName, allowUnassignedMatch]
   );
   if (existing.rows[0]) {
-    if ((name && name !== existing.rows[0].customer_name) || (instanceName && !existing.rows[0].source_instance_name)) {
-      const updated = await db.query(
-        `UPDATE conversations
-         SET customer_name = COALESCE($1, customer_name),
-             source_instance_name = COALESCE(source_instance_name, $2),
-             updated_at = NOW()
-         WHERE id = $3 RETURNING *`,
-        [name || null, instanceName, existing.rows[0].id]
-      );
-      return { conversation: updated.rows[0], isNewNumber: false };
-    }
-    return { conversation: existing.rows[0], isNewNumber: false };
-  }
-  const inserted = await db.query(
-    `INSERT INTO conversations (customer_phone, customer_name, status, client_id, source_instance_name)
-     VALUES ($1, $2, 'active', $3, $4) RETURNING *`,
-    [phone, name || null, clientId, instanceName]
-  );
-  return { conversation: inserted.rows[0], isNewNumber };
-}
-
-async function saveMessage(conversationId, role, content) {
-  const inserted = await db.query(
-    `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, $2, $3, NOW()) RETURNING id`,
-    [conversationId, role, content]
-  );
-  await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
-  return inserted.rows[0];
-}
-
-async function reply(client, conversationId, phone, text, asVoice = false) {
-  if (asVoice) {
-    try {
-      const audio = await synthesizeVoice(text, client.voice_id || 'alloy');
-      await sendClientVoiceNote(client, phone, audio);
-      await saveMessage(conversationId, 'assistant', text);
-      return;
-    } catch (err) {
-      console.error(`[evo client ${client.id}] Voice reply failed, falling back to text:`, safeError(err));
-    }
-  }
-  try {
-    const sendResponse = await sendClientText(client, phone, text);
-    const sendData = sendResponse?.data || {};
-    const providerState =
-      sendData?.status ||
-      sendData?.message?.status ||
-      sendData?.key?.status ||
-      'unknown';
-    const providerMessageId =
-      sendData?.key?.id ||
-      sendData?.message?.key?.id ||
-      sendData?.id ||
-      'unknown';
-
-    console.log(
-      `[evo client ${client.id}] Evolution send result: ` +
-      `instance=${client.evolution_instance_name} ` +
-      `http=${sendResponse?.status || 'unknown'} ` +
-      `state=${providerState} id=${providerMessageId} target=${phone}`
+    if ((name && name !== existing.rows[0].…1446 tokens truncated…|| 'unknown'} ` +
+      `remote=${jidType(remoteJid)} ` +
+      `alt=${jidType(remoteJidAlt)} ` +
+      `participant=${jidType(participantJid)} ` +
+      `parsed=${jidType(incoming.replyJid)} ` +
+      `target=${jidType(replyTarget)}`
     );
-  } catch (err) {
-    console.error(`[evo client ${client.id}] Text reply failed to ${phone}:`, safeError(err));
-    throw err;
-  }
-  await saveMessage(conversationId, 'assistant', text);
-}
-
-async function sendMatchedMedia(client, conversationId, phone, text) {
-  const tagged = await mediaByTags(client.id, text);
-  const matches = await matchingMedia(client.id, text);
-  for (const item of uniqueMediaItems(tagged, matches)) {
-    try {
-      await sendClientMedia(client, phone, item);
-      await saveMessage(conversationId, 'assistant', `[Sent ${item.media_type}: ${item.title}]`);
-      console.log(`[evo client ${client.id}] Sent media "${item.title}" to ${phone}.`);
-    } catch (err) {
-      console.error(`[evo client ${client.id}] Media send failed:`, safeError(err));
-    }
-  }
-}
-
-async function sendWelcomeMedia(client, conversationId, phone) {
-  if (!await claimWelcomeMediaRecipient(client.id, phone)) return;
-  for (const item of await welcomeMedia(client.id)) {
-    try {
-      await sendClientMedia(client, phone, item);
-      await saveMessage(conversationId, 'assistant', `[Sent ${item.media_type}: ${item.title}]`);
-      console.log(`[evo client ${client.id}] Sent welcome media "${item.title}" to new number ${phone}.`);
-    } catch (err) {
-      console.error(`[evo client ${client.id}] Welcome media send failed:`, safeError(err));
-    }
-  }
-}
-
-router.post('/client/:clientId', async (req, res) => {
-  res.status(200).json({ received: true });
-  try {
-    const token = String(req.query.token || req.headers['x-webhook-token'] || '');
-    const client = await loadClient(req.params.clientId, token, req.query.agent || null);
-    if (!client) {
-      console.warn(`Evolution client webhook ignored for client ${req.params.clientId}: invalid token or routing inactive.`);
-      return;
-    }
-
-    const parseDiagnostics = {};
-    const incoming = parseEvolutionInbound(req.body, parseDiagnostics);
-    if (!incoming || !incoming.phone) {
-      console.log(`[evo client ${client.id}] Webhook received but no customer message was parsed. Reason: ${JSON.stringify(parseDiagnostics)} Shape: ${payloadShape(req.body)}`);
-      return;
-    }
-
-    const inboundLid = String(incoming.messageKey?.remoteJid || incoming.replyJid || '').trim();
-    const exactInboundJid = /^[0-9]+@(s\.whatsapp\.net|lid)$/i.test(inboundLid)
-      ? inboundLid
-      : '';
-    const replyTarget = incoming.replyJid || exactInboundJid || incoming.phone;
-    const jidType = (value) => String(value || 'none').replace(/^\d+/, 'number');
-
-    console.log(`[evo client ${client.id}] Reply routing: key=${jidType(inboundLid)} parsed=${jidType(incoming.replyJid)} target=${jidType(replyTarget)} fields=${Object.keys(incoming.messageKey || {}).join(',')}`);
 
     const { conversation, isNewNumber } = await findOrCreateConversation(
       client.id,

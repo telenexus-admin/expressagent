@@ -29,6 +29,7 @@ import expressnetLogo from '../assets/expressnetLogo';
 import aiBotArtwork from '../assets/aiBotArtwork';
 import nexaLogo from '../assets/nexa-logo.png';
 import agentSwitcherAvatar from '../assets/agent-switcher-avatar.jpg';
+import { applyTheme, getStoredTheme, saveTheme, resolveTheme } from '../utils/theme';
 
 const NexaMark = () => (
   <span className="relative flex h-full w-full items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-[#13c8ff] via-[#3455ff] to-[#812fff] shadow-[0_8px_18px_rgba(53,53,255,0.18)]">
@@ -57,6 +58,8 @@ const ChevronDownIcon = ({ className = 'h-5 w-5' }) => (
     <path d="m6 9 6 6 6-6" />
   </svg>
 );
+
+const ThemeIcon=({dark,className='h-5 w-5'})=><svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{dark?<path d="M21 12.8A8.5 8.5 0 1 1 11.2 3 6.7 6.7 0 0 0 21 12.8Z"/>:<><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.42 1.42M17.65 17.65l1.42 1.42M2 12h2M20 12h2M4.93 19.07l1.42-1.42M17.65 6.35l1.42-1.42"/></>}</svg>;
 
 function canAccess(admin, permission) {
   if (!admin) return false;
@@ -131,6 +134,10 @@ export default function ClientDashboard() {
   const menuRef = useRef(null);
   const agentMenuRef = useRef(null);
   const expressnet = Number(admin?.client_id) === 1;
+  const [themeMode,setThemeMode]=useState(()=>getStoredTheme());
+  const resolvedTheme=resolveTheme(themeMode);
+  useEffect(()=>{applyTheme(themeMode);},[themeMode]);
+  const toggleTheme=()=>{const next=resolvedTheme==='dark'?'light':'dark';setThemeMode(next);saveTheme(next);};
 
   useEffect(() => {
     let stopped = false;
@@ -432,6 +439,7 @@ export default function ClientDashboard() {
                   <div className="truncate text-xs font-medium capitalize text-[#6d7697]">{admin?.role || 'Administrator'}</div>
                 </div>
               </div>
+              <button type="button" onClick={toggleTheme} title="Toggle color theme" aria-label="Toggle color theme" className="dark-theme-toggle flex h-10 w-10 items-center justify-center rounded-2xl border border-[#dfe6f3] bg-white text-[#52617d] shadow-sm"><ThemeIcon dark={resolvedTheme === 'dark'} /></button>
               <div className="relative" ref={menuRef}><button onClick={() => setMenuOpen(!menuOpen)} className="w-12 h-12 rounded-2xl bg-white border border-[#e0e6f2] shadow-sm flex items-center justify-center text-[#667092]"><span className="hidden lg:block"><ChevronDownIcon className="h-5 w-5" /></span><span className="lg:hidden"><DotsVerticalIcon className="w-5 h-5" /></span></button>{menuOpen && <div className="absolute right-0 top-14 w-64 bg-white rounded-[24px] shadow-2xl py-2 z-30 border border-slate-100"><div className="px-5 py-3 border-b border-gray-100"><div className="text-sm font-black truncate">{admin?.name}</div><div className="text-xs text-gray-500 capitalize">{admin?.role}</div></div><button onClick={signOut} className="w-full flex items-center gap-3 px-5 py-3 text-sm hover:bg-gray-50"><LogoutIcon className="w-4 h-4" />Sign out</button></div>}</div>
             </div>
           </header>
@@ -440,10 +448,16 @@ export default function ClientDashboard() {
         </section>
       </div>
 
+      <nav className="mobile-bottom-nav lg:hidden" aria-label="Quick navigation">
+        {[['/dashboard/statistics','Home',HomeIcon],['/dashboard/conversations','Inbox',ChatIcon],['/dashboard/tickets','Tickets',TicketIcon],['/dashboard/settings','Settings',CogIcon]].map(([path,label,Icon]) => {
+          const selected = active(path);
+          return <button key={path} type="button" onClick={() => { navigate(path); setDrawerOpen(false); }} className={selected ? 'mobile-bottom-nav__item is-active' : 'mobile-bottom-nav__item'}><span className="mobile-bottom-nav__icon"><Icon className="h-5 w-5" /></span><span>{label}</span></button>;
+        })}
+      </nav>
+
       <div className={`fixed inset-0 z-40 bg-black/50 lg:hidden ${drawerOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'}`} onClick={() => setDrawerOpen(false)} />
-      <aside className={`fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] bg-white text-[#0d1438] flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+      <aside className={`fixed inset-y-0 left-0 z-50 w-[min(19rem,82vw)] max-w-[82vw] bg-white text-[#0d1438] flex flex-col shadow-2xl transition-transform lg:hidden ${drawerOpen ? 'translate-x-0' : '-translate-x-full'}`}>
         <div className="px-5 pt-5 pb-3 border-b border-[#e2e7f4] flex items-center justify-between gap-3"><Brand expressnet={expressnet} compact /><button onClick={() => setDrawerOpen(false)} className="w-9 h-9 flex items-center justify-center text-[#263150]"><CloseIcon className="w-5 h-5" /></button></div>
-        <AiSidebarHero compact />
         <nav className="flex-1 overflow-y-auto px-4 py-3 pb-6 pr-2">{navList(true)}</nav>
       </aside>
     </div>

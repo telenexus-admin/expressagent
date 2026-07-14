@@ -360,7 +360,7 @@ router.post(
          ) VALUES (
            $1, $2, $3, 'active', $4,
            $5, $6, $7, $8,
-           $9, $10, $11, $12, CASE WHEN $10 IS NULL THEN NULL ELSE NOW() END,
+           $9, $10::varchar, $11, $12, NOW(),
            $13, $14, $15, $16, $17
          ) RETURNING id, name, business_name, contact_email, status, connection_provider,
                     meta_phone_number_id, meta_business_account_id, meta_verify_token,

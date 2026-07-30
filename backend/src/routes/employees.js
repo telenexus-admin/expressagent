@@ -3,6 +3,11 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
+const {
+  appendBillingEvent,
+  ensureEventSchema,
+  eventActorFromRequest,
+} = require('../services/events');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -71,20 +76,56 @@ router.post(
         }
       }
 
-      const result = await db.query(
-        `INSERT INTO employees (client_id, name, role, location, phone, email, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, client_id, name, role, location, phone, email, is_active, created_at`,
-        [
+      await ensureEventSchema();
+      const client = await db.connect();
+      let result;
+      try {
+        await client.query('BEGIN');
+        result = await client.query(
+          `INSERT INTO employees (client_id, name, role, location, phone, email, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, client_id, name, role, location, phone, email, is_active, created_at`,
+          [
+            clientId,
+            req.body.name.trim(),
+            req.body.role || 'technician',
+            req.body.location.trim(),
+            req.body.phone.trim(),
+            req.body.email,
+            req.body.is_active === undefined ? true : !!req.body.is_active,
+          ]
+        );
+        const employee = result.rows[0];
+        await appendBillingEvent(client, {
           clientId,
-          req.body.name.trim(),
-          req.body.role || 'technician',
-          req.body.location.trim(),
-          req.body.phone.trim(),
-          req.body.email,
-          req.body.is_active === undefined ? true : !!req.body.is_active,
-        ]
-      );
+          eventType: 'employee.created',
+          category: 'employee',
+          source: 'employees_api',
+          entityType: 'employee',
+          entityId: employee.id,
+          ...eventActorFromRequest(req),
+          title: 'Employee added',
+          description: `${employee.name} was added as ${employee.role}`,
+          payload: {
+            role: employee.role,
+            location: employee.location,
+            is_active: employee.is_active,
+          },
+          newState: {
+            role: employee.role,
+            location: employee.location,
+            is_active: employee.is_active,
+          },
+          deduplicationKey: `employee:${employee.id}:created`,
+          sensitivity: 'confidential',
+        });
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
       res.status(201).json(result.rows[0]);
     } catch (err) {
       if (err.code === '23505') {

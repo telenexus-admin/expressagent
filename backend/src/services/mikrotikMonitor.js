@@ -2,6 +2,7 @@ const db = require('../db');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
 const { collectMonitoringSnapshot, ensureMikrotikTables } = require('./mikrotik');
+const { recordBillingEvent } = require('./events');
 
 let schemaReady = false;
 let schedulerStarted = false;
@@ -14,6 +15,13 @@ const COOLDOWNS = {
   high_cpu: 10,
   storage_bad: 30,
   security_failed_login: 10,
+};
+const CANONICAL_EVENT_TYPES = {
+  router_offline: 'router.offline',
+  router_back_online: 'router.recovered',
+  high_cpu: 'router.high_cpu',
+  storage_bad: 'router.storage_degraded',
+  security_failed_login: 'router.security_failed_login',
 };
 
 const notificationTemplates = {
@@ -274,6 +282,36 @@ async function cooldownBlocked(routerId, eventType, key = '') {
 async function notifyEvent({ router, client, eventType, severity, variables, key = '' }) {
   const cooldown = COOLDOWNS[eventType] ?? 10;
   if (cooldown > 0 && await cooldownBlocked(router.id, eventType, key)) return { skipped: true, reason: 'cooldown' };
+  const canonicalSeverity = ['warning', 'critical'].includes(severity) ? severity : 'info';
+  try {
+    await recordBillingEvent({
+      clientId: router.client_id,
+      eventType: CANONICAL_EVENT_TYPES[eventType] || 'router.monitor_event',
+      category: 'network',
+      source: 'mikrotik_monitor',
+      entityType: 'router',
+      entityId: router.id,
+      actorType: 'system',
+      severity: canonicalSeverity,
+      title: variables.router_name || router.name || 'Router event',
+      description: `${variables.router_name || router.name || 'Router'} emitted ${eventType}`,
+      payload: {
+        monitor_event_type: eventType,
+        monitor_key: key || null,
+        ...variables,
+      },
+      newState: {
+        status: eventType === 'router_offline'
+          ? 'offline'
+          : eventType === 'router_back_online'
+            ? 'online'
+            : severity,
+      },
+      sensitivity: eventType === 'security_failed_login' ? 'restricted' : 'internal',
+    });
+  } catch (error) {
+    console.error(`Failed to record ${eventType} in billing event history:`, error.message);
+  }
   const recipients = await routerAlertRecipients(router.client_id);
   if (!recipients.length) return { skipped: true, reason: 'no_router_alert_workflow_recipient' };
   const { index, template } = chooseTemplate(eventType);

@@ -53,6 +53,7 @@ const { startWebsiteKnowledgeScheduler } = require('./services/websiteKnowledge'
 const { startAiTaskScheduler } = require('./services/aiTasks');
 const { startMikrotikMonitorScheduler } = require('./services/mikrotikMonitor');
 const { startRadiusSyncJobScheduler } = require('./services/radiusJobs');
+const { ensureEventSchema } = require('./services/events');
 const { openAIModelSummary } = require('./services/openai');
 
 const app = express();
@@ -155,6 +156,9 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`WhatsApp Support backend running on port ${PORT}`);
   console.log(`OpenAI runtime config: ${JSON.stringify(openAIModelSummary())}`);
+  ensureEventSchema()
+    .then(() => console.log('Billing event schema ready.'))
+    .catch((error) => console.error('Billing event schema initialization failed:', error.message));
   startDailyReportScheduler();
   startOperatorFollowUpScheduler();
   startHumanTakeoverRecoveryScheduler();

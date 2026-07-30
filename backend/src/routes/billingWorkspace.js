@@ -8,6 +8,11 @@ const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber,
 const { enqueueRadiusSyncJob, processRadiusSyncJobs } = require('../services/radiusJobs');
 const { ensureMikrotikTables, syncStaticDhcpLease } = require('../services/mikrotik');
 const { createHotspotPortalToken } = require('../services/hotspotPortalToken');
+const {
+  appendBillingEvent,
+  ensureEventSchema,
+  eventActorFromRequest,
+} = require('../services/events');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -230,12 +235,61 @@ router.post('/subscribers', [
     const graceDays = Number(grace_period_days || 0);
     const planDays = Number(selectedPlan?.validity_days || 0);
     const expiresAt = planDays ? new Date(Date.now() + planDays * 86400000) : null;
-    const result = await db.query(
-      `INSERT INTO billing_subscribers (client_id, plan_id, full_name, phone, email, account_number, radius_username, router_id, router_name, notes, grace_period_days, expires_at, access_mode, vlan_id, static_pool_id, static_ip, static_mac, static_dhcp_server)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
-      [req.scope.clientId, plan_id || null, full_name.trim(), phone?.trim() || null, email?.trim() || null, account_number.trim(), radius_username?.trim() || null, selectedRouter?.id || null, selectedRouter?.name || null, notes?.trim() || null, graceDays, expiresAt, staticConfig.accessMode, vlan_id ? Number(vlan_id) : null, staticConfig.staticPoolId, staticConfig.staticIp, staticConfig.staticMac, staticConfig.staticDhcpServer]
-    );
-    if (staticConfig.accessMode === 'dhcp_static') { await enqueueRadiusSyncJob(db, req.scope.clientId, result.rows[0].id, 'subscriber_created'); processRadiusSyncJobs().catch(() => {}); }
+    await ensureEventSchema();
+    const client = await db.connect();
+    let result;
+    try {
+      await client.query('BEGIN');
+      result = await client.query(
+        `INSERT INTO billing_subscribers (client_id, plan_id, full_name, phone, email, account_number, radius_username, router_id, router_name, notes, grace_period_days, expires_at, access_mode, vlan_id, static_pool_id, static_ip, static_mac, static_dhcp_server)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18) RETURNING *`,
+        [req.scope.clientId, plan_id || null, full_name.trim(), phone?.trim() || null, email?.trim() || null, account_number.trim(), radius_username?.trim() || null, selectedRouter?.id || null, selectedRouter?.name || null, notes?.trim() || null, graceDays, expiresAt, staticConfig.accessMode, vlan_id ? Number(vlan_id) : null, staticConfig.staticPoolId, staticConfig.staticIp, staticConfig.staticMac, staticConfig.staticDhcpServer]
+      );
+      const subscriber = result.rows[0];
+      const actor = eventActorFromRequest(req);
+      await appendBillingEvent(client, {
+        clientId: req.scope.clientId,
+        eventType: 'subscriber.created',
+        category: 'subscriber',
+        source: 'billing_api',
+        entityType: 'subscriber',
+        entityId: subscriber.id,
+        ...actor,
+        title: 'Subscriber created',
+        description: `${subscriber.full_name} was added to the billing account`,
+        payload: {
+          account_number: subscriber.account_number,
+          access_mode: subscriber.access_mode,
+          plan_id: subscriber.plan_id,
+          router_id: subscriber.router_id,
+          vlan_id: subscriber.vlan_id,
+          service_status: subscriber.service_status,
+          expires_at: subscriber.expires_at,
+        },
+        newState: {
+          service_status: subscriber.service_status,
+          plan_id: subscriber.plan_id,
+          router_id: subscriber.router_id,
+          access_mode: subscriber.access_mode,
+        },
+        relatedEntities: [
+          ...(subscriber.plan_id ? [{ entityType: 'package', entityId: subscriber.plan_id, relationship: 'subscribed_to' }] : []),
+          ...(subscriber.router_id ? [{ entityType: 'router', entityId: subscriber.router_id, relationship: 'served_by' }] : []),
+        ],
+        deduplicationKey: `subscriber:${subscriber.id}:created`,
+        sensitivity: 'confidential',
+      });
+      if (staticConfig.accessMode === 'dhcp_static') {
+        await enqueueRadiusSyncJob(client, req.scope.clientId, subscriber.id, 'subscriber_created');
+      }
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+    if (staticConfig.accessMode === 'dhcp_static') processRadiusSyncJobs().catch(() => {});
     res.status(201).json(result.rows[0]);
   } catch (err) {
     if (err.code === '23505') return res.status(409).json({ error: 'Account number or RADIUS username already exists' });
@@ -251,6 +305,12 @@ router.post('/subscribers/:id/recharge', [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    await ensureEventSchema();
+  } catch (error) {
+    console.error('Unable to initialize billing event schema:', error.message);
+    return res.status(500).json({ error: 'Failed to initialize account event history' });
+  }
   const client = await db.connect();
   try {
     await client.query('BEGIN');
@@ -296,6 +356,74 @@ router.post('/subscribers/:id/recharge', [
       [plan.id, expiresAt, packageRouter?.id || null, packageRouter?.name || null, subscriber.id, req.scope.clientId]
     );
     await enqueueRadiusSyncJob(client, req.scope.clientId, subscriber.id, 'recharge_committed');
+    const actor = eventActorFromRequest(req);
+    await appendBillingEvent(client, {
+      clientId: req.scope.clientId,
+      eventType: 'subscriber.recharged',
+      category: 'subscriber',
+      source: 'billing_api',
+      entityType: 'subscriber',
+      entityId: subscriber.id,
+      ...actor,
+      title: 'Subscriber recharged',
+      description: `${subscriber.full_name} was recharged on ${plan.name}`,
+      payload: {
+        account_number: subscriber.account_number,
+        package_id: plan.id,
+        package_name: plan.name,
+        amount,
+        payment_reference: reference,
+        invoice_number: invoice.rows[0].invoice_number,
+      },
+      previousState: {
+        plan_id: subscriber.plan_id,
+        service_status: subscriber.service_status,
+        expires_at: subscriber.expires_at,
+      },
+      newState: {
+        plan_id: plan.id,
+        service_status: 'active',
+        expires_at: expiresAt,
+        router_id: packageRouter?.id || subscriber.router_id,
+      },
+      relatedEntities: [
+        { entityType: 'package', entityId: plan.id, relationship: 'recharged_with' },
+        { entityType: 'payment', entityId: payment.rows[0].id, relationship: 'paid_by' },
+        { entityType: 'invoice', entityId: invoice.rows[0].id, relationship: 'settled_by' },
+        ...((packageRouter?.id || subscriber.router_id) ? [{
+          entityType: 'router',
+          entityId: packageRouter?.id || subscriber.router_id,
+          relationship: 'served_by',
+        }] : []),
+      ],
+      correlationId: `recharge:${req.scope.clientId}:${reference}`,
+      deduplicationKey: `subscriber-recharge:${req.scope.clientId}:${reference}`,
+      sensitivity: 'confidential',
+    });
+    await appendBillingEvent(client, {
+      clientId: req.scope.clientId,
+      eventType: 'payment.received',
+      category: 'payment',
+      source: 'billing_api',
+      entityType: 'payment',
+      entityId: payment.rows[0].id,
+      ...actor,
+      title: 'Recharge payment received',
+      description: `Payment ${reference} was received for ${subscriber.full_name}`,
+      payload: {
+        amount,
+        method: payment.rows[0].method,
+        reference,
+        status: payment.rows[0].status,
+      },
+      relatedEntities: [
+        { entityType: 'subscriber', entityId: subscriber.id, relationship: 'paid_for' },
+        { entityType: 'invoice', entityId: invoice.rows[0].id, relationship: 'applied_to' },
+      ],
+      correlationId: `recharge:${req.scope.clientId}:${reference}`,
+      deduplicationKey: `payment:${req.scope.clientId}:${reference}`,
+      sensitivity: 'confidential',
+    });
     await client.query('COMMIT');
     processRadiusSyncJobs().catch((error) => console.error('Unable to start RADIUS recharge sync:', error.message));
     res.status(201).json({ invoice: invoice.rows[0], payment: payment.rows[0], subscriber: { id: subscriber.id, plan_id: plan.id, expires_at: expiresAt, service_status: 'active' } });

@@ -1,6 +1,7 @@
 require('dotenv').config();
 const { Pool } = require('pg');
 const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
+const { EVENT_SCHEMA_SQL } = require('../services/events');
 
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
@@ -811,6 +812,7 @@ async function init() {
   console.log('Initializing database schema...');
   try {
     await pool.query(schema);
+    await pool.query(EVENT_SCHEMA_SQL);
     await bootstrapDefaultClient();
     console.log('Database schema initialized successfully.');
   } catch (err) {

@@ -1,6 +1,7 @@
 const db = require('../db');
 const { loadSubscriber, syncHotspotVoucherRadius, syncSubscriberRadius } = require('./radiusSync');
 const { connectRouter, getRouter, syncStaticDhcpLease } = require('./mikrotik');
+const { recordBillingEvent } = require('./events');
 
 let running = false;
 let timer;
@@ -110,6 +111,20 @@ async function processJob(job) {
        last_error=NULL, updated_at=NOW() WHERE id=$1`,
       [job.id]
     );
+    await recordBillingEvent({
+      clientId: job.client_id,
+      eventType: 'radius.sync_completed',
+      category: 'radius',
+      source: 'radius_sync_worker',
+      entityType: 'subscriber',
+      entityId: job.subscriber_id,
+      actorType: 'system',
+      title: 'RADIUS synchronization completed',
+      payload: { job_id: job.id, reason: job.reason, attempt: job.attempts },
+      relatedEntities: [{ entityType: 'radius_sync_job', entityId: job.id, relationship: 'sync_job' }],
+      deduplicationKey: `radius-sync:${job.id}:attempt:${job.attempts}:completed`,
+      sensitivity: 'restricted',
+    }).catch((eventError) => console.error('RADIUS sync completion event could not be recorded:', eventError.message));
   } catch (error) {
     const exhausted = Number(job.attempts) >= 8;
     const delaySeconds = Math.min(300, 5 * (2 ** Math.max(0, Number(job.attempts) - 1)));
@@ -119,6 +134,27 @@ async function processJob(job) {
            last_error=$4, updated_at=NOW() WHERE id=$1`,
       [job.id, exhausted ? 'failed' : 'pending', delaySeconds, String(error.message || error).slice(0, 1000)]
     );
+    await recordBillingEvent({
+      clientId: job.client_id,
+      eventType: exhausted ? 'radius.sync_failed' : 'radius.sync_retry_scheduled',
+      category: 'radius',
+      source: 'radius_sync_worker',
+      entityType: 'subscriber',
+      entityId: job.subscriber_id,
+      actorType: 'system',
+      severity: exhausted ? 'critical' : 'warning',
+      title: exhausted ? 'RADIUS synchronization failed' : 'RADIUS synchronization retry scheduled',
+      payload: {
+        job_id: job.id,
+        reason: job.reason,
+        attempt: job.attempts,
+        next_attempt_seconds: exhausted ? null : delaySeconds,
+        error: String(error.message || error).slice(0, 1000),
+      },
+      relatedEntities: [{ entityType: 'radius_sync_job', entityId: job.id, relationship: 'sync_job' }],
+      deduplicationKey: `radius-sync:${job.id}:attempt:${job.attempts}:${exhausted ? 'failed' : 'retry'}`,
+      sensitivity: 'restricted',
+    }).catch((eventError) => console.error('RADIUS sync failure event could not be recorded:', eventError.message));
   }
 }
 

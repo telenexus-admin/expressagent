@@ -1,6 +1,7 @@
 const assert = require('assert');
 const {
   appendBillingEvent,
+  appendRequestEvent,
   buildEventEnvelope,
   redactSensitive,
 } = require('../src/services/events');
@@ -109,12 +110,48 @@ async function testDeduplication() {
   assert.equal(call, 2);
 }
 
+async function testRequestEvent() {
+  const calls = [];
+  const queryable = {
+    async query(sql, params) {
+      calls.push({ sql, params });
+      if (sql.includes('INSERT INTO billing_events')) {
+        return { rows: [{ id: params[0], client_id: params[1], recorded_at: new Date().toISOString() }] };
+      }
+      return { rows: [] };
+    },
+  };
+  await appendRequestEvent(queryable, {
+    scope: { clientId: 81 },
+    user: { id: 9, role: 'admin', name: 'Test Admin' },
+    headers: { 'x-request-id': 'req-81', 'user-agent': 'test-agent' },
+    ip: '127.0.0.1',
+  }, {
+    eventType: 'invoice.issued',
+    category: 'invoice',
+    source: 'billing_workspace',
+    entityType: 'invoice',
+    entityId: 501,
+    payload: { amount: 2000 },
+  });
+  const insert = calls.find((call) => call.sql.includes('INSERT INTO billing_events'));
+  assert(insert);
+  assert.equal(insert.params[1], 81);
+  assert.equal(insert.params[8], 'admin');
+  assert.equal(insert.params[9], '9');
+  assert.equal(insert.params[10], 'Test Admin');
+  const metadata = JSON.parse(insert.params[17]);
+  assert.equal(metadata.request_id, 'req-81');
+  assert.equal(metadata.ip_address, '127.0.0.1');
+}
+
 async function main() {
   testEnvelope();
   testValidation();
   testRedaction();
   await testAppend();
   await testDeduplication();
+  await testRequestEvent();
   console.log('Event schema service tests passed.');
 }
 

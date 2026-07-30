@@ -346,12 +346,51 @@ function eventActorFromRequest(req) {
   };
 }
 
+function clientIdFromRequest(req) {
+  const value = Number(
+    req?.scope?.clientId
+    ?? req?.body?.client_id
+    ?? req?.query?.clientId
+  );
+  if (!Number.isInteger(value) || value <= 0) {
+    throw new Error('A tenant client id is required for this event');
+  }
+  return value;
+}
+
+async function appendRequestEvent(queryable, req, input = {}) {
+  return appendBillingEvent(queryable, {
+    clientId: input.clientId ?? clientIdFromRequest(req),
+    ...eventActorFromRequest(req),
+    ...input,
+    metadata: {
+      ...eventActorFromRequest(req).metadata,
+      ...(input.metadata || {}),
+    },
+  });
+}
+
+async function recordRequestEvent(req, input = {}) {
+  return recordBillingEvent({
+    clientId: input.clientId ?? clientIdFromRequest(req),
+    ...eventActorFromRequest(req),
+    ...input,
+    metadata: {
+      ...eventActorFromRequest(req).metadata,
+      ...(input.metadata || {}),
+    },
+  });
+}
+
 module.exports = {
   EVENT_SCHEMA_SQL,
   appendBillingEvent,
+  appendRequestEvent,
   buildEventEnvelope,
+  clientIdFromRequest,
   ensureEventSchema,
   eventActorFromRequest,
   recordBillingEvent,
+  recordRequestEvent,
   redactSensitive,
 };

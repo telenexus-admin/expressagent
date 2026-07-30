@@ -7,6 +7,7 @@ const {
   appendBillingEvent,
   ensureEventSchema,
   eventActorFromRequest,
+  recordRequestEvent,
 } = require('../services/events');
 
 router.use(authMiddleware, scopeMiddleware);
@@ -154,7 +155,7 @@ router.put(
     }
 
     try {
-      const existing = await db.query(`SELECT id, client_id FROM employees WHERE id = $1`, [req.params.id]);
+      const existing = await db.query(`SELECT * FROM employees WHERE id = $1`, [req.params.id]);
       if (existing.rows.length === 0) {
         return res.status(404).json({ error: 'Employee not found' });
       }
@@ -184,6 +185,22 @@ router.put(
          RETURNING id, client_id, name, role, location, phone, email, is_active, created_at`,
         params
       );
+      const employee = result.rows[0];
+      await recordRequestEvent(req, {
+        clientId: employee.client_id,
+        eventType: 'employee.updated',
+        category: 'employee',
+        source: 'employees_api',
+        entityType: 'employee',
+        entityId: employee.id,
+        title: 'Employee updated',
+        description: `${employee.name}'s employee record was updated`,
+        previousState: existing.rows[0],
+        newState: employee,
+        payload: { changed_fields: allowed.filter((key) => req.body[key] !== undefined) },
+        deduplicationKey: `employee:${employee.id}:updated:${Date.now()}`,
+        sensitivity: 'confidential',
+      });
       res.json(result.rows[0]);
     } catch (err) {
       if (err.code === '23505') {
@@ -197,7 +214,7 @@ router.put(
 
 router.delete('/:id', async (req, res) => {
   try {
-    const existing = await db.query(`SELECT id, client_id FROM employees WHERE id = $1`, [req.params.id]);
+    const existing = await db.query(`SELECT * FROM employees WHERE id = $1`, [req.params.id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Employee not found' });
     }
@@ -205,6 +222,20 @@ router.delete('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await db.query(`DELETE FROM employees WHERE id = $1`, [req.params.id]);
+    await recordRequestEvent(req, {
+      clientId: existing.rows[0].client_id,
+      eventType: 'employee.deleted',
+      category: 'employee',
+      source: 'employees_api',
+      entityType: 'employee',
+      entityId: existing.rows[0].id,
+      severity: 'warning',
+      title: 'Employee removed',
+      description: `${existing.rows[0].name} was removed`,
+      previousState: existing.rows[0],
+      deduplicationKey: `employee:${existing.rows[0].id}:deleted`,
+      sensitivity: 'confidential',
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /employees/:id error:', err.message);

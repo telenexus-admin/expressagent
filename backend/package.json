@@ -12,7 +12,8 @@
     "db:setup": "node src/db/init.js && node src/db/seed.js",
     "test:events": "node test/events.test.js",
     "test:events:db": "node test/events.db.test.js",
-    "test:events:schema": "node test/events.schema.verify.js"
+    "test:events:schema": "node test/events.schema.verify.js",
+    "test:event-producers:db": "node test/eventProducers.db.test.js"
   },
   "dependencies": {
     "axios": "^1.6.7",

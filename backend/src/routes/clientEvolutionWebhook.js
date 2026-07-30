@@ -18,6 +18,7 @@ const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { isBlockedNumber } = require('../services/blockedNumbers');
 const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
+const { recordBillingEvent } = require('../services/events');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
@@ -606,6 +607,31 @@ router.post('/client/:clientId', async (req, res) => {
         );
       }
     }
+    await recordBillingEvent({
+      clientId: client.id,
+      eventType: 'communication.whatsapp_received',
+      category: 'communication',
+      source: 'evolution_webhook',
+      entityType: 'whatsapp_message',
+      entityId: savedUserMessage.id,
+      actorType: 'subscriber',
+      actorId: incoming.phone,
+      actorName: conversation.customer_name,
+      title: 'WhatsApp message received',
+      payload: {
+        conversation_id: conversation.id,
+        sender_phone: incoming.phone,
+        message: storedText,
+        is_voice: Boolean(incoming.isVoice),
+        is_image: Boolean(incoming.isImage),
+        provider: 'evolution',
+      },
+      relatedEntities: [
+        { entityType: 'conversation', entityId: conversation.id, relationship: 'conversation' },
+      ],
+      deduplicationKey: `whatsapp-inbound:${client.id}:${savedUserMessage.id}`,
+      sensitivity: 'confidential',
+    });
     runAfterReply('Push notification for inbound Evolution message', () => notifyClientAdmins({
       clientId: client.id,
       conversationId: conversation.id,

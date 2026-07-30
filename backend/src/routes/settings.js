@@ -12,6 +12,7 @@ const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
 const { listBlockedNumbers, addBlockedNumber, removeBlockedNumber } = require('../services/blockedNumbers');
 const { setClientWebhook } = require('../services/clientEvolution');
+const { recordRequestEvent } = require('../services/events');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -1434,6 +1435,28 @@ router.post('/communication/send', async (req, res) => {
         sent += 1;
       } catch (error) { failures.push({ id: recipient.id, error: error.message || 'Delivery failed' }); }
     }
+    await recordRequestEvent(req, {
+      clientId: targetClient,
+      eventType: `communication.${channel}_broadcast_completed`,
+      category: 'communication',
+      source: 'communication_api',
+      entityType: 'communication_broadcast',
+      entityId: `${channel}-${Date.now()}`,
+      severity: failures.length ? 'warning' : 'info',
+      title: `${channel === 'sms' ? 'SMS' : 'WhatsApp'} broadcast completed`,
+      payload: {
+        channel,
+        audience,
+        router_id: req.body.router_id || null,
+        message,
+        total: recipients.length,
+        sent,
+        failed: failures.length,
+        failed_subscriber_ids: failures.map((failure) => failure.id),
+      },
+      relatedEntities: req.body.router_id ? [{ entityType: 'router', entityId: req.body.router_id, relationship: 'audience_router' }] : [],
+      sensitivity: 'confidential',
+    });
     res.json({ success: failures.length === 0, total: recipients.length, sent, failed: failures.length, failures: failures.slice(0, 10) });
   } catch (error) {
     console.error('POST /settings/communication/send error:', error.message);

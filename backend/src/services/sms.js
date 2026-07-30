@@ -1,5 +1,6 @@
 const axios = require('axios');
 const db = require('../db');
+const { recordBillingEvent } = require('./events');
 
 const BLESSED_DEFAULT_URL = 'https://sms.blessedtexts.com/api/sms/v1/sendsms';
 const SAVVY_DEFAULT_URL = 'https://sms.savvybulksms.com/api/services/sendsms/';
@@ -291,6 +292,30 @@ async function sendSMS(phone, message, clientConfig = null) {
   const results = await Promise.all(
     recipients.map((recipient) => sendOne(recipient, message, clientConfig))
   );
+  const source = clientConfig?.client || clientConfig || {};
+  const clientId = Number(source.id || source.client_id || 0);
+  if (Number.isInteger(clientId) && clientId > 0) {
+    const config = normalizeExplicitConfig(clientConfig || {});
+    await recordBillingEvent({
+      clientId,
+      eventType: 'communication.sms_sent',
+      category: 'communication',
+      source: 'sms_service',
+      entityType: 'sms_delivery',
+      entityId: `${Date.now()}-${recipients[0]}`,
+      actorType: 'system',
+      title: 'SMS sent',
+      description: `SMS sent to ${recipients.length} recipient${recipients.length === 1 ? '' : 's'}`,
+      payload: {
+        provider: config.sms_provider,
+        sender_id: config.sms_sender_id,
+        recipients,
+        message: String(message),
+        recipient_count: recipients.length,
+      },
+      sensitivity: 'confidential',
+    }).catch((error) => console.error('SMS event recording failed:', error.message));
+  }
 
   return Array.isArray(phone) ? results : results[0];
 }

@@ -10,8 +10,10 @@ const { ensureMikrotikTables, syncStaticDhcpLease } = require('../services/mikro
 const { createHotspotPortalToken } = require('../services/hotspotPortalToken');
 const {
   appendBillingEvent,
+  appendRequestEvent,
   ensureEventSchema,
   eventActorFromRequest,
+  recordRequestEvent,
 } = require('../services/events');
 
 const router = express.Router();
@@ -120,11 +122,12 @@ router.post('/plans', [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const client = await db.connect();
   try {
     const { name, description, download_speed_mbps, upload_speed_mbps, price, validity_days, radius_profile, router_id,
       fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps } = req.body;
     if (router_id) {
-      const selectedRouter = await db.query(
+      const selectedRouter = await client.query(
         'SELECT id FROM mikrotik_routers WHERE id = $1 AND client_id = $2 AND is_active = TRUE LIMIT 1',
         [router_id, req.scope.clientId]
       );
@@ -133,7 +136,9 @@ router.post('/plans', [
     if (fup_enabled && (!fup_threshold_mb || !fup_download_speed_mbps || !fup_upload_speed_mbps)) {
       return res.status(400).json({ error: 'FUP requires a usage threshold and reduced download and upload speeds' });
     }
-    const result = await db.query(
+    await ensureEventSchema();
+    await client.query('BEGIN');
+    const result = await client.query(
       `INSERT INTO billing_plans
        (client_id, name, description, download_speed_mbps, upload_speed_mbps, price, validity_days, radius_profile,
         router_id, fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps)
@@ -142,11 +147,36 @@ router.post('/plans', [
         price || 0, validity_days || 30, radius_profile?.trim() || null, router_id || null, Boolean(fup_enabled),
         fup_enabled ? fup_threshold_mb : null, fup_enabled ? fup_download_speed_mbps : null, fup_enabled ? fup_upload_speed_mbps : null]
     );
+    const plan = result.rows[0];
+    await appendRequestEvent(client, req, {
+      eventType: 'package.created',
+      category: 'package',
+      source: 'billing_workspace',
+      entityType: 'package',
+      entityId: plan.id,
+      title: 'PPPoE package created',
+      description: `${plan.name} was added to the service catalogue`,
+      payload: {
+        service_type: 'pppoe',
+        price: plan.price,
+        validity_days: plan.validity_days,
+        download_speed_mbps: plan.download_speed_mbps,
+        upload_speed_mbps: plan.upload_speed_mbps,
+        fup_enabled: plan.fup_enabled,
+      },
+      newState: plan,
+      relatedEntities: plan.router_id ? [{ entityType: 'router', entityId: plan.router_id, relationship: 'assigned_router' }] : [],
+      deduplicationKey: `package:${plan.id}:created`,
+    });
+    await client.query('COMMIT');
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* transaction may not have started */ }
     if (err.code === '23505') return res.status(409).json({ error: 'A plan with that name already exists' });
     console.error('Create billing plan error:', err.message);
     res.status(500).json({ error: 'Failed to create billing plan' });
+  } finally {
+    client.release();
   }
 });
 
@@ -507,6 +537,28 @@ router.patch('/subscribers/:id', [
   const subscriber = await loadSubscriber(current.id, req.scope.clientId);
   if (subscriber.access_mode === 'dhcp_static') { await enqueueRadiusSyncJob(db, req.scope.clientId, subscriber.id, 'subscriber_updated'); processRadiusSyncJobs().catch(() => {}); }
   else if (subscriber.radius_username) await syncSubscriberRadius(subscriber);
+  await recordRequestEvent(req, {
+    eventType: 'subscriber.updated',
+    category: 'subscriber',
+    source: 'billing_workspace',
+    entityType: 'subscriber',
+    entityId: subscriber.id,
+    title: 'Subscriber updated',
+    description: subscriber.full_name,
+    previousState: current,
+    newState: result.rows[0],
+    payload: {
+      changed_fields: Object.keys(req.body || {}),
+      access_mode: subscriber.access_mode,
+      service_status: subscriber.service_status,
+    },
+    relatedEntities: [
+      ...(subscriber.plan_id ? [{ entityType: 'package', entityId: subscriber.plan_id, relationship: 'package' }] : []),
+      ...(subscriber.router_id ? [{ entityType: 'router', entityId: subscriber.router_id, relationship: 'router' }] : []),
+    ],
+    deduplicationKey: `subscriber:${subscriber.id}:updated:${Date.now()}`,
+    sensitivity: 'confidential',
+  });
   res.json(result.rows[0]);
 });
 
@@ -519,6 +571,23 @@ router.delete('/subscribers/:id', async (req, res) => {
     await syncSubscriberRadius({ ...subscriber, service_status: 'suspended' });
   }
   await db.query('DELETE FROM billing_subscribers WHERE id = $1 AND client_id = $2', [subscriber.id, req.scope.clientId]);
+  await recordRequestEvent(req, {
+    eventType: 'subscriber.deleted',
+    category: 'subscriber',
+    source: 'billing_workspace',
+    entityType: 'subscriber',
+    entityId: subscriber.id,
+    severity: 'warning',
+    title: 'Subscriber deleted',
+    description: subscriber.full_name,
+    previousState: subscriber,
+    relatedEntities: [
+      ...(subscriber.plan_id ? [{ entityType: 'package', entityId: subscriber.plan_id, relationship: 'package' }] : []),
+      ...(subscriber.router_id ? [{ entityType: 'router', entityId: subscriber.router_id, relationship: 'router' }] : []),
+    ],
+    deduplicationKey: `subscriber:${subscriber.id}:deleted`,
+    sensitivity: 'confidential',
+  });
   res.json({ success: true });
 });
 
@@ -529,19 +598,49 @@ router.post('/invoices', [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const client = await db.connect();
   try {
-    const subscriber = await db.query('SELECT id FROM billing_subscribers WHERE id = $1 AND client_id = $2 LIMIT 1', [req.body.subscriber_id, req.scope.clientId]);
-    if (!subscriber.rows[0]) return res.status(400).json({ error: 'Selected subscriber does not belong to this billing workspace' });
+    await ensureEventSchema();
+    await client.query('BEGIN');
+    const subscriber = await client.query('SELECT id, full_name, account_number FROM billing_subscribers WHERE id = $1 AND client_id = $2 LIMIT 1', [req.body.subscriber_id, req.scope.clientId]);
+    if (!subscriber.rows[0]) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Selected subscriber does not belong to this billing workspace' });
+    }
     const invoiceNumber = `INV-${req.scope.clientId}-${Date.now()}`;
-    const result = await db.query(
+    const result = await client.query(
       `INSERT INTO billing_invoices (client_id, subscriber_id, invoice_number, amount, status, due_date)
        VALUES ($1, $2, $3, $4, 'issued', $5) RETURNING *`,
       [req.scope.clientId, req.body.subscriber_id, invoiceNumber, req.body.amount, req.body.due_date || null]
     );
+    const invoice = result.rows[0];
+    await appendRequestEvent(client, req, {
+      eventType: 'invoice.issued',
+      category: 'invoice',
+      source: 'billing_workspace',
+      entityType: 'invoice',
+      entityId: invoice.id,
+      title: 'Invoice issued',
+      description: `${invoice.invoice_number} was issued to ${subscriber.rows[0].full_name}`,
+      payload: {
+        invoice_number: invoice.invoice_number,
+        amount: invoice.amount,
+        due_date: invoice.due_date,
+        status: invoice.status,
+      },
+      newState: invoice,
+      relatedEntities: [{ entityType: 'subscriber', entityId: invoice.subscriber_id, relationship: 'billed_subscriber' }],
+      deduplicationKey: `invoice:${invoice.id}:issued`,
+      sensitivity: 'confidential',
+    });
+    await client.query('COMMIT');
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* transaction may not have started */ }
     console.error('Create invoice error:', err.message);
     res.status(500).json({ error: 'Failed to create invoice' });
+  } finally {
+    client.release();
   }
 });
 
@@ -569,6 +668,7 @@ router.post('/payments', [
   const client = await db.connect();
   let entitlementSubscriberId = null;
   try {
+    await ensureEventSchema();
     await client.query('BEGIN');
     const existingPayment = await client.query(
       `SELECT id, invoice_id, subscriber_id, amount, method, reference, status, paid_at
@@ -622,6 +722,56 @@ router.post('/payments', [
         await enqueueRadiusSyncJob(client, req.scope.clientId, subscriber.id, 'payment_committed');
       }
     }
+    const payment = paymentResult.rows[0];
+    const correlationId = `invoice:${invoice.id}`;
+    await appendRequestEvent(client, req, {
+      eventType: 'payment.received',
+      category: 'payment',
+      source: 'billing_workspace',
+      entityType: 'payment',
+      entityId: payment.id,
+      title: 'Payment received',
+      description: `${payment.reference} recorded against ${invoice.invoice_number}`,
+      payload: {
+        amount: payment.amount,
+        method: payment.method,
+        reference: payment.reference,
+        status: payment.status,
+      },
+      newState: payment,
+      relatedEntities: [
+        { entityType: 'invoice', entityId: invoice.id, relationship: 'settles' },
+        { entityType: 'subscriber', entityId: invoice.subscriber_id, relationship: 'payer' },
+      ],
+      correlationId,
+      deduplicationKey: `payment:${payment.id}:received`,
+      sensitivity: 'confidential',
+    });
+    if (paidAmount >= Number(invoice.amount)) {
+      await appendRequestEvent(client, req, {
+        eventType: 'invoice.paid',
+        category: 'invoice',
+        source: 'billing_workspace',
+        entityType: 'invoice',
+        entityId: invoice.id,
+        title: 'Invoice paid',
+        description: `${invoice.invoice_number} is fully paid`,
+        payload: {
+          invoice_number: invoice.invoice_number,
+          invoice_amount: invoice.amount,
+          paid_amount: paidAmount,
+        },
+        previousState: { status: invoice.status },
+        newState: { status: 'paid', paid_amount: paidAmount },
+        relatedEntities: [
+          { entityType: 'payment', entityId: payment.id, relationship: 'final_payment' },
+          { entityType: 'subscriber', entityId: invoice.subscriber_id, relationship: 'subscriber' },
+        ],
+        correlationId,
+        deduplicationKey: `invoice:${invoice.id}:paid`,
+        sensitivity: 'confidential',
+      });
+    }
     await client.query('COMMIT');
     let reconnection = { status: entitlementSubscriberId ? 'queued' : 'not_required' };
     if (entitlementSubscriberId) {
@@ -665,6 +815,25 @@ router.post('/subscribers/:id/radius', [
     );
     const subscriber = await loadSubscriber(current.id, req.scope.clientId);
     const sync = await syncSubscriberRadius(subscriber);
+    await recordRequestEvent(req, {
+      eventType: 'radius.subscriber_configured',
+      category: 'radius',
+      source: 'billing_workspace',
+      entityType: 'subscriber',
+      entityId: subscriber.id,
+      title: 'Subscriber RADIUS access configured',
+      payload: {
+        radius_username: subscriber.radius_username,
+        radius_status: subscriber.radius_status,
+        sync_status: sync.status,
+      },
+      newState: {
+        radius_username: subscriber.radius_username,
+        radius_status: subscriber.radius_status,
+      },
+      deduplicationKey: `subscriber:${subscriber.id}:radius-config:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true, sync, subscriber: { id: subscriber.id, radius_username: subscriber.radius_username, radius_status: subscriber.radius_status } });
   } catch (err) {
     console.error('Radius subscriber sync error:', err.message);
@@ -677,6 +846,22 @@ router.post('/subscribers/:id/radius/sync', async (req, res) => {
     const subscriber = await loadSubscriber(req.params.id, req.scope.clientId);
     if (!subscriber) return res.status(404).json({ error: 'Subscriber not found' });
     const sync = subscriber.access_mode === 'dhcp_static' ? await syncStaticDhcpLease(subscriber) : await syncSubscriberRadius(subscriber);
+    await recordRequestEvent(req, {
+      eventType: 'radius.subscriber_synced',
+      category: 'radius',
+      source: 'billing_workspace',
+      entityType: 'subscriber',
+      entityId: subscriber.id,
+      title: 'Subscriber access synchronized',
+      payload: {
+        access_mode: subscriber.access_mode,
+        radius_username: subscriber.radius_username,
+        sync_status: sync.status,
+      },
+      relatedEntities: subscriber.router_id ? [{ entityType: 'router', entityId: subscriber.router_id, relationship: 'access_router' }] : [],
+      deduplicationKey: `subscriber:${subscriber.id}:manual-radius-sync:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true, sync });
   } catch (err) {
     console.error('Radius resync error:', err.message);
@@ -723,9 +908,10 @@ router.post('/hotspot/plans', [
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  const client = await db.connect();
   try {
     if (req.body.router_id) {
-      const selectedRouter = await db.query(
+      const selectedRouter = await client.query(
         'SELECT id FROM mikrotik_routers WHERE id = $1 AND client_id = $2 AND is_active = TRUE LIMIT 1',
         [req.body.router_id, req.scope.clientId]
       );
@@ -734,7 +920,9 @@ router.post('/hotspot/plans', [
     if (req.body.fup_enabled && (!req.body.fup_threshold_mb || !req.body.fup_download_speed_mbps || !req.body.fup_upload_speed_mbps)) {
       return res.status(400).json({ error: 'FUP requires a usage threshold and reduced download and upload speeds' });
     }
-    const result = await db.query(
+    await ensureEventSchema();
+    await client.query('BEGIN');
+    const result = await client.query(
       `INSERT INTO billing_hotspot_plans
        (client_id, name, price, duration_minutes, data_limit_mb, mikrotik_rate_limit, router_id,
         fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps)
@@ -745,11 +933,36 @@ router.post('/hotspot/plans', [
         req.body.fup_enabled ? req.body.fup_download_speed_mbps : null,
         req.body.fup_enabled ? req.body.fup_upload_speed_mbps : null]
     );
+    const plan = result.rows[0];
+    await appendRequestEvent(client, req, {
+      eventType: 'package.created',
+      category: 'package',
+      source: 'billing_workspace',
+      entityType: 'hotspot_package',
+      entityId: plan.id,
+      title: 'Hotspot package created',
+      description: `${plan.name} was added to the hotspot catalogue`,
+      payload: {
+        service_type: 'hotspot',
+        price: plan.price,
+        duration_minutes: plan.duration_minutes,
+        data_limit_mb: plan.data_limit_mb,
+        mikrotik_rate_limit: plan.mikrotik_rate_limit,
+        fup_enabled: plan.fup_enabled,
+      },
+      newState: plan,
+      relatedEntities: plan.router_id ? [{ entityType: 'router', entityId: plan.router_id, relationship: 'assigned_router' }] : [],
+      deduplicationKey: `hotspot-package:${plan.id}:created`,
+    });
+    await client.query('COMMIT');
     res.status(201).json(result.rows[0]);
   } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* transaction may not have started */ }
     if (err.code === '23505') return res.status(409).json({ error: 'A hotspot package with that name already exists' });
     console.error('Create hotspot plan error:', err.message);
     res.status(500).json({ error: 'Failed to create hotspot package' });
+  } finally {
+    client.release();
   }
 });
 
@@ -792,6 +1005,7 @@ router.post('/hotspot/vouchers', [
   try {
     const plan = await client.query('SELECT id FROM billing_hotspot_plans WHERE id = $1 AND client_id = $2 AND is_active = TRUE', [req.body.plan_id, req.scope.clientId]);
     if (!plan.rows[0]) return res.status(400).json({ error: 'Select an active hotspot package from this billing account' });
+    await ensureEventSchema();
     await client.query('BEGIN');
     const vouchers = [];
     for (let index = 0; index < req.body.quantity; index += 1) {
@@ -802,6 +1016,26 @@ router.post('/hotspot/vouchers', [
       );
       vouchers.push(result.rows[0]);
     }
+    await appendRequestEvent(client, req, {
+      eventType: 'hotspot.vouchers_created',
+      category: 'hotspot',
+      source: 'billing_workspace',
+      entityType: 'hotspot_package',
+      entityId: req.body.plan_id,
+      title: 'Hotspot vouchers created',
+      description: `${vouchers.length} hotspot voucher${vouchers.length === 1 ? '' : 's'} created`,
+      payload: {
+        quantity: vouchers.length,
+        voucher_ids: vouchers.map((voucher) => voucher.id),
+      },
+      relatedEntities: vouchers.map((voucher) => ({
+        entityType: 'hotspot_voucher',
+        entityId: voucher.id,
+        relationship: 'created_voucher',
+      })),
+      deduplicationKey: `hotspot-voucher-batch:${vouchers[0]?.id}:${vouchers.length}`,
+      sensitivity: 'confidential',
+    });
     await client.query('COMMIT');
     res.status(201).json(vouchers);
   } catch (err) {
@@ -840,6 +1074,27 @@ router.post('/hotspot/vouchers/:id/simulate-login', async (req, res) => {
       fup_threshold_mb: voucher.fup_threshold_mb,
       fup_download_speed_mbps: voucher.fup_download_speed_mbps,
       fup_upload_speed_mbps: voucher.fup_upload_speed_mbps,
+    });
+    await recordRequestEvent(req, {
+      eventType: 'hotspot.voucher_activated',
+      category: 'hotspot',
+      source: 'billing_workspace',
+      entityType: 'hotspot_voucher',
+      entityId: result.rows[0].id,
+      title: 'Hotspot voucher activated',
+      payload: {
+        plan_id: result.rows[0].plan_id,
+        expires_at: result.rows[0].expires_at,
+        radius_sync_status: radiusSync.status,
+      },
+      newState: {
+        status: result.rows[0].status,
+        activated_at: result.rows[0].activated_at,
+        expires_at: result.rows[0].expires_at,
+      },
+      relatedEntities: [{ entityType: 'hotspot_package', entityId: result.rows[0].plan_id, relationship: 'package' }],
+      deduplicationKey: `hotspot-voucher:${result.rows[0].id}:activated`,
+      sensitivity: 'confidential',
     });
     res.json({ simulated: true, voucher: result.rows[0], radius_sync: radiusSync });
   } catch (err) {

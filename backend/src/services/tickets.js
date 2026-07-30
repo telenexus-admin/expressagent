@@ -4,6 +4,7 @@ const { sendHighPriorityTicketEmail, sendWorkflowEmployeeEmail } = require('./em
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
 const { buildInstallationWorkOrderUrl, getOrCreateInstallationWorkOrder } = require('./installationWorkOrders');
+const { recordBillingEvent } = require('./events');
 
 let schemaReady = false;
 
@@ -443,9 +444,10 @@ async function recordHighPriorityClientAlerts(ticket) {
 
 async function addTicketEvent(ticketId, event) {
   await ensureTicketSchema();
-  await db.query(
+  const inserted = await db.query(
     `INSERT INTO ticket_events (ticket_id, actor_type, actor_id, actor_name, event_type, body, metadata)
-     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)
+     RETURNING *`,
     [
       ticketId,
       event.actor_type || 'system',
@@ -456,6 +458,58 @@ async function addTicketEvent(ticketId, event) {
       JSON.stringify(event.metadata || {}),
     ]
   );
+  const ticketEvent = inserted.rows[0];
+  const ticketResult = await db.query(
+    `SELECT id, client_id, conversation_id, customer_phone, customer_name, title,
+            category, priority, status, assigned_admin_id, assigned_employee_id
+     FROM tickets WHERE id = $1 LIMIT 1`,
+    [ticketId]
+  );
+  const ticket = ticketResult.rows[0];
+  if (ticket) {
+    const canonicalType = {
+      created: 'ticket.created',
+      message: 'ticket.message_added',
+      status_changed: 'ticket.status_changed',
+      assigned: 'ticket.assigned',
+      note: 'ticket.note_added',
+      resolved: 'ticket.resolved',
+    }[ticketEvent.event_type] || 'ticket.updated';
+    await recordBillingEvent({
+      clientId: ticket.client_id,
+      eventType: canonicalType,
+      category: 'ticket',
+      source: 'ticket_service',
+      entityType: 'ticket',
+      entityId: ticket.id,
+      actorType: ticketEvent.actor_type,
+      actorId: ticketEvent.actor_id,
+      actorName: ticketEvent.actor_name,
+      severity: ticket.priority === 'urgent' ? 'critical' : ticket.priority === 'high' ? 'warning' : 'info',
+      title: ticket.title,
+      description: ticketEvent.body,
+      payload: {
+        ticket_event_id: ticketEvent.id,
+        ticket_category: ticket.category,
+        priority: ticket.priority,
+        status: ticket.status,
+        metadata: ticketEvent.metadata,
+      },
+      newState: {
+        status: ticket.status,
+        priority: ticket.priority,
+        assigned_admin_id: ticket.assigned_admin_id,
+        assigned_employee_id: ticket.assigned_employee_id,
+      },
+      relatedEntities: [
+        ...(ticket.conversation_id ? [{ entityType: 'conversation', entityId: ticket.conversation_id, relationship: 'conversation' }] : []),
+        ...(ticket.assigned_employee_id ? [{ entityType: 'employee', entityId: ticket.assigned_employee_id, relationship: 'assignee' }] : []),
+      ],
+      deduplicationKey: `ticket-event:${ticketEvent.id}`,
+      sensitivity: 'confidential',
+    });
+  }
+  return ticketEvent;
 }
 
 async function recordAssignmentNotification(ticket, assignment, details) {

@@ -53,6 +53,7 @@ const { startWebsiteKnowledgeScheduler } = require('./services/websiteKnowledge'
 const { startAiTaskScheduler } = require('./services/aiTasks');
 const { startMikrotikMonitorScheduler } = require('./services/mikrotikMonitor');
 const { startRadiusSyncJobScheduler } = require('./services/radiusJobs');
+const { startRadiusSessionEventScheduler } = require('./services/radiusSessionEvents');
 const { ensureEventSchema } = require('./services/events');
 const { openAIModelSummary } = require('./services/openai');
 
@@ -166,4 +167,5 @@ app.listen(PORT, () => {
   startAiTaskScheduler();
   startMikrotikMonitorScheduler();
   startRadiusSyncJobScheduler();
+  startRadiusSessionEventScheduler();
 });

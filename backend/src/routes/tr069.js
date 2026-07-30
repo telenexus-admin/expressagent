@@ -3,6 +3,7 @@ const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
+const { recordBillingEvent, recordRequestEvent } = require('../services/events');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -152,6 +153,12 @@ async function syncDevices(id) {
   const query = JSON.stringify({ _tags: config.tenant_tag });
   const response = await api.get('/devices/', { params: { query } });
   const devices = Array.isArray(response.data) ? response.data.map(normalizeDevice).filter((item) => item.device_id) : [];
+  const previousResult = await db.query(
+    `SELECT device_id, status, last_inform, rx_power_dbm, software_version
+     FROM tr069_device_cache WHERE client_id = $1`,
+    [id]
+  );
+  const previousById = new Map(previousResult.rows.map((item) => [String(item.device_id), item]));
   for (const item of devices) {
     await db.query(
       `INSERT INTO tr069_device_cache
@@ -168,6 +175,33 @@ async function syncDevices(id) {
         item.mac_address, item.ssid, item.rx_power_dbm, item.tx_power_dbm, item.uptime_seconds, item.last_inform,
         item.status, JSON.stringify(item)]
     );
+    const previous = previousById.get(String(item.device_id));
+    if (!previous || previous.status !== item.status) {
+      await recordBillingEvent({
+        clientId: id,
+        eventType: previous ? 'ont.status_changed' : 'ont.discovered',
+        category: 'ont',
+        source: 'tr069_sync',
+        entityType: 'ont',
+        entityId: String(item.device_id).slice(0, 160),
+        actorType: 'system',
+        severity: item.status === 'offline' ? 'warning' : item.status === 'warning' ? 'warning' : 'info',
+        title: previous ? 'ONT status changed' : 'ONT discovered',
+        description: `${item.manufacturer || ''} ${item.model_name || ''}`.trim() || item.device_id,
+        payload: item,
+        previousState: previous || {},
+        newState: {
+          status: item.status,
+          last_inform: item.last_inform,
+          rx_power_dbm: item.rx_power_dbm,
+          software_version: item.software_version,
+        },
+        deduplicationKey: previous
+          ? `ont:${id}:${item.device_id}:status:${item.status}:${item.last_inform || 'unknown'}`
+          : `ont:${id}:${item.device_id}:discovered`,
+        sensitivity: 'restricted',
+      });
+    }
   }
   return devices;
 }
@@ -208,6 +242,24 @@ router.put('/config', async (req, res) => {
         String(req.body.cpe_username || '').trim(), cpePassword ? encrypt(cpePassword) : current?.cpe_password_encrypted || null,
         Math.max(60, Math.min(86400, Number(req.body.inform_interval || 300))), tenantTag(id), req.body.enabled !== false]
     );
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: current ? 'tr069.configuration_updated' : 'tr069.configuration_created',
+      category: 'tr069',
+      source: 'tr069_api',
+      entityType: 'tr069_configuration',
+      entityId: id,
+      title: current ? 'TR-069 configuration updated' : 'TR-069 configuration created',
+      payload: {
+        nbi_url: nbiUrl.replace(/\/$/, ''),
+        cwmp_url: cwmpUrl.replace(/\/$/, ''),
+        inform_interval: Math.max(60, Math.min(86400, Number(req.body.inform_interval || 300))),
+        tenant_tag: tenantTag(id),
+        enabled: req.body.enabled !== false,
+      },
+      deduplicationKey: `tr069-config:${id}:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true, tenant_tag: tenantTag(id) });
   } catch (error) { console.error('TR-069 config save error:', error.message); res.status(500).json({ error: 'Could not save TR-069 configuration' }); }
 });
@@ -218,16 +270,57 @@ router.post('/test', async (req, res) => {
     const config = await configFor(id);
     const response = await acsClient(config).get('/devices/', { params: { query: JSON.stringify({ _tags: config.tenant_tag }), projection: '_id', limit: 1 } });
     await db.query(`UPDATE tr069_configs SET last_tested_at=NOW(),last_test_status='online',last_test_error=NULL WHERE client_id=$1`, [id]);
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: 'tr069.connection_tested',
+      category: 'tr069',
+      source: 'tr069_api',
+      entityType: 'tr069_configuration',
+      entityId: id,
+      title: 'TR-069 connection test succeeded',
+      payload: { reachable: true, devices_visible: Array.isArray(response.data) ? response.data.length : 0 },
+      deduplicationKey: `tr069-test:${id}:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true, reachable: true, devices_visible: Array.isArray(response.data) ? response.data.length : 0 });
   } catch (error) {
     await db.query(`UPDATE tr069_configs SET last_tested_at=NOW(),last_test_status='offline',last_test_error=$2 WHERE client_id=$1`, [id, String(error.message).slice(0, 500)]).catch(() => {});
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: 'tr069.connection_failed',
+      category: 'tr069',
+      source: 'tr069_api',
+      entityType: 'tr069_configuration',
+      entityId: id,
+      actorType: 'system',
+      severity: 'warning',
+      title: 'TR-069 connection test failed',
+      payload: { reachable: false, error: error.message },
+      deduplicationKey: `tr069-test-failed:${id}:${Date.now()}`,
+      sensitivity: 'restricted',
+    }).catch(() => {});
     res.status(400).json({ error: `ACS connection failed: ${error.message}` });
   }
 });
 
 router.post('/sync', async (req, res) => {
   const id = clientId(req, res); if (!id) return;
-  try { const devices = await syncDevices(id); res.json({ success: true, synced: devices.length }); }
+  try {
+    const devices = await syncDevices(id);
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: 'tr069.devices_synced',
+      category: 'tr069',
+      source: 'tr069_api',
+      entityType: 'tr069_configuration',
+      entityId: id,
+      title: 'TR-069 devices synchronized',
+      payload: { device_count: devices.length },
+      deduplicationKey: `tr069-sync:${id}:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
+    res.json({ success: true, synced: devices.length });
+  }
   catch (error) { res.status(400).json({ error: error.message || 'Could not synchronize TR-069 devices' }); }
 });
 
@@ -277,6 +370,18 @@ router.post('/claim', async (req, res) => {
     if (!Array.isArray(found.data) || !found.data.length) return res.status(404).json({ error: 'Device was not found in this ACS' });
     await api.post(`/devices/${encodeURIComponent(deviceId)}/tags/${encodeURIComponent(config.tenant_tag)}`);
     await syncDevices(id);
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: 'ont.claimed',
+      category: 'ont',
+      source: 'tr069_api',
+      entityType: 'ont',
+      entityId: deviceId.slice(0, 160),
+      title: 'ONT claimed',
+      payload: { device_id: deviceId, tenant_tag: config.tenant_tag },
+      deduplicationKey: `ont:${id}:${deviceId}:claimed`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true, device_id: deviceId });
   } catch (error) { res.status(400).json({ error: error.message || 'Could not claim ONT' }); }
 });
@@ -298,6 +403,24 @@ router.put('/devices/:deviceId/location', async (req, res) => {
        address=EXCLUDED.address,notes=EXCLUDED.notes,updated_at=NOW()`,
       [id, req.params.deviceId, req.body.subscriber_id || null, latitude, longitude, String(req.body.address || '').trim(), String(req.body.notes || '').trim()]
     );
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: 'ont.location_updated',
+      category: 'ont',
+      source: 'tr069_api',
+      entityType: 'ont',
+      entityId: String(req.params.deviceId).slice(0, 160),
+      title: 'ONT location updated',
+      payload: {
+        latitude,
+        longitude,
+        address: String(req.body.address || '').trim(),
+        subscriber_id: req.body.subscriber_id || null,
+      },
+      relatedEntities: req.body.subscriber_id ? [{ entityType: 'subscriber', entityId: req.body.subscriber_id, relationship: 'assigned_subscriber' }] : [],
+      deduplicationKey: `ont:${id}:${req.params.deviceId}:location:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: 'Could not save ONT location' }); }
 });
@@ -323,6 +446,23 @@ router.post('/devices/:deviceId/action', async (req, res) => {
       ] };
     }
     const response = await acsClient(config).post(`/devices/${encodeURIComponent(req.params.deviceId)}/tasks`, task, { params: { connection_request: '' } });
+    await recordRequestEvent(req, {
+      clientId: id,
+      eventType: 'ont.action_queued',
+      category: 'ont',
+      source: 'tr069_api',
+      entityType: 'ont',
+      entityId: String(req.params.deviceId).slice(0, 160),
+      title: 'ONT action queued',
+      description: action,
+      payload: {
+        action,
+        queued: response.status === 202,
+        ssid: action === 'set_wifi' ? String(req.body.ssid || '').trim() : null,
+      },
+      deduplicationKey: `ont:${id}:${req.params.deviceId}:action:${action}:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
     res.status(response.status === 202 ? 202 : 200).json({ success: true, queued: response.status === 202, task: response.data });
   } catch (error) { res.status(400).json({ error: error.response?.data?.message || error.message || 'TR-069 action failed' }); }
 });

@@ -103,6 +103,30 @@ async function getOnlineUsernames(usernames = []) {
   return new Set(result.rows.map((row) => String(row.username)));
 }
 
+async function listRecentRadiusSessions(usernames = [], lookbackMinutes = 15) {
+  if (!radiusEnabled() || !usernames.length) return [];
+  const safeMinutes = Math.min(1440, Math.max(1, Number(lookbackMinutes) || 15));
+  const result = await getRadiusPool().query(
+    `SELECT radacctid, username, acctstarttime, acctupdatetime, acctstoptime,
+            acctsessiontime, acctinputoctets, acctoutputoctets, framedipaddress,
+            nasipaddress, callingstationid, calledstationid, acctterminatecause
+     FROM radacct
+     WHERE username = ANY($1::text[])
+       AND GREATEST(
+         COALESCE(acctupdatetime, '-infinity'::timestamptz),
+         COALESCE(acctstoptime, '-infinity'::timestamptz),
+         COALESCE(acctstarttime, '-infinity'::timestamptz)
+       ) >= NOW() - ($2 * INTERVAL '1 minute')
+     ORDER BY GREATEST(
+       COALESCE(acctupdatetime, acctstarttime),
+       COALESCE(acctstoptime, acctstarttime)
+     ) DESC
+     LIMIT 500`,
+    [usernames, safeMinutes]
+  );
+  return result.rows;
+}
+
 function formatRadiusExpiration(date) {
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const pad = (value) => String(value).padStart(2, '0');
@@ -244,4 +268,4 @@ async function getSubscriberUsage(radiusUsername, days = 30) {
   ]);
   return { available: true, days: safeDays, total: summary.rows[0] || {}, daily: daily.rows, sessions: sessions.rows };
 }
-module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotVoucherRadius, syncSubscriberRadius };
+module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotVoucherRadius, syncSubscriberRadius };

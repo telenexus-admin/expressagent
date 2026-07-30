@@ -27,6 +27,7 @@ const { buildRelocationUrl } = require('../services/relocationRequests');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
+const { recordBillingEvent } = require('../services/events');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -612,8 +613,38 @@ async function findOrCreateConversation(clientId, phoneNumber, profileName) {
 }
 
 async function persistOutgoing(conversationId, content) {
-  await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`, [conversationId, content]);
+  const inserted = await db.query(
+    `INSERT INTO messages (conversation_id, role, content, timestamp)
+     VALUES ($1, 'assistant', $2, NOW()) RETURNING id`,
+    [conversationId, content]
+  );
   await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+  const conversationResult = await db.query(
+    `SELECT id, client_id, customer_phone FROM conversations WHERE id = $1 LIMIT 1`,
+    [conversationId]
+  );
+  const conversation = conversationResult.rows[0];
+  if (conversation) {
+    await recordBillingEvent({
+      clientId: conversation.client_id,
+      eventType: 'communication.whatsapp_sent',
+      category: 'communication',
+      source: 'meta_whatsapp',
+      entityType: 'whatsapp_message',
+      entityId: inserted.rows[0].id,
+      actorType: 'system',
+      title: 'WhatsApp message sent',
+      payload: {
+        conversation_id: conversation.id,
+        recipient: conversation.customer_phone,
+        message: content,
+        provider: 'meta',
+      },
+      relatedEntities: [{ entityType: 'conversation', entityId: conversation.id, relationship: 'conversation' }],
+      deduplicationKey: `whatsapp-outbound:${conversation.client_id}:${inserted.rows[0].id}`,
+      sensitivity: 'confidential',
+    });
+  }
 }
 
 router.post('/', async (req, res) => {
@@ -741,6 +772,29 @@ router.post('/', async (req, res) => {
        RETURNING id`,
       [conversation.id, persistedMessageText, timestamp]
     );
+    await recordBillingEvent({
+      clientId: client.id,
+      eventType: 'communication.whatsapp_received',
+      category: 'communication',
+      source: 'meta_whatsapp_webhook',
+      entityType: 'whatsapp_message',
+      entityId: storedMessage.rows[0].id,
+      actorType: 'subscriber',
+      actorId: phoneNumber,
+      actorName: conversation.customer_name,
+      title: 'WhatsApp message received',
+      payload: {
+        conversation_id: conversation.id,
+        sender_phone: phoneNumber,
+        message: persistedMessageText,
+        is_voice: inboundIsVoice,
+        is_image: inboundIsImage,
+        provider: 'meta',
+      },
+      relatedEntities: [{ entityType: 'conversation', entityId: conversation.id, relationship: 'conversation' }],
+      deduplicationKey: `whatsapp-inbound:${client.id}:${storedMessage.rows[0].id}`,
+      sensitivity: 'confidential',
+    });
     if (inboundIsImage && inboundImageBuffer) {
       await db.query(
         `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)

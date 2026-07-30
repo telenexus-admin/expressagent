@@ -10,7 +10,9 @@ function providerConfig() {
 }
 
 function cleanNumber(number) {
-  return String(number || '').replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
+  const recipient = String(number || '').trim();
+  if (/^[0-9]+@(s\.whatsapp\.net|lid)$/i.test(recipient)) return recipient;
+  return recipient.replace(/[^0-9]/g, '');
 }
 
 function clientSettings(client) {
@@ -44,6 +46,17 @@ async function setClientWebhook(client, options = {}) {
     { headers, timeout: 30000 }
   );
   return callback;
+}
+
+async function sendClientPresence(client, number, presence = 'composing', delay = 5000) {
+  const { baseUrl, headers, instance } = clientSettings(client);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp number is required.');
+  return axios.post(
+    `${baseUrl}/chat/sendPresence/${encodeURIComponent(instance)}`,
+    { number: phone, presence, delay },
+    { headers, timeout: 10000 }
+  );
 }
 
 async function sendClientText(client, number, text) {
@@ -180,4 +193,4 @@ async function downloadClientImage(client, messageKey) {
   return { ...media, mimeType: media.mimeType || 'image/jpeg' };
 }
 
-module.exports = { setClientWebhook, sendClientText, sendClientButtons, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };
+module.exports = { setClientWebhook, sendClientPresence, sendClientText, sendClientButtons, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };

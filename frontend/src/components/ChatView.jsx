@@ -27,6 +27,15 @@ const REPLY_MODES = [
   { value: 'silent', label: 'Silent', description: 'AI records but does not reply' },
 ];
 
+function isNocStatusMessage(msg) {
+  if (msg?.role !== 'assistant') return false;
+  return /\b(?:live noc|noc overview|mikrotik|routeros|router status|network report|router health|router report|router details)\b/i.test(messageText(msg));
+}
+
+function isNocRequest(msg) {
+  return msg?.role === 'user' && /\b(?:mikrotik|routeros|router status|router health|network report|router report|router details|noc)\b/i.test(messageText(msg));
+}
+
 function formatTimestamp(ts) {
   return new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 }
@@ -368,6 +377,8 @@ export default function ChatView() {
   const isHuman = conversation?.status === 'human_takeover';
   const aiOn = conversation?.status === 'active';
   const replyMode = conversation?.reply_mode || 'auto';
+  const showNocContext = messages.some(isNocRequest) || messages.some(isNocStatusMessage);
+  const aiTyping = Boolean(conversation && !isHuman && !isResolved && messages[messages.length - 1]?.role === 'user');
   const aiLabel = isHuman
     ? 'AI Off - Human Takeover'
     : isResolved
@@ -402,6 +413,7 @@ export default function ChatView() {
             <div className="font-semibold text-sm text-gray-900 truncate">
               {conversation?.customer_phone || '...'}
             </div>
+            {aiTyping && <span className="mt-1 flex items-center gap-1 text-[10px] font-bold text-[#3535FF]"><span className="flex gap-0.5"><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.2s]" /><i className="h-1 w-1 animate-bounce rounded-full bg-current [animation-delay:-0.1s]" /><i className="h-1 w-1 animate-bounce rounded-full bg-current" /></span> AI is typing...</span>}
             {conversation && (
               <span
                 className={`inline-block text-[10px] px-2 py-0.5 rounded-full font-medium mt-0.5 ${
@@ -422,7 +434,9 @@ export default function ChatView() {
 
         {conversation && (
           <div className="relative flex items-center gap-2 shrink-0" ref={menuRef}>
-            <IconButton label="Call customer"><PhoneIcon /></IconButton>
+            {showNocContext && <button type="button" onClick={() => navigate('/dashboard/noc')} className="hidden sm:flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-[#3158ff] to-[#812cff] px-3 py-2 text-[11px] font-black text-white shadow-sm transition hover:brightness-110"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m7 15 3-3 3 2 5-6"/></svg>Live NOC</button>}
++            {showNocContext && <button type="button" onClick={() => navigate('/dashboard/noc')} aria-label="Open Live NOC" className="flex sm:hidden h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-r from-[#3158ff] to-[#812cff] text-white shadow-sm"><svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m7 15 3-3 3 2 5-6"/></svg></button>}
++            <IconButton label="Call customer"><PhoneIcon /></IconButton>
             <IconButton label="Video call"><VideoIcon /></IconButton>
             <IconButton label="Conversation menu" onClick={() => setMenuOpen((value) => !value)}><DotsIcon /></IconButton>
             {menuOpen && (
@@ -523,6 +537,8 @@ export default function ChatView() {
         {messages.map((msg) => {
           const style = BUBBLE[msg.role] || BUBBLE.user;
           const text = messageText(msg);
+          const previousUserMessage = messages.slice(0, messages.indexOf(msg)).reverse().find((item) => item.role === 'user');
+          const showNocButton = isNocStatusMessage(msg) || (msg.role === 'assistant' && isNocRequest(previousUserMessage));
           return (
             <div key={msg.id} className={`flex ${style.wrap}`}>
               <div className="max-w-[85%] sm:max-w-[70%]">
@@ -539,6 +555,12 @@ export default function ChatView() {
                     <div className={msg.attachment_media_type ? 'mt-2' : ''}>
                       {text}
                     </div>
+                  )}
+                  {showNocButton && (
+                    <button type="button" onClick={() => navigate('/dashboard/noc')} className="mt-3 flex w-full items-center justify-center gap-2 rounded-xl border border-white/25 bg-white/15 px-3 py-2 text-xs font-black text-white shadow-sm transition hover:bg-white/25">
+                      <svg className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="m7 15 3-3 3 2 5-6"/><path d="M18 8h-3V5"/></svg>
+                      Open Live NOC
+                    </button>
                   )}
                 </div>
                 <div className={`text-[10px] text-gray-400 mt-1 ${msg.role !== 'user' ? 'text-right' : ''}`}>

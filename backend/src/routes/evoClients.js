@@ -110,7 +110,7 @@ router.post(
     } catch (err) {
       const detail = cleanProviderError(err);
       console.error('POST /evo-clients/auto-onboard error:', detail);
-      res.status(502).json({ error: `Could not create pairing code onboarding: ${detail}` });
+      res.status(502).json({ error: `Evolution could not create the pairing code. ${detail}` });
     }
   }
 );

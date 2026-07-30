@@ -11,6 +11,7 @@ const schema = `
     business_name VARCHAR(255),
     contact_email VARCHAR(255),
     status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (status IN ('active', 'suspended')),
+    account_type VARCHAR(20) NOT NULL DEFAULT 'ai' CHECK (account_type IN ('ai', 'billing')),
     meta_phone_number_id VARCHAR(64) UNIQUE,
     meta_access_token TEXT,
     meta_business_account_id VARCHAR(64),
@@ -61,6 +62,9 @@ const schema = `
   ALTER TABLE clients ALTER COLUMN system_prompt SET DEFAULT 'You are a helpful and professional ISP customer support agent.';
   UPDATE clients SET photo_troubleshooting_enabled = TRUE WHERE photo_troubleshooting_enabled = FALSE;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE clients ADD COLUMN IF NOT EXISTS account_type VARCHAR(20) NOT NULL DEFAULT 'ai';
+  ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_account_type_check;
+  ALTER TABLE clients ADD CONSTRAINT clients_account_type_check CHECK (account_type IN ('ai', 'billing'));
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_provider VARCHAR(40);
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_base_url TEXT;
   ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_api_key TEXT;
@@ -585,6 +589,171 @@ const schema = `
   CREATE INDEX IF NOT EXISTS idx_escalations_created ON escalations(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_escalations_client ON escalations(client_id);
   CREATE INDEX IF NOT EXISTS idx_admins_client ON admins(client_id);
+
+  CREATE TABLE IF NOT EXISTS billing_plans (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(160) NOT NULL,
+    description TEXT,
+    download_speed_mbps NUMERIC(10,2),
+    upload_speed_mbps NUMERIC(10,2),
+    price NUMERIC(12,2) NOT NULL DEFAULT 0,
+    validity_days INTEGER NOT NULL DEFAULT 30 CHECK (validity_days > 0),
+    radius_profile VARCHAR(160),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, name)
+  );
+  ALTER TABLE billing_plans ADD COLUMN IF NOT EXISTS router_id INTEGER;
+  ALTER TABLE billing_plans ADD COLUMN IF NOT EXISTS fup_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE billing_plans ADD COLUMN IF NOT EXISTS fup_threshold_mb BIGINT;
+  ALTER TABLE billing_plans ADD COLUMN IF NOT EXISTS fup_download_speed_mbps NUMERIC(10,2);
+  ALTER TABLE billing_plans ADD COLUMN IF NOT EXISTS fup_upload_speed_mbps NUMERIC(10,2);
+
+  CREATE TABLE IF NOT EXISTS billing_subscribers (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    plan_id INTEGER REFERENCES billing_plans(id) ON DELETE SET NULL,
+    full_name VARCHAR(255) NOT NULL,
+    phone VARCHAR(80),
+    email VARCHAR(255),
+    account_number VARCHAR(120) NOT NULL,
+    radius_username VARCHAR(180),
+    radius_status VARCHAR(30) NOT NULL DEFAULT 'active' CHECK (radius_status IN ('active', 'suspended', 'expired', 'pending')),
+    service_status VARCHAR(30) NOT NULL DEFAULT 'active' CHECK (service_status IN ('active', 'suspended', 'expired', 'pending')),
+    expires_at TIMESTAMP WITH TIME ZONE,
+    router_name VARCHAR(180),
+    access_mode VARCHAR(30) NOT NULL DEFAULT 'pppoe' CHECK (access_mode IN ('pppoe', 'pppoe_static', 'dhcp_static')),
+    vlan_id INTEGER CHECK (vlan_id IS NULL OR vlan_id BETWEEN 1 AND 4094),
+    static_pool_id INTEGER,
+    static_ip INET,
+    static_mac VARCHAR(32),
+    static_dhcp_server VARCHAR(160),
+    notes TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, account_number),
+    UNIQUE (client_id, radius_username)
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_invoices (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    subscriber_id INTEGER REFERENCES billing_subscribers(id) ON DELETE SET NULL,
+    invoice_number VARCHAR(80) NOT NULL,
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    status VARCHAR(30) NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'issued', 'paid', 'overdue', 'void')),
+    due_date DATE,
+    paid_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, invoice_number)
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_payments (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    subscriber_id INTEGER REFERENCES billing_subscribers(id) ON DELETE SET NULL,
+    invoice_id INTEGER REFERENCES billing_invoices(id) ON DELETE SET NULL,
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    method VARCHAR(40),
+    reference VARCHAR(160),
+    status VARCHAR(30) NOT NULL DEFAULT 'completed' CHECK (status IN ('pending', 'completed', 'failed', 'reversed')),
+    paid_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, reference)
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_radius_profiles (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(160) NOT NULL,
+    mikrotik_rate_limit VARCHAR(160),
+    session_timeout_seconds INTEGER,
+    framed_pool VARCHAR(160),
+    attributes JSONB NOT NULL DEFAULT '{}'::jsonb,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, name)
+  );
+
+  CREATE TABLE IF NOT EXISTS billing_hotspot_plans (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    name VARCHAR(160) NOT NULL,
+    price NUMERIC(12,2) NOT NULL DEFAULT 0,
+    duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+    data_limit_mb INTEGER,
+    mikrotik_rate_limit VARCHAR(160),
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, name)
+  );
+  ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS router_id INTEGER;
+  ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_enabled BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_threshold_mb BIGINT;
+  ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_download_speed_mbps NUMERIC(10,2);
+  ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_upload_speed_mbps NUMERIC(10,2);
+
+  CREATE TABLE IF NOT EXISTS billing_hotspot_vouchers (
+    id SERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    plan_id INTEGER REFERENCES billing_hotspot_plans(id) ON DELETE SET NULL,
+    code VARCHAR(80) NOT NULL,
+    status VARCHAR(30) NOT NULL DEFAULT 'available' CHECK (status IN ('available', 'active', 'expired', 'void')),
+    used_by VARCHAR(255),
+    activated_at TIMESTAMP WITH TIME ZONE,
+    expires_at TIMESTAMP WITH TIME ZONE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE (client_id, code)
+  );
+  ALTER TABLE billing_hotspot_vouchers ADD COLUMN IF NOT EXISTS used_by VARCHAR(255);
+
+  CREATE INDEX IF NOT EXISTS idx_billing_plans_client ON billing_plans(client_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_billing_plans_router ON billing_plans(client_id, router_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_billing_subscribers_client ON billing_subscribers(client_id, service_status);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_subscribers_router_static_ip ON billing_subscribers(router_id, static_ip) WHERE static_ip IS NOT NULL;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_subscribers_radius_username_global ON billing_subscribers(LOWER(radius_username)) WHERE radius_username IS NOT NULL AND radius_username <> '';
+  CREATE INDEX IF NOT EXISTS idx_billing_invoices_client ON billing_invoices(client_id, status, due_date);
+  CREATE INDEX IF NOT EXISTS idx_billing_invoices_subscriber_history ON billing_invoices(client_id, subscriber_id, created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_billing_payments_client ON billing_payments(client_id, paid_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_billing_payments_subscriber_history ON billing_payments(client_id, subscriber_id, paid_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_billing_payments_invoice_completed ON billing_payments(invoice_id) WHERE status = 'completed';
+  CREATE INDEX IF NOT EXISTS idx_billing_radius_profiles_client ON billing_radius_profiles(client_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_billing_hotspot_plans_client ON billing_hotspot_plans(client_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_billing_hotspot_plans_router ON billing_hotspot_plans(client_id, router_id, is_active);
+  CREATE INDEX IF NOT EXISTS idx_billing_hotspot_vouchers_client ON billing_hotspot_vouchers(client_id, status, created_at DESC);
+
+  CREATE TABLE IF NOT EXISTS billing_radius_sync_jobs (
+    id BIGSERIAL PRIMARY KEY,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    subscriber_id INTEGER NOT NULL REFERENCES billing_subscribers(id) ON DELETE CASCADE,
+    reason VARCHAR(80) NOT NULL DEFAULT 'billing_update',
+    status VARCHAR(20) NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','processing','completed','failed')),
+    attempts INTEGER NOT NULL DEFAULT 0,
+    next_attempt_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    locked_at TIMESTAMP WITH TIME ZONE,
+    completed_at TIMESTAMP WITH TIME ZONE,
+    last_error TEXT,
+    created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+    UNIQUE (client_id, subscriber_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_billing_radius_sync_jobs_pending ON billing_radius_sync_jobs(next_attempt_at, id) WHERE status IN ('pending','processing');
+
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS radius_password_ciphertext TEXT;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS radius_sync_status VARCHAR(30) NOT NULL DEFAULT 'not_configured';
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS radius_last_synced_at TIMESTAMP WITH TIME ZONE;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS radius_sync_error TEXT;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS grace_period_days INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS router_id INTEGER;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS access_mode VARCHAR(30) NOT NULL DEFAULT 'pppoe';
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS vlan_id INTEGER;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_pool_id INTEGER;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_ip INET;
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_mac VARCHAR(32);
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_dhcp_server VARCHAR(160);
 `;
 
 async function bootstrapDefaultClient() {

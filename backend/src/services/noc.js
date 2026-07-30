@@ -7,6 +7,7 @@ const {
 } = require('./mikrotik');
 
 const SNAPSHOT_LIMIT = 1200;
+const LIVE_INTERFACE_LIMIT = 8;
 
 function num(value) {
   if (value === null || value === undefined || value === '') return null;
@@ -21,6 +22,19 @@ function bitsPerSecond(value) {
 
 function mbps(value) {
   return Number((bitsPerSecond(value) / 1000000).toFixed(2));
+}
+
+function mbpsFromBits(value) {
+  const parsed = Number(value || 0);
+  return Number((parsed / 1000000).toFixed(2));
+}
+
+function parseRatePair(value) {
+  const parts = String(value || '').split('/').map((item) => bitsPerSecond(item));
+  return {
+    tx_bps: parts[0] || 0,
+    rx_bps: parts[1] || 0,
+  };
 }
 
 function percent(value, fallback = null) {
@@ -45,15 +59,39 @@ function trafficInterfaceCandidate(row = {}) {
 
 function chooseWanInterface(interfaces = [], preferred = '') {
   const target = String(preferred || '').trim().toLowerCase();
-  const usable = interfaces.filter((row) => trafficInterfaceCandidate(row) && row.disabled !== 'true');
+  const usable = interfaces.filter((row) => trafficInterfaceCandidate(row) && row.disabled !== 'true' && row.disabled !== true);
   if (target) {
     const match = usable.find((row) => String(row.name || '').toLowerCase() === target);
     if (match) return match;
   }
   const namedWan = usable.find((row) => /\b(wan|internet|uplink|provider|backhaul)\b/i.test(`${row.name || ''} ${row.comment || ''}`));
   if (namedWan) return namedWan;
-  const running = usable.filter((row) => row.running === 'true');
+  const running = usable
+    .filter((row) => row.running === 'true' || row.running === true)
+    .sort((a, b) => ((b.rx_bps || 0) + (b.tx_bps || 0)) - ((a.rx_bps || 0) + (a.tx_bps || 0)));
   return running[0] || usable[0] || {};
+}
+
+function orderInterfaceCandidates(rows = [], preferred = '') {
+  const target = String(preferred || '').trim().toLowerCase();
+  const scored = rows
+    .filter(trafficInterfaceCandidate)
+    .filter((row) => row.disabled !== 'true' && row.disabled !== true)
+    .map((row) => {
+      const name = String(row.name || '').toLowerCase();
+      const haystack = `${row.name || ''} ${row.comment || ''}`.toLowerCase();
+      let score = 0;
+      if (target && name === target) score += 1000;
+      if (/\b(wan|internet|uplink|provider|backhaul)\b/i.test(haystack)) score += 500;
+      if (row.running === 'true' || row.running === true) score += 200;
+      if (/^(sfp|ether|combo)/i.test(row.name || '')) score += 80;
+      if (/^(bridge|vlan|wg-|wireguard)/i.test(row.name || '')) score += 20;
+      return { row, score };
+    });
+  return scored
+    .sort((a, b) => b.score - a.score)
+    .slice(0, LIVE_INTERFACE_LIMIT)
+    .map((item) => item.row);
 }
 
 function routerHealth({ cpuLoad, memoryUsedPercent, storageUsedPercent, ok }) {
@@ -76,6 +114,252 @@ function statusFromHealth(value) {
 
 function trendFromRows(rows, key) {
   return rows.map((row) => Number(row[key] || 0)).filter((value) => Number.isFinite(value));
+}
+
+function severityRank(severity) {
+  return { critical: 4, warning: 3, watch: 2, info: 1 }[severity] || 0;
+}
+
+function pushFinding(findings, severity, title, detail, recommendation = '') {
+  findings.push({ severity, title, detail, recommendation });
+}
+
+function analyzeSecurityLogs(alerts = []) {
+  const sshFailures = alerts.filter((row) => /login failure|failed login/i.test(`${row.topics || ''} ${row.message || ''}`) && /ssh/i.test(`${row.topics || ''} ${row.message || ''}`));
+  const dhcpAlerts = alerts.filter((row) => /dhcp alert|unknown dhcp/i.test(`${row.topics || ''} ${row.message || ''}`));
+  const critical = alerts.filter((row) => /critical/i.test(`${row.topics || ''} ${row.message || ''}`));
+  return { sshFailures, dhcpAlerts, critical };
+}
+
+function buildNocAnalysis(snapshot, history = []) {
+  const findings = [];
+  const alerts = Array.isArray(snapshot?.latest_alerts) ? snapshot.latest_alerts : [];
+  const security = analyzeSecurityLogs(alerts);
+  const cpu = Number(snapshot?.cpu_load);
+  const memory = Number(snapshot?.memory_used_percent);
+  const storage = Number(snapshot?.storage_used_percent);
+  const interfaces = Array.isArray(snapshot?.interfaces) ? snapshot.interfaces : [];
+  const runningTrafficInterfaces = interfaces.filter((row) => row.status === 'running' && Number(row.total_mbps || 0) > 0);
+  const downNamedUplinks = interfaces.filter((row) =>
+    row.status !== 'running' &&
+    /\b(wan|internet|uplink|provider|backhaul)\b/i.test(`${row.name || ''} ${row.comment || ''}`)
+  );
+
+  if (snapshot?.live_error || snapshot?.source === 'last-good-snapshot') {
+    pushFinding(
+      findings,
+      'critical',
+      'Router live check is unstable',
+      snapshot.live_error || 'The NOC is showing the last good snapshot because the latest live read did not complete cleanly.',
+      'Confirm WireGuard reachability, RouterOS API access, and that the nexa user still has read,test,api permissions.'
+    );
+  }
+
+  if (Number.isFinite(cpu)) {
+    if (cpu >= 85) {
+      pushFinding(findings, 'critical', 'CPU load is very high', `CPU is currently ${cpu}%.`, 'Check queues, firewall rules, traffic spikes and any looping/broadcast issue. Plan action before customers experience slow browsing.');
+    } else if (cpu >= 70) {
+      pushFinding(findings, 'warning', 'CPU load is high', `CPU is currently ${cpu}%.`, 'Watch this router closely during peak hours and inspect top traffic users or heavy queues.');
+    } else if (cpu >= 50) {
+      pushFinding(findings, 'watch', 'CPU is active but controlled', `CPU is currently ${cpu}%.`, 'No urgent action, but keep watching if complaints are coming in.');
+    }
+  } else {
+    pushFinding(findings, 'watch', 'CPU value not returned', 'RouterOS did not return CPU load in this sample.', 'Refresh again or confirm the API user can read system resources.');
+  }
+
+  if (Number.isFinite(memory) && memory >= 85) {
+    pushFinding(findings, 'warning', 'Memory usage is high', `Memory usage is ${memory}%.`, 'Check long-running services, logs, and whether the router needs a controlled maintenance reboot.');
+  }
+  if (Number.isFinite(storage) && storage >= 85) {
+    pushFinding(findings, 'warning', 'Storage usage is high', `Storage usage is ${storage}%.`, 'Remove old backups/log exports and confirm there is enough disk space for RouterOS stability.');
+  }
+
+  if (security.sshFailures.length >= 3) {
+    const latest = security.sshFailures[0]?.message || 'Multiple SSH login failures were seen.';
+    pushFinding(findings, 'critical', 'Possible SSH brute-force attack', `${security.sshFailures.length} SSH login failure log(s) were detected. Latest: ${latest}`, 'Restrict SSH/Winbox to VPN/trusted IPs, disable public SSH if not needed, and use strong unique admin credentials.');
+  }
+  if (security.dhcpAlerts.length > 0) {
+    pushFinding(findings, 'warning', 'Unknown DHCP server detected', `${security.dhcpAlerts.length} DHCP alert log(s) were detected.`, 'Check bridges/APs/customer routers. Rogue DHCP can give clients wrong gateways and cause widespread internet failures.');
+  }
+  if (security.critical.length > 0 && security.sshFailures.length < 3) {
+    pushFinding(findings, 'warning', 'Critical router logs present', `${security.critical.length} critical log item(s) were returned by RouterOS.`, 'Open the latest logs and confirm whether the issue is repeated or already resolved.');
+  }
+
+  if (downNamedUplinks.length > 0) {
+    pushFinding(findings, 'critical', 'Named uplink interface is down', `${downNamedUplinks.map((row) => row.name).join(', ')} is not running.`, 'Check fibre/radio/ISP handoff, SFP, power and patch cable before blaming customer-side equipment.');
+  }
+  if (interfaces.length > 0 && runningTrafficInterfaces.length === 0) {
+    pushFinding(findings, 'warning', 'No interface traffic seen', 'Interfaces were returned, but none showed live RX/TX traffic in this sample.', 'Refresh and verify the selected router is the active edge/core router. If true, check uplink and bridge forwarding.');
+  }
+
+  const recentTraffic = history.slice(-12).map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0));
+  if (recentTraffic.length >= 4) {
+    const latest = recentTraffic[recentTraffic.length - 1];
+    const previousAvg = recentTraffic.slice(0, -1).reduce((sum, value) => sum + value, 0) / (recentTraffic.length - 1);
+    if (previousAvg > 10 && latest < previousAvg * 0.25) {
+      pushFinding(findings, 'warning', 'Traffic dropped sharply', `Current total traffic is ${latest.toFixed(1)} Mbps against a recent average of ${previousAvg.toFixed(1)} Mbps.`, 'Check uplink, PPPoE/hotspot services and customer complaints before assuming normal off-peak drop.');
+    }
+  }
+
+  if (findings.length === 0) {
+    pushFinding(findings, 'info', 'No major issue detected', 'The latest live router sample does not show critical CPU, memory, storage, uplink or security-log problems.', 'Keep monitoring. Nexa will surface changes when RouterOS logs or live metrics show risk.');
+  }
+
+  findings.sort((a, b) => severityRank(b.severity) - severityRank(a.severity));
+  const topSeverity = findings[0]?.severity || 'info';
+  const summary = topSeverity === 'critical'
+    ? 'Nexa found issues that need attention.'
+    : topSeverity === 'warning'
+    ? 'Nexa found items worth checking.'
+    : topSeverity === 'watch'
+    ? 'Nexa is watching minor signals.'
+    : 'Nexa does not see a major issue right now.';
+
+  return {
+    generated_at: new Date().toISOString(),
+    router_id: snapshot?.router_id,
+    router_name: snapshot?.identity || snapshot?.router_name || 'MikroTik',
+    summary,
+    severity: topSeverity,
+    live_source: snapshot?.source || 'mikrotik-live',
+    findings,
+    latest_events: alerts.slice(0, 10),
+    metrics: {
+      cpu_load: snapshot?.cpu_load,
+      memory_used_percent: snapshot?.memory_used_percent,
+      storage_used_percent: snapshot?.storage_used_percent,
+      uptime: snapshot?.uptime,
+      routeros_version: snapshot?.routeros_version,
+      total_traffic_mbps: snapshot?.total_traffic_mbps,
+      running_traffic_interfaces: runningTrafficInterfaces.length,
+      total_interfaces: interfaces.length,
+    },
+  };
+}
+
+async function interfaceTrafficRows(client, interfaceRows = [], preferred = '') {
+  const candidates = orderInterfaceCandidates(interfaceRows, preferred);
+  const rows = [];
+  for (const row of candidates) {
+    const traffic = row.disabled === 'true'
+      ? {}
+      : (await client.command('/interface/monitor-traffic', { interface: row.name, once: '' }).catch(() => []))[0] || {};
+    const rxBps = bitsPerSecond(traffic['rx-bits-per-second']);
+    const txBps = bitsPerSecond(traffic['tx-bits-per-second']);
+    rows.push({
+      name: row.name || '',
+      type: row.type || '',
+      running: row.running === 'true',
+      disabled: row.disabled === 'true',
+      comment: row.comment || '',
+      rx_bps: rxBps,
+      tx_bps: txBps,
+      rx_mbps: mbpsFromBits(rxBps),
+      tx_mbps: mbpsFromBits(txBps),
+      total_mbps: mbpsFromBits(rxBps + txBps),
+      link_speed: row['actual-speed'] || row.speed || row['link-speed'] || row['default-name'] || '',
+      full_duplex: row['full-duplex'] || '',
+      status: row.disabled === 'true' ? 'disabled' : row.running === 'true' ? 'running' : 'down',
+    });
+  }
+
+  return rows.sort((a, b) => (b.total_mbps || 0) - (a.total_mbps || 0));
+}
+
+function interfaceCountsForBandwidth(row = {}) {
+  const name = String(row.name || '').toLowerCase();
+  const type = String(row.type || '').toLowerCase();
+  if (row.disabled || row.status === 'disabled') return false;
+  if (name === 'lo' || type === 'loopback') return false;
+  if (/^(wg-|wireguard|ovpn|sstp|l2tp|pptp)/i.test(name)) return false;
+  return row.status === 'running' || row.running === true || Number(row.total_mbps || 0) > 0;
+}
+
+function aggregateBandwidth(interfaces = [], wan = {}) {
+  const counted = interfaces.filter(interfaceCountsForBandwidth);
+  const active = counted.filter((row) => Number(row.total_mbps || 0) > 0);
+  const rows = active.length ? active : counted;
+  const rxBps = rows.reduce((sum, row) => sum + Number(row.rx_bps || 0), 0);
+  const txBps = rows.reduce((sum, row) => sum + Number(row.tx_bps || 0), 0);
+  const fallbackRx = Number(wan.rx_bps || 0);
+  const fallbackTx = Number(wan.tx_bps || 0);
+  const finalRx = rxBps || fallbackRx;
+  const finalTx = txBps || fallbackTx;
+  return {
+    download_mbps: mbpsFromBits(finalRx),
+    upload_mbps: mbpsFromBits(finalTx),
+    total_mbps: mbpsFromBits(finalRx + finalTx),
+    sampled_interfaces: rows.length,
+    source: rows.length > 1 ? 'aggregate-live-interfaces' : 'live-interface',
+  };
+}
+
+function topUsersFromQueues(queueRows = []) {
+  return queueRows
+    .filter((row) => row.disabled !== 'true' && row.disabled !== true)
+    .map((row) => {
+      const rate = parseRatePair(row.rate || row['rate'] || row['actual-rate'] || '');
+      const totalBps = rate.tx_bps + rate.rx_bps;
+      return {
+        name: row.name || row.target || row.comment || 'Queue user',
+        target: row.target || '',
+        service: row.comment || row.parent || 'queue',
+        download_mbps: mbpsFromBits(rate.rx_bps),
+        upload_mbps: mbpsFromBits(rate.tx_bps),
+        total_mbps: mbpsFromBits(totalBps),
+        raw_rate: row.rate || row['actual-rate'] || '',
+        disabled: row.disabled === 'true' || row.disabled === true,
+      };
+    })
+    .filter((row) => row.total_mbps > 0)
+    .sort((a, b) => b.total_mbps - a.total_mbps)
+    .slice(0, 12);
+}
+
+async function latestStoredSnapshot(clientId, routerId) {
+  await ensureNocTables();
+  const result = await db.query(
+    `SELECT raw, created_at
+     FROM noc_router_snapshots
+     WHERE client_id = $1 AND router_id = $2
+     ORDER BY created_at DESC
+     LIMIT 1`,
+    [clientId, routerId]
+  );
+  const row = result.rows[0];
+  if (!row?.raw) return null;
+  return {
+    ...row.raw,
+    cached_at: row.created_at,
+  };
+}
+
+function recentEnough(dateValue, minutes = 10) {
+  const time = new Date(dateValue || 0).getTime();
+  return Number.isFinite(time) && Date.now() - time <= minutes * 60 * 1000;
+}
+
+function stabilizeSnapshot(snapshot, previous) {
+  if (!previous) return snapshot;
+  const next = { ...snapshot };
+  const liveInterfaces = Array.isArray(snapshot.interfaces) ? snapshot.interfaces : [];
+  const liveHasTraffic = liveInterfaces.some((row) => Number(row.total_mbps || 0) > 0);
+  const previousInterfaces = Array.isArray(previous.interfaces) ? previous.interfaces : [];
+  if (!liveHasTraffic && previousInterfaces.length && recentEnough(previous.checked_at || previous.cached_at, 10)) {
+    next.interfaces = previousInterfaces;
+    next.wan_interface = snapshot.wan_interface || previous.wan_interface;
+    next.wan_link_speed = snapshot.wan_link_speed || previous.wan_link_speed;
+    next.download_mbps = Number(previous.download_mbps || 0);
+    next.upload_mbps = Number(previous.upload_mbps || 0);
+    next.total_traffic_mbps = Number(previous.total_traffic_mbps || 0);
+    next.wan_status = snapshot.wan_status === 'stable' ? snapshot.wan_status : previous.wan_status;
+    next.traffic_source = 'last-good-snapshot';
+  }
+  if ((!snapshot.top_users || snapshot.top_users.length === 0) && Array.isArray(previous.top_users) && previous.top_users.length && recentEnough(previous.checked_at || previous.cached_at, 10)) {
+    next.top_users = previous.top_users;
+    next.top_users_source = 'last-good-snapshot';
+  }
+  return next;
 }
 
 async function ensureNocTables() {
@@ -120,39 +404,35 @@ async function resolveRouter(clientId, routerId) {
 async function readLiveSnapshot(clientId, routerId, options = {}) {
   await ensureNocTables();
   const router = await resolveRouter(clientId, routerId);
+  const previous = await latestStoredSnapshot(clientId, router.id).catch(() => null);
   let client = null;
   try {
     client = await connectRouter(router);
-    const [identityRows, resourceRows, interfaceRows, pppRows, hotspotRows, queueRows, logRows] = await Promise.all([
-      client.command('/system/identity/print').catch(() => []),
-      client.command('/system/resource/print').catch(() => []),
-      router.features?.interfaces === false ? Promise.resolve([]) : client.command('/interface/print').catch(() => []),
-      router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-      router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
-      client.command('/queue/simple/print').catch(() => []),
-      router.features?.logs === false ? Promise.resolve([]) : client.command('/log/print').catch(() => []),
-    ]);
+    const identityRows = await client.command('/system/identity/print').catch(() => []);
+    const resourceRows = await client.command('/system/resource/print').catch(() => []);
+    const interfaceRows = router.features?.interfaces === false ? [] : await client.command('/interface/print').catch(() => []);
+    const pppRows = router.features?.ppp_active === false ? [] : await client.command('/ppp/active/print').catch(() => []);
+    const hotspotRows = router.features?.hotspot_active === false ? [] : await client.command('/ip/hotspot/active/print').catch(() => []);
+    const queueRows = await client.command('/queue/simple/print', { stats: '' }).catch(() => client.command('/queue/simple/print').catch(() => []));
+    const logRows = router.features?.logs === false ? [] : await client.command('/log/print').catch(() => []);
 
     const resource = resourceRows[0] || {};
-    const wan = chooseWanInterface(interfaceRows, options.wan_interface);
-    const traffic = wan.name
-      ? (await client.command('/interface/monitor-traffic', { interface: wan.name, once: '' }).catch(() => []))[0] || {}
-      : {};
-    const ethernet = wan.name
-      ? (await client.command('/interface/ethernet/monitor', { numbers: wan.name, once: '' }).catch(() => []))[0] || {}
-      : {};
+    const interfaces = await interfaceTrafficRows(client, interfaceRows, options.wan_interface);
+    const wan = chooseWanInterface(interfaces, options.wan_interface);
+    const bandwidth = aggregateBandwidth(interfaces, wan);
+    const topUsers = topUsersFromQueues(queueRows);
 
-    const downloadMbps = mbps(traffic['rx-bits-per-second']);
-    const uploadMbps = mbps(traffic['tx-bits-per-second']);
+    const downloadMbps = bandwidth.download_mbps;
+    const uploadMbps = bandwidth.upload_mbps;
     const cpuLoad = percent(resource['cpu-load']);
     const memoryUsedPercent = bytesPercent(resource['free-memory'], resource['total-memory']);
     const storageUsedPercent = bytesPercent(resource['free-hdd-space'] || resource['free-disk-space'], resource['total-hdd-space'] || resource['total-disk-space']);
     const health = routerHealth({ cpuLoad, memoryUsedPercent, storageUsedPercent, ok: true });
-    const activeQueues = queueRows.filter((row) => row.disabled !== 'true').length;
+    const activeQueues = queueRows.filter((row) => row.disabled !== 'true' && row.disabled !== true).length;
     const queueHealth = queueRows.length ? Number(((activeQueues / queueRows.length) * 100).toFixed(1)) : null;
     const warningLogs = logRows.filter((row) => /error|critical|warning|failed|failure|attack|dhcp alert/i.test(`${row.topics || ''} ${row.message || ''}`)).slice(-10);
 
-    const snapshot = {
+    const snapshot = stabilizeSnapshot({
       router_id: router.id,
       client_id: clientId,
       router_name: identityRows[0]?.name || router.last_identity || router.name,
@@ -170,11 +450,13 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
       storage_used_percent: storageUsedPercent,
       router_health_percent: health,
       wan_interface: wan.name || '',
-      wan_link_speed: ethernet.rate || wan['actual-speed'] || wan.speed || wan['link-speed'] || '',
-      wan_status: wan.name ? (wan.running === 'true' ? 'stable' : 'down') : 'unknown',
+      wan_link_speed: wan.link_speed || '',
+      wan_status: wan.name ? (wan.running ? 'stable' : 'down') : 'unknown',
+      bandwidth,
       queue_health_percent: queueHealth,
       total_queues: queueRows.length,
       active_queues: activeQueues,
+      top_users: topUsers,
       active_alerts: warningLogs.length,
       critical_alerts: warningLogs.filter((row) => /critical/i.test(`${row.topics || ''} ${row.message || ''}`)).length,
       warning_alerts: warningLogs.length,
@@ -183,19 +465,10 @@ async function readLiveSnapshot(clientId, routerId, options = {}) {
         topics: row.topics || '',
         message: row.message || '',
       })),
-      interfaces: interfaceRows
-        .filter(trafficInterfaceCandidate)
-        .slice(0, 40)
-        .map((row) => ({
-          name: row.name || '',
-          type: row.type || '',
-          running: row.running === 'true',
-          disabled: row.disabled === 'true',
-          comment: row.comment || '',
-        })),
+      interfaces,
       checked_at: new Date().toISOString(),
       source: 'mikrotik-live',
-    };
+    }, previous);
 
     await storeSnapshot(snapshot).catch((err) => console.error('NOC snapshot store failed:', err.message));
     return snapshot;
@@ -249,7 +522,20 @@ async function nocRouters(clientId) {
 }
 
 async function nocOverview(clientId, routerId, options = {}) {
-  return readLiveSnapshot(clientId, routerId, options);
+  try {
+    return await readLiveSnapshot(clientId, routerId, options);
+  } catch (err) {
+    const router = await resolveRouter(clientId, routerId);
+    const previous = await latestStoredSnapshot(clientId, router.id).catch(() => null);
+    if (previous && recentEnough(previous.checked_at || previous.cached_at, 10)) {
+      return {
+        ...previous,
+        source: 'last-good-snapshot',
+        live_error: err.message,
+      };
+    }
+    throw err;
+  }
 }
 
 async function nocHistory(clientId, routerId, range = '6h') {
@@ -257,7 +543,7 @@ async function nocHistory(clientId, routerId, range = '6h') {
   const router = await resolveRouter(clientId, routerId);
   const hours = range === '24h' ? 24 : range === '1h' ? 1 : 6;
   const result = await db.query(
-    `SELECT created_at, download_mbps, upload_mbps, cpu_load, active_pppoe, active_hotspot, router_health_percent
+    `SELECT created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent, storage_used_percent, active_pppoe, active_hotspot, router_health_percent
      FROM noc_router_snapshots
      WHERE client_id = $1 AND router_id = $2 AND created_at >= NOW() - ($3::text)::interval
      ORDER BY created_at ASC`,
@@ -268,6 +554,8 @@ async function nocHistory(clientId, routerId, range = '6h') {
     download_mbps: Number(row.download_mbps || 0),
     upload_mbps: Number(row.upload_mbps || 0),
     cpu_load: row.cpu_load === null ? null : Number(row.cpu_load),
+    memory_used_percent: row.memory_used_percent === null ? null : Number(row.memory_used_percent),
+    storage_used_percent: row.storage_used_percent === null ? null : Number(row.storage_used_percent),
     pppoe_count: row.active_pppoe === null ? null : Number(row.active_pppoe),
     hotspot_count: row.active_hotspot === null ? null : Number(row.active_hotspot),
     router_health_percent: row.router_health_percent === null ? null : Number(row.router_health_percent),
@@ -316,7 +604,14 @@ async function nocStatus(clientId, routerId) {
   ];
 }
 
+async function nocAnalysis(clientId, routerId) {
+  const snapshot = await nocOverview(clientId, routerId);
+  const history = await nocHistory(clientId, snapshot.router_id, '1h').catch(() => []);
+  return buildNocAnalysis(snapshot, history);
+}
+
 module.exports = {
+  nocAnalysis,
   nocHistory,
   nocOverview,
   nocRouters,

@@ -8,7 +8,9 @@ const {
   makeSessionToken,
   makeInstanceName,
   createInstance,
+  createPairingInstance,
   requestPairingCode,
+  removeInstance,
   refreshOnboarding,
   cleanProviderError,
 } = require('../services/evoSelfOnboarding');
@@ -51,6 +53,10 @@ function publicView(row) {
 
 function cleanPhone(number) {
   return String(number || '').replace(/[^0-9]/g, '');
+}
+
+function temporaryBridgeEnabled() {
+  return String(process.env.WHATSAPP_BRIDGE_ENABLED || '').toLowerCase() === 'true';
 }
 
 function makeOtp() {
@@ -109,6 +115,7 @@ router.post(
     body('email').isEmail().normalizeEmail().withMessage('Enter a valid email address'),
     body('location').optional().trim().isLength({ max: 255 }),
     body('service_interest').optional().isIn(['customer_support', 'isp_support', 'sales_support', 'full_automation']),
+    body('connection_method').optional().isIn(['qr', 'pairing_code']).withMessage('Choose QR code or pairing code'),
     body('request_type').optional().isIn(['new_client', 'additional_agent']),
     body('parent_client_id').optional({ checkFalsy: true }).isInt({ min: 1 }),
     body('agent_label').optional({ checkFalsy: true }).trim().isLength({ max: 80 }),
@@ -123,7 +130,8 @@ router.post(
     try {
       await ensureEvoOnboardingTable();
       const sessionToken = makeSessionToken();
-      const instanceName = makeInstanceName(req.body.business_name);
+      const requestedMethod = req.body.connection_method === 'pairing_code' ? 'pairing' : 'qr';
+      const instanceName = makeInstanceName(`${req.body.business_name}-${requestedMethod}`);
       const requestType = req.body.request_type === 'additional_agent' && req.body.parent_client_id ? 'additional_agent' : 'new_client';
       const parentClientId = requestType === 'additional_agent' ? Number(req.body.parent_client_id) : null;
       if (parentClientId) {
@@ -152,6 +160,38 @@ router.post(
         ]
       );
       const row = insert.rows[0];
+      if (temporaryBridgeEnabled()) {
+        try {
+          const method = req.body.connection_method === 'pairing_code' ? 'pairing_code' : 'qr';
+          let qrCode = null;
+          let generatedPairingCode = null;
+          let pairingNumber = null;
+          if (method === 'qr') {
+            qrCode = await createInstance(row.instance_name, { qrcode: true });
+          } else {
+            const paired = await createPairingInstance(row.instance_name, row.phone);
+            generatedPairingCode = paired.pairingCode;
+            pairingNumber = paired.number;
+          }
+          const updated = await db.query(
+            `UPDATE evo_client_onboardings
+             SET status = 'pending_qr', qr_code = $1, pairing_code = $2, pairing_number = $3,
+                 connection_method = $4, connection_state = $5, phone_verified_at = NOW(),
+                 provider_error = NULL, updated_at = NOW()
+             WHERE id = $6 RETURNING *`,
+            [qrCode, generatedPairingCode, pairingNumber, method, method === 'qr' ? 'waiting_scan' : 'waiting_pairing_code', row.id]
+          );
+          return res.status(201).json({ session_token: sessionToken, ...publicView(updated.rows[0]) });
+        } catch (providerErr) {
+          const error = cleanProviderError(providerErr);
+          await db.query(
+            `UPDATE evo_client_onboardings SET status = 'failed', provider_error = $1, updated_at = NOW() WHERE id = $2`,
+            [error, row.id]
+          );
+          console.error('Temporary Baileys bridge QR preparation failed:', error);
+          return res.status(502).json({ error: 'We could not prepare the WhatsApp QR code. Please try again shortly.' });
+        }
+      }
       try {
         const updated = await sendOnboardingOtp(row);
         return res.status(201).json({ session_token: sessionToken, ...publicView(updated) });
@@ -274,13 +314,15 @@ router.post(
       if (!row.phone_verified_at) {
         return res.status(403).json({ error: 'Confirm your WhatsApp number before requesting a pairing code.' });
       }
-      const paired = await requestPairingCode(row.instance_name, req.body.phone);
+      const pairingInstanceName = makeInstanceName(row.business_name);
+      await removeInstance(row.instance_name);
+      const paired = await requestPairingCode(pairingInstanceName, req.body.phone, { forceFresh: true });
       const updated = await db.query(
         `UPDATE evo_client_onboardings
-         SET pairing_code = $1, pairing_number = $2, connection_method = 'pairing_code',
+         SET instance_name = $1, pairing_code = $2, pairing_number = $3, connection_method = 'pairing_code',
              status = 'pending_qr', connection_state = 'waiting_pairing_code', provider_error = NULL, updated_at = NOW()
-         WHERE id = $3 RETURNING *`,
-        [paired.pairingCode, paired.number, row.id]
+         WHERE id = $4 RETURNING *`,
+        [pairingInstanceName, paired.pairingCode, paired.number, row.id]
       );
       return res.json(publicView(updated.rows[0]));
     } catch (err) {

@@ -4,6 +4,8 @@ const db = require('../db');
 const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, openAIModelSummary } = require('../services/openai');
 const {
   sendWhatsAppMessage,
+  sendWhatsAppUrlButton,
+  sendWhatsAppTyping,
   sendWhatsAppList,
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
@@ -300,6 +302,13 @@ function isRouterStatusQuestion(text) {
   const value = String(text || '').toLowerCase();
   if (/\b(interfaces?|ports?|logs?|error|alert|warning|users?|sessions?|pppoe|hotspot|dhcp|traffic|cpu|memory)\b/.test(value)) return false;
   return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
+}
+
+function isRouterAdminFollowupQuestion(text) {
+  const value = String(text || '').toLowerCase().trim();
+  if (!value) return false;
+  if (/\b(account|invoice|payment|pay|billing|expire|expiry|package|password|subscription|balance)\b/.test(value)) return false;
+  return /\b(status|health|report|overview|logs?|alerts?|errors?|cpu|processor|memory|storage|disk|uptime|interfaces?|ports?|ethernet|sfp|traffic|bandwidth|queues?|wan|uplink|link|offline|online)\b/.test(value);
 }
 
 function classifyComplaintLocal(text) {
@@ -628,6 +637,11 @@ router.post('/', async (req, res) => {
 
     const message = incomingMessages[0];
     const phoneNumber = message.from;
+    sendWhatsAppTyping(client.meta_phone_number_id, client.meta_access_token, message.id).then(() => {
+      console.log(`[client ${client.id}] Meta typing indicator accepted for ${phoneNumber}.`);
+    }).catch((err) => {
+      console.warn(`[client ${client.id}] Meta typing indicator failed: ${formatErr(err)}`);
+    });
     const profileName = value?.contacts?.[0]?.profile?.name;
     const timestamp = new Date(parseInt(message.timestamp, 10) * 1000);
     const { conversation, isNew, isNewNumber } = await findOrCreateConversation(client.id, phoneNumber, profileName);
@@ -1034,23 +1048,40 @@ router.post('/', async (req, res) => {
       : messageText;
     const preReplyIntent = inboundIsImage ? null : classifyIntentLocal(classificationText);
     let routerAdminContext = '';
-    if (preReplyIntent?.intent === 'router_management') {
+    const explicitRouterAdminQuestion = preReplyIntent?.intent === 'router_management';
+    const possibleRouterAdminFollowup = !inboundIsImage && isRouterAdminFollowupQuestion(classificationText);
+    if (explicitRouterAdminQuestion || possibleRouterAdminFollowup) {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
       if (!allowedRouterAdmin) {
+        if (!explicitRouterAdminQuestion) {
+          console.log(`[client ${client.id}] Router-admin-like follow-up from ${phoneNumber} treated as normal customer text because the number is not authorized.`);
+        } else {
         console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
         const safeReply = 'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.';
         await deliverReply(client, phoneNumber, safeReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, safeReply);
         return;
-      }
-      if (isRouterStatusQuestion(classificationText)) {
+        }
+      } else if (isRouterStatusQuestion(classificationText) || /^\s*(status|health|report|overview|router status|mikrotik status)\s*[?.!]*\s*$/i.test(classificationText)) {
         const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
         await deliverReply(client, phoneNumber, statusReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, statusReply);
+        if (!replyAsVoice) {
+          const nocLink = String(statusReply).match(/https?:\/\/[^\s]+\/public\/noc\/[^\s]+/)?.[0] || '';
+          if (nocLink) {
+            try {
+              await sendWhatsAppUrlButton(client.meta_phone_number_id, client.meta_access_token, phoneNumber, 'Open the live NOC view for this router.', 'Open Live NOC', nocLink, 'Link valid for 12 hours');
+              console.log(`[client ${client.id}] Meta Live NOC URL button sent to ${phoneNumber}.`);
+            } catch (err) {
+              console.warn(`[client ${client.id}] Meta Live NOC URL button failed; URL remains in status reply: ${formatErr(err)}`);
+            }
+          }
+        }
         console.log(`[client ${client.id}] Deterministic router status reply sent to ${phoneNumber}.`);
         return;
+      } else {
+        routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
       }
-      routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
     }
 
     if (!inboundIsImage) {

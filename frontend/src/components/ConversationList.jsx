@@ -139,7 +139,7 @@ export default function ConversationList({ conversations, compact = false, initi
                 <button
                   key={conversation.id}
                   onClick={() => navigate(`/dashboard/conversations/${conversation.id}`)}
-                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[50px_minmax(0,1fr)_20px] gap-3 px-3 py-3' : 'grid-cols-[72px_220px_minmax(0,1fr)_110px_24px] gap-4 px-6 py-3.5'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
+                  className={`conversation-row group grid w-full ${compact ? 'grid-cols-[46px_minmax(0,1fr)_auto_14px] gap-2 px-3 py-2.5' : 'grid-cols-[72px_220px_minmax(0,1fr)_110px_24px] gap-4 px-6 py-3.5'} items-center border-b border-[#e5eaf4] text-left transition last:border-b-0 ${isCurrent ? 'bg-[#f5f2ff]' : 'hover:bg-[#fbfcff]'}`}
                 >
                   <span className={`${compact ? 'h-10 w-10 text-xs' : 'h-14 w-14 text-base'} relative flex items-center justify-center rounded-full border border-[#d7d7ff] bg-[#f6f3ff] font-semibold text-[#4f35f5]`}>
                     {initials(conversation)}
@@ -153,6 +153,7 @@ export default function ConversationList({ conversations, compact = false, initi
                   {!compact && <span className="min-w-0 truncate text-sm font-medium leading-6 text-[#4f5d84] dashboard-muted">
                     {conversation.last_message || 'No messages yet'}
                   </span>}
+                  {compact && <span className="conversation-time text-[10px] font-bold text-[#8792ad] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
                   {!compact && <span className="text-right text-sm font-medium text-[#58658b] dashboard-muted">{formatTime(conversation.last_message_at)}</span>}
                   <span className="text-2xl font-light text-[#7c35ff] transition group-hover:translate-x-1">&rsaquo;</span>
                 </button>

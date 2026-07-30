@@ -1,5 +1,10 @@
+import { clientsClaim } from 'workbox-core';
 import { cleanupOutdatedCaches, precacheAndRoute } from 'workbox-precaching';
 
+// Activate the new asset manifest immediately. This prevents an old worker
+// from serving an HTML shell that references route chunks from a prior build.
+self.skipWaiting();
+clientsClaim();
 precacheAndRoute(self.__WB_MANIFEST);
 cleanupOutdatedCaches();
 

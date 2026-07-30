@@ -10,6 +10,11 @@ export default defineConfig({
       srcDir: 'src',
       filename: 'sw.js',
       registerType: 'autoUpdate',
+      injectManifest: {
+        // Keep first load lean. Route chunks are fetched only when an admin opens
+        // that section; stale chunk failures recover through vite:preloadError.
+        globPatterns: ['index.html', 'assets/index-*.{js,css}', '**/*.{svg,ico,woff,woff2}'],
+      },
       includeAssets: [
         'favicon.svg',
         'favicon-16x16.png',
@@ -44,7 +49,6 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,ico,webp,woff,woff2}'],
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [/^\/api/, /^\/webhook/, /^\/health/],
         runtimeCaching: [

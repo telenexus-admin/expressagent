@@ -13,6 +13,8 @@ const {
   updateRouterStatus,
 } = require('../services/mikrotik');
 const { previewMikrotikAlert } = require('../services/mikrotikMonitor');
+const { prepareSinglePaste } = require('../services/onePasteOnboarding');
+const { previewProvisioning, applyProvisioning } = require('../services/mikrotikProvisioning');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -73,17 +75,12 @@ router.post('/clients/sync', async (req, res) => {
 });
 
 router.post('/wireguard/prepare', async (req, res) => {
-  const clientId = resolveTargetClient(req, res);
-  if (!clientId) return;
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
   try {
-    const plan = await prepareWireguardOnboarding(clientId, req.body || {});
-    res.json(plan);
-  } catch (err) {
-    console.error('POST /mikrotik/wireguard/prepare error:', err.message);
-    res.status(400).json({ error: err.message || 'Failed to prepare WireGuard onboarding' });
-  }
+    const single = await prepareSinglePaste(clientId, req.body || {});
+    res.json({ tunnel_ip: single.tunnel_ip, api_host: single.tunnel_ip, api_port: 8728, api_connection_type: 'api', username: 'nexa', single_paste: true, expires_in_minutes: single.expires_in_minutes, radius_host: single.radius_host, mikrotikScript: single.script, warning: single.warning });
+  } catch (err) { console.error('Prepare single-paste onboarding error:', err.message); res.status(400).json({ error: err.message || 'Could not prepare onboarding script' }); }
 });
-
 router.post('/wireguard/activate', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
@@ -117,6 +114,17 @@ router.post('/test', async (req, res) => {
   }
 });
 
+router.post('/:id/provision/preview', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { res.json(await previewProvisioning(clientId, Number(req.params.id), req.body || {})); }
+  catch (err) { res.status(400).json({ error: err.message || 'Could not preview MikroTik provisioning' }); }
+});
+
+router.post('/:id/provision', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { res.json(await applyProvisioning(clientId, Number(req.params.id), req.body || {})); }
+  catch (err) { console.error('MikroTik provisioning error:', err.message); res.status(400).json({ error: err.message || 'MikroTik provisioning failed' }); }
+});
 router.post('/alerts/test', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;

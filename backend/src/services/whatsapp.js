@@ -42,6 +42,33 @@ async function sendWhatsAppMessage(phoneNumberId, accessToken, phoneNumber, mess
   return response.data;
 }
 
+async function sendWhatsAppUrlButton(phoneNumberId, accessToken, phoneNumber, bodyText, displayText, url, footerText = '') {
+  assertCreds(phoneNumberId, accessToken);
+  const interactive = {
+    type: 'cta_url',
+    body: { text: String(bodyText).slice(0, 1024) },
+    action: { name: 'cta_url', parameters: { display_text: String(displayText).slice(0, 20), url: String(url) } },
+  };
+  if (footerText) interactive.footer = { text: String(footerText).slice(0, 60) };
+  const response = await axios.post(
+    '${GRAPH_BASE}/${phoneNumberId}/messages',
+    { messaging_product: 'whatsapp', recipient_type: 'individual', to: phoneNumber, type: 'interactive', interactive },
+    { headers: jsonHeaders(accessToken), timeout: requestTimeoutMs() }
+  );
+  return response.data;
+}
+
+async function sendWhatsAppTyping(phoneNumberId, accessToken, messageId) {
+  assertCreds(phoneNumberId, accessToken);
+  if (!messageId) return null;
+  const response = await axios.post(
+    '${GRAPH_BASE}/${phoneNumberId}/messages',
+    { messaging_product: 'whatsapp', status: 'read', message_id: String(messageId), typing_indicator: { type: 'text' } },
+    { headers: jsonHeaders(accessToken), timeout: requestTimeoutMs() }
+  );
+  return response.data;
+}
+
 // Send up to three Meta WhatsApp reply buttons. Each id is returned to the webhook when tapped.
 async function sendWhatsAppButtons(phoneNumberId, accessToken, phoneNumber, bodyText, buttons, footerText = '') {
   assertCreds(phoneNumberId, accessToken);
@@ -195,6 +222,8 @@ async function sendWhatsAppMediaMessage(phoneNumberId, accessToken, phoneNumber,
 module.exports = {
   sendWhatsAppMessage,
   sendWhatsAppButtons,
+  sendWhatsAppUrlButton,
+  sendWhatsAppTyping,
   sendWhatsAppList,
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,

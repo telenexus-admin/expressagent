@@ -19,10 +19,13 @@ const invoiceRoutes = require('./routes/invoices');
 const inventoryRoutes = require('./routes/inventory');
 const ticketRoutes = require('./routes/tickets');
 const billingRoutes = require('./routes/billing');
+const billingWorkspaceRoutes = require('./routes/billingWorkspace');
+const hotspotPortalRoutes = require('./routes/hotspotPortal');
 const mediaLibraryRoutes = require('./routes/mediaLibrary');
 const websiteKnowledgeRoutes = require('./routes/websiteKnowledge');
 const mikrotikRoutes = require('./routes/mikrotik');
 const nocRoutes = require('./routes/noc');
+const tr069Routes = require('./routes/tr069');
 const aiTaskRoutes = require('./routes/aiTasks');
 const helpBotRoutes = require('./routes/helpBot');
 const pushRoutes = require('./routes/pushNotifications');
@@ -31,6 +34,8 @@ const relocationRequestRoutes = require('./routes/relocationRequests');
 const installationWorkOrderRoutes = require('./routes/installationWorkOrders');
 const payheroRoutes = require('./routes/payhero');
 const siteChatRoutes = require('./routes/siteChat');
+const publicNocRoutes = require('./routes/publicNoc');
+const mikrotikOnboardingPublicRoutes = require('./routes/mikrotikOnboardingPublic');
 const operatorAgentRoutes = require('./routes/operatorAgent');
 const operatorEvolutionRoutes = require('./routes/operatorEvolution');
 const operatorUpdateContactRoutes = require('./routes/operatorUpdateContacts');
@@ -47,6 +52,7 @@ const { startHumanTakeoverRecoveryScheduler } = require('./services/humanTakeove
 const { startWebsiteKnowledgeScheduler } = require('./services/websiteKnowledge');
 const { startAiTaskScheduler } = require('./services/aiTasks');
 const { startMikrotikMonitorScheduler } = require('./services/mikrotikMonitor');
+const { startRadiusSyncJobScheduler } = require('./services/radiusJobs');
 const { openAIModelSummary } = require('./services/openai');
 
 const app = express();
@@ -81,14 +87,14 @@ function isAllowedCorsOrigin(origin) {
 }
 
 app.use((req, res, next) => {
-  const isPublicSiteChat = req.path.startsWith('/api/public/site-chat');
+  const isPublicApi = req.path.startsWith('/api/public/site-chat') || req.path.startsWith('/api/public/noc');
   return cors({
     origin(origin, callback) {
-      if (isPublicSiteChat) return callback(null, true);
+      if (isPublicApi) return callback(null, true);
       if (isAllowedCorsOrigin(origin)) return callback(null, true);
       return callback(new Error('Not allowed by CORS'));
     },
-    credentials: !isPublicSiteChat,
+    credentials: !isPublicApi,
   })(req, res, next);
 });
 
@@ -102,6 +108,9 @@ app.use('/api/public/relocation-request', relocationRequestRoutes);
 app.use('/api/public/installation-work-orders', installationWorkOrderRoutes);
 app.use('/api/public/payhero', payheroRoutes);
 app.use('/api/public/site-chat', siteChatRoutes);
+app.use('/api/public/noc', publicNocRoutes);
+app.use('/api/public/mikrotik', mikrotikOnboardingPublicRoutes);
+app.use('/api/public/hotspot', hotspotPortalRoutes);
 app.get('/api/public/invoices/:token', invoiceRoutes.publicInvoiceHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
@@ -122,10 +131,12 @@ app.use('/api/invoices', invoiceRoutes);
 app.use('/api/inventory', inventoryRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/billing', billingRoutes);
+app.use('/api/billing-workspace', billingWorkspaceRoutes);
 app.use('/api/media-library', mediaLibraryRoutes);
 app.use('/api/website-knowledge', websiteKnowledgeRoutes);
 app.use('/api/mikrotik', mikrotikRoutes);
 app.use('/api/noc', nocRoutes);
+app.use('/api/tr069', tr069Routes);
 app.use('/api/ai-tasks', aiTaskRoutes);
 app.use('/api/help-bot', helpBotRoutes);
 app.use('/api/push', pushRoutes);
@@ -150,4 +161,5 @@ app.listen(PORT, () => {
   startWebsiteKnowledgeScheduler();
   startAiTaskScheduler();
   startMikrotikMonitorScheduler();
+  startRadiusSyncJobScheduler();
 });

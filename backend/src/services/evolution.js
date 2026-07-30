@@ -135,9 +135,10 @@ function cleanNumber(number) {
 }
 
 function evolutionAuth(settings) {
-  const baseUrl = cleanBaseUrl(settings.evolution_base_url);
-  const instance = String(settings.evolution_instance || '').trim();
-  const apiKey = settings.evolution_api_key;
+  const bridgeEnabled = String(process.env.WHATSAPP_BRIDGE_ENABLED || '').toLowerCase() === 'true';
+  const baseUrl = cleanBaseUrl(bridgeEnabled ? process.env.WHATSAPP_BRIDGE_URL : settings.evolution_base_url);
+  const instance = String(bridgeEnabled ? process.env.WHATSAPP_BRIDGE_INSTANCE : settings.evolution_instance || '').trim();
+  const apiKey = bridgeEnabled ? process.env.WHATSAPP_BRIDGE_API_KEY : settings.evolution_api_key;
   if (!baseUrl || !instance || !apiKey) throw new Error('Evolution API URL, instance and API key must be configured.');
   return { baseUrl, instance, headers: { apikey: apiKey, 'Content-Type': 'application/json' } };
 }
@@ -361,7 +362,26 @@ function parseEvolutionInbound(payload, diagnostics = null) {
     }
     return null;
   }
-  const remoteJid = firstPresent(
+  // Newer WhatsApp multi-device events can use an opaque @lid as remoteJid.
+  // Evolution/Baileys supplies the real phone JID in remoteJidAlt (or senderPn).
+  // Sending the numeric part of a LID as a phone number creates a message that
+  // remains PENDING, so prefer the normalized phone JID whenever it is present.
+  const alternatePhoneJid = firstPresent(
+    key.remoteJidAlt,
+    key.senderPn,
+    data?.remoteJidAlt,
+    data?.senderPn,
+    root?.remoteJidAlt,
+    root?.senderPn,
+    payload?.remoteJidAlt,
+    payload?.senderPn,
+    ...candidateSenderValues(payload?.sender).filter((value) => !/@lid$/i.test(String(value || ''))),
+    ...candidateSenderValues(root?.sender).filter((value) => !/@lid$/i.test(String(value || ''))),
+    ...candidateSenderValues(data?.sender).filter((value) => !/@lid$/i.test(String(value || ''))),
+    findNestedString(payload, ['remoteJidAlt', 'senderPn'], (value) => /@s\.whatsapp\.net$/i.test(String(value || ''))),
+    ''
+  );
+  const detectedRemoteJid = firstPresent(
     key.remoteJid,
     key.participant,
     data?.remoteJid,
@@ -375,6 +395,9 @@ function parseEvolutionInbound(payload, diagnostics = null) {
     findNestedString(payload, ['remoteJid', 'participant', 'jid', 'from', 'sender', 'chatId', 'number', 'phone', 'user'], senderLooksUsable),
     ''
   );
+  const remoteJid = String(detectedRemoteJid || '').toLowerCase().endsWith('@lid') && alternatePhoneJid
+    ? alternatePhoneJid
+    : detectedRemoteJid;
   if (!remoteJid) {
     if (debug) {
       debug.reason = 'missing_remote_jid';
@@ -452,6 +475,7 @@ function parseEvolutionInbound(payload, diagnostics = null) {
   }
   return {
     phone,
+    replyJid: String(detectedRemoteJid || '').toLowerCase().endsWith('@lid') ? detectedRemoteJid : null,
     name: data?.pushName || data?.data?.pushName || root?.pushName || payload?.senderName || payload?.pushName || null,
     text,
     isVoice,

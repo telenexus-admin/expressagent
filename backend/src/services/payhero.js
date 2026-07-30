@@ -45,6 +45,7 @@ async function ensurePayHeroSchema() {
         )
       `);
       await db.query(`CREATE INDEX IF NOT EXISTS idx_payhero_requests_client ON payhero_payment_requests(client_id, created_at DESC)`);
+      await db.query(`CREATE INDEX IF NOT EXISTS idx_payhero_requests_checkout ON payhero_payment_requests(client_id, checkout_request_id) WHERE checkout_request_id IS NOT NULL`);
     })().catch((err) => {
       schemaPromise = null;
       throw err;

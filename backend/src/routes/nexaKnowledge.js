@@ -9,6 +9,23 @@ const {
   listKnowledgeEntities,
   searchKnowledge,
 } = require('../services/knowledgeProcessor');
+const {
+  getLLMHealth,
+  listKnowledgeInsights,
+  sanitizeTextForLLM,
+} = require('../services/knowledgeLLM');
+const {
+  buildNexaTwinContext,
+  getTwinEntity,
+  getTwinHealth,
+  getTwinImpact,
+  listTwinEntities,
+} = require('../services/digitalTwin');
+const {
+  getTwinStabilityReport,
+  listTwinAlerts,
+} = require('../services/twinStability');
+const { buildIncidentContext } = require('../services/incidentCommander');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -29,10 +46,32 @@ router.get('/health', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
   try {
-    res.json(await getKnowledgeHealth(clientId));
+    const [knowledge, llm] = await Promise.all([
+      getKnowledgeHealth(clientId),
+      getLLMHealth(clientId),
+    ]);
+    res.json({ ...knowledge, llm });
   } catch (error) {
     console.error('GET /nexa-knowledge/health error:', error.message);
     res.status(500).json({ error: 'Failed to load Nexa knowledge health' });
+  }
+});
+
+router.get('/insights', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const insights = await listKnowledgeInsights(clientId, {
+      riskLevel: req.query.riskLevel,
+      insightType: req.query.insightType,
+      entityType: req.query.entityType,
+      entityId: req.query.entityId,
+      limit: req.query.limit,
+    });
+    res.json({ insights });
+  } catch (error) {
+    console.error('GET /nexa-knowledge/insights error:', error.message);
+    res.status(500).json({ error: 'Failed to load Nexa intelligence insights' });
   }
 });
 
@@ -88,17 +127,106 @@ router.get('/entities/:entityType/:entityId', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
   try {
-    const entity = await getKnowledgeEntity(
-      clientId,
-      req.params.entityType,
-      req.params.entityId,
-      req.query.limit
-    );
+    const [entity, insights] = await Promise.all([
+      getKnowledgeEntity(
+        clientId,
+        req.params.entityType,
+        req.params.entityId,
+        req.query.limit
+      ),
+      listKnowledgeInsights(clientId, {
+        entityType: req.params.entityType,
+        entityId: req.params.entityId,
+        limit: req.query.limit,
+      }),
+    ]);
     if (!entity) return res.status(404).json({ error: 'Knowledge entity not found' });
-    res.json(entity);
+    res.json({ ...entity, insights });
   } catch (error) {
     console.error('GET /nexa-knowledge/entities/:type/:id error:', error.message);
     res.status(500).json({ error: 'Failed to load Nexa knowledge entity' });
+  }
+});
+
+router.get('/twin/health', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json(await getTwinHealth(clientId));
+  } catch (error) {
+    console.error('GET /nexa-knowledge/twin/health error:', error.message);
+    res.status(500).json({ error: 'Failed to load Nexa digital twin health' });
+  }
+});
+
+router.get('/twin/stability', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json(await getTwinStabilityReport(clientId));
+  } catch (error) {
+    console.error('GET /nexa-knowledge/twin/stability error:', error.message);
+    res.status(500).json({ error: 'Failed to load Nexa digital twin stability' });
+  }
+});
+
+router.get('/twin/alerts', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    res.json({ alerts: await listTwinAlerts(clientId, {
+      status: req.query.status,
+      limit: req.query.limit,
+    }) });
+  } catch (error) {
+    console.error('GET /nexa-knowledge/twin/alerts error:', error.message);
+    res.status(500).json({ error: 'Failed to load Nexa digital twin alerts' });
+  }
+});
+
+router.get('/twin/entities', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const entities = await listTwinEntities(clientId, {
+      entityType: req.query.entityType,
+      operationalStatus: req.query.operationalStatus,
+      healthStatus: req.query.healthStatus,
+      query: req.query.q,
+      limit: req.query.limit,
+    });
+    res.json({ entities });
+  } catch (error) {
+    console.error('GET /nexa-knowledge/twin/entities error:', error.message);
+    res.status(500).json({ error: 'Failed to load Nexa digital twin entities' });
+  }
+});
+
+router.get('/twin/entities/:entityType/:entityId', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const entity = await getTwinEntity(clientId, req.params.entityType, req.params.entityId);
+    if (!entity) return res.status(404).json({ error: 'Digital twin entity not found' });
+    res.json(entity);
+  } catch (error) {
+    console.error('GET /nexa-knowledge/twin/entities/:type/:id error:', error.message);
+    res.status(500).json({ error: 'Failed to load Nexa digital twin entity' });
+  }
+});
+
+router.get('/twin/impact/:entityType/:entityId', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const root = await getTwinEntity(clientId, req.params.entityType, req.params.entityId);
+    if (!root) return res.status(404).json({ error: 'Digital twin entity not found' });
+    res.json(await getTwinImpact(clientId, req.params.entityType, req.params.entityId, {
+      depth: req.query.depth,
+    }));
+  } catch (error) {
+    console.error('GET /nexa-knowledge/twin/impact/:type/:id error:', error.message);
+    res.status(500).json({ error: 'Failed to calculate digital twin impact' });
   }
 });
 
@@ -109,14 +237,18 @@ router.post('/ask', async (req, res) => {
   if (!question) return res.status(400).json({ error: 'question is required' });
 
   try {
-    const knowledge = await buildNexaKnowledgeContext(clientId, question, {
-      from: req.body?.from,
-      to: req.body?.to,
-      category: req.body?.category,
-      entityType: req.body?.entity_type,
-      limit: 15,
-    });
-    if (!knowledge.context) {
+    const [knowledge, twin, incidents] = await Promise.all([
+      buildNexaKnowledgeContext(clientId, question, {
+        from: req.body?.from,
+        to: req.body?.to,
+        category: req.body?.category,
+        entityType: req.body?.entity_type,
+        limit: 15,
+      }),
+      buildNexaTwinContext(clientId, question, { limit: 15, depth: 3 }),
+      buildIncidentContext(clientId, question, { limit: 10 }),
+    ]);
+    if (!knowledge.context && !twin.context && !incidents.context) {
       return res.json({
         answer: 'I do not have enough recorded account evidence to answer that yet.',
         sources: [],
@@ -128,16 +260,26 @@ router.post('/ask', async (req, res) => {
       'Answer only from the ACCOUNT KNOWLEDGE supplied below.',
       'Never infer information about another account or claim an action happened without evidence.',
       'If evidence is incomplete, say exactly what is missing.',
-      'Be concise, operationally useful, and mention event IDs in parentheses for important claims.',
+      'Respond naturally like an experienced human ISP operations assistant, never as raw JSON.',
+      'Lead with the direct answer, then explain the cause, affected scope, evidence freshness, and next best step.',
+      'Treat stale digital-twin observations as historical evidence, not confirmed live status.',
+      'Be concise, operationally useful, and mention event IDs in parentheses for important historical claims.',
       'Do not reveal raw credentials, tokens, passwords, private keys or authentication data.',
+      'Incident Commander recommendations are advisory. Never say an operational action was executed unless explicit execution evidence is supplied.',
       '',
-      'ACCOUNT KNOWLEDGE:',
-      knowledge.context,
+      'ACTIVE AND RECENT INCIDENTS:',
+      sanitizeTextForLLM(incidents.context, 8000) || 'No matching incidents.',
+      '',
+      'CURRENT DIGITAL TWIN:',
+      sanitizeTextForLLM(twin.context, 12000) || 'No matching current twin state.',
+      '',
+      'ACCOUNT EVENT EVIDENCE:',
+      sanitizeTextForLLM(knowledge.context, 12000) || 'No matching historical events.',
     ].join('\n');
     const answer = await generateAIResponse(systemPrompt, [
       { role: 'user', content: question },
     ]);
-    res.json({ answer, sources: knowledge.sources });
+    res.json({ answer, sources: [...incidents.sources, ...twin.sources, ...knowledge.sources] });
   } catch (error) {
     console.error('POST /nexa-knowledge/ask error:', error.message);
     res.status(500).json({ error: 'Nexa could not answer from account knowledge' });

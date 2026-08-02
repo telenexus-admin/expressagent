@@ -16,7 +16,15 @@
     "test:event-producers:db": "node test/eventProducers.db.test.js",
     "test:knowledge": "node test/knowledgeProcessor.test.js",
     "test:knowledge:db": "node test/knowledgeProcessor.db.test.js",
-    "test:knowledge-bootstrap:db": "node test/knowledgeBootstrap.db.test.js"
+    "test:knowledge-bootstrap:db": "node test/knowledgeBootstrap.db.test.js",
+    "test:knowledge-llm": "node test/knowledgeLLM.test.js",
+    "test:knowledge-llm:db": "node test/knowledgeLLM.db.test.js",
+    "test:digital-twin": "node test/digitalTwin.test.js",
+    "test:digital-twin:db": "node test/digitalTwin.db.test.js",
+    "test:twin-stability": "node test/twinStability.test.js",
+    "test:twin-stability:db": "node test/twinStability.db.test.js",
+    "test:incident-commander": "node test/incidentCommander.test.js",
+    "test:incident-commander:db": "node test/incidentCommander.db.test.js"
   },
   "dependencies": {
     "axios": "^1.6.7",

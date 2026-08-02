@@ -1,6 +1,10 @@
 const db = require('../db');
 const { recordBillingEvent } = require('./events');
-const { listRecentRadiusSessions, radiusEnabled } = require('./radiusSync');
+const { getOnlineUsernames, listRecentRadiusSessions, radiusEnabled } = require('./radiusSync');
+const {
+  observeTwinEntities,
+  observeTwinRelationship,
+} = require('./digitalTwin');
 
 let running = false;
 let timer;
@@ -41,7 +45,30 @@ async function pollRadiusSessionEvents() {
       const subscriberByUsername = new Map(
         subscribers.map((subscriber) => [String(subscriber.radius_username), subscriber])
       );
-      const sessions = await listRecentRadiusSessions([...subscriberByUsername.keys()], 15);
+      const usernames = [...subscriberByUsername.keys()];
+      const [sessions, onlineUsernames] = await Promise.all([
+        listRecentRadiusSessions(usernames, 15),
+        getOnlineUsernames(usernames),
+      ]);
+      const observations = subscribers.map((subscriber) => {
+        const online = onlineUsernames.has(String(subscriber.radius_username));
+        return {
+          clientId,
+          eventType: online ? 'subscriber.connected' : 'subscriber.disconnected',
+          category: 'radius',
+          source: 'radius_accounting_live',
+          entityType: 'subscriber',
+          entityId: subscriber.id,
+          state: {
+            online,
+            operational_status: online ? 'online' : 'offline',
+            radius_username: subscriber.radius_username,
+            observed_from: 'radius_accounting',
+          },
+          observedAt: new Date(),
+          sensitivity: 'restricted',
+        };
+      });
       const sessionIds = sessions.map((session) => String(session.radacctid));
       const stateResult = sessionIds.length
         ? await db.query(
@@ -57,6 +84,33 @@ async function pollRadiusSessionEvents() {
         if (!subscriber) continue;
         const sessionId = String(session.radacctid);
         const state = stateById.get(sessionId);
+        const sessionActive = !session.acctstoptime;
+        observations.push({
+          clientId,
+          eventType: sessionActive ? 'radius.session_started' : 'radius.session_stopped',
+          category: 'radius',
+          source: 'radius_accounting_live',
+          entityType: 'radius_session',
+          entityId: sessionId,
+          state: {
+            online: sessionActive,
+            operational_status: sessionActive ? 'online' : 'offline',
+            username: session.username,
+            started_at: session.acctstarttime,
+            updated_at: session.acctupdatetime,
+            stopped_at: session.acctstoptime,
+            session_seconds: session.acctsessiontime,
+            upload_bytes: session.acctinputoctets,
+            download_bytes: session.acctoutputoctets,
+            framed_ip_address: session.framedipaddress,
+            nas_ip_address: session.nasipaddress,
+            terminate_cause: session.acctterminatecause,
+          },
+          observedAt: session.acctupdatetime || session.acctstoptime || session.acctstarttime || new Date(),
+          severity: !sessionActive && /lost|reject|error|timeout/i.test(String(session.acctterminatecause || ''))
+            ? 'warning' : 'info',
+          sensitivity: 'restricted',
+        });
         if (!state?.started_event_at) await recordBillingEvent({
           clientId,
           eventType: 'radius.session_started',
@@ -135,7 +189,33 @@ async function pollRadiusSessionEvents() {
             ]
           );
         }
+        if (!state?.started_event_at || (session.acctstoptime && !state?.stopped_event_at)) {
+          const active = !session.acctstoptime;
+          const observedAt = session.acctstoptime || session.acctupdatetime || session.acctstarttime || new Date();
+          await observeTwinRelationship({
+            clientId,
+            fromEntityType: 'radius_session',
+            fromEntityId: sessionId,
+            relationship: 'subscriber',
+            toEntityType: 'subscriber',
+            toEntityId: subscriber.id,
+            active,
+            observedAt,
+            attributes: { username: session.username },
+          });
+          if (subscriber.router_id) await observeTwinRelationship({
+            clientId,
+            fromEntityType: 'radius_session',
+            fromEntityId: sessionId,
+            relationship: 'router',
+            toEntityType: 'router',
+            toEntityId: subscriber.router_id,
+            active,
+            observedAt,
+          });
+        }
       }
+      await observeTwinEntities(observations);
     }
   } catch (error) {
     console.error('RADIUS session event poll failed:', error.message);

@@ -4,9 +4,12 @@ const axios = require('axios');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { recordBillingEvent, recordRequestEvent } = require('../services/events');
+const { observeTwinEntity, observeTwinRelationship } = require('../services/digitalTwin');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
+let telemetrySchedulerStarted = false;
+let telemetrySchedulerBusy = false;
 
 function clientId(req, res) {
   if (req.scope.isSuperadmin && !req.scope.clientId) {
@@ -159,6 +162,13 @@ async function syncDevices(id) {
     [id]
   );
   const previousById = new Map(previousResult.rows.map((item) => [String(item.device_id), item]));
+  const locationResult = await db.query(
+    `SELECT device_id, subscriber_id FROM tr069_device_locations WHERE client_id = $1`,
+    [id]
+  );
+  const subscriberByDevice = new Map(
+    locationResult.rows.filter((row) => row.subscriber_id).map((row) => [String(row.device_id), row.subscriber_id])
+  );
   for (const item of devices) {
     await db.query(
       `INSERT INTO tr069_device_cache
@@ -202,8 +212,125 @@ async function syncDevices(id) {
         sensitivity: 'restricted',
       });
     }
+    await observeTwinEntity({
+      clientId: id,
+      eventType: 'ont.observed',
+      category: 'ont',
+      source: 'tr069_live',
+      entityType: 'ont',
+      entityId: String(item.device_id).slice(0, 160),
+      displayName: [item.manufacturer, item.model_name, item.serial_number].filter(Boolean).join(' ') || item.device_id,
+      state: {
+        status: item.status,
+        operational_status: item.status === 'online' || item.status === 'warning' ? 'online' : 'offline',
+        health_status: item.status === 'warning' ? 'degraded' : item.status === 'offline' ? 'critical' : 'healthy',
+        serial_number: item.serial_number,
+        manufacturer: item.manufacturer,
+        model_name: item.model_name,
+        software_version: item.software_version,
+        ip_address: item.ip_address,
+        mac_address: item.mac_address,
+        ssid: item.ssid,
+        rx_power_dbm: item.rx_power_dbm,
+        tx_power_dbm: item.tx_power_dbm,
+        uptime_seconds: item.uptime_seconds,
+        last_inform: item.last_inform,
+      },
+      observedAt: item.last_inform || new Date(),
+      severity: item.status === 'offline' ? 'critical' : item.status === 'warning' ? 'warning' : 'info',
+      sensitivity: 'restricted',
+    });
+    const subscriberId = subscriberByDevice.get(String(item.device_id));
+    if (subscriberId) await observeTwinRelationship({
+      clientId: id,
+      fromEntityType: 'ont',
+      fromEntityId: String(item.device_id).slice(0, 160),
+      relationship: 'assigned_subscriber',
+      toEntityType: 'subscriber',
+      toEntityId: subscriberId,
+      active: true,
+      observedAt: item.last_inform || new Date(),
+    });
   }
   return devices;
+}
+
+async function runTr069TelemetryOnce() {
+  if (telemetrySchedulerBusy) return { skipped: true, accounts: 0, devices: 0 };
+  telemetrySchedulerBusy = true;
+  let devices = 0;
+  let failed = 0;
+  try {
+    await ensureSchema();
+    const configs = await db.query(
+      `SELECT client_id, last_test_status FROM tr069_configs WHERE enabled = TRUE ORDER BY client_id`
+    );
+    for (const config of configs.rows) {
+      try {
+        const synced = await syncDevices(config.client_id);
+        devices += synced.length;
+        await db.query(
+          `UPDATE tr069_configs
+           SET last_tested_at = NOW(), last_test_status = 'online', last_test_error = NULL, updated_at = NOW()
+           WHERE client_id = $1`,
+          [config.client_id]
+        );
+        await observeTwinEntity({
+          clientId: config.client_id,
+          eventType: 'tr069.connection_observed',
+          category: 'tr069',
+          source: 'tr069_monitor_live',
+          entityType: 'tr069_configuration',
+          entityId: config.client_id,
+          displayName: 'TR-069 ACS connection',
+          state: {
+            online: true,
+            operational_status: 'online',
+            health_status: 'healthy',
+            device_count: synced.length,
+          },
+          observedAt: new Date(),
+          sensitivity: 'restricted',
+        });
+        if (config.last_test_status && config.last_test_status !== 'online') await recordBillingEvent({
+          clientId: config.client_id,
+          eventType: 'tr069.connection_recovered',
+          category: 'tr069',
+          source: 'tr069_monitor',
+          entityType: 'tr069_configuration',
+          entityId: config.client_id,
+          actorType: 'system',
+          severity: 'info',
+          title: 'TR-069 connection recovered',
+          newState: { status: 'online', device_count: synced.length },
+          deduplicationKey: `tr069-monitor:${config.client_id}:recovered:${Date.now()}`,
+          sensitivity: 'restricted',
+        });
+      } catch (error) {
+        failed += 1;
+        await db.query(
+          `UPDATE tr069_configs
+           SET last_tested_at = NOW(), last_test_status = 'offline', last_test_error = $2, updated_at = NOW()
+           WHERE client_id = $1`,
+          [config.client_id, String(error.message || 'TR-069 synchronization failed').slice(0, 500)]
+        );
+        await observeTwinEntity({
+          clientId: config.client_id,
+          eventType: 'tr069.connection_failed',
+          category: 'tr069',
+          source: 'tr069_monitor_live',
+          entityType: 'tr069_configuration',
+          entityId: config.client_id,
+          displayName: 'TR-069 ACS connection',
+          state: {
+            online: false,
+            operational_status: 'offline',
+            health_status: 'critical',
+            last_error: String(error.message || 'TR-069 synchronization failed').slice(0, 500),
+          ãÎ­¢G§²ÚîÆ­yÙled:', error.message));
+  }, intervalMs);
+  timer.unref?.();
+  console.log(`TR-069 telemetry scheduler ready (${intervalMs}ms interval).`);
 }
 
 router.get('/config', async (req, res) => {
@@ -394,7 +521,14 @@ router.put('/devices/:deviceId/location', async (req, res) => {
   }
   try {
     await ensureSchema();
-    const exists = await db.query('SELECT 1 FROM tr069_device_cache WHERE client_id=$1 AND device_id=$2', [id, req.params.deviceId]);
+    const exists = await db.query(
+      `SELECT cache.device_id, location.subscriber_id
+       FROM tr069_device_cache cache
+       LEFT JOIN tr069_device_locations location
+         ON location.client_id = cache.client_id AND location.device_id = cache.device_id
+       WHERE cache.client_id=$1 AND cache.device_id=$2`,
+      [id, req.params.deviceId]
+    );
     if (!exists.rows[0]) return res.status(404).json({ error: 'ONT not found in this billing account' });
     await db.query(
       `INSERT INTO tr069_device_locations(client_id,device_id,subscriber_id,latitude,longitude,address,notes)
@@ -420,6 +554,30 @@ router.put('/devices/:deviceId/location', async (req, res) => {
       relatedEntities: req.body.subscriber_id ? [{ entityType: 'subscriber', entityId: req.body.subscriber_id, relationship: 'assigned_subscriber' }] : [],
       deduplicationKey: `ont:${id}:${req.params.deviceId}:location:${Date.now()}`,
       sensitivity: 'restricted',
+    });
+    const previousSubscriberId = exists.rows[0]?.subscriber_id;
+    const nextSubscriberId = req.body.subscriber_id || null;
+    if (previousSubscriberId && String(previousSubscriberId) !== String(nextSubscriberId || '')) {
+      await observeTwinRelationship({
+        clientId: id,
+        fromEntityType: 'ont',
+        fromEntityId: String(req.params.deviceId).slice(0, 160),
+        relationship: 'assigned_subscriber',
+        toEntityType: 'subscriber',
+        toEntityId: previousSubscriberId,
+        active: false,
+        observedAt: new Date(),
+      });
+    }
+    if (nextSubscriberId) await observeTwinRelationship({
+      clientId: id,
+      fromEntityType: 'ont',
+      fromEntityId: String(req.params.deviceId).slice(0, 160),
+      relationship: 'assigned_subscriber',
+      toEntityType: 'subscriber',
+      toEntityId: nextSubscriberId,
+      active: true,
+      observedAt: new Date(),
     });
     res.json({ success: true });
   } catch (error) { res.status(500).json({ error: 'Could not save ONT location' }); }
@@ -467,4 +625,6 @@ router.post('/devices/:deviceId/action', async (req, res) => {
   } catch (error) { res.status(400).json({ error: error.response?.data?.message || error.message || 'TR-069 action failed' }); }
 });
 
+router.runTr069TelemetryOnce = runTr069TelemetryOnce;
+router.startTr069TelemetryScheduler = startTr069TelemetryScheduler;
 module.exports = router;

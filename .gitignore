@@ -1,0 +1,78 @@
+# Environment secrets
+.env
+.env.*
+!.env.example
+*.env.save
+
+# Dependencies
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+whatsapp-bridge/node_modules/
+
+# Logs
+*.log
+logs/
+backend/logs/
+frontend/logs/
+storage/logs/
+
+# Frontend generated builds
+frontend/dist/
+frontend/dist-*/
+dist/
+build/
+
+# Backups and temporary copies
+backups/
+*.bak
+*.bak-*
+*.before-*
+*.corrupt-*
+*.save
+*.backup
+*.old
+*.orig
+*~
+
+# Database backups
+*.sql
+*.sqlite
+*.sqlite3
+*.db
+*.dump
+
+# Compressed backups
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+
+# Runtime and cache
+.cache/
+tmp/
+temp/
+coverage/
+.nyc_output/
+
+# IDE and operating system
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Uploaded/runtime content
+uploads/
+public/uploads/
+backend/uploads/
+frontend/public/uploads/
+
+# WhatsApp/Baileys authentication credentials
+whatsapp-bridge/auth/
+whatsapp-bridge/auth.*/
+whatsapp-bridge/*auth*/
+**/creds.json
+**/pre-key-*.json
+**/session-*.json
+**/app-state-sync-key-*.json
+**/app-state-sync-version-*.json

@@ -1,0 +1,17 @@
+const assert=require('assert');
+const {buildOnboardingScript}=require('../src/services/onePasteOnboarding');
+const {compileProvisioningPlan,deriveCapabilities,enrollmentFeatureState,normalizeFingerprint,parseVersion,redactSnapshot}=require('../src/services/networkEnrollment');
+const script=buildOnboardingScript({apiPassword:'readonly-password',executorPassword:'executor-password-123456789',tunnelIp:'10.77.0.240',callbackToken:'opaque-token'});
+for(const forbidden of ['/radius/add','/ppp/profile/add','/ip/hotspot/add','/ip/pool/add','/ip/dns/set','/ip/firewall/nat/add','/file/add','NexaRadiusShared'])assert.ok(!script.includes(forbidden),'bootstrap contains '+forbidden);
+assert.ok(script.includes('nexa-readonly policy=read,test,api'));
+assert.ok(script.includes('nexa-executor policy=read,write,test,api'));
+assert.deepStrictEqual(parseVersion('7.18.2 (stable)'),{raw:'7.18.2 (stable)',major:7,minor:18,patch:2});
+const snapshot={identity:{ok:true,rows:[{name:'CCR-LAB'}]},resource:{ok:true,rows:[{version:'7.18.2','board-name':'CCR2004-1G-12S+2XS','architecture-name':'arm64'}]},routerboard:{ok:true,rows:[{'serial-number':'ABC123'}]},packages:{ok:true,rows:[{name:'routeros',version:'7.18.2'}]},device_mode:{ok:true,rows:[{hotspot:'yes',flagged:'no'}]},interfaces:{ok:true,rows:[{'.id':'*1',name:'ether1',type:'ether',running:'true'}]},hotspot_servers:{ok:true,rows:[]},pppoe_servers:{ok:true,rows:[]},bridge_vlans:{ok:true,rows:[]}};
+const f=normalizeFingerprint(snapshot);f.source_quality={hotspot_servers:true,pppoe_servers:true,bridge_vlans:true};
+const cap=deriveCapabilities(f,{pppoe:true,hotspot:true});assert.strictEqual(cap.compatibility_status,'compatible');assert.strictEqual(cap.adapter_version,'routeros-v7.1');
+const blocked=deriveCapabilities({...f,software:{...f.software,device_mode:{hotspot:'no'}}},{hotspot:true});assert.strictEqual(blocked.compatibility_status,'manual_action_required');assert.ok(blocked.physical_actions.length);
+const plan=compileProvisioningPlan({desired_services:{pppoe:true,hotspot:true,vlan_id:220},capability_profile:cap,nas_identifier:'nexa-1-2-router',nas_ip:'10.77.0.2',radius_host:'10.78.0.2'});
+assert.ok(plan.stages.some(x=>x.name==='subscriber_vlan'));assert.ok(plan.stages.some(x=>x.name==='radius_registration'));assert.ok(JSON.stringify(plan).includes('router-radius-secret'));assert.ok(!JSON.stringify(plan).includes('shared_secret'));
+const redacted=redactSnapshot({secret:'x',nested:{private_key:'y',value:2}});assert.deepStrictEqual(redacted,{secret:'[redacted]',nested:{private_key:'[redacted]',value:2}});
+const state=enrollmentFeatureState();assert.strictEqual(state.execution_enabled,false);assert.strictEqual(state.automatic_execution,false);assert.strictEqual(state.bootstrap_only,true);assert.strictEqual(state.shared_radius_secret_in_script,false);
+console.log('Phase 4 bootstrap, fingerprint, compatibility, plan, redaction, and safety tests passed.');

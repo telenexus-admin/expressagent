@@ -1,6 +1,7 @@
 ﻿
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import api from '../utils/api';
+import { messagesForLLM, messagesForStorage } from '../utils/nexaChatSecurity';
 
 const WELCOME = {
   id: 'welcome',
@@ -52,7 +53,7 @@ function readMessages(key) {
   }
 }
 
-export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode = false, onAction }) {
+export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode = false }) {
   const storageKey = useMemo(() => 'nexa-agent-chat-v1:' +
     (admin?.client_id || admin?.clientId || admin?.client_name || 'billing') + ':' +
     (admin?.id || 'admin'), [admin]);
@@ -62,13 +63,15 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState('');
   const [unread, setUnread] = useState(false);
+  const [onboarding, setOnboarding] = useState(null);
+  const [copiedId, setCopiedId] = useState('');
   const inputRef = useRef(null);
   const scrollRef = useRef(null);
   const prompts = PROMPTS[currentTab] || PROMPTS.overview;
 
   useEffect(() => setMessages(readMessages(storageKey)), [storageKey]);
   useEffect(() => {
-    try { localStorage.setItem(storageKey, JSON.stringify(messages.filter((item) => item.id !== 'welcome').slice(-30))); } catch (_) { /* optional */ }
+    try { localStorage.setItem(storageKey, JSON.stringify(messagesForStorage(messages))); } catch (_) { /* optional */ }
   }, [messages, storageKey]);
   useEffect(() => {
     if (!open) return;
@@ -86,15 +89,98 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
   }, []);
 
   const clearChat = () => {
+    setOnboarding(null);
+    setQuestion('');
+    setCopiedId('');
     setMessages([WELCOME]);
     setError('');
     try { localStorage.removeItem(storageKey); } catch (_) { /* optional */ }
   };
 
+  const continueOnboarding = async (text) => {
+    const addUser = (displayText, sensitive = false) => setMessages((current) => current.concat({
+      id: crypto.randomUUID(),
+      role: 'user',
+      text: displayText,
+      private: sensitive,
+      sensitive,
+    }));
+    const addNexa = (message) => setMessages((current) => current.concat({
+      id: crypto.randomUUID(),
+      role: 'assistant',
+      text: message,
+    }));
+    setQuestion('');
+    setError('');
+
+    if (onboarding.step === 'name') {
+      const name = text.replace(/\s+/g, ' ').trim().slice(0, 80);
+      addUser(name);
+      if (name.length < 2) {
+        addNexa('Please give the router a clear name with at least two characters.');
+        return;
+      }
+      setOnboarding({ step: 'password', name, password: '' });
+      addNexa('Perfect — I will call it "' + name + '".\n\nNow create the MikroTik API password Nexa should use. It must have at least 8 characters. This entry is masked and will never be sent to the AI or saved in chat history.');
+      return;
+    }
+
+    if (onboarding.step === 'password') {
+      addUser('••••••••', true);
+      if (text.length < 8) {
+        addNexa('That password is too short. Please enter at least 8 characters.');
+        return;
+      }
+      setOnboarding({ step: 'confirm', name: onboarding.name, password: text });
+      addNexa('Got it securely. Please enter the same password once more to confirm it.');
+      return;
+    }
+
+    if (onboarding.step === 'confirm') {
+      addUser('••••••••', true);
+      if (text !== onboarding.password) {
+        setOnboarding({ step: 'password', name: onboarding.name, password: '' });
+        addNexa('Those passwords did not match, so I discarded both entries. Create the password again and I will reconfirm it.');
+        return;
+      }
+
+      const routerName = onboarding.name;
+      const confirmedPassword = onboarding.password;
+      setOnboarding({ step: 'creating', name: routerName });
+      setThinking(true);
+      try {
+        const result = await api.post('/mikrotik/wireguard/prepare', {
+          name: routerName,
+          password: confirmedPassword,
+        });
+        const script = String(result.data?.mikrotikScript || '');
+        if (!script) throw new Error('The onboarding service did not return a script.');
+        setMessages((current) => current.concat({
+          id: crypto.randomUUID(),
+          role: 'assistant',
+          text: 'Your secure script for "' + routerName + '" is ready.\n\nCopy it below and paste it once into the MikroTik terminal. I will detect the callback, identify the model and RouterOS version, register it to this billing account, and begin discovery automatically.',
+          script,
+          expiresInMinutes: Number(result.data?.expires_in_minutes || 60),
+          sensitive: true,
+        }));
+        setOnboarding(null);
+      } catch (requestError) {
+        setOnboarding(null);
+        setError(requestError.response?.data?.error || requestError.message || 'Could not generate the onboarding script.');
+        addNexa('I could not generate the script, and I discarded the password. Nothing was changed on the router. Tell me to add the MikroTik when you are ready to try again.');
+      } finally {
+        setThinking(false);
+      }
+    }
+  };
   const ask = async (value) => {
     const text = String(value || question).trim();
     if (!text || thinking) return;
-    const prior = messages.filter((item) => item.id !== 'welcome').slice(-8);
+    if (onboarding) {
+      if (onboarding.step !== 'creating') await continueOnboarding(text);
+      return;
+    }
+    const prior = messagesForLLM(messages);
     const userMessage = { id: crypto.randomUUID(), role: 'user', text };
     setMessages((current) => current.concat(userMessage));
     setQuestion('');
@@ -103,16 +189,18 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
     try {
       const response = await api.post('/nexa-knowledge/ask', {
         question: text,
-        history: prior.map((item) => ({ role: item.role, content: item.text })),
+        history: prior,
         category: currentTab === 'routers' ? 'router' : undefined,
         workspace: currentTab,
       });
+      if (response.data?.flow?.type === 'mikrotik_onboarding') {
+        setOnboarding({ step: 'name', name: '', password: '' });
+      }
       setMessages((current) => current.concat({
         id: crypto.randomUUID(),
         role: 'assistant',
         text: response.data?.answer || 'I could not form an answer from the available account evidence.',
         sources: Array.isArray(response.data?.sources) ? response.data.sources : [],
-        actions: Array.isArray(response.data?.actions) ? response.data.actions : [],
       }));
       if (!open) setUnread(true);
     } catch (requestError) {
@@ -128,6 +216,26 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
     }
   };
 
+  const copyScript = async (message) => {
+    try {
+      await navigator.clipboard.writeText(message.script);
+      setCopiedId(message.id);
+      window.setTimeout(() => setCopiedId((current) => current === message.id ? '' : current), 2200);
+    } catch (_) {
+      setError('Could not copy automatically. Press and hold the script to select it.');
+    }
+  };
+
+  const secretEntry = onboarding?.step === 'password' || onboarding?.step === 'confirm';
+  const onboardingPlaceholder = onboarding?.step === 'name'
+    ? 'Enter the MikroTik name…'
+    : onboarding?.step === 'password'
+      ? 'Create the API password…'
+      : onboarding?.step === 'confirm'
+        ? 'Confirm the API password…'
+        : onboarding?.step === 'creating'
+          ? 'Generating secure script…'
+          : 'Ask Nexa about your ISP…';
   const panel = darkMode ? 'border-slate-700 bg-[#11162a] text-white' : 'border-white/80 bg-white text-slate-900';
   const composer = darkMode ? 'border-slate-700 bg-slate-900 text-white placeholder:text-slate-500' : 'border-slate-200 bg-slate-50 text-slate-900 placeholder:text-slate-400';
 
@@ -155,8 +263,11 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
               {!mine && <div className="mt-1 flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-violet-600 to-fuchsia-500 text-white"><Icon name="sparkle" className="h-4 w-4" /></div>}
               <div>
                 <div className={'rounded-2xl px-4 py-3 text-[13px] leading-5 shadow-sm ' + (mine ? 'rounded-br-md bg-violet-600 text-white' : message.failed ? 'rounded-bl-md border border-rose-200 bg-rose-50 text-rose-800' : darkMode ? 'rounded-bl-md border border-slate-700 bg-slate-800 text-slate-100' : 'rounded-bl-md border border-violet-100 bg-white text-slate-700')}><MessageText text={message.text} /></div>
+                {message.script && <div className={'mt-3 overflow-hidden rounded-2xl border ' + (darkMode ? 'border-slate-700 bg-slate-950' : 'border-violet-200 bg-[#130b29]')}>
+                  <div className="flex items-center justify-between gap-3 border-b border-white/10 px-3 py-2 text-white"><div><p className="text-[10px] font-extrabold uppercase tracking-[.14em] text-violet-300">One-paste RouterOS script</p><p className="text-[9px] text-slate-400">Expires in {message.expiresInMinutes || 60} minutes</p></div><button type="button" onClick={() => void copyScript(message)} className="rounded-lg bg-violet-600 px-3 py-2 text-[10px] font-extrabold hover:bg-violet-500">{copiedId === message.id ? 'Copied ✓' : 'Copy script'}</button></div>
+                  <pre className="max-h-56 overflow-auto whitespace-pre-wrap break-all px-3 py-3 font-mono text-[10px] leading-4 text-emerald-300">{message.script}</pre>
+                </div>}
                 {labels.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{labels.map((label) => <span key={label} className={'max-w-[180px] truncate rounded-full px-2 py-1 text-[9px] font-bold ' + (darkMode ? 'bg-slate-800 text-slate-400' : 'bg-violet-100 text-violet-600')}>{label}</span>)}</div>}
-                {Array.isArray(message.actions) && message.actions.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.actions.map((action) => <button type="button" key={action.type + action.label} onClick={() => { setOpen(false); onAction?.(action); }} className="rounded-xl bg-violet-600 px-3 py-2 text-[11px] font-extrabold text-white shadow-sm hover:bg-violet-700">{action.label}</button>)}</div>}
               </div>
             </div>
           </article>;
@@ -166,13 +277,13 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
       </div>
 
       <div className={'border-t px-4 pb-[max(14px,env(safe-area-inset-bottom))] pt-3 sm:px-5 ' + (darkMode ? 'border-slate-800 bg-[#11162a]' : 'border-slate-100 bg-white')}>
-        {messages.length <= 2 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{prompts.map((prompt) => <button type="button" key={prompt} disabled={thinking} onClick={() => void ask(prompt)} className={'shrink-0 rounded-full border px-3 py-2 text-[10px] font-bold disabled:opacity-50 ' + (darkMode ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-violet-100 bg-violet-50 text-violet-700')}>{prompt}</button>)}</div>}
+        {!onboarding && messages.length <= 2 && <div className="mb-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">{prompts.map((prompt) => <button type="button" key={prompt} disabled={thinking} onClick={() => void ask(prompt)} className={'shrink-0 rounded-full border px-3 py-2 text-[10px] font-bold disabled:opacity-50 ' + (darkMode ? 'border-slate-700 bg-slate-800 text-slate-300' : 'border-violet-100 bg-violet-50 text-violet-700')}>{prompt}</button>)}</div>}
         {error && <p className="mb-2 text-[11px] font-semibold text-rose-500">{error}</p>}
         <form onSubmit={(event) => { event.preventDefault(); void ask(); }} className={'flex items-end gap-2 rounded-2xl border p-2 focus-within:border-violet-400 focus-within:ring-4 focus-within:ring-violet-500/10 ' + composer}>
-          <textarea ref={inputRef} rows="1" maxLength="1000" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder="Ask Nexa about your ISP…" className="max-h-28 min-h-[38px] flex-1 resize-none bg-transparent px-2 py-2 text-[13px] leading-5 outline-none" />
+          {secretEntry ? <input ref={inputRef} type="password" autoComplete="new-password" maxLength="160" value={question} onChange={(event) => setQuestion(event.target.value)} placeholder={onboardingPlaceholder} className="min-h-[38px] flex-1 bg-transparent px-2 py-2 text-[13px] leading-5 outline-none" /> : <textarea ref={inputRef} rows="1" maxLength="1000" value={question} onChange={(event) => setQuestion(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void ask(); } }} placeholder={onboardingPlaceholder} disabled={onboarding?.step === 'creating'} className="max-h-28 min-h-[38px] flex-1 resize-none bg-transparent px-2 py-2 text-[13px] leading-5 outline-none disabled:opacity-50" />}
           <button type="submit" disabled={thinking || !question.trim()} aria-label="Send message to Nexa" className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-600 text-white shadow-lg shadow-violet-300/40 hover:bg-violet-700 disabled:opacity-40"><Icon name="send" /></button>
         </form>
-        <div className="mt-2 flex items-center justify-center gap-1.5 text-[9px] font-semibold text-slate-400"><Icon name="shield" className="h-3 w-3" />Account-scoped evidence · Operational actions require approval</div>
+        <div className="mt-2 flex items-center justify-center gap-1.5 text-[9px] font-semibold text-slate-400"><Icon name="shield" className="h-3 w-3" />{secretEntry ? 'Private entry · never sent to AI or saved in chat' : 'Account-scoped evidence · Operational actions require approval'}</div>
       </div>
     </section>}
 

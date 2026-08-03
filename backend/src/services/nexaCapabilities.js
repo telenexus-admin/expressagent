@@ -1,7 +1,6 @@
 const MIKROTIK_CAPABILITY = {
   id: 'mikrotik_secure_onboarding',
   title: 'Secure MikroTik onboarding',
-  action: { type: 'open_router_onboarding', label: 'Start MikroTik onboarding' },
 };
 
 function isMikrotikOnboardingQuestion(value) {
@@ -13,13 +12,11 @@ function isMikrotikOnboardingQuestion(value) {
 
 function mikrotikOnboardingAnswer() {
   return [
-    "Yes. I can onboard and configure your MikroTik through Nexa's secure one-paste process.",
+    "Absolutely. I can add the MikroTik from here using Nexa's secure one-paste onboarding.",
     '',
-    'Tap "Start MikroTik onboarding", enter a router name and a temporary onboarding password, then paste the generated script into the MikroTik terminal.',
+    'What name should I call this MikroTik?',
     '',
-    'After the router calls back, I will register it to this billing account through its private WireGuard tunnel, identify its model and RouterOS version, discover its interfaces and capabilities, verify the protected executor account, and store its starting baseline. Nexa then prepares only compatible RADIUS, PPPoE and Hotspot changes for approval and post-change verification.',
-    '',
-    'I will not claim the router is configured until the callback, discovery and verification records confirm it.',
+    'For example: Main Office CCR or Westlands Tower Router.',
   ].join('\n');
 }
 
@@ -32,13 +29,16 @@ function getCapabilityResponse(question) {
       id: MIKROTIK_CAPABILITY.id,
       title: MIKROTIK_CAPABILITY.title,
     }],
-    actions: [MIKROTIK_CAPABILITY.action],
+    flow: {
+      type: 'mikrotik_onboarding',
+      step: 'router_name',
+    },
   };
 }
 
 const PLATFORM_CAPABILITY_CONTEXT = [
-  'Nexa has a production MikroTik one-paste onboarding workflow.',
-  'It generates a one-time RouterOS script from Network > Add router.',
+  'Nexa has a production MikroTik one-paste onboarding workflow available directly inside the Nexa chat.',
+  'The guided conversation collects the router name and a confirmed API password without sending secrets to the LLM or saving them in chat history, then calls the tenant-scoped onboarding API and displays the one-time RouterOS script.',
   'The bootstrap creates a private WireGuard management path and scoped read-only and executor identities, then calls Nexa back.',
   'After callback Nexa registers the router to the current tenant, discovers model, RouterOS version, interfaces and capabilities, verifies credentials, and records a baseline.',
   'RADIUS, PPPoE, Hotspot and repair changes are compatibility-checked, approval-gated and verified; never claim they were applied without execution evidence.',

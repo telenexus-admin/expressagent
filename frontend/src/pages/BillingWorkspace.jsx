@@ -84,43 +84,7 @@ export default function BillingWorkspace() {
       section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:last-child > div:nth-child(n+3) {
         display: none !important;
       }
-      button[aria-label="Toggle navigation"],
-      button[aria-label="Toggle dark mode"] {
-        font-size: 0 !important;
-      }
-      button[aria-label="Toggle navigation"]::before {
-        content: "";
-        display: block;
-        width: 19px;
-        height: 14px;
-        background:
-          linear-gradient(currentColor 0 0) top / 100% 2px no-repeat,
-          linear-gradient(currentColor 0 0) center / 100% 2px no-repeat,
-          linear-gradient(currentColor 0 0) bottom / 100% 2px no-repeat;
-        border-radius: 2px;
-      }
-      button[aria-label="Toggle dark mode"]::before {
-        content: "";
-        display: block;
-        width: 17px;
-        height: 17px;
-        border-radius: 999px;
-        box-shadow: inset -5px -3px 0 0 currentColor;
-      }
-      button[aria-label="Toggle dark mode"].text-amber-300::before {
-        width: 9px;
-        height: 9px;
-        background: currentColor;
-        box-shadow:
-          0 -7px 0 -3px currentColor,
-          0 7px 0 -3px currentColor,
-          7px 0 0 -3px currentColor,
-          -7px 0 0 -3px currentColor,
-          5px 5px 0 -3px currentColor,
-          -5px -5px 0 -3px currentColor,
-          5px -5px 0 -3px currentColor,
-          -5px 5px 0 -3px currentColor;
-      }
+
       [data-billing-tab="communication"] > div > header {
         display: none !important;
       }
@@ -152,11 +116,11 @@ export default function BillingWorkspace() {
 function NavIcon({ kind }) { const paths = { home: <><path d="m3 11 9-7 9 7" /><path d="M5 10v10h14V10M9 20v-6h6v6" /></>, clients: <><circle cx="12" cy="8" r="3" /><path d="M5 20a7 7 0 0 1 14 0" /><circle cx="18" cy="10" r="2" /><path d="M17 15a5 5 0 0 1 5 5" /></>, network: <><path d="M3 9.5a14 14 0 0 1 18 0" /><path d="M6.5 13a8.5 8.5 0 0 1 11 0" /><path d="M10 16.5a3.5 3.5 0 0 1 4 0" /><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" /></>, more: <><circle cx="6" cy="6" r="1.5" /><circle cx="12" cy="6" r="1.5" /><circle cx="18" cy="6" r="1.5" /><circle cx="6" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="18" cy="12" r="1.5" /><circle cx="6" cy="18" r="1.5" /><circle cx="12" cy="18" r="1.5" /><circle cx="18" cy="18" r="1.5" /></>, add: <><path d="M12 5v14M5 12h14" /></>, invoices: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>, voucher: <><path d="M4 7h16v10H4z" /><path d="M8 7v10M16 7v10M6 11h2M16 11h2" /></>, packages: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5l8 4.5 8-4.5" /></>, payments: <><path d="M4 7h16v10H4z" /><path d="M4 11h16M8 15h3" /></>, radius: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>, hotspot: <><path d="M3 9.5a14 14 0 0 1 18 0" /><path d="M6.5 13a8.5 8.5 0 0 1 11 0" /><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" /></> }; return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[kind] || paths.more}</svg>; }function MobileDock({ tab, setTab, openMenu, darkMode }) { const items = [['overview', 'home', 'Home'], ['subscribers', 'clients', 'Clients'], ['routers', 'network', 'Network'], ['more', 'more', 'More']]; return <nav className={`fixed inset-x-0 bottom-0 z-30 flex h-[72px] items-center justify-around border-t px-3 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_28px_rgba(15,23,42,.07)] backdrop-blur lg:hidden ${darkMode ? 'border-slate-800 bg-[#161a2d]/95' : 'border-slate-100 bg-white/95'}`}>{items.map(([key, icon, label]) => <button key={key} onClick={() => key === 'more' ? openMenu() : setTab(key)} className={`relative flex min-w-[58px] flex-col items-center gap-1 text-[10px] font-bold ${tab === key ? 'text-violet-500' : 'text-slate-400'}`}><span className={`flex h-9 w-9 items-center justify-center rounded-full ${tab === key ? 'bg-violet-600 text-white shadow-lg shadow-violet-300' : ''}`}><NavIcon kind={icon} /></span>{label}</button>)}</nav>; }function MobileHome({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, onAddSubscriber, money, expanded, setExpanded, darkMode }) { const recent = summary?.recent_payments || payments.slice(0, 3); const panel = darkMode ? 'bg-[#1a1f35] text-white shadow-black/20' : 'bg-white text-slate-900 shadow-violet-950/10'; const muted = darkMode ? 'text-slate-400' : 'text-slate-400'; const amount = money(summary?.payments?.total); return <div className="space-y-5"><section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#26006b] via-[#5600c6] to-[#8d2cff] px-6 pb-16 pt-6 text-white shadow-xl shadow-violet-300/50"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-sm">N</div><button onClick={() => setTab('payments')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢</button></div><div className="mt-8 text-center"><p className="text-xs font-bold text-violet-100">Collections this month</p><p className="mt-2 text-3xl font-black tracking-tight">{amount}</p><p className="mt-2 text-xs font-semibold text-violet-100">{summary?.subscribers?.active ?? active} active subscribers</p></div><div className="pointer-events-none absolute -bottom-20 -right-16 h-52 w-52 rounded-full bg-fuchsia-300/20 blur-2xl" /></section><section className={`-mt-12 mx-2 rounded-2xl p-3 shadow-xl ${panel}`}><div className="grid grid-cols-4 gap-2"><MobileAction icon="+" label="Add" onClick={onAddSubscriber} /><MobileAction icon="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¤" label="Invoices" onClick={() => setTab('invoices')} /><MobileAction icon="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°" label="Voucher" onClick={() => setTab('vouchers')} /><MobileAction icon="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â" label="Network" onClick={() => setTab('routers')} /></div>{expanded && <div className={`mt-3 grid grid-cols-3 gap-2 border-t pt-3 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><MobileAction icon="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦" label="Packages" onClick={() => setTab('plans')} /><MobileAction icon="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚ÂÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¹ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â " label="Payments" onClick={() => setTab('payments')} /><MobileAction icon="ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¾ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢" label="Subscribers" onClick={() => setTab('subscribers')} /></div>}</section><BandwidthOverviewExact history={bandwidthHistory} tick={bandwidthTick} panel={panel} muted={muted} /><section className={`rounded-2xl p-5 shadow-sm ${panel}`}><div className="flex items-center justify-between"><h2 className="font-black">Recent payments</h2><span className="text-xs font-bold text-violet-500">Today</span></div>{recent.length ? <div className="mt-3 divide-y divide-slate-100/10">{recent.map((payment) => <div key={payment.id} className="flex items-center justify-between py-3"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ</div><div><p className="text-sm font-bold">{payment.reference || 'Payment received'}</p><p className={`text-[11px] ${muted}`}>{payment.method || 'Collection'}</p></div></div><p className="text-sm font-black">{money(payment.amount)}</p></div>)}</div> : <p className={`mt-4 text-sm ${muted}`}>No payments recorded yet.</p>}</section></div>; }
 function CurrencyMobileHome({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, onAddSubscriber, money, expanded, setExpanded, darkMode }) {
   const currencies = {
-    KES: { label: 'Kenyan Shilling', locale: 'en-KE', fallback: 1, flag: 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â°ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Âª' },
-    USD: { label: 'US Dollar', locale: 'en-US', fallback: 0.00773, flag: 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂºÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¸' },
-    TZS: { label: 'Tanzanian Shilling', locale: 'sw-TZ', fallback: 20.343, flag: 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¹ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¿' },
-    UGX: { label: 'Ugandan Shilling', locale: 'en-UG', fallback: 28.992, flag: 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚ÂºÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬' },
-    NGN: { label: 'Nigerian Naira', locale: 'en-NG', fallback: 10.5842, flag: 'ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â³ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â°ÃƒÆ’Ã¢â‚¬Â¦Ãƒâ€šÃ‚Â¸ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬' },
+    KES: { label: 'Kenyan Shilling', locale: 'en-KE', fallback: 1, flag: 'KE' },
+    USD: { label: 'US Dollar', locale: 'en-US', fallback: 0.00773, flag: 'US' },
+    TZS: { label: 'Tanzanian Shilling', locale: 'sw-TZ', fallback: 20.343, flag: 'TZ' },
+    UGX: { label: 'Ugandan Shilling', locale: 'en-UG', fallback: 28.992, flag: 'UG' },
+    NGN: { label: 'Nigerian Naira', locale: 'en-NG', fallback: 10.5842, flag: 'NG' },
   };
   const [currency, setCurrency] = useState(() => {
     try { return localStorage.getItem('nexa-billing-display-currency') || 'KES'; } catch (_) { return 'KES'; }

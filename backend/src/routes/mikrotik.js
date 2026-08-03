@@ -94,7 +94,7 @@ router.post('/wireguard/prepare', async (req, res) => {
       deduplicationKey: `router-onboarding:${clientId}:${single.tunnel_ip}:prepared`,
       sensitivity: 'restricted',
     });
-    res.json({ tunnel_ip: single.tunnel_ip, api_host: single.tunnel_ip, api_port: 8728, api_connection_type: 'api', username: 'nexa', single_paste: true, expires_in_minutes: single.expires_in_minutes, radius_host: single.radius_host, mikrotikScript: single.script, warning: single.warning });
+    res.json({ enrollment_id: single.enrollment_id, tunnel_ip: single.tunnel_ip, api_host: single.tunnel_ip, api_port: 8728, api_connection_type: 'api', username: 'nexa', single_paste: true, expires_in_minutes: single.expires_in_minutes, mikrotikScript: single.script, warning: single.warning });
   } catch (err) { console.error('Prepare single-paste onboarding error:', err.message); res.status(400).json({ error: err.message || 'Could not prepare onboarding script' }); }
 });
 router.post('/wireguard/activate', async (req, res) => {

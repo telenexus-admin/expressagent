@@ -5,8 +5,14 @@ set -euo pipefail
 
 APP_DIR="/var/www/expresnet-agent"
 DB_NAME="whatsapp_support"
-DB_PASS="Expr3sN3t_Db_2025!"
+DB_PASS="${DB_PASS:?Export DB_PASS before running this setup script}"
 SERVER_IP="139.59.36.247"
+
+META_VERIFY_TOKEN="${META_VERIFY_TOKEN:?Export META_VERIFY_TOKEN before running this setup script}"
+META_ACCESS_TOKEN="${META_ACCESS_TOKEN:?Export META_ACCESS_TOKEN before running this setup script}"
+META_PHONE_NUMBER_ID="${META_PHONE_NUMBER_ID:?Export META_PHONE_NUMBER_ID before running this setup script}"
+OPENAI_API_KEY="${OPENAI_API_KEY:?Export OPENAI_API_KEY before running this setup script}"
+JWT_SECRET="${JWT_SECRET:?Export JWT_SECRET before running this setup script}"
 
 echo "==> [1/9] Updating system packages..."
 apt-get update -y
@@ -34,13 +40,13 @@ mkdir -p "${APP_DIR}"
 tar -xzf /tmp/expresnet-agent.tar.gz -C "${APP_DIR}"
 
 echo "==> Writing backend .env..."
-cat > "${APP_DIR}/backend/.env" << 'ENVEOF'
-META_VERIFY_TOKEN=expresnet_wh_verify_2025
-META_ACCESS_TOKEN=EAAWMQypkR2ABRfgRml2IIKZB4FaXZAlKHYujqtQQInXTZA33ZAZCX0FtQJQRJlOZAfsHw17RfZCf8Wu4NzjEUm2sW8ZAwtD6CCUVYq6dJTaTUafpYLqTeDs3RqktBZAGQUZBiFOJmZBEkUqbbmIjZCFETxEpcmN8DQV20xQ8ijA6CQDd6VXoqNJG4NvQZB44wZCbqJlQZDZD
-META_PHONE_NUMBER_ID=1120487707795014
-OPENAI_API_KEY=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
-DATABASE_URL=postgresql://postgres:Expr3sN3t_Db_2025!@localhost:5432/whatsapp_support
-JWT_SECRET=j4X8mK2pQ9vR5tW0yZ3bE6hN1cF7gL4sD8nU2xA5wB9eM3kH6jP0qV7rT1oI4uY
+cat > "${APP_DIR}/backend/.env" << ENVEOF
+META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
+META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+META_PHONE_NUMBER_ID=${META_PHONE_NUMBER_ID}
+OPENAI_API_KEY=${OPENAI_API_KEY}
+DATABASE_URL=postgresql://postgres:${DB_PASS}@localhost:5432/${DB_NAME}
+JWT_SECRET=${JWT_SECRET}
 PORT=3001
 FRONTEND_URL=http://139.59.36.247
 ENVEOF
@@ -125,9 +131,9 @@ echo "  App URL:       http://${SERVER_IP}"
 echo "  Webhook URL:   http://${SERVER_IP}/webhook"
 echo "  Health check:  http://${SERVER_IP}/health"
 echo "-----------------------------------------------------------"
-echo "  Admin login:   admin@example.com"
-echo "  Password:      admin123   <-- CHANGE THIS AFTER LOGIN"
+echo "  Admin login:   configured by the database seed"
+echo "  Password:      supplied through the seed configuration"
 echo "-----------------------------------------------------------"
-echo "  WhatsApp webhook verify token: expresnet_wh_verify_2025"
+echo "  WhatsApp webhook verify token: supplied through META_VERIFY_TOKEN"
 echo "  (Enter this in Meta Developer Console -> Webhooks)"
 echo "==========================================================="

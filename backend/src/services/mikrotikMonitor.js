@@ -3,6 +3,7 @@ const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
 const { collectMonitoringSnapshot, ensureMikrotikTables } = require('./mikrotik');
 const { recordBillingEvent } = require('./events');
+const { observeTwinEntity } = require('./digitalTwin');
 
 let schemaReady = false;
 let schedulerStarted = false;
@@ -461,6 +462,37 @@ async function processSnapshot(router, client, snapshot, state) {
     });
   }
 
+  const healthStatus = [currentCpuStatus, currentStorageStatus].includes('critical')
+    ? 'critical'
+    : [currentCpuStatus, currentStorageStatus].includes('warning') ? 'degraded' : 'healthy';
+  await observeTwinEntity({
+    clientId: router.client_id,
+    eventType: 'router.observed',
+    category: 'network',
+    source: 'mikrotik_monitor_live',
+    entityType: 'router',
+    entityId: router.id,
+    displayName: snapshot.router_name || router.name,
+    state: {
+      online: true,
+      operational_status: 'online',
+      health_status: healthStatus,
+      cpu_load: variables.cpu_load,
+      free_memory: snapshot.free_memory,
+      total_memory: snapshot.total_memory,
+      free_storage: snapshot.free_storage,
+      total_storage: snapshot.total_storage,
+      storage_free_percent: variables.storage_free_percent,
+      bad_blocks: variables.bad_blocks,
+      wan_rx_mbps: variables.wan_rx_mbps,
+      wan_tx_mbps: variables.wan_tx_mbps,
+      last_seen: new Date().toISOString(),
+    },
+    severity: healthStatus === 'critical' ? 'critical' : healthStatus === 'degraded' ? 'warning' : 'info',
+    observedAt: new Date(),
+    sensitivity: 'restricted',
+  });
+
   await saveState(router.id, {
     is_online: true,
     last_seen: new Date(),
@@ -509,6 +541,25 @@ async function processRouter(router) {
         failure_count: failureCount,
         last_error: err.message || 'router check failed',
       },
+    });
+    await observeTwinEntity({
+      clientId: router.client_id,
+      eventType: failureCount >= 2 ? 'router.offline' : 'router.check_failed',
+      category: 'network',
+      source: 'mikrotik_monitor_live',
+      entityType: 'router',
+      entityId: router.id,
+      displayName: router.last_identity || router.name,
+      state: {
+        operational_status: failureCount >= 2 ? 'offline' : 'unknown',
+        health_status: failureCount >= 2 ? 'critical' : 'degraded',
+        failure_count: failureCount,
+        offline_since: state?.offline_since || now,
+        last_error: String(err.message || 'router check failed').slice(0, 500),
+      },
+      severity: failureCount >= 2 ? 'critical' : 'warning',
+      observedAt: now,
+      sensitivity: 'restricted',
     });
     if (failureCount >= 2 && (!state || state.is_online !== false || Number(state?.state_json?.failure_count || 0) < 2)) {
       await notifyEvent({

@@ -1573,7 +1573,9 @@ async function syncStaticDhcpLease(subscriber) {
 module.exports = {
   DEFAULT_FEATURES,
   connectRouter,
+  decryptSecret,
   deleteRouter,
+  encryptSecret,
   ensureMikrotikTables,
   getRouter,
   listMikrotikClients,

@@ -44,6 +44,14 @@ function cleanQuestion(value) {
   return String(value || '').replace(/\s+/g, ' ').trim().slice(0, 1000);
 }
 
+function cleanHistory(value) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(-8).map((item) => ({
+    role: item?.role === 'assistant' ? 'assistant' : 'user',
+    content: sanitizeTextForLLM(String(item?.content || ''), 1600),
+  })).filter((item) => item.content);
+}
+
 router.get('/health', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
@@ -236,6 +244,7 @@ router.post('/ask', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
   const question = cleanQuestion(req.body?.question);
+  const history = cleanHistory(req.body?.history);
   if (!question) return res.status(400).json({ error: 'question is required' });
 
   try {
@@ -288,6 +297,7 @@ router.post('/ask', async (req, res) => {
       sanitizeTextForLLM(knowledge.context, 12000) || 'No matching historical events.',
     ].join('\n');
     const answer = await generateAIResponse(systemPrompt, [
+      ...history,
       { role: 'user', content: question },
     ]);
     res.json({ answer, sources: [...networkExecutions.sources, ...networkPlans.sources, ...incidents.sources, ...twin.sources, ...knowledge.sources] });

@@ -1,4 +1,5 @@
 const axios = require('axios');
+const { recordBillingEvent } = require('./events');
 
 function providerConfig() {
   const baseUrl = String(process.env.EVOLUTION_API_URL || '').trim().replace(/\/$/, '');
@@ -10,7 +11,9 @@ function providerConfig() {
 }
 
 function cleanNumber(number) {
-  return String(number || '').replace(/@s\.whatsapp\.net$/i, '').replace(/[^0-9]/g, '');
+  const recipient = String(number || '').trim();
+  if (/^[0-9]+@(s\.whatsapp\.net|lid)$/i.test(recipient)) return recipient;
+  return recipient.replace(/[^0-9]/g, '');
 }
 
 function clientSettings(client) {
@@ -46,15 +49,46 @@ async function setClientWebhook(client, options = {}) {
   return callback;
 }
 
-async function sendClientText(client, number, text) {
+async function sendClientPresence(client, number, presence = 'composing', delay = 5000) {
   const { baseUrl, headers, instance } = clientSettings(client);
   const phone = cleanNumber(number);
   if (!phone) throw new Error('A valid WhatsApp number is required.');
   return axios.post(
+    `${baseUrl}/chat/sendPresence/${encodeURIComponent(instance)}`,
+    { number: phone, presence, delay },
+    { headers, timeout: 10000 }
+  );
+}
+
+async function sendClientText(client, number, text) {
+  const { baseUrl, headers, instance } = clientSettings(client);
+  const phone = cleanNumber(number);
+  if (!phone) throw new Error('A valid WhatsApp number is required.');
+  const response = await axios.post(
     `${baseUrl}/message/sendText/${encodeURIComponent(instance)}`,
     { number: phone, text },
     { headers, timeout: 30000 }
   );
+  const providerMessageId = response.data?.key?.id || response.data?.messageId || response.data?.id || null;
+  await recordBillingEvent({
+    clientId: client.id,
+    eventType: 'communication.whatsapp_sent',
+    category: 'communication',
+    source: 'evolution_client',
+    entityType: 'whatsapp_message',
+    entityId: providerMessageId || `${Date.now()}-${phone}`,
+    actorType: 'system',
+    title: 'WhatsApp message sent',
+    payload: {
+      recipient: phone,
+      message: String(text),
+      provider: 'evolution',
+      provider_message_id: providerMessageId,
+    },
+    deduplicationKey: providerMessageId ? `whatsapp-outbound:${client.id}:${providerMessageId}` : null,
+    sensitivity: 'confidential',
+  }).catch((error) => console.error(`[evo client ${client.id}] Outbound event recording failed:`, error.message));
+  return response;
 }
 
 async function sendClientButtons(client, number, { title, description, footer, buttons }) {
@@ -180,4 +214,4 @@ async function downloadClientImage(client, messageKey) {
   return { ...media, mimeType: media.mimeType || 'image/jpeg' };
 }
 
-module.exports = { setClientWebhook, sendClientText, sendClientButtons, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };
+module.exports = { setClientWebhook, sendClientPresence, sendClientText, sendClientButtons, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage };

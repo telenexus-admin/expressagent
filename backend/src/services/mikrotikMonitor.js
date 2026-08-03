@@ -2,6 +2,8 @@ const db = require('../db');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
 const { collectMonitoringSnapshot, ensureMikrotikTables } = require('./mikrotik');
+const { recordBillingEvent } = require('./events');
+const { observeTwinEntity } = require('./digitalTwin');
 
 let schemaReady = false;
 let schedulerStarted = false;
@@ -14,6 +16,13 @@ const COOLDOWNS = {
   high_cpu: 10,
   storage_bad: 30,
   security_failed_login: 10,
+};
+const CANONICAL_EVENT_TYPES = {
+  router_offline: 'router.offline',
+  router_back_online: 'router.recovered',
+  high_cpu: 'router.high_cpu',
+  storage_bad: 'router.storage_degraded',
+  security_failed_login: 'router.security_failed_login',
 };
 
 const notificationTemplates = {
@@ -274,6 +283,36 @@ async function cooldownBlocked(routerId, eventType, key = '') {
 async function notifyEvent({ router, client, eventType, severity, variables, key = '' }) {
   const cooldown = COOLDOWNS[eventType] ?? 10;
   if (cooldown > 0 && await cooldownBlocked(router.id, eventType, key)) return { skipped: true, reason: 'cooldown' };
+  const canonicalSeverity = ['warning', 'critical'].includes(severity) ? severity : 'info';
+  try {
+    await recordBillingEvent({
+      clientId: router.client_id,
+      eventType: CANONICAL_EVENT_TYPES[eventType] || 'router.monitor_event',
+      category: 'network',
+      source: 'mikrotik_monitor',
+      entityType: 'router',
+      entityId: router.id,
+      actorType: 'system',
+      severity: canonicalSeverity,
+      title: variables.router_name || router.name || 'Router event',
+      description: `${variables.router_name || router.name || 'Router'} emitted ${eventType}`,
+      payload: {
+        monitor_event_type: eventType,
+        monitor_key: key || null,
+        ...variables,
+      },
+      newState: {
+        status: eventType === 'router_offline'
+          ? 'offline'
+          : eventType === 'router_back_online'
+            ? 'online'
+            : severity,
+      },
+      sensitivity: eventType === 'security_failed_login' ? 'restricted' : 'internal',
+    });
+  } catch (error) {
+    console.error(`Failed to record ${eventType} in billing event history:`, error.message);
+  }
   const recipients = await routerAlertRecipients(router.client_id);
   if (!recipients.length) return { skipped: true, reason: 'no_router_alert_workflow_recipient' };
   const { index, template } = chooseTemplate(eventType);
@@ -423,6 +462,37 @@ async function processSnapshot(router, client, snapshot, state) {
     });
   }
 
+  const healthStatus = [currentCpuStatus, currentStorageStatus].includes('critical')
+    ? 'critical'
+    : [currentCpuStatus, currentStorageStatus].includes('warning') ? 'degraded' : 'healthy';
+  await observeTwinEntity({
+    clientId: router.client_id,
+    eventType: 'router.observed',
+    category: 'network',
+    source: 'mikrotik_monitor_live',
+    entityType: 'router',
+    entityId: router.id,
+    displayName: snapshot.router_name || router.name,
+    state: {
+      online: true,
+      operational_status: 'online',
+      health_status: healthStatus,
+      cpu_load: variables.cpu_load,
+      free_memory: snapshot.free_memory,
+      total_memory: snapshot.total_memory,
+      free_storage: snapshot.free_storage,
+      total_storage: snapshot.total_storage,
+      storage_free_percent: variables.storage_free_percent,
+      bad_blocks: variables.bad_blocks,
+      wan_rx_mbps: variables.wan_rx_mbps,
+      wan_tx_mbps: variables.wan_tx_mbps,
+      last_seen: new Date().toISOString(),
+    },
+    severity: healthStatus === 'critical' ? 'critical' : healthStatus === 'degraded' ? 'warning' : 'info',
+    observedAt: new Date(),
+    sensitivity: 'restricted',
+  });
+
   await saveState(router.id, {
     is_online: true,
     last_seen: new Date(),
@@ -471,6 +541,25 @@ async function processRouter(router) {
         failure_count: failureCount,
         last_error: err.message || 'router check failed',
       },
+    });
+    await observeTwinEntity({
+      clientId: router.client_id,
+      eventType: failureCount >= 2 ? 'router.offline' : 'router.check_failed',
+      category: 'network',
+      source: 'mikrotik_monitor_live',
+      entityType: 'router',
+      entityId: router.id,
+      displayName: router.last_identity || router.name,
+      state: {
+        operational_status: failureCount >= 2 ? 'offline' : 'unknown',
+        health_status: failureCount >= 2 ? 'critical' : 'degraded',
+        failure_count: failureCount,
+        offline_since: state?.offline_since || now,
+        last_error: String(err.message || 'router check failed').slice(0, 500),
+      },
+      severity: failureCount >= 2 ? 'critical' : 'warning',
+      observedAt: now,
+      sensitivity: 'restricted',
     });
     if (failureCount >= 2 && (!state || state.is_online !== false || Number(state?.state_json?.failure_count || 0) < 2)) {
       await notifyEvent({

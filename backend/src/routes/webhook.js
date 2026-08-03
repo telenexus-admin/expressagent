@@ -4,6 +4,8 @@ const db = require('../db');
 const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, openAIModelSummary } = require('../services/openai');
 const {
   sendWhatsAppMessage,
+  sendWhatsAppUrlButton,
+  sendWhatsAppTyping,
   sendWhatsAppList,
   downloadWhatsAppMedia,
   uploadWhatsAppMedia,
@@ -25,6 +27,7 @@ const { buildRelocationUrl } = require('../services/relocationRequests');
 const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
+const { recordBillingEvent } = require('../services/events');
 
 function formatErr(err) {
   return typeof err.response?.data === 'object'
@@ -300,6 +303,13 @@ function isRouterStatusQuestion(text) {
   const value = String(text || '').toLowerCase();
   if (/\b(interfaces?|ports?|logs?|error|alert|warning|users?|sessions?|pppoe|hotspot|dhcp|traffic|cpu|memory)\b/.test(value)) return false;
   return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
+}
+
+function isRouterAdminFollowupQuestion(text) {
+  const value = String(text || '').toLowerCase().trim();
+  if (!value) return false;
+  if (/\b(account|invoice|payment|pay|billing|expire|expiry|package|password|subscription|balance)\b/.test(value)) return false;
+  return /\b(status|health|report|overview|logs?|alerts?|errors?|cpu|processor|memory|storage|disk|uptime|interfaces?|ports?|ethernet|sfp|traffic|bandwidth|queues?|wan|uplink|link|offline|online)\b/.test(value);
 }
 
 function classifyComplaintLocal(text) {
@@ -603,8 +613,38 @@ async function findOrCreateConversation(clientId, phoneNumber, profileName) {
 }
 
 async function persistOutgoing(conversationId, content) {
-  await db.query(`INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`, [conversationId, content]);
+  const inserted = await db.query(
+    `INSERT INTO messages (conversation_id, role, content, timestamp)
+     VALUES ($1, 'assistant', $2, NOW()) RETURNING id`,
+    [conversationId, content]
+  );
   await db.query(`UPDATE conversations SET updated_at = NOW() WHERE id = $1`, [conversationId]);
+  const conversationResult = await db.query(
+    `SELECT id, client_id, customer_phone FROM conversations WHERE id = $1 LIMIT 1`,
+    [conversationId]
+  );
+  const conversation = conversationResult.rows[0];
+  if (conversation) {
+    await recordBillingEvent({
+      clientId: conversation.client_id,
+      eventType: 'communication.whatsapp_sent',
+      category: 'communication',
+      source: 'meta_whatsapp',
+      entityType: 'whatsapp_message',
+      entityId: inserted.rows[0].id,
+      actorType: 'system',
+      title: 'WhatsApp message sent',
+      payload: {
+        conversation_id: conversation.id,
+        recipient: conversation.customer_phone,
+        message: content,
+        provider: 'meta',
+      },
+      relatedEntities: [{ entityType: 'conversation', entityId: conversation.id, relationship: 'conversation' }],
+      deduplicationKey: `whatsapp-outbound:${conversation.client_id}:${inserted.rows[0].id}`,
+      sensitivity: 'confidential',
+    });
+  }
 }
 
 router.post('/', async (req, res) => {
@@ -628,6 +668,11 @@ router.post('/', async (req, res) => {
 
     const message = incomingMessages[0];
     const phoneNumber = message.from;
+    sendWhatsAppTyping(client.meta_phone_number_id, client.meta_access_token, message.id).then(() => {
+      console.log(`[client ${client.id}] Meta typing indicator accepted for ${phoneNumber}.`);
+    }).catch((err) => {
+      console.warn(`[client ${client.id}] Meta typing indicator failed: ${formatErr(err)}`);
+    });
     const profileName = value?.contacts?.[0]?.profile?.name;
     const timestamp = new Date(parseInt(message.timestamp, 10) * 1000);
     const { conversation, isNew, isNewNumber } = await findOrCreateConversation(client.id, phoneNumber, profileName);
@@ -727,6 +772,29 @@ router.post('/', async (req, res) => {
        RETURNING id`,
       [conversation.id, persistedMessageText, timestamp]
     );
+    await recordBillingEvent({
+      clientId: client.id,
+      eventType: 'communication.whatsapp_received',
+      category: 'communication',
+      source: 'meta_whatsapp_webhook',
+      entityType: 'whatsapp_message',
+      entityId: storedMessage.rows[0].id,
+      actorType: 'subscriber',
+      actorId: phoneNumber,
+      actorName: conversation.customer_name,
+      title: 'WhatsApp message received',
+      payload: {
+        conversation_id: conversation.id,
+        sender_phone: phoneNumber,
+        message: persistedMessageText,
+        is_voice: inboundIsVoice,
+        is_image: inboundIsImage,
+        provider: 'meta',
+      },
+      relatedEntities: [{ entityType: 'conversation', entityId: conversation.id, relationship: 'conversation' }],
+      deduplicationKey: `whatsapp-inbound:${client.id}:${storedMessage.rows[0].id}`,
+      sensitivity: 'confidential',
+    });
     if (inboundIsImage && inboundImageBuffer) {
       await db.query(
         `INSERT INTO message_attachments (message_id, media_type, mime_type, filename, data)
@@ -1034,23 +1102,40 @@ router.post('/', async (req, res) => {
       : messageText;
     const preReplyIntent = inboundIsImage ? null : classifyIntentLocal(classificationText);
     let routerAdminContext = '';
-    if (preReplyIntent?.intent === 'router_management') {
+    const explicitRouterAdminQuestion = preReplyIntent?.intent === 'router_management';
+    const possibleRouterAdminFollowup = !inboundIsImage && isRouterAdminFollowupQuestion(classificationText);
+    if (explicitRouterAdminQuestion || possibleRouterAdminFollowup) {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, phoneNumber);
       if (!allowedRouterAdmin) {
+        if (!explicitRouterAdminQuestion) {
+          console.log(`[client ${client.id}] Router-admin-like follow-up from ${phoneNumber} treated as normal customer text because the number is not authorized.`);
+        } else {
         console.warn(`[client ${client.id}] Router management request from unauthorized number ${phoneNumber}; reply blocked.`);
         const safeReply = 'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.';
         await deliverReply(client, phoneNumber, safeReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, safeReply);
         return;
-      }
-      if (isRouterStatusQuestion(classificationText)) {
+        }
+      } else if (isRouterStatusQuestion(classificationText) || /^\s*(status|health|report|overview|router status|mikrotik status)\s*[?.!]*\s*$/i.test(classificationText)) {
         const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
         await deliverReply(client, phoneNumber, statusReply, replyAsVoice, voiceId);
         await persistOutgoing(conversation.id, statusReply);
+        if (!replyAsVoice) {
+          const nocLink = String(statusReply).match(/https?:\/\/[^\s]+\/public\/noc\/[^\s]+/)?.[0] || '';
+          if (nocLink) {
+            try {
+              await sendWhatsAppUrlButton(client.meta_phone_number_id, client.meta_access_token, phoneNumber, 'Open the live NOC view for this router.', 'Open Live NOC', nocLink, 'Link valid for 12 hours');
+              console.log(`[client ${client.id}] Meta Live NOC URL button sent to ${phoneNumber}.`);
+            } catch (err) {
+              console.warn(`[client ${client.id}] Meta Live NOC URL button failed; URL remains in status reply: ${formatErr(err)}`);
+            }
+          }
+        }
         console.log(`[client ${client.id}] Deterministic router status reply sent to ${phoneNumber}.`);
         return;
+      } else {
+        routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
       }
-      routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: classificationText });
     }
 
     if (!inboundIsImage) {

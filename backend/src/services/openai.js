@@ -144,6 +144,32 @@ async function generateAIResponse(systemPrompt, messageHistory) {
   return response.choices[0].message.content;
 }
 
+async function generateStructuredResponse(systemPrompt, userPayload, options = {}) {
+  const response = await withOpenAIRetry(
+    options.label || 'Structured OpenAI response',
+    () => getClient().chat.completions.create({
+      model: options.model || chatModel(),
+      messages: [
+        { role: 'system', content: String(systemPrompt || '') },
+        { role: 'user', content: String(userPayload || '') },
+      ],
+      max_tokens: Math.max(200, Math.min(Number(options.maxTokens) || 2400, 6000)),
+      temperature: Math.max(0, Math.min(Number(options.temperature) || 0, 1)),
+      response_format: { type: 'json_object' },
+    }, { timeout: Math.max(openaiTimeoutMs(), Number(options.timeoutMs) || 30000) }),
+    Math.max(1, Math.min(Number(options.attempts) || 3, 5))
+  );
+  return {
+    content: response.choices?.[0]?.message?.content || '',
+    model: response.model || options.model || chatModel(),
+    usage: {
+      input_tokens: Number(response.usage?.prompt_tokens) || 0,
+      output_tokens: Number(response.usage?.completion_tokens) || 0,
+      total_tokens: Number(response.usage?.total_tokens) || 0,
+    },
+  };
+}
+
 // Inspect a customer-supplied support image, such as router LEDs or cabling.
 // The reply is intentionally self-contained because it is persisted in chat history
 // and becomes reliable context when the customer asks follow-up questions later.
@@ -343,4 +369,13 @@ async function classifyIntent(userMessage) {
   }
 }
 
-module.exports = { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent, openAIModelSummary };
+module.exports = {
+  generateAIResponse,
+  generateStructuredResponse,
+  analyzeSupportImage,
+  transcribeAudio,
+  synthesizeVoice,
+  classifyComplaint,
+  classifyIntent,
+  openAIModelSummary,
+};

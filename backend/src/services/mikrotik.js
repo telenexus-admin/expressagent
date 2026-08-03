@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const db = require('../db');
+const { createNocLiveUrl } = require('./nocPublicLinks');
 
 const execFileAsync = promisify(execFile);
 
@@ -74,6 +75,44 @@ async function ensureMikrotikTables() {
     )
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_mikrotik_routers_client ON mikrotik_routers(client_id, is_active)`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mikrotik_routers_client_id_unique ON mikrotik_routers(client_id, id)`);
+  await db.query(`ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS router_id INTEGER`);
+  await db.query(`DO $$
+    BEGIN
+      IF EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'billing_subscribers_router_id_fkey') THEN
+        ALTER TABLE billing_subscribers DROP CONSTRAINT billing_subscribers_router_id_fkey;
+      END IF;
+      IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'billing_subscribers_tenant_router_fkey') THEN
+        ALTER TABLE billing_subscribers
+          ADD CONSTRAINT billing_subscribers_tenant_router_fkey
+          FOREIGN KEY (client_id, router_id) REFERENCES mikrotik_routers(client_id, id) ON DELETE SET NULL (router_id);
+      END IF;
+    END $$`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_subscribers_router ON billing_subscribers(client_id, router_id)`);
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS billing_ip_pools (
+      id SERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+      router_id INTEGER NOT NULL,
+      name VARCHAR(160) NOT NULL,
+      cidr CIDR NOT NULL,
+      gateway INET,
+      dns_servers TEXT,
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT NOW(),
+      UNIQUE (client_id, router_id, name),
+      UNIQUE (client_id, id),
+      FOREIGN KEY (client_id, router_id) REFERENCES mikrotik_routers(client_id, id) ON DELETE CASCADE
+    )
+  `);
+  await db.query(`ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS access_mode VARCHAR(30) NOT NULL DEFAULT 'pppoe'`);
+  await db.query(`ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_pool_id INTEGER`);
+  await db.query(`ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_ip INET`);
+  await db.query(`ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_mac VARCHAR(32)`);
+  await db.query(`ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_dhcp_server VARCHAR(160)`);
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_billing_subscribers_router_static_ip ON billing_subscribers(router_id, static_ip) WHERE static_ip IS NOT NULL`);
+  await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_ip_pools_client_router ON billing_ip_pools(client_id, router_id, is_active)`);
   await db.query(`
     CREATE TABLE IF NOT EXISTS mikrotik_clients (
       id SERIAL PRIMARY KEY,
@@ -545,28 +584,36 @@ async function syncMikrotikClients(clientId) {
   const routers = await activeRouterConfigs(clientId);
   const summary = { routers: routers.length, synced: 0, failed: 0, sources: [], errors: [] };
 
-  for (const router of routers) {
-    let client = null;
-    try {
-      client = await connectRouter(router);
-      const collected = await collectMikrotikClientRows(clientId, router, client);
-      summary.sources.push(collected.sources);
-
-      for (const row of collected.rows) {
-        await upsertMikrotikClient(row);
-        summary.synced += 1;
+  const concurrency = 3;
+  for (let offset = 0; offset < routers.length; offset += concurrency) {
+    const batch = routers.slice(offset, offset + concurrency);
+    const results = await Promise.all(batch.map(async (router) => {
+      let client = null;
+      try {
+        client = await connectRouter(router);
+        const collected = await collectMikrotikClientRows(clientId, router, client);
+        for (const row of collected.rows) await upsertMikrotikClient(row);
+        await markStaleMikrotikClientsOffline({
+          clientId,
+          routerId: router.id,
+          onlineRows: collected.onlineRows,
+        });
+        return { ok: true, synced: collected.rows.length, sources: collected.sources };
+      } catch (err) {
+        console.error(`MikroTik client sync failed for router ${router.id}:`, err.message);
+        return { ok: false, error: { router_id: router.id, router: router.name, error: err.message } };
+      } finally {
+        if (client) client.close();
       }
-      await markStaleMikrotikClientsOffline({
-        clientId,
-        routerId: router.id,
-        onlineRows: collected.onlineRows,
-      });
-    } catch (err) {
-      summary.failed += 1;
-      summary.errors.push({ router_id: router.id, router: router.name, error: err.message });
-      console.error(`MikroTik client sync failed for router ${router.id}:`, err.message);
-    } finally {
-      if (client) client.close();
+    }));
+    for (const result of results) {
+      if (result.ok) {
+        summary.synced += result.synced;
+        summary.sources.push(result.sources);
+      } else {
+        summary.failed += 1;
+        summary.errors.push(result.error);
+      }
     }
   }
   return summary;
@@ -939,6 +986,10 @@ async function buildMikrotikStatusReply({ clientId }) {
     const securitySection = security.hasIssue
       ? `\n\nSecurity check:\n${security.summary}\n${security.lines.map((line) => `- ${line}`).join('\n')}\nRecommendation: restrict or disable public SSH/FTP/Winbox access, allow management only through trusted IPs or VPN, and keep the Nexa API limited to WireGuard.`
       : `\n\nSecurity check:\n${security.summary}`;
+    const nocLink = createNocLiveUrl({ clientId, routerId: router.id, ttlHours: 12 });
+    const nocSection = nocLink
+      ? `\n\nLive NOC view:\n${nocLink}\nThis link shows the live graph, interface traffic, top bandwidth users and the current router template for the next 12 hours.`
+      : '';
 
     return `Sir, your router ${identity} ${servingLine}.
 
@@ -946,15 +997,13 @@ It has been running for ${uptime}.
 
 Currently, ${pppCount} homes are enjoying internet through PPPoE, while ${hotspotCount} hotspot users are connected.
 
-These online numbers use the same logic as the Clients tab: PPP active plus Hotspot active sessions, deduped by account/IP/MAC. Hotspot hosts and DHCP leases are stored as seen/offline records, but are not counted as online by themselves.
-
 CPU load is at ${percentText(cpuLoad)}.
 ${cpuMessage}
 
 Uptime check:
 ${uptimeMessage}
 
-Overall network view: ${routerStatus}${securitySection}`;
+Overall network view: ${routerStatus}${securitySection}${nocSection}`;
 
   } catch (err) {
     return `Sir, I could not complete the live router status check right now.
@@ -1495,10 +1544,38 @@ async function deleteRouter(clientId, id) {
   return Boolean(result.rows[0]);
 }
 
+function staticAccessActive(subscriber) {
+  const expiry = subscriber.expires_at ? new Date(new Date(subscriber.expires_at).getTime() + Number(subscriber.grace_period_days || 0) * 86400000) : null;
+  return subscriber.service_status === 'active' && (!expiry || expiry > new Date());
+}
+
+async function syncStaticDhcpLease(subscriber) {
+  if (subscriber.access_mode !== 'dhcp_static') return { status: 'not_applicable' };
+  if (!subscriber.router_id || !subscriber.static_ip || !subscriber.static_mac || !subscriber.static_dhcp_server) {
+    throw new Error('Static DHCP requires a router, IP address, MAC address, and DHCP server');
+  }
+  const router = await getRouter(subscriber.client_id, subscriber.router_id, { includePassword: true });
+  if (!router || !router.is_active) throw new Error('Assigned MikroTik router is unavailable');
+  const client = await connectRouter(router);
+  const comment = `Nexa subscriber:${subscriber.id}`;
+  const attrs = { address: String(subscriber.static_ip), 'mac-address': String(subscriber.static_mac).toUpperCase(), server: String(subscriber.static_dhcp_server), comment, disabled: staticAccessActive(subscriber) ? 'no' : 'yes' };
+  try {
+    const leases = await client.command('/ip/dhcp-server/lease/print');
+    const existing = leases.find((lease) => lease.comment === comment || (lease.address === attrs.address && String(lease['mac-address'] || '').toUpperCase() === attrs['mac-address']));
+    if (existing?.['.id']) await client.command('/ip/dhcp-server/lease/set', { '.id': existing['.id'], ...attrs });
+    else await client.command('/ip/dhcp-server/lease/add', attrs);
+    return { status: 'synced', router_id: router.id, address: attrs.address };
+  } finally {
+    client.close();
+  }
+}
+
 module.exports = {
   DEFAULT_FEATURES,
   connectRouter,
+  decryptSecret,
   deleteRouter,
+  encryptSecret,
   ensureMikrotikTables,
   getRouter,
   listMikrotikClients,
@@ -1511,6 +1588,7 @@ module.exports = {
   prepareWireguardOnboarding,
   saveRouter,
   syncMikrotikClients,
+  syncStaticDhcpLease,
   testRouterConfig,
   updateRouterStatus,
 };

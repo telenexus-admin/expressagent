@@ -3,6 +3,12 @@ const router = express.Router();
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
+const {
+  appendBillingEvent,
+  ensureEventSchema,
+  eventActorFromRequest,
+  recordRequestEvent,
+} = require('../services/events');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -71,20 +77,56 @@ router.post(
         }
       }
 
-      const result = await db.query(
-        `INSERT INTO employees (client_id, name, role, location, phone, email, is_active)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)
-         RETURNING id, client_id, name, role, location, phone, email, is_active, created_at`,
-        [
+      await ensureEventSchema();
+      const client = await db.connect();
+      let result;
+      try {
+        await client.query('BEGIN');
+        result = await client.query(
+          `INSERT INTO employees (client_id, name, role, location, phone, email, is_active)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)
+           RETURNING id, client_id, name, role, location, phone, email, is_active, created_at`,
+          [
+            clientId,
+            req.body.name.trim(),
+            req.body.role || 'technician',
+            req.body.location.trim(),
+            req.body.phone.trim(),
+            req.body.email,
+            req.body.is_active === undefined ? true : !!req.body.is_active,
+          ]
+        );
+        const employee = result.rows[0];
+        await appendBillingEvent(client, {
           clientId,
-          req.body.name.trim(),
-          req.body.role || 'technician',
-          req.body.location.trim(),
-          req.body.phone.trim(),
-          req.body.email,
-          req.body.is_active === undefined ? true : !!req.body.is_active,
-        ]
-      );
+          eventType: 'employee.created',
+          category: 'employee',
+          source: 'employees_api',
+          entityType: 'employee',
+          entityId: employee.id,
+          ...eventActorFromRequest(req),
+          title: 'Employee added',
+          description: `${employee.name} was added as ${employee.role}`,
+          payload: {
+            role: employee.role,
+            location: employee.location,
+            is_active: employee.is_active,
+          },
+          newState: {
+            role: employee.role,
+            location: employee.location,
+            is_active: employee.is_active,
+          },
+          deduplicationKey: `employee:${employee.id}:created`,
+          sensitivity: 'confidential',
+        });
+        await client.query('COMMIT');
+      } catch (error) {
+        await client.query('ROLLBACK');
+        throw error;
+      } finally {
+        client.release();
+      }
       res.status(201).json(result.rows[0]);
     } catch (err) {
       if (err.code === '23505') {
@@ -113,7 +155,7 @@ router.put(
     }
 
     try {
-      const existing = await db.query(`SELECT id, client_id FROM employees WHERE id = $1`, [req.params.id]);
+      const existing = await db.query(`SELECT * FROM employees WHERE id = $1`, [req.params.id]);
       if (existing.rows.length === 0) {
         return res.status(404).json({ error: 'Employee not found' });
       }
@@ -143,6 +185,22 @@ router.put(
          RETURNING id, client_id, name, role, location, phone, email, is_active, created_at`,
         params
       );
+      const employee = result.rows[0];
+      await recordRequestEvent(req, {
+        clientId: employee.client_id,
+        eventType: 'employee.updated',
+        category: 'employee',
+        source: 'employees_api',
+        entityType: 'employee',
+        entityId: employee.id,
+        title: 'Employee updated',
+        description: `${employee.name}'s employee record was updated`,
+        previousState: existing.rows[0],
+        newState: employee,
+        payload: { changed_fields: allowed.filter((key) => req.body[key] !== undefined) },
+        deduplicationKey: `employee:${employee.id}:updated:${Date.now()}`,
+        sensitivity: 'confidential',
+      });
       res.json(result.rows[0]);
     } catch (err) {
       if (err.code === '23505') {
@@ -156,7 +214,7 @@ router.put(
 
 router.delete('/:id', async (req, res) => {
   try {
-    const existing = await db.query(`SELECT id, client_id FROM employees WHERE id = $1`, [req.params.id]);
+    const existing = await db.query(`SELECT * FROM employees WHERE id = $1`, [req.params.id]);
     if (existing.rows.length === 0) {
       return res.status(404).json({ error: 'Employee not found' });
     }
@@ -164,6 +222,20 @@ router.delete('/:id', async (req, res) => {
       return res.status(403).json({ error: 'Forbidden' });
     }
     await db.query(`DELETE FROM employees WHERE id = $1`, [req.params.id]);
+    await recordRequestEvent(req, {
+      clientId: existing.rows[0].client_id,
+      eventType: 'employee.deleted',
+      category: 'employee',
+      source: 'employees_api',
+      entityType: 'employee',
+      entityId: existing.rows[0].id,
+      severity: 'warning',
+      title: 'Employee removed',
+      description: `${existing.rows[0].name} was removed`,
+      previousState: existing.rows[0],
+      deduplicationKey: `employee:${existing.rows[0].id}:deleted`,
+      sensitivity: 'confidential',
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /employees/:id error:', err.message);

@@ -1,4 +1,5 @@
 const db = require('../db');
+const { recordBillingEvent } = require('./events');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
 const { sendSMS } = require('./sms');
@@ -548,10 +549,41 @@ async function runAiTask(clientId, taskId) {
     const result = await executeAiTask(task);
     await finishRun(run.id, result.status, result.summary, result.stats);
     await updateTaskAfterRun(task, result.status === 'completed' || result.status === 'partial');
+    await recordBillingEvent({
+      clientId: task.client_id,
+      eventType: result.status === 'partial' ? 'employee_task.partially_completed' : 'employee_task.completed',
+      category: 'employee_task',
+      source: 'ai_task_worker',
+      entityType: 'ai_task',
+      entityId: task.id,
+      actorType: 'system',
+      title: result.status === 'partial' ? 'Automation task partially completed' : 'Automation task completed',
+      description: result.summary,
+      payload: { run_id: run.id, status: result.status, stats: result.stats || {} },
+      relatedEntities: [{ entityType: 'ai_task_run', entityId: run.id, relationship: 'run' }],
+      deduplicationKey: `ai-task-run:${run.id}`,
+      sensitivity: 'confidential',
+    });
     return { ...result, run_id: run.id };
   } catch (err) {
     await finishRun(run.id, 'failed', 'Task failed.', {}, err.message);
     await updateTaskAfterRun(task, false);
+    await recordBillingEvent({
+      clientId: task.client_id,
+      eventType: 'employee_task.failed',
+      category: 'employee_task',
+      source: 'ai_task_worker',
+      entityType: 'ai_task',
+      entityId: task.id,
+      actorType: 'system',
+      severity: 'warning',
+      title: 'Automation task failed',
+      description: err.message,
+      payload: { run_id: run.id, status: 'failed', error: err.message },
+      relatedEntities: [{ entityType: 'ai_task_run', entityId: run.id, relationship: 'run' }],
+      deduplicationKey: `ai-task-run:${run.id}`,
+      sensitivity: 'confidential',
+    }).catch((eventError) => console.error(`AI task ${task.id} failure event could not be recorded:`, eventError.message));
     throw err;
   }
 }

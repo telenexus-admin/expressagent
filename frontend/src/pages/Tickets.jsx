@@ -335,7 +335,7 @@ export default function Tickets({ detailMode = false }) {
   const [ticketForm, setTicketForm] = useState(EMPTY_TICKET);
   const [formError, setFormError] = useState('');
   const [summary, setSummary] = useState({ active: 0, open: 0, priority: 0, closed: 0, avg_resolution_seconds: 0 });
-  const [viewMode, setViewMode] = useState('list');
+  const [viewMode, setViewMode] = useState(() => (typeof window !== 'undefined' && window.matchMedia('(max-width: 640px)').matches ? 'grid' : 'list'));
 
   const params = useMemo(() => {
     const query = { status, category, priority };

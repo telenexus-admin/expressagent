@@ -632,6 +632,34 @@ router.get('/lookup-customer', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
   try {
+    const account = await db.query('SELECT account_type FROM clients WHERE id = $1 LIMIT 1', [clientId]);
+    if (account.rows[0]?.account_type === 'billing') {
+      const query = String(req.query.q || '').trim();
+      if (!query) return res.status(400).json({ error: 'Enter a subscriber name, phone, account number, or PPPoE username' });
+      const key = `%${query}%`;
+      const subscriber = await db.query(
+        `SELECT s.full_name, s.phone, s.email, s.account_number, s.radius_username, s.notes,
+                p.name AS plan_name, p.price
+         FROM billing_subscribers s
+         LEFT JOIN billing_plans p ON p.id = s.plan_id AND p.client_id = s.client_id
+         WHERE s.client_id = $1
+           AND (s.full_name ILIKE $2 OR s.phone ILIKE $2 OR s.account_number ILIKE $2 OR s.radius_username ILIKE $2)
+         ORDER BY CASE WHEN s.account_number = $3 OR s.radius_username = $3 OR s.phone = $3 THEN 0 ELSE 1 END, s.created_at DESC
+         LIMIT 1`,
+        [clientId, key, query]
+      );
+      const row = subscriber.rows[0];
+      if (!row) return res.status(404).json({ error: 'No RADIUS subscriber matched that search' });
+      return res.json({
+        name: row.full_name,
+        phone: row.phone || '',
+        email: row.email || '',
+        address: row.notes || '',
+        account: row.account_number || row.radius_username || '',
+        plan: row.plan_name || '',
+        price: Number(row.price || 0),
+      });
+    }
     const result = await lookupInvoiceCustomer({ clientId, query: req.query.q });
     if (!result.success) return res.status(404).json({ error: result.error || 'Customer not found' });
     res.json(result.customer);

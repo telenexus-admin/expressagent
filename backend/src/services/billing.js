@@ -6,6 +6,7 @@ const { findMikrotikAccount } = require('./mikrotik');
 const DEFAULT_BASE_URL = 'https://riseli.wispman.net/index.php?_route=api';
 const SUPPORTED_PROVIDERS = ['wispman'];
 let importedBillingSchemaReady = false;
+let billingTemplateCursor = 0;
 
 function enabled() {
   return String(process.env.BILLING_API_ENABLED || '').toLowerCase() === 'true';
@@ -197,7 +198,7 @@ function wantsReconnect(text) {
 }
 
 function wantsClientStatus(text) {
-  return /\b(active|expired|expiry|expire|status|account|client id|clientid|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
+  return /\b(active|expired|expiry|expire|status|account|client id|clientid|username|balance|renew|renewal|recharge|recharged|last recharged|current plan|my plan|my package|which plan|which package|details|information|info|internet off|not connected|disconnected|why.*off|why.*down)\b/i.test(String(text || ''));
 }
 
 function wantsImportedAccountDetails(text) {
@@ -1012,16 +1013,14 @@ function clientStatusReply(data, options = {}) {
     data.last_seen ? `Last seen: ${data.last_seen}.` : null,
   ].filter(Boolean);
 
-  return (
-    `I found:\n` +
-    `Status: ${status}.\n` +
-    `Account number: ${account}.\n` +
-    `Current plan Price: ${planPrice}.\n` +
-    `Account Balance: ${balance}.\n` +
-    `Expiry: ${expiry}.\n` +
-    `Last recharge: ${recharge}.` +
-    (extraLines.length ? `\n${extraLines.join('\n')}` : '')
-  );
+  const name = customerDisplayName(data.fullname || options.customerName || 'there');
+  const templates = [
+    'Hi '+name+' 😊\nYour account is '+status+' on the '+planPrice+' plan. It expires on '+expiry+'. Your account number is '+account+', and your service is connected through '+(data.router || 'your network')+'.\nLet me know if you need anything else.',
+    'Hello '+name+', I’ve checked your account successfully.\nYou’re currently '+status+' on the '+planPrice+' package, with expiry on '+expiry+'. Your account number is '+account+', and your router is '+(data.router || 'not shown')+'.\nIs there anything else I can help you with today?',
+    'I found your account, '+name+' 😊 Everything looks good—your '+planPrice+' package is '+status+' until '+expiry+'. Your account number is '+account+', and the service is connected through '+(data.router || 'your network')+'.\nWould you like me to help with anything else?',
+  ];
+  const reply = templates[billingTemplateCursor++ % templates.length];
+  return extraLines.length ? reply+'\n'+extraLines.join('\n') : reply;
 }
 
 function importedAccountDetailsReply(data) {
@@ -1169,17 +1168,18 @@ async function answerBillingQuestion({ clientId, customerPhone, customerName, me
   if (isRouterAdminOnlyQuestion(messageText)) return null;
 
   const config = await loadClientBillingConfig(clientId);
+  const numberOnlyLookup = /^\s*(?:\+?254|0)[0-9]{9,12}\s*$/.test(String(messageText || ""));
   const canBeImportedLookup = looksLikeImportedLookupText(messageText);
-  if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText) && !canBeImportedLookup) return null;
+  if (!looksLikeBillingQuestion(messageText) && !hasStandalonePhone(messageText) && !numberOnlyLookup && !canBeImportedLookup) return null;
 
   const keys = extractLookupKeys({ customerPhone, messageText });
   const accountDetailsWanted = wantsImportedAccountDetails(messageText);
-  const statusWanted = wantsClientStatus(messageText) || hasStandalonePhone(messageText);
+  const statusWanted = wantsClientStatus(messageText) || hasStandalonePhone(messageText) || numberOnlyLookup;
   const paymentWanted = wantsPayment(messageText);
   const reconnectWanted = wantsReconnect(messageText);
   const plansWanted = wantsPlans(messageText);
 
-  if (!looksLikeBillingQuestion(messageText) && canBeImportedLookup) {
+  if (!looksLikeBillingQuestion(messageText) && canBeImportedLookup && !numberOnlyLookup) {
     const mikrotik = await findMikrotikAccount({ clientId, customerPhone, messageText });
     if (mikrotik) return clientStatusReply(mikrotik, { customerName });
     const imported = await findImportedAccount({ clientId, customerPhone, messageText });

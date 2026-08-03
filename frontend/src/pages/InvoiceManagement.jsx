@@ -218,7 +218,7 @@ function InvoiceMiniPreview({ profile, draft }) {
   const calc = totals(draft.items, draft.discount_amount);
   const modern = profile.template_key === 'modern_blue_orange';
   return (
-    <div className="overflow-hidden rounded-[28px] border border-[#dfe5f2] bg-white shadow-[0_24px_60px_rgba(30,41,59,0.12)]">
+    <div className="invoice-preview overflow-hidden rounded-[28px] border border-[#dfe5f2] bg-white shadow-[0_24px_60px_rgba(30,41,59,0.12)]">
       <div className={`relative min-h-[132px] p-6 text-white ${modern ? 'bg-[#172b72]' : 'bg-[#171d27]'}`}>
         <div className={`absolute right-0 top-8 h-12 w-44 ${modern ? 'bg-[#ff9f05]' : 'bg-[#e5092f]'} -skew-y-12`} />
         {profile.logo_data_url ? <img src={profile.logo_data_url} alt="" className="relative z-10 mb-2 max-h-10 max-w-[160px] object-contain" /> : null}
@@ -514,7 +514,7 @@ export default function InvoiceManagement() {
   if (loading) return <div className="h-full min-h-0 overflow-y-auto p-6 text-sm font-black text-[#637098]">Loading invoice management...</div>;
 
   return (
-    <div className="h-full min-h-0 overflow-y-auto overflow-x-hidden bg-[#f6f8ff] p-3 sm:p-5">
+    <div className="invoice-management-page h-full min-h-0 overflow-y-auto overflow-x-hidden bg-[#f6f8ff] p-3 sm:p-5">
       <div className="mx-auto flex w-full max-w-[1320px] flex-col gap-4">
         <header className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>

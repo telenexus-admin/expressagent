@@ -7,7 +7,7 @@ function UpdateToast() {
   const [updateSW, setUpdateSW] = useState(() => () => {});
 
   useEffect(() => {
-    const update = registerSW({
+    const update = registerSW({ immediate: true,
       onNeedRefresh() {
         setNeedRefresh(true);
       },

@@ -5,10 +5,14 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { billingImportSummary, deleteBillingImport, importBillingCsv, testBillingConnection } = require('../services/billing');
 const { sendSMS } = require('../services/sms');
+const { sendWhatsAppMessage } = require('../services/whatsapp');
+const { sendClientText } = require('../services/clientEvolution');
+const { getOnlineUsernames } = require('../services/radiusSync');
 const { testEmailConfig } = require('../services/email');
 const { ensurePayHeroSchema, getPayHeroBasicAuth, testPayHeroConnection } = require('../services/payhero');
 const { listBlockedNumbers, addBlockedNumber, removeBlockedNumber } = require('../services/blockedNumbers');
 const { setClientWebhook } = require('../services/clientEvolution');
+const { recordRequestEvent } = require('../services/events');
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -524,7 +528,7 @@ router.post('/agents/:agentId/reconnect', async (req, res) => {
 
     if (method === 'pairing_code') {
       const phone = String(req.body.phone || '').trim();
-      const paired = await requestPairingCode(instanceName, phone);
+      const paired = await requestPairingCode(instanceName, phone, { forceFresh: true });
       await setClientWebhook(parent, { instanceName, token: webhookToken, agentId: webhookAgentId });
       if (row) {
         const updated = await db.query(
@@ -570,6 +574,152 @@ router.post('/agents/:agentId/reconnect', async (req, res) => {
     const detail = cleanProviderError(err);
     console.error('POST /settings/agents/:agentId/reconnect error:', detail);
     res.status(502).json({ error: `Could not start reconnect: ${detail}` });
+  }
+});
+
+// Billing communication WhatsApp status. This deliberately returns no provider credentials.
+router.get('/whatsapp', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  try {
+    await ensureAgentSettingsColumns();
+    const result = await db.query(
+      `SELECT id, connection_provider, evolution_instance_name
+       FROM clients WHERE id = $1 LIMIT 1`,
+      [targetClient]
+    );
+    const client = result.rows[0];
+    if (!client) return res.status(404).json({ error: 'Billing account not found.' });
+
+    const instanceName = client.evolution_instance_name || '';
+    if (!instanceName || client.connection_provider !== 'evolution') {
+      return res.json({
+        configured: false,
+        connected: false,
+        connection_state: 'not_configured',
+        instance_name: '',
+      });
+    }
+
+    const { getInstanceState, cleanProviderError } = require('../services/evoSelfOnboarding');
+    try {
+      const live = await getInstanceState(instanceName);
+      const state = live.state || 'unknown';
+      return res.json({
+        configured: true,
+        connected: ['open', 'connected'].includes(state),
+        connection_state: state,
+        instance_name: instanceName,
+      });
+    } catch (providerError) {
+      return res.json({
+        configured: true,
+        connected: false,
+        connection_state: 'unavailable',
+        instance_name: instanceName,
+        provider_error: cleanProviderError(providerError),
+      });
+    }
+  } catch (err) {
+    console.error('GET /settings/whatsapp error:', err.message);
+    res.status(500).json({ error: 'Could not load WhatsApp connection status.' });
+  }
+});
+
+// Start or restore the billing account's isolated WhatsApp connection.
+router.post('/whatsapp/connect', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+
+  const method = String(req.body.method || 'qr').trim();
+  if (!['qr', 'pairing_code'].includes(method)) {
+    return res.status(400).json({ error: 'Choose QR code or pairing code.' });
+  }
+
+  try {
+    await ensureAgentSettingsColumns();
+    const {
+      makeInstanceName,
+      createInstance,
+      requestPairingCode,
+      requestQrReconnect,
+      getInstanceState,
+      cleanProviderError,
+    } = require('../services/evoSelfOnboarding');
+
+    const result = await db.query(`SELECT * FROM clients WHERE id = $1 LIMIT 1`, [targetClient]);
+    const client = result.rows[0];
+    if (!client) return res.status(404).json({ error: 'Billing account not found.' });
+
+    let instanceName = client.evolution_instance_name || '';
+    if (instanceName && client.connection_provider === 'evolution') {
+      try {
+        const live = await getInstanceState(instanceName);
+        if (['open', 'connected'].includes(live.state)) {
+          return res.json({
+            status: 'connected',
+            connection_state: live.state,
+            instance_name: instanceName,
+            message: 'WhatsApp is already connected and ready to send subscriber messages.',
+          });
+        }
+      } catch (_) {
+        // A missing or closed remote instance is recreated below.
+      }
+    } else {
+      instanceName = makeInstanceName(`${client.business_name || client.name || 'billing'}-billing`);
+    }
+
+    const webhookSecret = client.evolution_webhook_secret || crypto.randomBytes(32).toString('hex');
+    let response;
+    if (method === 'pairing_code') {
+      const phone = String(req.body.phone || '').trim();
+      const paired = await requestPairingCode(instanceName, phone, { forceFresh: true });
+      response = {
+        status: 'pending_pairing_code',
+        connection_state: 'waiting_pairing_code',
+        pairing_code: paired.pairingCode,
+        pairing_number: paired.number,
+        message: 'Pairing code generated. Enter it from WhatsApp linked devices.',
+      };
+    } else {
+      const qrCode = client.evolution_instance_name
+        ? await requestQrReconnect(instanceName)
+        : await createInstance(instanceName, { qrcode: true });
+      if (!qrCode) throw new Error('The WhatsApp service did not return a QR code.');
+      response = {
+        status: 'pending_qr',
+        connection_state: 'waiting_qr',
+        qr_code: qrCode,
+        message: 'Scan the QR code from WhatsApp linked devices.',
+      };
+    }
+
+    await db.query(
+      `UPDATE clients
+       SET connection_provider = 'evolution',
+           evolution_instance_name = $1,
+           evolution_webhook_secret = $2
+       WHERE id = $3`,
+      [instanceName, webhookSecret, targetClient]
+    );
+
+    try {
+      await setClientWebhook(
+        { ...client, connection_provider: 'evolution', evolution_instance_name: instanceName, evolution_webhook_secret: webhookSecret },
+        { instanceName, token: webhookSecret, agentId: null }
+      );
+    } catch (webhookError) {
+      console.warn('Billing WhatsApp instance connected but webhook setup is pending:', webhookError.message);
+    }
+
+    return res.json({ ...response, configured: true, instance_name: instanceName });
+  } catch (err) {
+    const { cleanProviderError } = require('../services/evoSelfOnboarding');
+    const detail = cleanProviderError(err);
+    console.error('POST /settings/whatsapp/connect error:', detail);
+    res.status(502).json({ error: `Could not prepare WhatsApp connection: ${detail}` });
   }
 });
 
@@ -1222,6 +1372,95 @@ router.post('/communication/test', async (req, res) => {
     const message = typeof err.response?.data === 'object' ? JSON.stringify(err.response.data) : (err.response?.data || err.message);
     console.error('POST /settings/communication/test error:', message);
     res.status(500).json({ error: `SMS could not be sent: ${message}` });
+  }
+});
+
+// POST /api/settings/communication/send - send a tenant-scoped audience message.
+router.post('/communication/send', async (req, res) => {
+  const targetClient = resolveTargetClient(req, res);
+  if (!targetClient) return;
+  const channel = String(req.body.channel || 'sms').trim().toLowerCase();
+  const audience = String(req.body.audience || 'all').trim().toLowerCase();
+  const message = String(req.body.message || '').trim();
+  if (!['sms', 'whatsapp'].includes(channel)) return res.status(400).json({ error: 'Unsupported communication channel' });
+  if (!['all', 'online', 'offline', 'expired', 'new', 'router'].includes(audience)) return res.status(400).json({ error: 'Unsupported audience' });
+  if (audience === 'router' && !req.body.router_id) return res.status(400).json({ error: 'Select a router for this audience' });
+  if (!message) return res.status(400).json({ error: 'Message is required' });
+  if (message.length > 1000) return res.status(400).json({ error: 'Message must be 1000 characters or fewer' });
+
+  try {
+    await ensureCommunicationColumns();
+    const clientResult = await db.query(
+      `SELECT id, name, business_name, sms_provider, sms_api_key, sms_sender_id, sms_partner_id,
+              connection_provider, evolution_instance_name, meta_phone_number_id, meta_access_token
+       FROM clients WHERE id = $1 LIMIT 1`,
+      [targetClient]
+    );
+    const client = clientResult.rows[0];
+    if (!client) return res.status(404).json({ error: 'Billing account not found' });
+    if (channel === 'sms' && (!client.sms_api_key || !client.sms_sender_id)) return res.status(400).json({ error: 'Configure and save the SMS provider before sending messages' });
+    if (channel === 'whatsapp' && client.connection_provider !== 'evolution' && (!client.meta_phone_number_id || !client.meta_access_token)) return res.status(400).json({ error: 'Connect WhatsApp before sending messages' });
+
+    const result = await db.query(
+      `SELECT s.id, s.full_name, s.account_number, s.phone, s.service_status, s.radius_username, s.router_id, s.created_at
+       FROM billing_subscribers s WHERE s.client_id = $1 AND COALESCE(s.phone, '') <> ''
+       ORDER BY s.created_at DESC LIMIT 500`,
+      [targetClient]
+    );
+    let recipients = result.rows;
+    let online = new Set();
+    if (audience === 'online' || audience === 'offline') {
+      try { online = await getOnlineUsernames(recipients.map((row) => row.radius_username).filter(Boolean)); } catch (error) { console.error('Communication audience RADIUS lookup failed:', error.message); }
+      recipients = recipients.filter((row) => audience === 'online' ? online.has(String(row.radius_username || '')) : !online.has(String(row.radius_username || '')));
+    } else if (audience === 'expired') {
+      recipients = recipients.filter((row) => row.service_status === 'expired');
+    } else if (audience === 'new') {
+      recipients = recipients.filter((row) => row.created_at && new Date(row.created_at).getTime() >= Date.now() - (30 * 24 * 60 * 60 * 1000));
+    }
+    if (audience === 'router' && req.body.router_id) recipients = recipients.filter((row) => String(row.router_id) === String(req.body.router_id));
+    if (recipients.length === 0) return res.status(400).json({ error: 'No subscribers match this audience' });
+
+    let sent = 0; const failures = [];
+    for (const recipient of recipients) {
+      const phone = String(recipient.phone || '').replace(/[^0-9]/g, '');
+      const personalized = message.replace(/{{\s*name\s*}}/gi, recipient.full_name || 'subscriber').replace(/{{\s*account\s*}}/gi, recipient.account_number || '').replace(/{{\s*business\s*}}/gi, client.business_name || 'your ISP');
+      try {
+        if (channel === 'sms') {
+          await sendSMS(phone, personalized, { provider: client.sms_provider || 'blessed_text', apiKey: client.sms_api_key, senderId: client.sms_sender_id, partnerId: client.sms_partner_id, client });
+        } else if (client.connection_provider === 'evolution' && client.evolution_instance_name) {
+          await sendClientText(client, phone, personalized);
+        } else {
+          await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, phone, personalized);
+        }
+        sent += 1;
+      } catch (error) { failures.push({ id: recipient.id, error: error.message || 'Delivery failed' }); }
+    }
+    await recordRequestEvent(req, {
+      clientId: targetClient,
+      eventType: `communication.${channel}_broadcast_completed`,
+      category: 'communication',
+      source: 'communication_api',
+      entityType: 'communication_broadcast',
+      entityId: `${channel}-${Date.now()}`,
+      severity: failures.length ? 'warning' : 'info',
+      title: `${channel === 'sms' ? 'SMS' : 'WhatsApp'} broadcast completed`,
+      payload: {
+        channel,
+        audience,
+        router_id: req.body.router_id || null,
+        message,
+        total: recipients.length,
+        sent,
+        failed: failures.length,
+        failed_subscriber_ids: failures.map((failure) => failure.id),
+      },
+      relatedEntities: req.body.router_id ? [{ entityType: 'router', entityId: req.body.router_id, relationship: 'audience_router' }] : [],
+      sensitivity: 'confidential',
+    });
+    res.json({ success: failures.length === 0, total: recipients.length, sent, failed: failures.length, failures: failures.slice(0, 10) });
+  } catch (error) {
+    console.error('POST /settings/communication/send error:', error.message);
+    res.status(500).json({ error: 'Could not send the audience message' });
   }
 });
 

@@ -2,7 +2,7 @@ const express = require('express');
 const db = require('../db');
 const { generateAIResponse, analyzeSupportImage, transcribeAudio, synthesizeVoice, classifyComplaint, classifyIntent } = require('../services/openai');
 const { parseEvolutionInbound } = require('../services/evolution');
-const { sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
+const { sendClientButtons, sendClientPresence, sendClientText, sendClientVoiceNote, sendClientMedia, downloadClientAudio, downloadClientImage } = require('../services/clientEvolution');
 const { createOrUpdateTicket, ticketFromComplaint, ticketFromIntent } = require('../services/tickets');
 const { notifyClientAdmins } = require('../services/pushNotifications');
 const { sendSMS } = require('../services/sms');
@@ -18,11 +18,12 @@ const { markHumanTakeover } = require('../services/humanTakeoverRecovery');
 const { answerPayHeroPrompt } = require('../services/payhero');
 const { isBlockedNumber } = require('../services/blockedNumbers');
 const { buildActiveMissionReplyContext, recordAiTaskRecipientReply } = require('../services/aiTasks');
+const { recordBillingEvent } = require('../services/events');
 
 const router = express.Router();
 const OPT_OUT = new Set(['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'acha', 'simama', 'koma']);
 const RESUME = new Set(['start', 'resume', 'subscribe', 'anza', 'endelea']);
-const HUMAN_RE = /\b(human|agent|person|representative|support|mtu|mwakilishi|msaada)\b/i;
+const HUMAN_RE = /\b(?:talk|speak|chat|connect|transfer|refer|forward|need|want)\s+(?:(?:me\s+)?(?:to|with)\s+)?(?:a\s+|an\s+)?(?:human|agent|person|representative)\b|\b(?:human|agent|representative|mwakilishi)\s+(?:please|now|tafadhali)\b|\b(?:nataka|naomba|nahitaji)\s+(?:mtu|mwakilishi|msaada)\b/i;
 const INSTALL_RE = /\b(want|need|looking for|book|schedule|please|can\s*(?:you|i)|how\s*(?:do|to))\b[^.?!]{0,40}\b(install|installation|new\s+connection|get\s+connected|connect\s+me|fibre|fiber|subscribe|register|sign\s*up)\b|\b(install|installation|new\s+connection|get\s+connected|connect\s+me|subscribe|register|sign\s*up)\b|\b(nataka|naomba|nahitaji|tafadhali)\b[^.?!]{0,40}\b(installation|kuunganishwa|usajili)\b|\bniunganish(e|wa|ie|ieni|eni)\b/i;
 const RELOCATION_RE = /\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b[^.?!]{0,60}\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b|\b(internet|wifi|wi-?fi|network|router|connection|service|line)\b[^.?!]{0,60}\b(relocat(?:e|ion|ing)|transfer|move|moving|shift|shifting)\b|\b(nahama|kuhama|hamisha|kuhamisha)\b[^.?!]{0,60}\b(internet|wifi|router|network)\b/i;
 const CONNECTION_PROBLEM_RE = /\b(problem|issue|trouble|fault|slow|down|offline|unstable|disconnect|disconnecting|not\s+working|no\s+internet|no\s+network|no\s+connection|cannot\s+connect|can't\s+connect|connected\s+without\s+internet)\b/i;
@@ -187,6 +188,13 @@ function isRouterStatusQuestion(text) {
   const value = String(text || '').toLowerCase();
   if (/\b(interfaces?|ports?|logs?|error|alert|warning|users?|sessions?|pppoe|hotspot|dhcp|traffic|cpu|memory)\b/.test(value)) return false;
   return /\b(router\s*(status|online|offline|health)?|is\s+.*router\s+online|mikrotik\s*(status|online|health)?)\b/.test(value);
+}
+
+function isRouterAdminFollowupQuestion(text) {
+  const value = String(text || '').toLowerCase().trim();
+  if (!value) return false;
+  if (/\b(account|invoice|payment|pay|billing|expire|expiry|package|password|subscription|balance)\b/.test(value)) return false;
+  return /\b(status|health|report|overview|logs?|alerts?|errors?|cpu|processor|memory|storage|disk|uptime|interfaces?|ports?|ethernet|sfp|traffic|bandwidth|queues?|wan|uplink|link|offline|online)\b/.test(value);
 }
 
 async function canAnswerRouterManagement(clientId, phoneNumber) {
@@ -413,7 +421,25 @@ async function reply(client, conversationId, phone, text, asVoice = false) {
     }
   }
   try {
-    await sendClientText(client, phone, text);
+    const sendResponse = await sendClientText(client, phone, text);
+    const sendData = sendResponse?.data || {};
+    const providerState =
+      sendData?.status ||
+      sendData?.message?.status ||
+      sendData?.key?.status ||
+      'unknown';
+    const providerMessageId =
+      sendData?.key?.id ||
+      sendData?.message?.key?.id ||
+      sendData?.id ||
+      'unknown';
+
+    console.log(
+      `[evo client ${client.id}] Evolution send result: ` +
+      `instance=${client.evolution_instance_name} ` +
+      `http=${sendResponse?.status || 'unknown'} ` +
+      `state=${providerState} id=${providerMessageId} target=${phone}`
+    );
   } catch (err) {
     console.error(`[evo client ${client.id}] Text reply failed to ${phone}:`, safeError(err));
     throw err;
@@ -465,6 +491,65 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
 
+    const messageKey = incoming.messageKey || {};
+    const remoteJid = String(messageKey.remoteJid || '').trim();
+    const remoteJidAlt = String(messageKey.remoteJidAlt || '').trim();
+    const participantJid = String(messageKey.participant || '').trim();
+    const addressingMode = String(messageKey.addressingMode || '').trim().toLowerCase();
+
+    const recipientCandidates = [
+      remoteJid,
+      remoteJidAlt,
+      participantJid,
+      incoming.replyJid,
+    ].map((value) => String(value || '').trim()).filter(Boolean);
+
+    const lidTarget = recipientCandidates.find((value) =>
+      /^[0-9]+@lid$/i.test(value)
+    );
+
+    const phoneTarget = recipientCandidates.find((value) =>
+      /^[0-9]+@s\.whatsapp\.net$/i.test(value)
+    );
+
+    const prefersLid = addressingMode.includes('lid');
+    const prefersPhone =
+      addressingMode.includes('pn') ||
+      addressingMode.includes('phone');
+
+    // WhatsApp multi-device events may identify a one-to-one chat with an
+    // opaque @lid JID. The parser has already resolved the sender's phone
+    // number into incoming.phone; use that phone JID for outbound delivery.
+    // Keep group targets intact because a group JID cannot be reconstructed
+    // from the individual sender's phone number.
+    const parsedReplyJid = String(incoming.replyJid || '').trim();
+    const isGroupTarget = /@g\.us$/i.test(parsedReplyJid);
+    const phoneFallback = /^\d{7,}$/.test(String(incoming.phone || '').trim())
+      ? `${String(incoming.phone).trim()}@s.whatsapp.net`
+      : null;
+
+    const replyTarget =
+      (isGroupTarget && parsedReplyJid) ||
+      (prefersPhone && phoneTarget) ||
+      phoneTarget ||
+      phoneFallback ||
+      ((prefersLid || !prefersPhone) && lidTarget) ||
+      parsedReplyJid ||
+      incoming.phone;
+
+    const jidType = (value) =>
+      String(value || 'none').replace(/^\d+/, 'number');
+
+    console.log(
+      `[evo client ${client.id}] Reply routing: ` +
+      `mode=${addressingMode || 'unknown'} ` +
+      `remote=${jidType(remoteJid)} ` +
+      `alt=${jidType(remoteJidAlt)} ` +
+      `participant=${jidType(participantJid)} ` +
+      `parsed=${jidType(incoming.replyJid)} ` +
+      `target=${jidType(replyTarget)}`
+    );
+
     const { conversation, isNewNumber } = await findOrCreateConversation(
       client.id,
       incoming.phone,
@@ -473,7 +558,7 @@ router.post('/client/:clientId', async (req, res) => {
       { allowUnassignedMatch: !client.routed_agent_id }
     );
     if (isNewNumber) {
-      await sendWelcomeMedia(client, conversation.id, incoming.phone);
+      await sendWelcomeMedia(client, conversation.id, replyTarget);
     }
 
     let userText = String(incoming.text || '').trim();
@@ -487,7 +572,7 @@ router.post('/client/:clientId', async (req, res) => {
         storedText = `[Voice note] ${userText}`;
       } catch (err) {
         console.error(`[evo client ${client.id}] Voice transcription failed:`, safeError(err));
-        await sendClientText(client, incoming.phone, "Sorry, I had trouble processing that voice note. Please send it again or type your message.");
+        await sendClientText(client, replyTarget, "Sorry, I had trouble processing that voice note. Please send it again or type your message.");
         return;
       }
     }
@@ -522,6 +607,31 @@ router.post('/client/:clientId', async (req, res) => {
         );
       }
     }
+    await recordBillingEvent({
+      clientId: client.id,
+      eventType: 'communication.whatsapp_received',
+      category: 'communication',
+      source: 'evolution_webhook',
+      entityType: 'whatsapp_message',
+      entityId: savedUserMessage.id,
+      actorType: 'subscriber',
+      actorId: incoming.phone,
+      actorName: conversation.customer_name,
+      title: 'WhatsApp message received',
+      payload: {
+        conversation_id: conversation.id,
+        sender_phone: incoming.phone,
+        message: storedText,
+        is_voice: Boolean(incoming.isVoice),
+        is_image: Boolean(incoming.isImage),
+        provider: 'evolution',
+      },
+      relatedEntities: [
+        { entityType: 'conversation', entityId: conversation.id, relationship: 'conversation' },
+      ],
+      deduplicationKey: `whatsapp-inbound:${client.id}:${savedUserMessage.id}`,
+      sensitivity: 'confidential',
+    });
     runAfterReply('Push notification for inbound Evolution message', () => notifyClientAdmins({
       clientId: client.id,
       conversationId: conversation.id,
@@ -543,7 +653,7 @@ router.post('/client/:clientId', async (req, res) => {
     const normalized = userText.toLowerCase();
     if (conversation.opted_out_at && RESUME.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NULL WHERE id = $1`, [conversation.id]);
-      await reply(client, conversation.id, incoming.phone, "You're resubscribed. How can I help you today?");
+      await reply(client, conversation.id, replyTarget, "You're resubscribed. How can I help you today?");
       return;
     }
     if (conversation.opted_out_at) {
@@ -552,7 +662,7 @@ router.post('/client/:clientId', async (req, res) => {
     }
     if (OPT_OUT.has(normalized)) {
       await db.query(`UPDATE conversations SET opted_out_at = NOW() WHERE id = $1`, [conversation.id]);
-      await reply(client, conversation.id, incoming.phone, "You've been unsubscribed. Reply START at any time to resume.");
+      await reply(client, conversation.id, replyTarget, "You've been unsubscribed. Reply START at any time to resume.");
       return;
     }
     if (conversation.status === 'human_takeover') {
@@ -565,55 +675,80 @@ router.post('/client/:clientId', async (req, res) => {
       return;
     }
     const replyAsVoice = shouldReplyAsVoice(replyMode, incoming.isVoice);
+    sendClientPresence(client, replyTarget, 'composing', 8000).catch((err) => {
+      console.warn(`[evo client ${client.id}] Typing presence unavailable: ${safeError(err)}`);
+    });
 
     const preReplyIntent = incoming.isImage ? null : classifyIntentLocal(userText);
-    if (preReplyIntent?.intent === 'router_management') {
+    const explicitRouterAdminQuestion = preReplyIntent?.intent === 'router_management';
+    const possibleRouterAdminFollowup = !incoming.isImage && isRouterAdminFollowupQuestion(userText);
+    if (explicitRouterAdminQuestion || possibleRouterAdminFollowup) {
       const allowedRouterAdmin = await canAnswerRouterManagement(client.id, incoming.phone);
       if (!allowedRouterAdmin) {
+        if (!explicitRouterAdminQuestion) {
+          console.log(`[evo client ${client.id}] Router-admin-like follow-up from ${incoming.phone} treated as normal customer text because the number is not authorized.`);
+        } else {
         console.warn(`[evo client ${client.id}] Router admin question ignored from unauthorized number ${incoming.phone}.`);
         await reply(
           client,
           conversation.id,
-          incoming.phone,
+          replyTarget,
           'I can help with your internet account, payments, installation or support request. Router administration details are only available to approved admin numbers.',
           replyAsVoice
         );
         return;
-      }
+        }
+      } else {
+        if (isRouterStatusQuestion(userText) || /^\s*(status|health|report|overview|router status|mikrotik status)\s*[?.!]*\s*$/i.test(userText)) {
+          const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
+          await reply(client, conversation.id, replyTarget, statusReply, replyAsVoice);
+          if (!replyAsVoice) {
+            const nocLink = String(statusReply).match(/https?:\/\/[^\s]+\/public\/noc\/[^\s]+/)?.[0] || '';
+            if (nocLink) {
+              try {
+                await sendClientButtons(client, replyTarget, {
+                  title: 'Live router monitoring',
+                  description: 'Open the live NOC view for this router.',
+                  footer: 'Link valid for 12 hours',
+                  buttons: [{ id: nocLink, title: 'Open Live NOC' }],
+                });
+                console.log(`[evo client ${client.id}] Live NOC action button sent to ${incoming.phone}.`);
+              } catch (err) {
+                console.warn(`[evo client ${client.id}] Interactive NOC button unavailable; URL remains in status reply: ${safeError(err)}`);
+              }
+            }
+          }
+          console.log(`[evo client ${client.id}] Deterministic router status reply sent to ${incoming.phone}.`);
+          return;
+        }
 
-      if (isRouterStatusQuestion(userText)) {
-        const statusReply = await buildMikrotikStatusReply({ clientId: client.id });
-        await reply(client, conversation.id, incoming.phone, statusReply, replyAsVoice);
-        console.log(`[evo client ${client.id}] Deterministic router status reply sent to ${incoming.phone}.`);
+        const routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: userText });
+        const routerPrompt =
+          `${client.agent_name ? `Your name is ${client.agent_name}. ` : ''}` +
+          `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
+          `Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly.\n` +
+          `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context.\n` +
+          `For interface, ethernet, SFP, link or port questions, explain which ports are connected/running, which are not linked or disabled, and include TX/RX rates and packet rates when present.\n` +
+          `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.\n` +
+          routerAdminContext;
+        const recent = await db.query(
+          `SELECT role, content FROM (
+             SELECT role, content, timestamp FROM messages
+             WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 8
+           ) history ORDER BY timestamp ASC`,
+          [conversation.id]
+        );
+        let routerReply;
+        try {
+          routerReply = await generateAIResponse(routerPrompt, recent.rows);
+        } catch (err) {
+          console.error(`[evo client ${client.id}] Router admin AI reply failed for ${incoming.phone}:`, safeError(err));
+          routerReply = 'I checked the router management context, but I could not prepare the answer right now. Please try again shortly.';
+        }
+        await reply(client, conversation.id, replyTarget, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
+        console.log(`[evo client ${client.id}] Router admin reply sent to ${incoming.phone}.`);
         return;
       }
-
-      const routerAdminContext = await buildMikrotikAdminContext({ clientId: client.id, messageText: userText });
-      const routerPrompt =
-        `${client.agent_name ? `Your name is ${client.agent_name}. ` : ''}` +
-        `You are answering an authorized router administrator for ${client.business_name || client.name || 'this ISP'}.\n` +
-        `Use only the ROUTER ADMIN CONTEXT below to answer the exact router question directly and briefly.\n` +
-        `Copy router names, uptime, counts, interface names, statuses, versions, IPs, and logs exactly as shown. Do not round, recalculate, guess, or mix in old conversation context.\n` +
-        `For interface, ethernet, SFP, link or port questions, explain which ports are connected/running, which are not linked or disabled, and include TX/RX rates and packet rates when present.\n` +
-        `If the requested detail is not present, say it is not available from the current read-only check. Never ask for a router photo in router-admin mode. Do not invent router data.\n` +
-        routerAdminContext;
-      const recent = await db.query(
-        `SELECT role, content FROM (
-           SELECT role, content, timestamp FROM messages
-           WHERE conversation_id = $1 ORDER BY timestamp DESC LIMIT 8
-         ) history ORDER BY timestamp ASC`,
-        [conversation.id]
-      );
-      let routerReply;
-      try {
-        routerReply = await generateAIResponse(routerPrompt, recent.rows);
-      } catch (err) {
-        console.error(`[evo client ${client.id}] Router admin AI reply failed for ${incoming.phone}:`, safeError(err));
-        routerReply = 'I checked the router management context, but I could not prepare the answer right now. Please try again shortly.';
-      }
-      await reply(client, conversation.id, incoming.phone, stripMediaTags(routerReply).trim() || 'Router details are not available from the current read-only check.', replyAsVoice);
-      console.log(`[evo client ${client.id}] Router admin reply sent to ${incoming.phone}.`);
-      return;
     }
 
     if (!incoming.isImage && /^pay now$/i.test(userText.trim())) {
@@ -622,12 +757,12 @@ router.post('/client/:clientId', async (req, res) => {
         conversationId: conversation.id,
         customerPhone: incoming.phone,
       });
-      await reply(client, conversation.id, incoming.phone, answer, false);
+      await reply(client, conversation.id, replyTarget, answer, false);
       return;
     }
 
     if (!incoming.isImage && /^pay later$/i.test(userText.trim())) {
-      await reply(client, conversation.id, incoming.phone, 'No problem. You can pay later using the invoice PDF when ready.', false);
+      await reply(client, conversation.id, replyTarget, 'No problem. You can pay later using the invoice PDF when ready.', false);
       return;
     }
 
@@ -640,7 +775,7 @@ router.post('/client/:clientId', async (req, res) => {
         messageText: userText,
       });
       if (paymentPromptReply) {
-        await reply(client, conversation.id, incoming.phone, paymentPromptReply, false);
+        await reply(client, conversation.id, replyTarget, paymentPromptReply, false);
         return;
       }
     }
@@ -652,7 +787,7 @@ router.post('/client/:clientId', async (req, res) => {
           `Sure, I can help you request a network relocation.\n\n` +
           `Please complete this relocation form:\n${relocationUrl}\n\n` +
           `It captures your new location, preferred visit time, router condition and equipment availability so the field team can prepare well.`;
-        await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        await reply(client, conversation.id, replyTarget, answer, replyAsVoice);
         console.log(`[evo client ${client.id}] Relocation form link sent to ${incoming.phone}.`);
         runAfterReply('Evolution relocation workflow dispatch', () => dispatchWorkflowToEmployees({
           client,
@@ -684,7 +819,7 @@ router.post('/client/:clientId', async (req, res) => {
         const answer =
           `Please complete this installation form:\n${intakeUrl}\n\n` +
           `It collects your ID scan, location and contact details for the setup team.`;
-        await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        await reply(client, conversation.id, replyTarget, answer, replyAsVoice);
         console.log(`[evo client ${client.id}] Installation intake form link sent to ${incoming.phone}.`);
         runAfterReply('Evolution installation ticket creation', () => createOrUpdateTicket({
           clientId: client.id,
@@ -712,10 +847,10 @@ router.post('/client/:clientId', async (req, res) => {
           messageText: userText,
           req,
         });
-        if (result.reply) await reply(client, conversation.id, incoming.phone, result.reply, replyAsVoice);
+        if (result.reply) await reply(client, conversation.id, replyTarget, result.reply, replyAsVoice);
       } catch (err) {
         console.error(`[evo client ${client.id}] Invoice auto-generation failed for ${incoming.phone}:`, safeError(err));
-        await reply(client, conversation.id, incoming.phone, 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.', replyAsVoice);
+        await reply(client, conversation.id, replyTarget, 'I could not generate the invoice right now. Please send your registered phone number or ask support to assist.', replyAsVoice);
       }
       return;
     }
@@ -731,8 +866,8 @@ router.post('/client/:clientId', async (req, res) => {
       if (billingReply) {
         const mediaText = `${userText}\n${billingReply}`;
         billingReply = stripMediaTags(billingReply) || 'Here is the media I found for you.';
-        await reply(client, conversation.id, incoming.phone, billingReply, replyAsVoice);
-        await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
+        await reply(client, conversation.id, replyTarget, billingReply, replyAsVoice);
+        await sendMatchedMedia(client, conversation.id, replyTarget, mediaText);
         console.log(`[evo client ${client.id}] Billing reply sent to ${incoming.phone}.`);
         return;
       }
@@ -767,9 +902,9 @@ router.post('/client/:clientId', async (req, res) => {
         messageText: userText,
       }));
       const answer = client.support_number
-        ? `Thanks — I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
-        : "Thanks — I've flagged your request for the support team. Someone will follow up shortly.";
-      await reply(client, conversation.id, incoming.phone, answer, replyAsVoice);
+        ? `Thanks â€” I've forwarded your request for human support. You may also reach the team on ${client.support_number}.`
+        : "Thanks â€” I've flagged your request for the support team. Someone will follow up shortly.";
+      await reply(client, conversation.id, replyTarget, answer, replyAsVoice);
       return;
     }
 
@@ -824,9 +959,9 @@ router.post('/client/:clientId', async (req, res) => {
     const mediaText = `${userText}\n${aiReply}`;
     const cleanReply = stripMediaTags(aiReply).trim() || 'Here is the media I found for you.';
     console.log(`[evo client ${client.id}] Sending AI reply to ${incoming.phone}.`);
-    await reply(client, conversation.id, incoming.phone, cleanReply, replyAsVoice);
-    if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, incoming.phone, mediaText);
-    else await sendMatchedMedia(client, conversation.id, incoming.phone, aiReply);
+    await reply(client, conversation.id, replyTarget, cleanReply, replyAsVoice);
+    if (!incoming.isImage) await sendMatchedMedia(client, conversation.id, replyTarget, mediaText);
+    else await sendMatchedMedia(client, conversation.id, replyTarget, aiReply);
     await recordAiTaskRecipientReply({
       clientId: client.id,
       phone: incoming.phone,

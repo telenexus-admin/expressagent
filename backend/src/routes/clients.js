@@ -20,6 +20,7 @@ router.use(authMiddleware, superadminMiddleware);
 
 const ALLOWED_VOICES = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const ALLOWED_CONNECTION_PROVIDERS = ['meta', 'evolution', 'website'];
+const ALLOWED_ACCOUNT_TYPES = ['ai', 'billing'];
 const MIN_META_ACCESS_TOKEN_LENGTH = 50;
 const OPERATOR_ACCESS_PERMISSIONS = [
   'statistics',
@@ -52,6 +53,9 @@ async function ensureProviderSchema() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS connection_provider VARCHAR(20) NOT NULL DEFAULT 'meta';
       ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_connection_provider_check;
       ALTER TABLE clients ADD CONSTRAINT clients_connection_provider_check CHECK (connection_provider IN ('meta', 'evolution', 'website'));
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS account_type VARCHAR(20) NOT NULL DEFAULT 'ai';
+      ALTER TABLE clients DROP CONSTRAINT IF EXISTS clients_account_type_check;
+      ALTER TABLE clients ADD CONSTRAINT clients_account_type_check CHECK (account_type IN ('ai', 'billing'));
     `);
   }
   await providerSchemaReady;
@@ -70,8 +74,14 @@ function normalizeConnectionProvider(value) {
   return ALLOWED_CONNECTION_PROVIDERS.includes(provider) ? provider : 'meta';
 }
 
+function normalizeAccountType(value) {
+  const type = String(value || 'ai').trim().toLowerCase();
+  return ALLOWED_ACCOUNT_TYPES.includes(type) ? type : 'ai';
+}
+
 function requiresMetaCredentials(req) {
-  return normalizeConnectionProvider(req.body.connection_provider) === 'meta';
+  return normalizeAccountType(req.body.account_type) !== 'billing'
+    && normalizeConnectionProvider(req.body.connection_provider) === 'meta';
 }
 
 function validateMetaPhoneNumber(value, { req }) {
@@ -99,7 +109,7 @@ router.get('/', async (_req, res) => {
     await ensureProviderSchema();
     const result = await db.query(
       `SELECT
-         c.id, c.name, c.business_name, c.contact_email, c.status, c.connection_provider,
+         c.id, c.name, c.business_name, c.contact_email, c.status, c.account_type, c.connection_provider,
          c.meta_phone_number_id, c.meta_business_account_id,
          c.support_number, c.agent_name, c.voice_id, c.photo_troubleshooting_enabled, c.created_at,
          c.official_whatsapp_number, c.official_contact_name, c.update_notifications_enabled, c.update_contact_updated_at,
@@ -168,7 +178,7 @@ router.get('/:id', async (req, res) => {
   try {
     await ensureProviderSchema();
     const result = await db.query(
-      `SELECT id, name, business_name, contact_email, status, connection_provider,
+      `SELECT id, name, business_name, contact_email, status, account_type, connection_provider,
               meta_phone_number_id, meta_business_account_id, meta_verify_token,
               support_number, system_prompt, agent_name, voice_id, opening_message,
               photo_troubleshooting_enabled, official_whatsapp_number, official_contact_name,
@@ -190,7 +200,7 @@ router.get('/:id', async (req, res) => {
 router.post('/:id/operator-access', async (req, res) => {
   try {
     const result = await db.query(
-      `SELECT id, name, business_name, contact_email, status
+      `SELECT id, name, business_name, contact_email, status, account_type
        FROM clients
        WHERE id = $1`,
       [req.params.id]
@@ -212,6 +222,7 @@ router.post('/:id/operator-access', async (req, res) => {
       email: req.user.email,
       role: 'admin',
       client_id: client.id,
+      account_type: client.account_type || 'ai',
       client_name: client.name,
       client_business_name: client.business_name || null,
       permissions: OPERATOR_ACCESS_PERMISSIONS,
@@ -322,6 +333,7 @@ router.post(
       name,
       business_name,
       contact_email,
+      account_type,
       connection_provider,
       meta_phone_number_id,
       meta_access_token,
@@ -349,20 +361,21 @@ router.post(
       await client.query('BEGIN');
 
       const verifyToken = (meta_verify_token || '').trim() || genVerifyToken();
-      const provider = normalizeConnectionProvider(connection_provider);
+      const type = normalizeAccountType(account_type);
+      const provider = type === 'billing' ? 'website' : normalizeConnectionProvider(connection_provider);
 
       const insertedClient = await client.query(
         `INSERT INTO clients (
-           name, business_name, contact_email, status, connection_provider,
+           name, business_name, contact_email, status, account_type, connection_provider,
            meta_phone_number_id, meta_access_token, meta_business_account_id, meta_verify_token,
            support_number, official_whatsapp_number, official_contact_name, update_notifications_enabled, update_contact_updated_at,
            system_prompt, agent_name, voice_id, opening_message, photo_troubleshooting_enabled
          ) VALUES (
-           $1, $2, $3, 'active', $4,
-           $5, $6, $7, $8,
-           $9, $10, $11, $12, CASE WHEN $10 IS NULL THEN NULL ELSE NOW() END,
-           $13, $14, $15, $16, $17
-         ) RETURNING id, name, business_name, contact_email, status, connection_provider,
+           $1, $2, $3, 'active', $4, $5,
+           $6, $7, $8, $9,
+           $10, $11::varchar, $12, $13, NOW(),
+           $14, $15, $16, $17, $18
+         ) RETURNING id, name, business_name, contact_email, status, account_type, connection_provider,
                     meta_phone_number_id, meta_business_account_id, meta_verify_token,
                     support_number, official_whatsapp_number, official_contact_name, update_notifications_enabled,
                     agent_name, voice_id, photo_troubleshooting_enabled, created_at`,
@@ -370,6 +383,7 @@ router.post(
           name.trim(),
           (business_name || '').trim() || null,
           (contact_email || '').trim() || null,
+          type,
           provider,
           (meta_phone_number_id || '').trim() || null,
           (meta_access_token || '').trim() || null,
@@ -450,6 +464,7 @@ router.put(
     body('business_name').optional().trim(),
     body('contact_email').optional({ checkFalsy: true }).isEmail(),
     body('status').optional().isIn(['active', 'suspended']),
+    body('account_type').optional().isIn(ALLOWED_ACCOUNT_TYPES).withMessage('Invalid account type'),
     body('connection_provider').optional().isIn(ALLOWED_CONNECTION_PROVIDERS).withMessage('Invalid connection provider'),
     body('meta_phone_number_id').optional({ nullable: true }).custom(validateMetaPhoneNumber),
     body('meta_access_token').optional({ nullable: true, checkFalsy: true }).custom(validateMetaAccessToken),
@@ -504,7 +519,7 @@ router.put(
       params.push(req.params.id);
       const result = await db.query(
         `UPDATE clients SET ${updates.join(', ')} WHERE id = $${params.length}
-         RETURNING id, name, business_name, contact_email, status, connection_provider,
+         RETURNING id, name, business_name, contact_email, status, account_type, connection_provider,
                    meta_phone_number_id, meta_business_account_id, meta_verify_token,
                    support_number, official_whatsapp_number, official_contact_name, update_notifications_enabled,
                    agent_name, voice_id, photo_troubleshooting_enabled, created_at`,

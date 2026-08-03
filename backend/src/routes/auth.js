@@ -45,7 +45,8 @@ router.post(
 
     try {
       const result = await db.query(
-        `SELECT a.*, c.name AS client_name, c.business_name AS client_business_name, c.status AS client_status
+        `SELECT a.*, c.name AS client_name, c.business_name AS client_business_name, c.status AS client_status,
+                c.account_type AS client_account_type
          FROM admins a
          LEFT JOIN clients c ON c.id = a.client_id
          WHERE a.email = $1`,
@@ -68,6 +69,7 @@ router.post(
         role: admin.role,
         name: admin.name,
         client_id: admin.client_id || null,
+        account_type: admin.client_account_type || 'ai',
         permissions,
       };
       const token = jwt.sign(tokenPayload, process.env.JWT_SECRET, { expiresIn: '24h' });
@@ -80,6 +82,7 @@ router.post(
           email: admin.email,
           role: admin.role,
           client_id: admin.client_id || null,
+          account_type: admin.client_account_type || 'ai',
           client_name: admin.client_name || null,
           client_business_name: admin.client_business_name || null,
           permissions,

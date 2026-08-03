@@ -1,5 +1,17 @@
 node_modules/
 .env
+.env.*
+!.env.example
 *.log
 dist/
 .DS_Store
+backups/
+*.bak-*
+*.before-*
+*.corrupt-*
+auth/
+auth.*
+uploads/
+*.sql
+*.sqlite
+*.sqlite3

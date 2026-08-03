@@ -1,50 +1,53 @@
-import React from 'react';
+import React, { Component, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
-import ExpressnetLogin from './pages/ExpressnetLogin';
-import SelfOnboarding from './pages/SelfOnboarding';
-import CustomerIntake from './pages/CustomerIntake';
-import RelocationRequest from './pages/RelocationRequest';
-import InstallationWorkOrder from './pages/InstallationWorkOrder';
-import ClientAccess from './pages/ClientAccess';
-import OnboardingLogin from './pages/OnboardingLogin';
-import OnboardingLayout from './pages/onboarding/Layout';
-import OnboardingOverview from './pages/onboarding/Overview';
-import OnboardingClients from './pages/onboarding/Clients';
-import OnboardingClientDetail from './pages/onboarding/ClientDetail';
-import OnboardingClientAccess from './pages/onboarding/ClientAccess';
-import EvoClients from './pages/onboarding/EvoClients';
-import NexaWhatsApp from './pages/onboarding/NexaWhatsApp';
-import UpdateContacts from './pages/onboarding/UpdateContacts';
-import Dashboard from './pages/DashboardShell';
-import Conversations from './pages/Conversations';
-import ChatView from './components/ChatView';
-import AIHealth from './pages/AIHealth';
-import Statistics from './pages/Statistics';
-import DailyReports from './pages/DailyReports';
-import SmsSettings from './pages/SmsSettings';
-import ClientRemarks from './pages/ClientRemarks';
-import AdminManagement from './pages/AdminManagement';
-import Employees from './pages/Employees';
-import Workflow from './pages/Workflow';
-import Agent from './pages/Agent';
-import KnowledgeBase from './pages/KnowledgeBase';
-import AiTasks from './pages/AiTasks';
-import NetworkMonitor from './pages/NetworkMonitor';
-import NocOverview from './pages/NocOverview';
-import MikrotikClients from './pages/MikrotikClients';
-import Escalations from './pages/Escalations';
-import Installations from './pages/Installations';
-import Complaints from './pages/Complaints';
-import Tickets from './pages/Tickets';
-import InvoiceManagement from './pages/InvoiceManagement';
-import Inventory from './pages/Inventory';
-import Logs from './pages/Logs';
-import Settings from './pages/Settings';
-import Billing from './pages/Billing';
-import Communication from './pages/Communication';
-import Documentation from './pages/Documentation';
+const ExpressnetLogin = lazy(() => import('./pages/ExpressnetLogin'));
+const SelfOnboarding = lazy(() => import('./pages/SelfOnboarding'));
+const CustomerIntake = lazy(() => import('./pages/CustomerIntake'));
+const RelocationRequest = lazy(() => import('./pages/RelocationRequest'));
+const InstallationWorkOrder = lazy(() => import('./pages/InstallationWorkOrder'));
+const ClientAccess = lazy(() => import('./pages/ClientAccess'));
+const HotspotPortal = lazy(() => import('./pages/HotspotPortal'));
+const OnboardingLogin = lazy(() => import('./pages/OnboardingLogin'));
+const OnboardingLayout = lazy(() => import('./pages/onboarding/Layout'));
+const OnboardingOverview = lazy(() => import('./pages/onboarding/Overview'));
+const OnboardingClients = lazy(() => import('./pages/onboarding/Clients'));
+const OnboardingClientDetail = lazy(() => import('./pages/onboarding/ClientDetail'));
+const OnboardingClientAccess = lazy(() => import('./pages/onboarding/ClientAccess'));
+const EvoClients = lazy(() => import('./pages/onboarding/EvoClients'));
+const NexaWhatsApp = lazy(() => import('./pages/onboarding/NexaWhatsApp'));
+const UpdateContacts = lazy(() => import('./pages/onboarding/UpdateContacts'));
+const Dashboard = lazy(() => import('./pages/DashboardShell'));
+const Conversations = lazy(() => import('./pages/Conversations'));
+const ChatView = lazy(() => import('./components/ChatView'));
+const AIHealth = lazy(() => import('./pages/AIHealth'));
+const Statistics = lazy(() => import('./pages/Statistics'));
+const DailyReports = lazy(() => import('./pages/DailyReports'));
+const SmsSettings = lazy(() => import('./pages/SmsSettings'));
+const ClientRemarks = lazy(() => import('./pages/ClientRemarks'));
+const AdminManagement = lazy(() => import('./pages/AdminManagement'));
+const Employees = lazy(() => import('./pages/Employees'));
+const Workflow = lazy(() => import('./pages/Workflow'));
+const Agent = lazy(() => import('./pages/Agent'));
+const KnowledgeBase = lazy(() => import('./pages/KnowledgeBase'));
+const AiTasks = lazy(() => import('./pages/AiTasks'));
+const NetworkMonitor = lazy(() => import('./pages/NetworkMonitor'));
+const NocOverview = lazy(() => import('./pages/NocOverview'));
+const PublicNocLive = lazy(() => import('./pages/PublicNocLive'));
+const MikrotikClients = lazy(() => import('./pages/MikrotikClients'));
+const Escalations = lazy(() => import('./pages/Escalations'));
+const Installations = lazy(() => import('./pages/Installations'));
+const Complaints = lazy(() => import('./pages/Complaints'));
+const Tickets = lazy(() => import('./pages/Tickets'));
+const InvoiceManagement = lazy(() => import('./pages/InvoiceManagement'));
+const Inventory = lazy(() => import('./pages/Inventory'));
+const Logs = lazy(() => import('./pages/Logs'));
+const Settings = lazy(() => import('./pages/Settings'));
+const Billing = lazy(() => import('./pages/Billing'));
+const Communication = lazy(() => import('./pages/Communication'));
+const Documentation = lazy(() => import('./pages/Documentation'));
+const BillingWorkspace = lazy(() => import('./pages/BillingWorkspace'));
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -106,6 +109,44 @@ function LoadingScreen() {
   return <div className="flex items-center justify-center h-screen bg-gray-50"><div className="text-gray-500 text-sm">Loading...</div></div>;
 }
 
+class RouteErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { failed: false };
+  }
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  componentDidCatch() {
+    const recoveryKey = 'nexa-runtime-recovery-v3';
+    if (sessionStorage.getItem(recoveryKey)) return;
+    sessionStorage.setItem(recoveryKey, '1');
+    const recover = async () => {
+      const registrations = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistrations() : [];
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+      if ('caches' in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.filter((key) => key.includes('workbox') || key.includes('precache') || key.includes('nexa')).map((key) => caches.delete(key)));
+      }
+      window.location.replace(`${window.location.pathname}?refresh=${Date.now()}`);
+    };
+    void recover();
+  }
+
+  render() {
+    if (!this.state.failed) return this.props.children;
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-sm rounded-3xl bg-white p-7 text-center shadow-xl shadow-slate-200/70">
+          <h1 className="text-lg font-bold text-slate-900">Refreshing Nexa...</h1><p className="mt-2 text-sm text-slate-500">We found an older cached app asset and are loading the current dashboard.</p><button onClick={() => { sessionStorage.removeItem('nexa-runtime-recovery-v3'); window.location.replace(`${window.location.pathname}?refresh=${Date.now()}`); }} className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white">Reload Nexa</button>
+        </div>
+      </div>
+    );
+  }
+}
+
 function AccessDenied() {
   return (
     <div className="flex-1 flex items-center justify-center bg-[#f8f6ff] p-6">
@@ -123,6 +164,16 @@ function ProtectedRoute({ children }) {
   if (loading) return <LoadingScreen />;
   if (!admin) return <Navigate to="/login" replace />;
   if (admin.role === 'superadmin') return <Navigate to="/onboarding" replace />;
+  if (admin.account_type === 'billing') return <Navigate to="/billing" replace />;
+  return children;
+}
+
+function BillingRoute({ children }) {
+  const { admin, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!admin) return <Navigate to="/login" replace />;
+  if (admin.role === 'superadmin') return <Navigate to="/onboarding" replace />;
+  if (admin.account_type !== 'billing') return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -151,15 +202,20 @@ export default function App() {
   return (
     <AuthProvider>
       <BrowserRouter>
+        <RouteErrorBoundary>
+        <Suspense fallback={<LoadingScreen />}>
         <Routes>
           <Route path="/self-onboarding" element={<SelfOnboarding />} />
           <Route path="/customer-intake/:clientId" element={<CustomerIntake />} />
           <Route path="/relocation-request/:clientId" element={<RelocationRequest />} />
           <Route path="/installation-work-order/:token" element={<InstallationWorkOrder />} />
+          <Route path="/public/noc/:token" element={<PublicNocLive />} />
           <Route path="/client-access" element={<ClientAccess />} />
+          <Route path="/hotspot" element={<HotspotPortal />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />
+          <Route path="/billing" element={<BillingRoute><BillingWorkspace /></BillingRoute>} />
           <Route path="/onboarding" element={<SuperadminRoute><OnboardingLayout /></SuperadminRoute>}>
             <Route index element={<OnboardingOverview />} />
             <Route path="clients" element={<OnboardingClients />} />
@@ -176,7 +232,7 @@ export default function App() {
             </Route>
             <Route path="tickets" element={<PermissionRoute permission="tickets"><Tickets /></PermissionRoute>} />
             <Route path="tickets/:id" element={<PermissionRoute permission="tickets"><Tickets detailMode /></PermissionRoute>} />
-            <Route path="invoices" element={<PermissionRoute permission="invoices"><InvoiceManagement /></PermissionRoute>} />
+            <Route path="invoices" element={<PermissionRoute permission="invoices"><Suspense fallback={<LoadingScreen />}><InvoiceManagement /></Suspense></PermissionRoute>} />
             <Route path="inventory" element={<PermissionRoute permission="inventory"><Inventory /></PermissionRoute>} />
             <Route path="billing" element={<PermissionRoute permission="billing"><Billing /></PermissionRoute>} />
             <Route path="communication" element={<PermissionRoute permission="communication"><Communication /></PermissionRoute>} />
@@ -203,6 +259,8 @@ export default function App() {
           </Route>
           <Route path="*" element={<Navigate to="/dashboard" replace />} />
         </Routes>
+        </Suspense>
+        </RouteErrorBoundary>
       </BrowserRouter>
     </AuthProvider>
   );

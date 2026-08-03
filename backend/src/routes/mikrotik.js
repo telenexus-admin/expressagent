@@ -13,6 +13,9 @@ const {
   updateRouterStatus,
 } = require('../services/mikrotik');
 const { previewMikrotikAlert } = require('../services/mikrotikMonitor');
+const { prepareSinglePaste } = require('../services/onePasteOnboarding');
+const { previewProvisioning, applyProvisioning } = require('../services/mikrotikProvisioning');
+const { recordRequestEvent } = require('../services/events');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -73,17 +76,27 @@ router.post('/clients/sync', async (req, res) => {
 });
 
 router.post('/wireguard/prepare', async (req, res) => {
-  const clientId = resolveTargetClient(req, res);
-  if (!clientId) return;
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
   try {
-    const plan = await prepareWireguardOnboarding(clientId, req.body || {});
-    res.json(plan);
-  } catch (err) {
-    console.error('POST /mikrotik/wireguard/prepare error:', err.message);
-    res.status(400).json({ error: err.message || 'Failed to prepare WireGuard onboarding' });
-  }
+    const single = await prepareSinglePaste(clientId, req.body || {});
+    await recordRequestEvent(req, {
+      eventType: 'router.onboarding_prepared',
+      category: 'router',
+      source: 'mikrotik_api',
+      entityType: 'router_onboarding',
+      entityId: single.tunnel_ip,
+      title: 'Router onboarding script prepared',
+      payload: {
+        router_name: String(req.body?.name || '').trim(),
+        tunnel_ip: single.tunnel_ip,
+        expires_in_minutes: single.expires_in_minutes,
+      },
+      deduplicationKey: `router-onboarding:${clientId}:${single.tunnel_ip}:prepared`,
+      sensitivity: 'restricted',
+    });
+    res.json({ enrollment_id: single.enrollment_id, tunnel_ip: single.tunnel_ip, api_host: single.tunnel_ip, api_port: 8728, api_connection_type: 'api', username: 'nexa', single_paste: true, expires_in_minutes: single.expires_in_minutes, mikrotikScript: single.script, warning: single.warning });
+  } catch (err) { console.error('Prepare single-paste onboarding error:', err.message); res.status(400).json({ error: err.message || 'Could not prepare onboarding script' }); }
 });
-
 router.post('/wireguard/activate', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
@@ -117,6 +130,31 @@ router.post('/test', async (req, res) => {
   }
 });
 
+router.post('/:id/provision/preview', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { res.json(await previewProvisioning(clientId, Number(req.params.id), req.body || {})); }
+  catch (err) { res.status(400).json({ error: err.message || 'Could not preview MikroTik provisioning' }); }
+});
+
+router.post('/:id/provision', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try {
+    const result = await applyProvisioning(clientId, Number(req.params.id), req.body || {});
+    await recordRequestEvent(req, {
+      eventType: 'router.provisioned',
+      category: 'router',
+      source: 'mikrotik_api',
+      entityType: 'router',
+      entityId: req.params.id,
+      title: 'Router provisioning applied',
+      payload: result,
+      deduplicationKey: `router:${req.params.id}:provisioned:${Date.now()}`,
+      sensitivity: 'restricted',
+    });
+    res.json(result);
+  }
+  catch (err) { console.error('MikroTik provisioning error:', err.message); res.status(400).json({ error: err.message || 'MikroTik provisioning failed' }); }
+});
 router.post('/alerts/test', async (req, res) => {
   const clientId = resolveTargetClient(req, res);
   if (!clientId) return;
@@ -141,6 +179,30 @@ router.post('/', async (req, res) => {
   try {
     const routerConfig = await saveRouter(clientId, req.body);
     if (!routerConfig) return res.status(404).json({ error: 'MikroTik router not found' });
+    await recordRequestEvent(req, {
+      eventType: req.body.id ? 'router.updated' : 'router.created',
+      category: 'router',
+      source: 'mikrotik_api',
+      entityType: 'router',
+      entityId: routerConfig.id,
+      title: req.body.id ? 'Router updated' : 'Router added',
+      description: routerConfig.name,
+      payload: {
+        name: routerConfig.name,
+        connection_method: routerConfig.connection_method,
+        connection_type: routerConfig.connection_type,
+        is_active: routerConfig.is_active,
+        host: routerConfig.host,
+        port: routerConfig.port,
+      },
+      newState: {
+        name: routerConfig.name,
+        is_active: routerConfig.is_active,
+        connection_method: routerConfig.connection_method,
+      },
+      deduplicationKey: req.body.id ? `router:${routerConfig.id}:updated:${Date.now()}` : `router:${routerConfig.id}:created`,
+      sensitivity: 'restricted',
+    });
     res.status(req.body.id ? 200 : 201).json(routerConfig);
   } catch (err) {
     console.error('POST /mikrotik error:', err.message);
@@ -154,6 +216,17 @@ router.delete('/:id', async (req, res) => {
   try {
     const deleted = await deleteRouter(clientId, req.params.id);
     if (!deleted) return res.status(404).json({ error: 'MikroTik router not found' });
+    await recordRequestEvent(req, {
+      eventType: 'router.deleted',
+      category: 'router',
+      source: 'mikrotik_api',
+      entityType: 'router',
+      entityId: req.params.id,
+      severity: 'warning',
+      title: 'Router removed',
+      deduplicationKey: `router:${req.params.id}:deleted`,
+      sensitivity: 'restricted',
+    });
     res.json({ success: true });
   } catch (err) {
     console.error('DELETE /mikrotik/:id error:', err.message);

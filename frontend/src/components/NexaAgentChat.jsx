@@ -52,7 +52,7 @@ function readMessages(key) {
   }
 }
 
-export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode = false }) {
+export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode = false, onAction }) {
   const storageKey = useMemo(() => 'nexa-agent-chat-v1:' +
     (admin?.client_id || admin?.clientId || admin?.client_name || 'billing') + ':' +
     (admin?.id || 'admin'), [admin]);
@@ -112,6 +112,7 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
         role: 'assistant',
         text: response.data?.answer || 'I could not form an answer from the available account evidence.',
         sources: Array.isArray(response.data?.sources) ? response.data.sources : [],
+        actions: Array.isArray(response.data?.actions) ? response.data.actions : [],
       }));
       if (!open) setUnread(true);
     } catch (requestError) {
@@ -155,6 +156,7 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
               <div>
                 <div className={'rounded-2xl px-4 py-3 text-[13px] leading-5 shadow-sm ' + (mine ? 'rounded-br-md bg-violet-600 text-white' : message.failed ? 'rounded-bl-md border border-rose-200 bg-rose-50 text-rose-800' : darkMode ? 'rounded-bl-md border border-slate-700 bg-slate-800 text-slate-100' : 'rounded-bl-md border border-violet-100 bg-white text-slate-700')}><MessageText text={message.text} /></div>
                 {labels.length > 0 && <div className="mt-2 flex flex-wrap gap-1.5">{labels.map((label) => <span key={label} className={'max-w-[180px] truncate rounded-full px-2 py-1 text-[9px] font-bold ' + (darkMode ? 'bg-slate-800 text-slate-400' : 'bg-violet-100 text-violet-600')}>{label}</span>)}</div>}
+                {Array.isArray(message.actions) && message.actions.length > 0 && <div className="mt-3 flex flex-wrap gap-2">{message.actions.map((action) => <button type="button" key={action.type + action.label} onClick={() => { setOpen(false); onAction?.(action); }} className="rounded-xl bg-violet-600 px-3 py-2 text-[11px] font-extrabold text-white shadow-sm hover:bg-violet-700">{action.label}</button>)}</div>}
               </div>
             </div>
           </article>;

@@ -28,6 +28,10 @@ const {
 const { buildIncidentContext } = require('../services/incidentCommander');
 const { buildNetworkAutomationContext } = require('../services/networkAutomation');
 const { buildNetworkExecutionContext } = require('../services/networkExecutor');
+const {
+  PLATFORM_CAPABILITY_CONTEXT,
+  getCapabilityResponse,
+} = require('../services/nexaCapabilities');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -247,6 +251,9 @@ router.post('/ask', async (req, res) => {
   const history = cleanHistory(req.body?.history);
   if (!question) return res.status(400).json({ error: 'question is required' });
 
+  const capabilityResponse = getCapabilityResponse(question);
+  if (capabilityResponse) return res.json(capabilityResponse);
+
   try {
     const [knowledge, twin, incidents, networkPlans, networkExecutions] = await Promise.all([
       buildNexaKnowledgeContext(clientId, question, {
@@ -280,6 +287,10 @@ router.post('/ask', async (req, res) => {
       'Do not reveal raw credentials, tokens, passwords, private keys or authentication data.',
       'Incident Commander recommendations are advisory. Never say an operational action was executed unless explicit execution evidence is supplied.',
       'Network repair plans are shadow previews only. Clearly distinguish a proposed plan from an executed repair.',
+      'Do not confuse approval-gated execution with lack of capability. Accurately explain the installed platform capabilities below.',
+      '',
+      'INSTALLED PLATFORM CAPABILITIES:',
+      PLATFORM_CAPABILITY_CONTEXT,
       '',
       'APPROVED NETWORK EXECUTION HISTORY:',
       sanitizeTextForLLM(networkExecutions.context, 10000) || 'No matching execution requests.',

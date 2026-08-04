@@ -24,7 +24,7 @@ function SubscriberDetail({ subscriber, back, setError }) {
 }
 function StatusGlyph({ kind }) { const paths = { online: <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>, offline: <><circle cx="12" cy="9" r="3" /><path d="M6 20a6 6 0 0 1 12 0" /></>, expired: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></> }; return <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-current/10"><svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[kind]}</svg></span>; }
 function Sparkline({ tone }) { const stroke = tone === 'green' ? '#0f9f6e' : tone === 'red' ? '#c72550' : '#6432df'; return <svg viewBox="0 0 160 34" className="h-8 w-full overflow-visible" aria-hidden="true"><path d="M2 26 L24 17 L45 22 L66 20 L87 29 L108 28 L128 17 L145 19 L158 10" fill="none" stroke={stroke} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /><circle cx="158" cy="10" r="5" fill={stroke} /></svg>; }
-function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="9" cy="9" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><circle cx="17" cy="11" r="2" /><path d="M14 20a4 4 0 0 1 7 0" /></> : kind === 'static' ? <><circle cx="12" cy="12" r="2" /><path d="M12 4v6m0 4v6M4 12h6m4 0h6" /></> : <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>; return <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{content}</svg>; }export default function BillingSubscribers({ subscribers, items: sourceItems, hotspotUsers = [], plans, hotspotPlans = [], routers = [], createOpen, setCreateOpen, search, setSearch, reload, setError }) {
+function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="9" cy="9" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><circle cx="17" cy="11" r="2" /><path d="M14 20a4 4 0 0 1 7 0" /></> : kind === 'static' ? <><circle cx="12" cy="12" r="2" /><path d="M12 4v6m0 4v6M4 12h6m4 0h6" /></> : <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>; return <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{content}</svg>; }export default function BillingSubscribers({ subscribers, items: sourceItems, hotspotUsers = [], plans, hotspotPlans = [], routers = [], createOpen, setCreateOpen, search, setSearch, reload, setError, darkMode = false }) {
   const [menuId, setMenuId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [recharging, setRecharging] = useState(null);
@@ -141,17 +141,141 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   if (createOpen && creating.access_mode === 'hotspot') return <HotspotClientForm value={hotspotForm} setValue={setHotspotForm} plans={hotspotPlans} busy={busyId === 'hotspot-create'} close={() => { setHotspotForm(emptyHotspot); setCreateOpen(false); }} submit={saveHotspot} />;
   if (selectedSubscriber) return <SubscriberDetail subscriber={selectedSubscriber} back={() => setSelectedSubscriber(null)} setError={setError} />;
   if (createOpen && ['pppoe_static', 'dhcp_static'].includes(creating.access_mode)) return <StaticClientForm value={creating} setValue={setCreating} plans={plans} routers={routers} busy={busyId === 'create'} close={() => { setCreating(emptySubscriber); setCreateOpen(false); }} submit={saveCreate} />;
-  return <div className="-mx-5 -mt-5 min-h-screen space-y-4 bg-[#fbfbff] pb-8 sm:-mx-8 sm:-mt-8"><section className="relative isolate overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-24 pt-8 text-white sm:px-8"><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Subscribers</h2><p className="mt-2 text-sm text-violet-100 sm:text-base">View and manage all your subscribers</p></div><button type="button" onClick={() => setCreateOpen(true)} className="relative z-10 mt-6 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:absolute sm:right-8 sm:top-8 sm:mt-0">+ Add a client</button><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#fbfbff" /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
+  return <div data-subscriber-theme={darkMode ? 'dark' : 'light'} className={`-mx-5 -mt-5 min-h-screen space-y-4 pb-8 sm:-mx-8 sm:-mt-8 ${darkMode ? 'bg-[#0b1020] text-slate-100' : 'bg-[#fbfbff] text-slate-900'}`}><section className="relative isolate overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-24 pt-8 text-white sm:px-8"><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Subscribers</h2><p className="mt-2 text-sm text-violet-100 sm:text-base">View and manage all your subscribers</p></div><button type="button" onClick={() => setCreateOpen(true)} className="relative z-10 mt-6 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:absolute sm:right-8 sm:top-8 sm:mt-0">+ Add a client</button><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill={darkMode ? '#0b1020' : '#fbfbff'} /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
     <style>{`.client-status-card{min-height:102px}section > .grid.grid-cols-2.border-b{display:none}@media(max-width:639px){.client-status-meta{display:none}.client-status-card{min-height:92px;padding:10px!important}.client-status-card .text-xs{font-size:10px}.client-status-card .text-2xl{font-size:1.5rem;line-height:2rem}}@media(max-width:639px){table.min-w-\\[700px\\]{min-width:100%!important;table-layout:fixed}table.min-w-\\[700px\\] th,table.min-w-\\[700px\\] td{padding:8px 4px!important;font-size:9px!important;line-height:1.25;overflow-wrap:anywhere}table.min-w-\\[700px\\] th:first-child,table.min-w-\\[700px\\] td:first-child{width:29%;padding-left:8px!important}table.min-w-\\[700px\\] th:nth-child(2),table.min-w-\\[700px\\] td:nth-child(2){width:19%}table.min-w-\\[700px\\] th:nth-child(3),table.min-w-\\[700px\\] td:nth-child(3){width:18%}table.min-w-\\[700px\\] th:nth-child(4),table.min-w-\\[700px\\] td:nth-child(4){width:18%}table.min-w-\\[700px\\] th:last-child,table.min-w-\\[700px\\] td:last-child{width:16%;padding-right:8px!important}.overflow-x-auto:has(table.min-w-\\[700px\\]){overflow-x:visible!important}}`}</style>
+    <style>{`
+      [data-subscriber-theme="dark"] {
+        color-scheme: dark;
+        background:
+          radial-gradient(circle at 85% 5%, rgba(124,58,237,.13), transparent 30%),
+          #0b1020;
+      }
+
+      [data-subscriber-theme="dark"] .client-status-card {
+        background: linear-gradient(145deg, #171d32 0%, #101527 100%) !important;
+        border-color: #303956 !important;
+        box-shadow: 0 14px 34px rgba(0,0,0,.24) !important;
+      }
+
+      [data-subscriber-theme="dark"] .client-status-card:hover {
+        border-color: #7257db !important;
+        transform: translateY(-1px);
+      }
+
+      [data-subscriber-theme="dark"] .subscriber-type-tabs,
+      [data-subscriber-theme="dark"] .subscriber-list-panel {
+        background: #11172a !important;
+        border-color: #2c3553 !important;
+        box-shadow: 0 16px 36px rgba(0,0,0,.20) !important;
+      }
+
+      [data-subscriber-theme="dark"] .subscriber-search-box,
+      [data-subscriber-theme="dark"] button[aria-label="Filter subscribers"] {
+        background: #0d1324 !important;
+        border-color: #303a5c !important;
+        color: #cbd5e1 !important;
+      }
+
+      [data-subscriber-theme="dark"] input,
+      [data-subscriber-theme="dark"] select,
+      [data-subscriber-theme="dark"] textarea {
+        background-color: #0d1324 !important;
+        border-color: #303a5c !important;
+        color: #f8fafc !important;
+      }
+
+      [data-subscriber-theme="dark"] input::placeholder,
+      [data-subscriber-theme="dark"] textarea::placeholder {
+        color: #64748b !important;
+      }
+
+      [data-subscriber-theme="dark"] .bg-white {
+        background-color: #11172a !important;
+      }
+
+      [data-subscriber-theme="dark"] .bg-slate-50 {
+        background-color: #0d1324 !important;
+      }
+
+      [data-subscriber-theme="dark"] .bg-slate-100 {
+        background-color: #202842 !important;
+      }
+
+      [data-subscriber-theme="dark"] .bg-violet-50,
+      [data-subscriber-theme="dark"] .bg-violet-100 {
+        background-color: rgba(124,58,237,.17) !important;
+      }
+
+      [data-subscriber-theme="dark"] .bg-emerald-100 {
+        background-color: rgba(16,185,129,.17) !important;
+      }
+
+      [data-subscriber-theme="dark"] .bg-rose-100 {
+        background-color: rgba(244,63,94,.17) !important;
+      }
+
+      [data-subscriber-theme="dark"] .border-slate-100,
+      [data-subscriber-theme="dark"] .border-slate-200 {
+        border-color: #29324d !important;
+      }
+
+      [data-subscriber-theme="dark"] .divide-slate-100 > :not([hidden]) ~ :not([hidden]) {
+        border-color: #29324d !important;
+      }
+
+      [data-subscriber-theme="dark"] .text-slate-900,
+      [data-subscriber-theme="dark"] .text-slate-800,
+      [data-subscriber-theme="dark"] .text-slate-700,
+      [data-subscriber-theme="dark"] .text-slate-600 {
+        color: #e2e8f0 !important;
+      }
+
+      [data-subscriber-theme="dark"] .text-slate-500,
+      [data-subscriber-theme="dark"] .text-slate-400 {
+        color: #94a3b8 !important;
+      }
+
+      [data-subscriber-theme="dark"] thead {
+        background: #0d1324 !important;
+        color: #94a3b8 !important;
+      }
+
+      [data-subscriber-theme="dark"] tbody tr {
+        background: #11172a;
+      }
+
+      [data-subscriber-theme="dark"] tbody tr:hover {
+        background: #19213a !important;
+      }
+
+      [data-subscriber-theme="dark"] tbody td {
+        border-color: #29324d !important;
+      }
+
+      [data-subscriber-theme="dark"] .subscriber-list-panel > div:last-child {
+        border-color: #29324d !important;
+      }
+
+      @media (max-width: 639px) {
+        [data-subscriber-theme="dark"] .client-status-card {
+          background: linear-gradient(155deg, #192039, #101527) !important;
+        }
+
+        [data-subscriber-theme="dark"] .subscriber-type-tabs {
+          margin-top: 8px;
+        }
+      }
+    `}</style>
+
     <div className="relative z-10 -mt-16 grid grid-cols-3 gap-2 px-5 sm:gap-4 sm:px-8">
       <button onClick={() => { setNetworkFilter(networkFilter === 'online' ? 'all' : 'online'); setPage(1); }} className={`client-status-card rounded-3xl border p-5 text-left shadow-sm transition ${networkFilter === 'online' ? 'border-emerald-400 ring-2 ring-emerald-200' : 'border-emerald-100'} bg-gradient-to-br from-white to-emerald-50`}><div className="flex items-start gap-2 sm:gap-4 text-emerald-600"><StatusGlyph kind="online" /><div><div className="text-2xl font-black leading-none sm:text-4xl">{online}</div><div className="mt-1 text-xs font-black text-emerald-700 sm:mt-2 sm:text-base">Online</div><p className="client-status-meta mt-1 text-sm text-emerald-700/70">Active RADIUS sessions</p></div></div><div className="mt-4"><Sparkline tone="green" /></div></button>
       <button onClick={() => { setNetworkFilter(networkFilter === 'offline' ? 'all' : 'offline'); setPage(1); }} className={`client-status-card rounded-3xl border p-5 text-left shadow-sm transition ${networkFilter === 'offline' ? 'border-violet-400 ring-2 ring-violet-200' : 'border-violet-100'} bg-gradient-to-br from-white to-violet-50`}><div className="flex items-start gap-2 sm:gap-4 text-violet-600"><StatusGlyph kind="offline" /><div><div className="text-2xl font-black leading-none sm:text-4xl">{offline}</div><div className="mt-1 text-xs font-black text-violet-700 sm:mt-2 sm:text-base">Offline</div><p className="client-status-meta mt-1 text-sm text-violet-700/70">No active session</p></div></div><div className="mt-4"><Sparkline tone="purple" /></div></button>
       <button onClick={() => { setNetworkFilter(networkFilter === 'expired' ? 'all' : 'expired'); setPage(1); }} className={`client-status-card rounded-3xl border p-5 text-left shadow-sm transition ${networkFilter === 'expired' ? 'border-rose-400 ring-2 ring-rose-200' : 'border-rose-100'} bg-gradient-to-br from-white to-rose-50`}><div className="flex items-start gap-2 sm:gap-4 text-rose-600"><StatusGlyph kind="expired" /><div><div className="text-2xl font-black leading-none sm:text-4xl">{expiredCount}</div><div className="mt-1 text-xs font-black text-rose-700 sm:mt-2 sm:text-base">Expired</div><p className="client-status-meta mt-1 text-sm text-rose-700/70">Recharge required</p></div></div><div className="mt-4"><Sparkline tone="red" /></div></button>
     </div>
-    <div className="mx-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:mx-8"><button onClick={() => { setSubscriberType('pppoe'); setPage(1); }} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-extrabold sm:text-sm ${subscriberType === 'pppoe' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="pppoe" /><span>PPPoE</span><span className="rounded-full bg-current/10 px-2 py-0.5">{pppoeItems.length}</span></button><button onClick={() => { setSubscriberType('static'); setPage(1); }} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-extrabold sm:text-sm ${subscriberType === 'static' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="static" /><span>Static</span><span className="rounded-full bg-current/10 px-2 py-0.5">{staticItems.length}</span></button><button onClick={() => { setSubscriberType('hotspot'); setPage(1); }} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-extrabold sm:text-sm ${subscriberType === 'hotspot' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="hotspot" /><span>Hotspot</span><span className="rounded-full bg-current/10 px-2 py-0.5">{hotspotUsers.length}</span></button></div>    <section className="overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
+    <div className="subscriber-type-tabs mx-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:mx-8"><button onClick={() => { setSubscriberType('pppoe'); setPage(1); }} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-extrabold sm:text-sm ${subscriberType === 'pppoe' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="pppoe" /><span>PPPoE</span><span className="rounded-full bg-current/10 px-2 py-0.5">{pppoeItems.length}</span></button><button onClick={() => { setSubscriberType('static'); setPage(1); }} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-extrabold sm:text-sm ${subscriberType === 'static' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="static" /><span>Static</span><span className="rounded-full bg-current/10 px-2 py-0.5">{staticItems.length}</span></button><button onClick={() => { setSubscriberType('hotspot'); setPage(1); }} className={`flex items-center justify-center gap-2 rounded-xl px-2 py-3 text-xs font-extrabold sm:text-sm ${subscriberType === 'hotspot' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="hotspot" /><span>Hotspot</span><span className="rounded-full bg-current/10 px-2 py-0.5">{hotspotUsers.length}</span></button></div>    <section className="subscriber-list-panel overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="grid grid-cols-2 border-b border-slate-200 px-4 pt-4"><button onClick={() => setSubscriberType('pppoe')} className={`border-b-2 px-2 pb-3 text-sm font-extrabold ${subscriberType === 'pppoe' ? 'border-violet-600 text-violet-600' : 'border-transparent text-slate-500'}`}>PPPoE Clients <span className="ml-2 rounded-full bg-violet-100 px-2 py-1 text-xs">{subscribers.length}</span></button><button onClick={() => setSubscriberType('hotspot')} className={`border-b-2 px-2 pb-3 text-sm font-extrabold ${subscriberType === 'hotspot' ? 'border-violet-600 text-violet-600' : 'border-transparent text-slate-500'}`}>Hotspot Users <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-xs">{hotspotUsers.length}</span></button></div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-slate-100 p-4 sm:p-5">
-        <label className="flex min-h-14 min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 shadow-sm focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
+        <label className="subscriber-search-box flex min-h-14 min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 shadow-sm focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
           <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 fill-none stroke-slate-500 stroke-2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
           <input className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" placeholder="Search subscribers…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
         </label>

@@ -114,7 +114,7 @@ export default function BillingWorkspace() {
         {tab === 'payments' && <Payments payments={payments} invoices={invoices} form={paymentForm} setForm={setPaymentForm} save={savePayment} saving={saving} />}
         {tab === 'hotspot' && <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}
         {tab === 'vouchers' && <Vouchers plans={hotspotPlans} vouchers={vouchers} form={voucherForm} setForm={setVoucherForm} generate={generateVouchers} simulate={simulateVoucher} saving={saving} reload={load} setError={setError} />}
-        {tab === 'routers' && <Routers routers={routers} form={routerForm} setForm={setRouterForm} plan={routerPlan} setPlan={setRouterPlan} prepare={prepareRouter} activate={activateRouter} test={testRouter} provision={previewRouterProvision} notice={routerNotice} saving={saving} />}
+        {tab === 'routers' && <Routers routers={routers} form={routerForm} setForm={setRouterForm} plan={routerPlan} setPlan={setRouterPlan} prepare={prepareRouter} activate={activateRouter} test={testRouter} provision={previewRouterProvision} notice={routerNotice} saving={saving} darkMode={darkMode} />}
         {tab === 'radius' && <Radius subscribers={subscribers} status={radiusStatus} form={radiusForm} setForm={setRadiusForm} save={saveRadius} resync={resync} saving={saving} />}
         {tab === 'reports' && <Reports invoices={invoices} payments={payments} subscribers={subscribers} routers={routers} bandwidthHistory={bandwidthHistory} employees={employees} tickets={reportTickets} money={money} />}
         {tab === 'communication' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingCommunication /></Suspense>}
@@ -239,16 +239,397 @@ function CurrencyMobileHome({ summary, subscribers, invoices, payments, bandwidt
   </div>;
 }
 
-function Routers({ routers = [], form, setForm, plan, setPlan, prepare, activate, test, provision, notice, saving }) {
+function Routers({
+  routers = [],
+  form,
+  setForm,
+  plan,
+  setPlan,
+  prepare,
+  activate,
+  test,
+  provision,
+  notice,
+  saving,
+  darkMode = false,
+}) {
   const [open, setOpen] = useState(false);
-  const safeRouters = Array.isArray(routers) ? routers.filter(Boolean) : [];
-  return <div className="-mx-5 -mt-5 min-h-screen space-y-5 bg-[#fbfbff] pb-8 sm:-mx-8 sm:-mt-8">
-    <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-6 pb-20 pt-8 text-white shadow-lg sm:px-10"><div className="relative z-10"><p className="text-[10px] font-extrabold uppercase tracking-[.2em] text-violet-200">Network operations</p><h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Router management</h2><p className="mt-2 max-w-xl text-sm text-violet-100">Monitor onboarded MikroTik routers and secure subscriber network access.</p><button type="button" onClick={() => setOpen(true)} className="mt-5 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20">+ Add router</button></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-20"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#fbfbff" /></svg></div></section>
-    {notice && <div className="mx-5 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800 sm:mx-10">{notice}</div>}
-    {safeRouters.length ? <div className="space-y-3 px-5 sm:px-10">{safeRouters.map((router) => <section key={router.id || router.name} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm"><div className="flex items-start justify-between gap-3"><div><h3 className="font-black text-slate-900">{router.name || 'MikroTik router'}</h3><p className="mt-1 text-xs text-slate-500">{router.host || router.wireguard_tunnel_ip || 'Private tunnel'} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· API {router.port || 8728}</p></div><Badge tone={router.status === 'online' || router.status === 'active' ? 'green' : 'amber'}>{router.status || 'pending'}</Badge></div><div className="mt-4 flex flex-wrap gap-2"><button type="button" onClick={() => test(router.id)} disabled={saving} className="rounded-xl border border-violet-200 px-3 py-2 text-xs font-extrabold text-violet-700">Test connection</button><button type="button" onClick={() => provision(router)} disabled={saving} className="rounded-xl border border-slate-200 px-3 py-2 text-xs font-extrabold text-slate-600">Preview setup</button></div></section>)}</div> : <section className="mx-5 rounded-2xl border border-dashed border-violet-200 bg-white px-5 py-16 text-center shadow-sm sm:mx-10"><div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-100 text-xl text-violet-600">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â</div><h3 className="mt-4 font-black text-slate-900">No routers onboarded</h3><p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-slate-500">Use Add router above to start the secure MikroTik onboarding process.</p></section>}
-    {open && <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/50 p-3 sm:items-center"><form onSubmit={plan ? activate : prepare} className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl"><div className="flex items-center justify-between"><div><p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-violet-600">Secure onboarding</p><h3 className="mt-1 text-xl font-black text-slate-900">Add a router</h3></div><button type="button" onClick={() => setOpen(false)} className="text-2xl text-slate-400">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â</button></div><div className="mt-5 space-y-4"><Field label="Router name"><input required className={input} value={form.name} onChange={(event) => setForm({ ...form, name: event.target.value })} placeholder="Main MikroTik" /></Field><Field label="Onboarding password"><input required type="password" className={input} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} /></Field>{plan && <Field label="MikroTik public key"><input required className={input} value={form.publicKey} onChange={(event) => setForm({ ...form, publicKey: event.target.value })} placeholder="Paste the key generated by the router" /></Field>}<button disabled={saving} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{saving ? 'PreparingÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¦' : plan ? 'Complete onboarding' : 'Generate onboarding script'}</button>{plan?.single_paste && <p className="rounded-xl bg-slate-50 p-3 text-xs leading-5 text-slate-600">Copy the one-time script from the next step and paste it in the MikroTik terminal.</p>}</div></form></div>}
-  </div>;
+  const safeRouters = Array.isArray(routers)
+    ? routers.filter(Boolean)
+    : [];
+
+  const pageBackground = darkMode
+    ? 'bg-[#0b1020] text-slate-100'
+    : 'bg-[#fbfbff] text-slate-900';
+
+  const surface = darkMode
+    ? 'border-[#303a58] bg-[#11172a] text-slate-100 shadow-black/25'
+    : 'border-slate-200 bg-white text-slate-900';
+
+  const muted = darkMode
+    ? 'text-slate-400'
+    : 'text-slate-500';
+
+  return (
+    <div
+      data-router-theme={darkMode ? 'dark' : 'light'}
+      className={`-mx-5 -mt-5 min-h-screen space-y-5 pb-8 sm:-mx-8 sm:-mt-8 ${pageBackground}`}
+    >
+      <style>{`
+        [data-router-theme="dark"] {
+          color-scheme: dark;
+          background:
+            radial-gradient(
+              circle at 85% 5%,
+              rgba(124, 58, 237, 0.14),
+              transparent 32%
+            ),
+            #0b1020;
+        }
+
+        [data-router-theme="dark"] .router-surface,
+        [data-router-theme="dark"] .router-empty-state,
+        [data-router-theme="dark"] .router-modal {
+          background: #11172a !important;
+          border-color: #303a58 !important;
+          color: #f8fafc !important;
+        }
+
+        [data-router-theme="dark"] .router-surface {
+          box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+        }
+
+        [data-router-theme="dark"] .router-empty-state {
+          box-shadow: 0 22px 48px rgba(0, 0, 0, 0.24);
+        }
+
+        [data-router-theme="dark"] .router-modal {
+          box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55);
+        }
+
+        [data-router-theme="dark"] .router-modal input,
+        [data-router-theme="dark"] .router-modal select,
+        [data-router-theme="dark"] .router-modal textarea {
+          background: #0b1020 !important;
+          border-color: #303a58 !important;
+          color: #f8fafc !important;
+        }
+
+        [data-router-theme="dark"] .router-modal input::placeholder,
+        [data-router-theme="dark"] .router-modal textarea::placeholder {
+          color: #64748b !important;
+        }
+
+        [data-router-theme="dark"] .router-modal .text-slate-700,
+        [data-router-theme="dark"] .router-modal .text-slate-900 {
+          color: #f1f5f9 !important;
+        }
+
+        [data-router-theme="dark"] .router-modal .text-slate-600,
+        [data-router-theme="dark"] .router-modal .text-slate-500,
+        [data-router-theme="dark"] .router-modal .text-slate-400 {
+          color: #94a3b8 !important;
+        }
+
+        [data-router-theme="dark"] .router-surface .bg-amber-50 {
+          background: rgba(245, 158, 11, 0.16) !important;
+        }
+
+        [data-router-theme="dark"] .router-surface .text-amber-700 {
+          color: #fbbf24 !important;
+        }
+
+        [data-router-theme="dark"] .router-surface .bg-emerald-50 {
+          background: rgba(16, 185, 129, 0.16) !important;
+        }
+
+        [data-router-theme="dark"] .router-surface .text-emerald-700 {
+          color: #34d399 !important;
+        }
+      `}</style>
+
+      <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-6 pb-20 pt-8 text-white shadow-lg sm:px-10">
+        <div className="relative z-10">
+          <p className="text-[10px] font-extrabold uppercase tracking-[.2em] text-violet-200">
+            Network operations
+          </p>
+
+          <h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">
+            Router management
+          </h2>
+
+          <p className="mt-2 max-w-xl text-sm leading-6 text-violet-100">
+            Monitor onboarded MikroTik routers and secure subscriber
+            network access.
+          </p>
+
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="mt-5 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300"
+          >
+            + Add router
+          </button>
+        </div>
+
+        <div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-20">
+          <svg
+            viewBox="0 0 1200 180"
+            preserveAspectRatio="none"
+            className="h-full w-full"
+            aria-hidden="true"
+          >
+            <path
+              d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z"
+              fill={darkMode ? '#0b1020' : '#fbfbff'}
+            />
+          </svg>
+        </div>
+      </section>
+
+      {notice && (
+        <div
+          className={`mx-5 rounded-2xl border px-4 py-3 text-sm font-semibold sm:mx-10 ${
+            darkMode
+              ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-300'
+              : 'border-emerald-200 bg-emerald-50 text-emerald-800'
+          }`}
+        >
+          {notice}
+        </div>
+      )}
+
+      {safeRouters.length ? (
+        <div className="space-y-3 px-5 sm:px-10">
+          {safeRouters.map((router) => (
+            <section
+              key={router.id || router.name}
+              className={`router-surface rounded-2xl border p-5 shadow-sm ${surface}`}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <h3
+                    className={`truncate font-black ${
+                      darkMode ? 'text-slate-100' : 'text-slate-900'
+                    }`}
+                  >
+                    {router.name || 'MikroTik router'}
+                  </h3>
+
+                  <p className={`mt-1 text-xs ${muted}`}>
+                    {router.host ||
+                      router.wireguard_tunnel_ip ||
+                      'Private tunnel'}
+                    <span className="mx-1.5 text-slate-500">|</span>
+                    API {router.port || 8728}
+                  </p>
+                </div>
+
+                <Badge
+                  tone={
+                    router.status === 'online' ||
+                    router.status === 'active'
+                      ? 'green'
+                      : 'amber'
+                  }
+                >
+                  {router.status || 'pending'}
+                </Badge>
+              </div>
+
+              <div className="mt-4 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => test(router.id)}
+                  disabled={saving}
+                  className={`rounded-xl border px-3 py-2 text-xs font-extrabold disabled:opacity-50 ${
+                    darkMode
+                      ? 'border-violet-400/30 bg-violet-500/10 text-violet-300'
+                      : 'border-violet-200 text-violet-700'
+                  }`}
+                >
+                  Test connection
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => provision(router)}
+                  disabled={saving}
+                  className={`rounded-xl border px-3 py-2 text-xs font-extrabold disabled:opacity-50 ${
+                    darkMode
+                      ? 'border-slate-600 bg-slate-800/50 text-slate-300'
+                      : 'border-slate-200 text-slate-600'
+                  }`}
+                >
+                  Preview setup
+                </button>
+              </div>
+            </section>
+          ))}
+        </div>
+      ) : (
+        <section
+          className={`router-empty-state mx-5 rounded-[28px] border border-dashed px-5 py-16 text-center sm:mx-10 ${surface}`}
+        >
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl border border-violet-400/20 bg-violet-500/15 text-violet-400">
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-8 w-8 fill-none stroke-current"
+              strokeWidth="1.8"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <rect x="4" y="6" width="16" height="11" rx="2" />
+              <path d="M8 17v3M16 17v3M6 20h12" />
+              <circle
+                cx="8"
+                cy="11.5"
+                r="1"
+                fill="currentColor"
+                stroke="none"
+              />
+              <path d="M12 10h5M12 13h5" />
+            </svg>
+          </div>
+
+          <h3
+            className={`mt-5 text-lg font-black ${
+              darkMode ? 'text-white' : 'text-slate-900'
+            }`}
+          >
+            No routers onboarded
+          </h3>
+
+          <p className={`mx-auto mt-2 max-w-xs text-sm leading-6 ${muted}`}>
+            Use Add router above to start the secure MikroTik
+            onboarding process.
+          </p>
+        </section>
+      )}
+
+      {open && (
+        <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:items-center">
+          <form
+            onSubmit={plan ? activate : prepare}
+            className={`router-modal max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl border p-5 ${surface}`}
+          >
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-violet-500">
+                  Secure onboarding
+                </p>
+
+                <h3
+                  className={`mt-1 text-xl font-black ${
+                    darkMode ? 'text-white' : 'text-slate-900'
+                  }`}
+                >
+                  Add a router
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Close router onboarding"
+                onClick={() => setOpen(false)}
+                className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl transition ${
+                  darkMode
+                    ? 'text-slate-400 hover:bg-white/10 hover:text-white'
+                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-700'
+                }`}
+              >
+                <svg
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                  className="h-5 w-5 fill-none stroke-current"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                >
+                  <path d="M6 6l12 12M18 6 6 18" />
+                </svg>
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-4">
+              <Field label="Router name">
+                <input
+                  required
+                  className={input}
+                  value={form.name}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      name: event.target.value,
+                    })
+                  }
+                  placeholder="Main MikroTik"
+                />
+              </Field>
+
+              <Field label="Onboarding password">
+                <input
+                  required
+                  type="password"
+                  className={input}
+                  value={form.password}
+                  onChange={(event) =>
+                    setForm({
+                      ...form,
+                      password: event.target.value,
+                    })
+                  }
+                />
+              </Field>
+
+              {plan && (
+                <Field label="MikroTik public key">
+                  <input
+                    required
+                    className={input}
+                    value={form.publicKey}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        publicKey: event.target.value,
+                      })
+                    }
+                    placeholder="Paste the key generated by the router"
+                  />
+                </Field>
+              )}
+
+              <button
+                disabled={saving}
+                className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white transition hover:bg-violet-500 disabled:opacity-50"
+              >
+                {saving
+                  ? 'Preparing...'
+                  : plan
+                    ? 'Complete onboarding'
+                    : 'Generate onboarding script'}
+              </button>
+
+              {plan?.single_paste && (
+                <p
+                  className={`rounded-xl p-3 text-xs leading-5 ${
+                    darkMode
+                      ? 'bg-slate-800 text-slate-300'
+                      : 'bg-slate-50 text-slate-600'
+                  }`}
+                >
+                  Copy the one-time script from the next step and
+                  paste it in the MikroTik terminal.
+                </p>
+              )}
+            </div>
+          </form>
+        </div>
+      )}
+    </div>
+  );
 }
+
 function MobileTile({ icon, title, text, onClick, panel, muted }) { return <button onClick={onClick} className={`flex items-center gap-3 rounded-2xl p-4 text-left shadow-sm ${panel}`}><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">{icon}</span><span><span className="block text-sm font-black">{title}</span><span className={`mt-0.5 block text-[10px] font-semibold ${muted}`}>{text}</span></span></button>; }
 function MobileAction({ icon, label, onClick }) { return <button onClick={onClick} className="flex flex-col items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><NavIcon kind={label.toLowerCase()} /></span>{label}</button>; }
 function BandwidthOverviewExact({ history = [], tick = 0, panel = 'rounded-2xl p-5 shadow-sm bg-white text-slate-900', muted = 'text-slate-400' }) {

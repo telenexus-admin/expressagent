@@ -203,8 +203,10 @@ function script({ apiPassword, executorPassword, tunnelIp, callbackToken }) {
 :if ([:len [/user/group/find where name="nexa-executor"]] = 0) do={
   /user/group/add \
     name=nexa-executor \
-    policy=read,write,test,api
+    policy=ftp,read,write,policy,test,sensitive,api
 }
+
+/user/group/set [find where name="nexa-executor"] policy=ftp,read,write,policy,test,sensitive,api
 
 :if ([:len [/user/find where name="nexa-executor"]] = 0) do={
   /user/add \
@@ -216,7 +218,8 @@ function script({ apiPassword, executorPassword, tunnelIp, callbackToken }) {
 /user/set \
   [find where name="nexa-executor"] \
   group=nexa-executor \
-  password=$nexaExecutorPassword
+  password=$nexaExecutorPassword \
+  address="${WG_SERVER_IP}/32"
 
 /ip/service/enable api
 /ip/service/set \

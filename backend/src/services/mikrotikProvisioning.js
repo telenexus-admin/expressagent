@@ -11,6 +11,9 @@ const {
   ensureNetworkEnrollmentSchema,
 } = require('./networkEnrollment');
 const {
+  ensureNetworkExecutorSchema,
+} = require('./networkExecutor');
+const {
   createHotspotPortalToken,
 } = require('./hotspotPortalToken');
 const {
@@ -447,6 +450,70 @@ async function radiusDatabasePreflight() {
   }
 }
 
+async function getProvisioningRouter(
+  clientId,
+  routerId
+) {
+  await ensureNetworkExecutorSchema();
+
+  const router = await getRouter(
+    clientId,
+    routerId,
+    { includePassword: false }
+  );
+
+  if (!router) {
+    throw new Error(
+      'MikroTik router not found in this billing account'
+    );
+  }
+
+  if (router.connection_method !== 'wireguard') {
+    throw new Error(
+      'Router provisioning is allowed only through the private WireGuard tunnel'
+    );
+  }
+
+  const result = await db.query(
+    `SELECT
+       username,
+       password_encrypted,
+       enabled,
+       verification_status,
+       last_error
+     FROM network_router_executor_credentials
+     WHERE client_id = $1
+       AND router_id = $2
+     LIMIT 1`,
+    [clientId, routerId]
+  );
+
+  const credential = result.rows[0];
+
+  if (!credential) {
+    throw new Error(
+      'The secure MikroTik provisioning executor is not configured'
+    );
+  }
+
+  if (
+    credential.verification_status !== 'verified' ||
+    credential.enabled !== true
+  ) {
+    throw new Error(
+      credential.last_error ||
+      'The secure MikroTik provisioning executor is not verified'
+    );
+  }
+
+  return {
+    ...router,
+    username: credential.username,
+    password: decryptSecret(
+      credential.password_encrypted
+    ),
+  };
+}
 async function getRadiusCredential(clientId, router) {
   await ensureNetworkEnrollmentSchema();
   const nasIp = String(
@@ -962,12 +1029,10 @@ async function previewProvisioning(clientId, routerId, input = {}) {
 
 async function applyProvisioning(clientId, routerId, input = {}) {
   await ensureProvisioningTables();
-  const router = await getRouter(clientId, routerId, {
-    includePassword: true,
-  });
-  if (!router) {
-    throw new Error('MikroTik router not found in this billing account');
-  }
+  const router = await getProvisioningRouter(
+    clientId,
+    routerId
+  );
 
   const preview = await previewProvisioning(clientId, routerId, input);
   if (preview.blockers.length) {

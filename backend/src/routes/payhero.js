@@ -1,6 +1,9 @@
 const express = require('express');
 const db = require('../db');
 const { ensurePayHeroSchema } = require('../services/payhero');
+const {
+  fulfillHotspotPayment,
+} = require('../services/hotspotPayments');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendClientText } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
@@ -103,6 +106,18 @@ router.post('/callback/:clientId', async (req, res) => {
     );
     const payment = updated.rows[0];
     if (!payment) return;
+
+    if (successful) {
+      try {
+        await fulfillHotspotPayment(payment);
+      } catch (fulfillmentError) {
+        console.error(
+          'Hotspot payment fulfillment failed:',
+          fulfillmentError.message
+        );
+      }
+    }
+
     const text = successful
       ? `Payment received successfully. KES ${payment.amount}${payment.mpesa_receipt_number ? `, receipt ${payment.mpesa_receipt_number}` : ''}. Thank you.`
       : `The M-Pesa payment was not completed. ${payment.result_description || 'You can request another prompt when ready.'}`;
@@ -156,6 +171,18 @@ router.post('/daraja-callback/:clientId', async (req, res) => {
     );
     const payment = updated.rows[0];
     if (!payment) return;
+
+    if (successful) {
+      try {
+        await fulfillHotspotPayment(payment);
+      } catch (fulfillmentError) {
+        console.error(
+          'Hotspot payment fulfillment failed:',
+          fulfillmentError.message
+        );
+      }
+    }
+
     const text = successful
       ? `Payment received successfully. KES ${payment.amount}${payment.mpesa_receipt_number ? `, receipt ${payment.mpesa_receipt_number}` : ''}. Thank you.`
       : `The M-Pesa payment was not completed. ${payment.result_description || 'You can request another prompt when ready.'}`;

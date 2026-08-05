@@ -44,6 +44,11 @@ async function ensurePayHeroSchema() {
           updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
         )
       `);
+      await db.query(`
+        ALTER TABLE payhero_payment_requests
+        ADD COLUMN IF NOT EXISTS metadata JSONB
+        NOT NULL DEFAULT '{}'::jsonb
+      `);
       await db.query(`CREATE INDEX IF NOT EXISTS idx_payhero_requests_client ON payhero_payment_requests(client_id, created_at DESC)`);
       await db.query(`CREATE INDEX IF NOT EXISTS idx_payhero_requests_checkout ON payhero_payment_requests(client_id, checkout_request_id) WHERE checkout_request_id IS NOT NULL`);
     })().catch((err) => {
@@ -310,10 +315,10 @@ function publicBackendUrl() {
   return String(process.env.PUBLIC_BACKEND_URL || process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
 }
 
-async function initiatePayHeroPayment({ client, conversationId, customerPhone, customerName, amount }) {
+async function initiatePayHeroPayment({ client, conversationId, customerPhone, customerName, amount, metadata = null }) {
   const config = await loadPayHeroConfig(client.id);
   if (config.paymentProvider === 'daraja') {
-    return initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, config });
+    return initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, config, metadata });
   }
   if (!config.enabled || !config.basicAuth || !config.channelId) {
     console.warn(
@@ -358,9 +363,25 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
   console.log(`[client ${client.id}] Sending PayHero prompt: channel_id=${config.channelId}, provider=${provider}, network_code=${networkCode || 'none'}, phone=+${phone}, amount=${amount}.`);
   await db.query(
     `INSERT INTO payhero_payment_requests
-       (client_id, conversation_id, customer_phone, customer_name, amount, external_reference)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [client.id, conversationId || null, phone, customerName || null, amount, externalReference]
+       (
+         client_id,
+         conversation_id,
+         customer_phone,
+         customer_name,
+         amount,
+         external_reference,
+         metadata
+       )
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+    [
+      client.id,
+      conversationId || null,
+      phone,
+      customerName || null,
+      amount,
+      externalReference,
+      JSON.stringify(metadata || {}),
+    ]
   );
   try {
     const response = await axios.post(`${PAYHERO_URL}/payments`, payload, {
@@ -405,7 +426,7 @@ function darajaTimestamp(date = new Date()) {
   return `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
 }
 
-async function initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, config }) {
+async function initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, config, metadata = null }) {
   if (!config.enabled) return { success: false, error: 'M-Pesa prompts are not enabled for this client.' };
   if (!config.mpesa.consumerKey || !config.mpesa.consumerSecret || !config.mpesa.shortcode || !config.mpesa.passkey) {
     return { success: false, error: 'Client M-Pesa credentials are incomplete.' };
@@ -424,9 +445,25 @@ async function initiateDarajaPayment({ client, conversationId, customerPhone, cu
   const callback = `${base}/api/public/payhero/daraja-callback/${client.id}?token=${encodeURIComponent(config.callbackSecret)}`;
   await db.query(
     `INSERT INTO payhero_payment_requests
-       (client_id, conversation_id, customer_phone, customer_name, amount, external_reference)
-     VALUES ($1, $2, $3, $4, $5, $6)`,
-    [client.id, conversationId || null, phone, customerName || null, amount, externalReference]
+       (
+         client_id,
+         conversation_id,
+         customer_phone,
+         customer_name,
+         amount,
+         external_reference,
+         metadata
+       )
+     VALUES ($1, $2, $3, $4, $5, $6, $7::jsonb)`,
+    [
+      client.id,
+      conversationId || null,
+      phone,
+      customerName || null,
+      amount,
+      externalReference,
+      JSON.stringify(metadata || {}),
+    ]
   );
   try {
     const accessToken = await getDarajaAccessToken(config);

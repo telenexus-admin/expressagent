@@ -2,6 +2,15 @@ const express = require('express');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { radiusEnabled, syncHotspotVoucherRadius } = require('../services/radiusSync');
+const {
+  cleanPhone,
+  initiatePayHeroPayment,
+  loadPayHeroConfig,
+} = require('../services/payhero');
+const {
+  ensureHotspotPaymentSchema,
+  getHotspotPaymentStatus,
+} = require('../services/hotspotPayments');
 const { verifyHotspotPortalToken } = require('../services/hotspotPortalToken');
 
 const router = express.Router();
@@ -30,6 +39,125 @@ function publicBoolean(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
 }
 
+const HOTSPOT_PAYHERO_CHANNEL_ID = Number(
+  process.env.HOTSPOT_PAYHERO_CHANNEL_ID ||
+  9010
+);
+
+const checkoutAttempts = new Map();
+
+function allowCheckout(key) {
+  const now = Date.now();
+  const windowMs = 5 * 60 * 1000;
+  const previous =
+    checkoutAttempts.get(key) || [];
+
+  const current = previous.filter(
+    (time) => now - time < windowMs
+  );
+
+  if (current.length >= 5) {
+    checkoutAttempts.set(key, current);
+    return false;
+  }
+
+  current.push(now);
+  checkoutAttempts.set(key, current);
+
+  if (checkoutAttempts.size > 5000) {
+    for (
+      const [storedKey, attempts]
+      of checkoutAttempts.entries()
+    ) {
+      if (
+        !attempts.some(
+          (time) => now - time < windowMs
+        )
+      ) {
+        checkoutAttempts.delete(storedKey);
+      }
+    }
+  }
+
+  return true;
+}
+
+async function resolveCheckoutPlan(
+  clientId,
+  planId
+) {
+  await ensureHotspotPortalConfigColumn();
+
+  const result = await db.query(
+    `SELECT
+       p.*,
+       c.hotspot_portal_config
+     FROM billing_hotspot_plans p
+     JOIN clients c
+       ON c.id = p.client_id
+     WHERE p.id = $1
+       AND p.client_id = $2
+       AND p.is_active = TRUE
+     LIMIT 1`,
+    [
+      planId,
+      clientId,
+    ]
+  );
+
+  const plan = result.rows[0];
+
+  if (!plan) {
+    return null;
+  }
+
+  const normalPrice = Number(plan.price);
+  let amount = Math.round(normalPrice);
+  let discountApplied = false;
+
+  const config =
+    plan.hotspot_portal_config || {};
+
+  const startsAt = config.flash_starts_at
+    ? Date.parse(config.flash_starts_at)
+    : null;
+
+  const endsAt = config.flash_ends_at
+    ? Date.parse(config.flash_ends_at)
+    : null;
+
+  const discountPrice =
+    Number(config.flash_discount_price);
+
+  const now = Date.now();
+
+  const flashActive = (
+    publicBoolean(config.flash_enabled) &&
+    Number(config.flash_plan_id) ===
+      Number(plan.id) &&
+    (
+      !Number.isFinite(startsAt) ||
+      now >= startsAt
+    ) &&
+    Number.isFinite(endsAt) &&
+    now < endsAt &&
+    Number.isFinite(discountPrice) &&
+    discountPrice >= 0 &&
+    discountPrice < normalPrice
+  );
+
+  if (flashActive) {
+    amount = Math.round(discountPrice);
+    discountApplied = true;
+  }
+
+  return {
+    plan,
+    amount,
+    normal_price: Math.round(normalPrice),
+    discount_applied: discountApplied,
+  };
+}
 router.get('/config', async (req, res) => {
   try {
     await ensureHotspotPortalConfigColumn();
@@ -65,6 +193,13 @@ router.get('/config', async (req, res) => {
       settings.rows.map((row) => [row.key, row.value])
     );
     const saved = portalConfigResult.rows[0]?.hotspot_portal_config || {};
+    const paymentConfig =
+      await loadPayHeroConfig(client.id)
+        .catch(() => ({
+          enabled: false,
+          basicAuth: '',
+          channelId: null,
+        }));
     const brandName = String(
       saved.brand_name
       || legacySettings.hotspot_brand_name
@@ -146,6 +281,17 @@ router.get('/config', async (req, res) => {
         ).trim(),
       },
       flash_offer: flashOffer,
+      payments: {
+        enabled: Boolean(
+          paymentConfig.enabled &&
+          paymentConfig.basicAuth &&
+          Number(paymentConfig.channelId) ===
+            HOTSPOT_PAYHERO_CHANNEL_ID
+        ),
+        channel_id:
+          paymentConfig.channelId || null,
+        provider: 'payhero',
+      },
       plans: plans.rows,
     });
   } catch (err) {
@@ -154,6 +300,229 @@ router.get('/config', async (req, res) => {
   }
 });
 
+router.post('/checkout', [
+  body('portal_token').trim().notEmpty(),
+  body('plan_id').isInt({ min: 1 }),
+  body('phone').trim().notEmpty(),
+  body('mac')
+    .optional({ checkFalsy: true })
+    .isLength({ max: 80 }),
+  body('ip')
+    .optional({ checkFalsy: true })
+    .isIP(),
+], async (req, res) => {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      error:
+        'Enter a valid package and M-Pesa number',
+      details: errors.array(),
+    });
+  }
+
+  const account =
+    await resolveClientId(req, res);
+
+  if (!account) {
+    return;
+  }
+
+  try {
+    const phone =
+      cleanPhone(req.body.phone);
+
+    if (!/^254[17]\d{8}$/.test(phone)) {
+      return res.status(400).json({
+        error:
+          'Enter a valid Safaricom M-Pesa number',
+      });
+    }
+
+    const limiterKey = [
+      account.id,
+      phone,
+      req.ip,
+    ].join(':');
+
+    if (!allowCheckout(limiterKey)) {
+      return res.status(429).json({
+        error:
+          'Too many payment prompts. Wait five minutes before trying again.',
+      });
+    }
+
+    const checkoutPlan =
+      await resolveCheckoutPlan(
+        account.id,
+        Number(req.body.plan_id)
+      );
+
+    if (!checkoutPlan) {
+      return res.status(404).json({
+        error:
+          'This hotspot package is no longer available',
+      });
+    }
+
+    if (
+      !Number.isInteger(checkoutPlan.amount) ||
+      checkoutPlan.amount < 10 ||
+      checkoutPlan.amount > 500000
+    ) {
+      return res.status(400).json({
+        error:
+          'This package must cost between KES 10 and KES 500,000 for M-Pesa checkout',
+      });
+    }
+
+    const paymentConfig =
+      await loadPayHeroConfig(account.id);
+
+    if (
+      !paymentConfig.enabled ||
+      !paymentConfig.basicAuth
+    ) {
+      return res.status(503).json({
+        error:
+          'M-Pesa checkout is not enabled for this hotspot',
+      });
+    }
+
+    if (
+      Number(paymentConfig.channelId) !==
+      HOTSPOT_PAYHERO_CHANNEL_ID
+    ) {
+      return res.status(503).json({
+        error:
+          `PayHero channel ${
+            HOTSPOT_PAYHERO_CHANNEL_ID
+          } is not active for this hotspot`,
+      });
+    }
+
+    await ensureHotspotPaymentSchema();
+
+    const result =
+      await initiatePayHeroPayment({
+        client: account,
+        conversationId: null,
+        customerPhone: phone,
+        customerName:
+          `${account.name || 'Nexa'} hotspot`,
+        amount: checkoutPlan.amount,
+        metadata: {
+          purpose: 'hotspot',
+          plan_id: checkoutPlan.plan.id,
+          expected_amount:
+            checkoutPlan.amount,
+          normal_price:
+            checkoutPlan.normal_price,
+          discount_applied:
+            checkoutPlan.discount_applied,
+          mac:
+            String(req.body.mac || '')
+              .trim()
+              .slice(0, 80),
+          ip:
+            String(req.body.ip || '')
+              .trim()
+              .slice(0, 80),
+          payhero_channel_id:
+            HOTSPOT_PAYHERO_CHANNEL_ID,
+        },
+      });
+
+    if (!result.success) {
+      return res.status(502).json({
+        error:
+          result.error ||
+          'Could not send the M-Pesa prompt',
+      });
+    }
+
+    return res.status(202).json({
+      success: true,
+      reference: result.externalReference,
+      status: 'pending',
+      amount: checkoutPlan.amount,
+      discount_applied:
+        checkoutPlan.discount_applied,
+      plan: {
+        id: checkoutPlan.plan.id,
+        name: checkoutPlan.plan.name,
+        duration_minutes:
+          checkoutPlan.plan.duration_minutes,
+      },
+      message:
+        `M-Pesa prompt sent to +${phone}`,
+    });
+  } catch (error) {
+    console.error(
+      'Public hotspot checkout error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error:
+        'Could not start the hotspot payment',
+    });
+  }
+});
+
+router.get(
+  '/checkout/:reference',
+  async (req, res) => {
+    try {
+      const account =
+        await resolveClientId(req, res);
+
+      if (!account) {
+        return;
+      }
+
+      const reference =
+        String(req.params.reference || '')
+          .trim()
+          .slice(0, 120);
+
+      if (
+        !reference ||
+        !/^[A-Za-z0-9_-]+$/.test(reference)
+      ) {
+        return res.status(400).json({
+          error:
+            'Payment reference is invalid',
+        });
+      }
+
+      const status =
+        await getHotspotPaymentStatus({
+          clientId: account.id,
+          externalReference: reference,
+        });
+
+      if (!status) {
+        return res.status(404).json({
+          error:
+            'Payment request was not found',
+        });
+      }
+
+      return res.json(status);
+    } catch (error) {
+      console.error(
+        'Public hotspot payment status error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          'Could not check the payment status',
+      });
+    }
+  }
+);
 router.post('/login', [
   body('portal_token').trim().notEmpty(),
   body('code').trim().notEmpty().isLength({ min: 3, max: 80 }),

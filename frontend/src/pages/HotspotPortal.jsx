@@ -3,6 +3,19 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 const apiBase = '/api/public/hotspot';
 const params = new URLSearchParams(window.location.search);
 const money = (value) => `KSh ${Number(value || 0).toLocaleString()}`;
+const normalizeMpesaPhone = (value) => {
+  let phone = String(value || '').replace(/\D/g, '');
+  if (phone.startsWith('0')) {
+    phone = `254${phone.slice(1)}`;
+  }
+  if (
+    phone.startsWith('7') ||
+    phone.startsWith('1')
+  ) {
+    phone = `254${phone}`;
+  }
+  return phone;
+};
 
 function Icon({ name, className = 'h-5 w-5' }) {
   const paths = {
@@ -246,6 +259,17 @@ export default function HotspotPortal() {
   const [active, setActive] = useState(null);
   const [selectedPlanId, setSelectedPlanId] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [paymentOpen, setPaymentOpen] = useState(false);
+  const [paymentPhone, setPaymentPhone] = useState(
+    () => window.localStorage.getItem(
+      'nexa-hotspot-mpesa-phone'
+    ) || '',
+  );
+  const [paymentBusy, setPaymentBusy] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState('idle');
+  const [paymentError, setPaymentError] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paymentAmount, setPaymentAmount] = useState(null);
 
   const packagesRef = useRef(null);
   const voucherRef = useRef(null);
@@ -289,6 +313,36 @@ export default function HotspotPortal() {
   const whatsappPhone = config?.support?.whatsapp || supportPhone;
   const walletBalance = Number(config?.portal?.wallet_balance || 0);
   const walletLabel = config?.portal?.wallet_label || 'MY WALLET';
+  const paymentEnabled = Boolean(
+    config?.payments?.enabled &&
+    Number(config?.payments?.channel_id) === 9010
+  );
+
+  const selectedCheckoutPrice = (() => {
+    if (!selectedPlan) return 0;
+
+    const flashStart = Date.parse(
+      flashOffer?.starts_at || ''
+    );
+    const flashEnd = Date.parse(
+      flashOffer?.ends_at || ''
+    );
+
+    const flashActive = (
+      Number(flashOffer?.plan_id) ===
+        Number(selectedPlan.id) &&
+      (
+        !Number.isFinite(flashStart) ||
+        now >= flashStart
+      ) &&
+      Number.isFinite(flashEnd) &&
+      now < flashEnd
+    );
+
+    return flashActive
+      ? Number(flashOffer.discount_price)
+      : Number(selectedPlan.price);
+  })();
 
   const scrollToPackages = () => {
     packagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -301,9 +355,192 @@ export default function HotspotPortal() {
   };
 
   const choosePlan = (plan) => {
-    setSelectedPlanId(Number(plan.id));
-    window.setTimeout(scrollToVoucher, 80);
+    const planId = Number(
+      plan?.id || plan?.plan_id
+    );
+
+    setSelectedPlanId(planId);
+    setPaymentError('');
+    setPaymentReference('');
+    setPaymentAmount(null);
+    setPaymentStatus('idle');
+
+    if (!paymentEnabled) {
+      setError(
+        'M-Pesa package checkout is not available. Use a voucher or contact support.',
+      );
+      window.setTimeout(scrollToVoucher, 80);
+      return;
+    }
+
+    setPaymentOpen(true);
   };
+
+  const submitPackagePayment = async (event) => {
+    event.preventDefault();
+
+    if (!selectedPlan) {
+      setPaymentError(
+        'Choose a hotspot package first.',
+      );
+      return;
+    }
+
+    const phone =
+      normalizeMpesaPhone(paymentPhone);
+
+    if (!/^254[17]\d{8}$/.test(phone)) {
+      setPaymentError(
+        'Enter a valid Safaricom M-Pesa number.',
+      );
+      return;
+    }
+
+    setPaymentBusy(true);
+    setPaymentError('');
+    setPaymentStatus('sending');
+
+    try {
+      window.localStorage.setItem(
+        'nexa-hotspot-mpesa-phone',
+        phone,
+      );
+
+      const response = await fetch(
+        `${apiBase}/checkout`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            portal_token: portalToken,
+            plan_id: selectedPlan.id,
+            phone,
+            mac: params.get('mac') || '',
+            ip: params.get('ip') || '',
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error ||
+          'Could not send the M-Pesa prompt',
+        );
+      }
+
+      setPaymentReference(data.reference);
+      setPaymentAmount(data.amount);
+      setPaymentStatus('pending');
+    } catch (requestError) {
+      setPaymentStatus('failed');
+      setPaymentError(requestError.message);
+    } finally {
+      setPaymentBusy(false);
+    }
+  };
+
+  useEffect(() => {
+    if (
+      !paymentReference ||
+      paymentStatus !== 'pending'
+    ) {
+      return undefined;
+    }
+
+    let stopped = false;
+    let timer = null;
+
+    const poll = async () => {
+      try {
+        const response = await fetch(
+          `${apiBase}/checkout/${
+            encodeURIComponent(paymentReference)
+          }?portalToken=${
+            encodeURIComponent(portalToken)
+          }`,
+        );
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            'Could not confirm the payment',
+          );
+        }
+
+        if (stopped) return;
+
+        if (data.status === 'active') {
+          setPaymentStatus('active');
+          setPaymentOpen(false);
+          setActive(data.voucher);
+
+          if (loginUrl && data.login) {
+            setLogin({
+              ...data.login,
+              url: loginUrl,
+              destination: origin,
+            });
+          }
+
+          return;
+        }
+
+        if (data.status === 'failed') {
+          setPaymentStatus('failed');
+          setPaymentError(
+            data.error ||
+            'The M-Pesa payment was not completed.',
+          );
+          return;
+        }
+
+        setPaymentStatus(
+          data.status === 'activating'
+            ? 'pending'
+            : 'pending',
+        );
+
+        if (data.message) {
+          setPaymentError(data.message);
+        }
+      } catch (requestError) {
+        if (!stopped) {
+          setPaymentError(
+            'Still waiting for payment confirmation...',
+          );
+        }
+      }
+
+      if (!stopped) {
+        timer = window.setTimeout(
+          poll,
+          2000,
+        );
+      }
+    };
+
+    void poll();
+
+    return () => {
+      stopped = true;
+
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [
+    paymentReference,
+    paymentStatus,
+    portalToken,
+    loginUrl,
+    origin,
+  ]);
 
   const updateVoucherUser = (value) => {
     const next = value.toUpperCase();
@@ -398,6 +635,106 @@ export default function HotspotPortal() {
       `}</style>
 
       <div className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden bg-[#fbfcff] shadow-2xl shadow-slate-900/10">
+        {paymentOpen && selectedPlan && (
+          <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/65 p-4 backdrop-blur-sm sm:items-center">
+            <div className="w-full max-w-md rounded-[26px] bg-white p-6 shadow-2xl sm:p-7">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-[.18em] text-blue-600">
+                    M-Pesa checkout
+                  </p>
+                  <h2 className="mt-2 text-2xl font-black text-[#101938]">
+                    {selectedPlan.name}
+                  </h2>
+                  <p className="mt-2 text-3xl font-black text-[#0871ee]">
+                    {money(
+                      paymentAmount ??
+                      selectedCheckoutPrice
+                    )}
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  disabled={
+                    paymentStatus === 'sending' ||
+                    paymentStatus === 'pending'
+                  }
+                  onClick={() => setPaymentOpen(false)}
+                  className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-100 text-xl font-black text-slate-600 disabled:opacity-40"
+                  aria-label="Close payment"
+                >
+                  ×
+                </button>
+              </div>
+
+              <form
+                onSubmit={submitPackagePayment}
+                className="mt-6"
+              >
+                <label className="block text-sm font-black text-slate-700">
+                  M-Pesa phone number
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    autoComplete="tel"
+                    value={paymentPhone}
+                    disabled={
+                      paymentStatus === 'sending' ||
+                      paymentStatus === 'pending'
+                    }
+                    onChange={(event) => {
+                      setPaymentPhone(
+                        event.target.value
+                      );
+                      setPaymentError('');
+                    }}
+                    placeholder="0712 345 678"
+                    className="mt-2 w-full rounded-xl border border-slate-300 px-4 py-4 text-lg font-bold outline-none transition focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10 disabled:bg-slate-100"
+                  />
+                </label>
+
+                {paymentStatus === 'pending' && (
+                  <div className="mt-4 rounded-xl bg-blue-50 px-4 py-4 text-sm font-semibold leading-6 text-blue-700">
+                    M-Pesa prompt sent. Enter your PIN on your phone. Internet access will connect automatically after confirmation.
+                  </div>
+                )}
+
+                {paymentError && (
+                  <div className={`mt-4 rounded-xl px-4 py-3 text-sm font-bold ${
+                    paymentStatus === 'failed'
+                      ? 'bg-rose-50 text-rose-700'
+                      : 'bg-amber-50 text-amber-700'
+                  }`}>
+                    {paymentError}
+                  </div>
+                )}
+
+                <button
+                  type="submit"
+                  disabled={
+                    paymentBusy ||
+                    paymentStatus === 'pending'
+                  }
+                  className="mt-5 w-full rounded-xl bg-gradient-to-r from-[#0876f9] to-[#073cc9] py-4 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-blue-700/20 disabled:opacity-60"
+                >
+                  {paymentStatus === 'sending'
+                    ? 'Sending M-Pesa prompt...'
+                    : paymentStatus === 'pending'
+                      ? 'Waiting for payment...'
+                      : paymentStatus === 'failed'
+                        ? 'Try payment again'
+                        : `Pay ${money(selectedCheckoutPrice)}`}
+                </button>
+              </form>
+
+              <p className="mt-4 text-center text-xs font-semibold text-slate-500">
+                Pay securely through PayHero channel 9010.
+              </p>
+            </div>
+          </div>
+        )}
+
         <section className="hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8">
           <header className="relative z-20 flex items-start justify-between">
             <div className="flex items-center gap-3">

@@ -568,6 +568,47 @@ async function getRadiusCredential(clientId, router) {
 }
 
 
+function removeUnsupportedComment(attrs = {}) {
+  const cleaned = { ...attrs };
+  delete cleaned.comment;
+  return cleaned;
+}
+
+async function commandWithCommentFallback(
+  client,
+  commandPath,
+  attrs
+) {
+  try {
+    return await client.command(
+      commandPath,
+      attrs
+    );
+  } catch (error) {
+    const message = String(
+      error?.message || ''
+    );
+
+    const hasComment =
+      Object.prototype.hasOwnProperty.call(
+        attrs || {},
+        'comment'
+      );
+
+    if (
+      !hasComment ||
+      !/unknown parameter\s+comment/i.test(message)
+    ) {
+      throw error;
+    }
+
+    return client.command(
+      commandPath,
+      removeUnsupportedComment(attrs)
+    );
+  }
+}
+
 async function ensureResource({
   client,
   printPath,
@@ -578,18 +619,45 @@ async function ensureResource({
   stage,
   record,
 }) {
-  const rows = await routerRows(client, printPath);
+  const rows = await routerRows(
+    client,
+    printPath
+  );
+
   const existing = rows.find(match);
+
   if (existing && rowId(existing)) {
-    await client.command(setPath, {
-      '.id': rowId(existing),
-      ...attrs,
-    });
-    await record(stage, 'completed', 'Existing resource updated');
+    await commandWithCommentFallback(
+      client,
+      setPath,
+      {
+        '.id': rowId(existing),
+        ...attrs,
+      }
+    );
+
+    await record(
+      stage,
+      'completed',
+      'Existing resource updated'
+    );
+
     return existing;
   }
-  const created = await client.command(addPath, attrs);
-  await record(stage, 'completed', 'Resource created');
+
+  const created =
+    await commandWithCommentFallback(
+      client,
+      addPath,
+      attrs
+    );
+
+  await record(
+    stage,
+    'completed',
+    'Resource created'
+  );
+
   return asRows(created)[0] || {};
 }
 
@@ -609,12 +677,16 @@ async function ensureBridgePorts(client, config, record) {
         disabled: 'no',
       });
     } else {
-      await client.command('/interface/bridge/port/add', {
-        bridge: config.subscriber_bridge,
-        interface: interfaceName,
-        disabled: 'no',
-        comment: 'NEXA managed subscriber port',
-      });
+      await commandWithCommentFallback(
+        client,
+        '/interface/bridge/port/add',
+        {
+          bridge: config.subscriber_bridge,
+          interface: interfaceName,
+          disabled: 'no',
+          comment: 'NEXA managed subscriber port',
+        }
+      );
     }
   }
   await record(
@@ -722,7 +794,12 @@ async function configureRouter({
     printPath: '/ip/dhcp-server/network/print',
     addPath: '/ip/dhcp-server/network/add',
     setPath: '/ip/dhcp-server/network/set',
-    match: (item) => item.comment === 'NEXA managed hotspot network',
+    match: (item) =>
+      item.comment === 'NEXA managed hotspot network' ||
+      (
+        item.address === hotspotNetwork &&
+        item.gateway === hotspotGatewayIp
+      ),
     attrs: {
       address: hotspotNetwork,
       gateway: hotspotGatewayIp,
@@ -877,7 +954,9 @@ async function configureRouter({
     printPath: '/radius/print',
     addPath: '/radius/add',
     setPath: '/radius/set',
-    match: (item) => item.comment === 'NEXA managed RADIUS',
+    match: (item) =>
+      item.comment === 'NEXA managed RADIUS' ||
+      item.address === config.radius_host,
     attrs: {
       service: 'hotspot,ppp',
       address: config.radius_host,
@@ -904,7 +983,10 @@ async function configureRouter({
     printPath: '/ip/hotspot/walled-garden/print',
     addPath: '/ip/hotspot/walled-garden/add',
     setPath: '/ip/hotspot/walled-garden/set',
-    match: (item) => item.comment === 'NEXA managed portal access',
+    match: (item) =>
+      item.comment === 'NEXA managed portal access' ||
+      item['dst-host'] ===
+        new URL(config.portal_url).hostname,
     attrs: {
       'dst-host': new URL(config.portal_url).hostname,
       action: 'allow',
@@ -922,7 +1004,14 @@ async function configureRouter({
     printPath: '/ip/firewall/nat/print',
     addPath: '/ip/firewall/nat/add',
     setPath: '/ip/firewall/nat/set',
-    match: (item) => item.comment === 'NEXA managed subscriber NAT',
+    match: (item) =>
+      item.comment === 'NEXA managed subscriber NAT' ||
+      (
+        item.chain === 'srcnat' &&
+        item.action === 'masquerade' &&
+        item['out-interface'] ===
+          config.wan_interface
+      ),
     attrs: {
       chain: 'srcnat',
       action: 'masquerade',
@@ -955,21 +1044,44 @@ async function validateRouter(client, config) {
       (item) => item.name === config.subscriber_bridge
     ),
     hotspot_gateway: addresses.some(
-      (item) => item.comment === 'NEXA managed hotspot gateway'
+      (item) =>
+        item.comment ===
+          'NEXA managed hotspot gateway' ||
+        (
+          item.address ===
+            config.hotspot_gateway &&
+          item.interface ===
+            config.subscriber_bridge
+        )
     ),
     dhcp: dhcp.some((item) => item.name === 'NEXA-HOTSPOT-DHCP'),
     hotspot: hotspots.some((item) => item.name === 'NEXA-HOTSPOT'),
     pppoe: pppoe.some(
-      (item) => item.comment === 'NEXA managed PPPoE server'
+      (item) =>
+        item.comment ===
+          'NEXA managed PPPoE server' ||
+        item['service-name'] ===
+          config.pppoe_service_name
     ),
     radius: radius.some(
-      (item) => item.comment === 'NEXA managed RADIUS'
+      (item) =>
+        item.comment ===
+          'NEXA managed RADIUS' ||
+        item.address === config.radius_host
     ),
     portal: files.some(
       (item) => item.name === 'nexa-hotspot/login.html'
     ),
     nat: nat.some(
-      (item) => item.comment === 'NEXA managed subscriber NAT'
+      (item) =>
+        item.comment ===
+          'NEXA managed subscriber NAT' ||
+        (
+          item.chain === 'srcnat' &&
+          item.action === 'masquerade' &&
+          item['out-interface'] ===
+            config.wan_interface
+        )
     ),
   };
 

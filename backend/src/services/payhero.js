@@ -4,6 +4,8 @@ const db = require('../db');
 const { canUseConfig, loadClientBillingConfig, lookupPaymentAccount } = require('./billing');
 
 const PAYHERO_URL = 'https://backend.payhero.co.ke/api/v2';
+const PAYHERO_STK_URL =
+  `${PAYHERO_URL}/payments/initiate-stk-push`;
 const DARAJA_PRODUCTION_URL = 'https://api.safaricom.co.ke';
 const DARAJA_SANDBOX_URL = 'https://sandbox.safaricom.co.ke';
 const EXPLICIT_PAYMENT_RE = /(?:^\s*(?:pay|prompt|lipa|renew|recharge)\b|\b(?:send|give|initiate|start|request|need|want|make|please)\b.{0,45}\b(?:stk|mpesa|m-pesa|prompt|pay|payment|lipa|renew|recharge)\b|\b(?:stk|mpesa|m-pesa)\s+prompt\b)/i;
@@ -384,7 +386,7 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
     ]
   );
   try {
-    const response = await axios.post(`${PAYHERO_URL}/payments`, payload, {
+    const response = await axios.post(PAYHERO_STK_URL, payload, {
       headers: { Authorization: authHeader(config.basicAuth), 'Content-Type': 'application/json', Accept: 'application/json' },
       timeout: 30000,
     });
@@ -393,10 +395,42 @@ async function initiatePayHeroPayment({ client, conversationId, customerPhone, c
       `UPDATE payhero_payment_requests
        SET payhero_reference = $1, checkout_request_id = $2, status = $3, raw_response = $4::jsonb, updated_at = NOW()
        WHERE external_reference = $5`,
-      [data.reference || null, data.CheckoutRequestID || null, String(data.status || 'queued').toLowerCase(), JSON.stringify(data), externalReference]
+      [
+        data.reference ||
+          data.merchant_reference ||
+          null,
+        data.CheckoutRequestID ||
+          data.checkout_request_id ||
+          null,
+        String(
+          data.status ||
+          data.Status ||
+          'queued'
+        ).toLowerCase(),
+        JSON.stringify(data),
+        externalReference,
+      ]
     );
     console.log(`[client ${client.id}] PayHero prompt accepted for +${phone}: amount=${amount}, reference=${externalReference}.`);
-    return { success: true, externalReference, status: data.status || 'QUEUED', manualInstructions: data.manual_instructions || null };
+    return {
+      success: true,
+      externalReference,
+      status:
+        data.status ||
+        data.Status ||
+        'QUEUED',
+      checkoutRequestId:
+        data.CheckoutRequestID ||
+        data.checkout_request_id ||
+        null,
+      payheroReference:
+        data.reference ||
+        data.merchant_reference ||
+        null,
+      manualInstructions:
+        data.manual_instructions ||
+        null,
+    };
   } catch (err) {
     const message = apiErrorMessage(err);
     await db.query(

@@ -5,7 +5,7 @@ const { canUseConfig, loadClientBillingConfig, lookupPaymentAccount } = require(
 
 const PAYHERO_URL = 'https://backend.payhero.co.ke/api/v2';
 const PAYHERO_STK_URL =
-  `${PAYHERO_URL}/payments/initiate-stk-push`;
+  `${PAYHERO_URL}/payments`;
 const DARAJA_PRODUCTION_URL = 'https://api.safaricom.co.ke';
 const DARAJA_SANDBOX_URL = 'https://sandbox.safaricom.co.ke';
 const EXPLICIT_PAYMENT_RE = /(?:^\s*(?:pay|prompt|lipa|renew|recharge)\b|\b(?:send|give|initiate|start|request|need|want|make|please)\b.{0,45}\b(?:stk|mpesa|m-pesa|prompt|pay|payment|lipa|renew|recharge)\b|\b(?:stk|mpesa|m-pesa)\s+prompt\b)/i;
@@ -68,13 +68,41 @@ function cleanPhone(value) {
   return phone;
 }
 
+function normalizePayHeroCredential(value) {
+  const raw = String(value || '')
+    .trim()
+    .replace(/^basic\s+/i, '')
+    .trim();
+
+  if (!raw) {
+    return '';
+  }
+
+  if (raw.includes(':')) {
+    return Buffer
+      .from(raw, 'utf8')
+      .toString('base64');
+  }
+
+  return raw;
+}
+
 function authHeader(value) {
-  const token = String(value || '').trim();
-  return /^basic\s+/i.test(token) ? token : `Basic ${token}`;
+  const token =
+    normalizePayHeroCredential(value);
+
+  return token
+    ? `Basic ${token}`
+    : '';
 }
 
 function getPayHeroBasicAuth(fallback = '') {
-  return String(process.env.PAYHERO_BASIC_AUTH || process.env.PAYHERO_BASIC_AUTH_TOKEN || fallback || '').trim();
+  return String(
+    fallback ||
+    process.env.PAYHERO_BASIC_AUTH ||
+    process.env.PAYHERO_BASIC_AUTH_TOKEN ||
+    ''
+  ).trim();
 }
 
 function apiErrorMessage(err) {

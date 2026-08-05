@@ -579,32 +579,26 @@ async function commandWithCommentFallback(
   commandPath,
   attrs
 ) {
+  /*
+   * RouterOS support for the comment property differs
+   * between menus and versions. Provisioning resources are
+   * identified through stable names, addresses, interfaces
+   * and service names, so comments are never required.
+   */
+  const safeAttrs =
+    removeUnsupportedComment(attrs);
+
   try {
     return await client.command(
       commandPath,
-      attrs
+      safeAttrs
     );
   } catch (error) {
-    const message = String(
-      error?.message || ''
-    );
-
-    const hasComment =
-      Object.prototype.hasOwnProperty.call(
-        attrs || {},
-        'comment'
-      );
-
-    if (
-      !hasComment ||
-      !/unknown parameter\s+comment/i.test(message)
-    ) {
-      throw error;
-    }
-
-    return client.command(
-      commandPath,
-      removeUnsupportedComment(attrs)
+    throw new Error(
+      `${commandPath}: ${
+        error?.message ||
+        'RouterOS command failed'
+      }`
     );
   }
 }

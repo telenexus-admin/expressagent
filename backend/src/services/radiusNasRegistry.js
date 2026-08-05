@@ -103,13 +103,17 @@ async function discoverSqlNasTable(pool) {
       'pg_catalog',
       'information_schema'
     )
-    ORDER BY table_schema, table_name, ordinal_position
+    ORDER BY
+      table_schema,
+      table_name,
+      ordinal_position
   `);
 
   const grouped = new Map();
 
   for (const row of result.rows) {
-    const key = `${row.table_schema}.${row.table_name}`;
+    const key =
+      `${row.table_schema}.${row.table_name}`;
 
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -125,6 +129,18 @@ async function discoverSqlNasTable(pool) {
   const candidates = [];
 
   for (const table of grouped.values()) {
+    const lowerName =
+      String(table.table || '').toLowerCase();
+
+    /*
+     * Do not infer a RADIUS NAS table merely because an
+     * unrelated application table contains an IP field and
+     * a password field.
+     */
+    if (!KNOWN_TABLES.has(lowerName)) {
+      continue;
+    }
+
     const ipColumn = findColumn(
       table.rows,
       IP_COLUMNS
@@ -135,55 +151,144 @@ async function discoverSqlNasTable(pool) {
       SECRET_COLUMNS
     );
 
-    if (!ipColumn || !secretColumn) continue;
+    if (!ipColumn || !secretColumn) {
+      continue;
+    }
 
-    const lowerName = table.table.toLowerCase();
+    const identifierColumn = findColumn(
+      table.rows,
+      IDENTIFIER_COLUMNS
+    );
 
-    let score = 0;
+    const typeColumn = findColumn(
+      table.rows,
+      ['type', 'nastype', 'nas_type']
+    );
 
-    if (KNOWN_TABLES.has(lowerName)) score += 100;
-    if (lowerName === 'nas') score += 100;
-    if (table.schema === 'public') score += 20;
+    const portsColumn = findColumn(
+      table.rows,
+      ['ports', 'port_count']
+    );
+
+    const serverColumn = findColumn(
+      table.rows,
+      ['server', 'virtual_server']
+    );
+
+    const communityColumn = findColumn(
+      table.rows,
+      ['community', 'snmp_community']
+    );
+
+    const descriptionColumn = findColumn(
+      table.rows,
+      ['description', 'comment', 'notes']
+    );
+
+    const suppliedColumns = new Set(
+      [
+        ipColumn,
+        secretColumn,
+        identifierColumn,
+        typeColumn,
+        portsColumn,
+        serverColumn,
+        communityColumn,
+        descriptionColumn,
+      ].filter(Boolean)
+    );
+
+    /*
+     * A valid candidate must not require unknown values such
+     * as operation, tenant_id or application-specific fields.
+     * Such a table belongs to another subsystem and must not
+     * receive RADIUS client secrets.
+     */
+    const unsupportedRequired =
+      table.rows.filter(
+        (row) =>
+          row.is_nullable === 'NO' &&
+          row.column_default == null &&
+          row.is_identity !== 'YES' &&
+          row.is_generated !== 'ALWAYS' &&
+          !suppliedColumns.has(row.column_name)
+      );
+
+    if (unsupportedRequired.length) {
+      continue;
+    }
+
+    let score = 100;
+
+    if (lowerName === 'nas') {
+      score += 100;
+    }
+
+    if (table.schema === 'public') {
+      score += 20;
+    }
 
     candidates.push({
       ...table,
       ipColumn,
       secretColumn,
-      identifierColumn: findColumn(
-        table.rows,
-        IDENTIFIER_COLUMNS
-      ),
-      typeColumn: findColumn(
-        table.rows,
-        ['type', 'nastype', 'nas_type']
-      ),
-      portsColumn: findColumn(
-        table.rows,
-        ['ports', 'port_count']
-      ),
-      serverColumn: findColumn(
-        table.rows,
-        ['server', 'virtual_server']
-      ),
-      communityColumn: findColumn(
-        table.rows,
-        ['community', 'snmp_community']
-      ),
-      descriptionColumn: findColumn(
-        table.rows,
-        ['description', 'comment', 'notes']
-      ),
+      identifierColumn,
+      typeColumn,
+      portsColumn,
+      serverColumn,
+      communityColumn,
+      descriptionColumn,
       score,
     });
   }
 
   candidates.sort(
-    (left, right) => right.score - left.score
+    (left, right) =>
+      right.score - left.score
   );
 
   return candidates[0] || null;
 }
 
+async function discoverNasSyncQueue(pool) {
+  const result = await pool.query(`
+    SELECT column_name
+    FROM information_schema.columns
+    WHERE table_schema = 'public'
+      AND table_name = 'nexa_nas_sync'
+  `);
+
+  const columns = new Set(
+    result.rows.map(
+      (row) => String(row.column_name)
+    )
+  );
+
+  const required = [
+    'nasname',
+    'shortname',
+    'secret',
+    'operation',
+    'status',
+    'attempts',
+    'last_error',
+    'applied_at',
+    'updated_at',
+  ];
+
+  if (
+    !required.every(
+      (column) => columns.has(column)
+    )
+  ) {
+    return null;
+  }
+
+  return {
+    schema: 'public',
+    table: 'nexa_nas_sync',
+  };
+}
 function findClientsDirectory() {
   const candidates = [
     process.env.FREERADIUS_CLIENTS_DIR,
@@ -291,6 +396,17 @@ async function resolveRadiusService() {
 }
 
 async function inspectRadiusNasRegistration(pool) {
+  const syncQueue =
+    await discoverNasSyncQueue(pool);
+
+  if (syncQueue) {
+    return {
+      mode: 'sync_queue',
+      schema: syncQueue.schema,
+      table: syncQueue.table,
+    };
+  }
+
   const sqlTable = await discoverSqlNasTable(pool);
 
   if (sqlTable) {
@@ -428,6 +544,109 @@ async function registerSqlClient(
   };
 }
 
+function wait(milliseconds) {
+  return new Promise(
+    (resolve) =>
+      setTimeout(resolve, milliseconds)
+  );
+}
+
+async function registerSyncQueue(
+  pool,
+  queue,
+  credential,
+  routerName
+) {
+  const qualifiedTable =
+    `${quoteIdentifier(queue.schema)}.` +
+    quoteIdentifier(queue.table);
+
+  await pool.query(
+    `INSERT INTO ${qualifiedTable}
+       (
+         nasname,
+         shortname,
+         secret,
+         operation,
+         status,
+         attempts,
+         last_error,
+         applied_at,
+         updated_at
+       )
+     VALUES (
+       $1,
+       $2,
+       $3,
+       'register',
+       'pending',
+       0,
+       NULL,
+       NULL,
+       NOW()
+     )
+     ON CONFLICT (nasname)
+     DO UPDATE SET
+       shortname = EXCLUDED.shortname,
+       secret = EXCLUDED.secret,
+       operation = 'register',
+       status = 'pending',
+       attempts = 0,
+       last_error = NULL,
+       applied_at = NULL,
+       updated_at = NOW()`,
+    [
+      credential.nas_ip,
+      credential.nas_identifier ||
+        safeClientName(routerName),
+      credential.secret,
+    ]
+  );
+
+  const deadline = Date.now() + 60000;
+
+  while (Date.now() < deadline) {
+    const result = await pool.query(
+      `SELECT
+         status,
+         attempts,
+         last_error,
+         applied_at,
+         updated_at
+       FROM ${qualifiedTable}
+       WHERE nasname = $1
+       LIMIT 1`,
+      [credential.nas_ip]
+    );
+
+    const row = result.rows[0];
+
+    if (row?.status === 'applied') {
+      return {
+        mode: 'sync_queue',
+        location:
+          `${queue.schema}.${queue.table}`,
+        status: 'applied',
+        applied_at: row.applied_at,
+      };
+    }
+
+    if (row?.status === 'failed') {
+      throw new Error(
+        row.last_error ||
+        `RADIUS NAS registration failed after ${
+          row.attempts || 0
+        } attempts`
+      );
+    }
+
+    await wait(1000);
+  }
+
+  throw new Error(
+    'The RADIUS server did not confirm NAS registration within 60 seconds'
+  );
+}
 async function registerFileClient(
   credential,
   routerName
@@ -525,6 +744,18 @@ async function registerRadiusNas(
   credential,
   routerName
 ) {
+  const syncQueue =
+    await discoverNasSyncQueue(pool);
+
+  if (syncQueue) {
+    return registerSyncQueue(
+      pool,
+      syncQueue,
+      credential,
+      routerName
+    );
+  }
+
   const sqlTable = await discoverSqlNasTable(pool);
 
   if (sqlTable) {

@@ -4,6 +4,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import BillingSubscribers from './BillingSubscribers';
 import NexaAgentChat from '../components/NexaAgentChat';
+import HotspotPortalSettingsPanel from '../components/HotspotPortalSettingsPanel';
 const InvoiceManagement = lazy(() => import('./InvoiceManagement'));
 const BillingCommunication = lazy(() => import('./BillingCommunication'));
 const BillingTr069 = lazy(() => import('./BillingTr069'));
@@ -700,6 +701,7 @@ function ServicesWorkspace({ packageView, setPackageView, plans, hotspotPlans, r
           </div>
         </div>
       </div>
+      {packageView === 'hotspot' && <HotspotPortalSettingsPanel plans={hotspotPlans} />}
       <PackageCatalogue packages={visiblePackages} type={packageView} display={packageDisplay} hasPackages={selectedPackages.length > 0} hasFilters={Boolean(packageSearch.trim()) || packageStatus !== 'all'} toggleHotspotPlan={toggleHotspotPlan} deleteHotspotPlan={deleteHotspotPlan} />
     </section>
     {createOpen && <PackageCreateModal type={packageView} routers={routers} form={packageView === 'pppoe' ? planForm : hotspotPlanForm} setForm={packageView === 'pppoe' ? setPlanForm : setHotspotPlanForm} onSubmit={submitPackage} onClose={() => setCreateOpen(false)} saving={saving} />}

@@ -19,22 +19,138 @@ async function resolveClientId(req, res) {
   if (result.rows[0]?.account_type !== 'billing') { res.status(404).json({ error: 'Hotspot account not found' }); return null; }
   return { id: clientId, ...result.rows[0] };
 }
+async function ensureHotspotPortalConfigColumn() {
+  await db.query(`
+    ALTER TABLE clients
+    ADD COLUMN IF NOT EXISTS hotspot_portal_config JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
+}
+
+function publicBoolean(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
 router.get('/config', async (req, res) => {
   try {
+    await ensureHotspotPortalConfigColumn();
     const client = await resolveClientId(req, res);
     if (!client) return;
-    const [plans, settings] = await Promise.all([
-      db.query(`SELECT id, name, price, duration_minutes, data_limit_mb, mikrotik_rate_limit, router_id,
-                       fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps
-                FROM billing_hotspot_plans WHERE client_id = $1 AND is_active = TRUE
-                ORDER BY price ASC, duration_minutes ASC`, [client.id]),
-      db.query(`SELECT key, value FROM client_settings WHERE client_id = $1 AND key IN ('hotspot_brand_name','hotspot_support_phone','hotspot_support_text')`, [client.id]).catch(() => ({ rows: [] })),
+
+    const [plans, settings, portalConfigResult] = await Promise.all([
+      db.query(
+        `SELECT id, name, price, duration_minutes, data_limit_mb, mikrotik_rate_limit, router_id,
+                fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps
+         FROM billing_hotspot_plans
+         WHERE client_id = $1 AND is_active = TRUE
+         ORDER BY price ASC, duration_minutes ASC`,
+        [client.id]
+      ),
+      db.query(
+        `SELECT key, value
+         FROM client_settings
+         WHERE client_id = $1
+           AND key IN ('hotspot_brand_name','hotspot_support_phone','hotspot_support_text')`,
+        [client.id]
+      ).catch(() => ({ rows: [] })),
+      db.query(
+        `SELECT hotspot_portal_config
+         FROM clients
+         WHERE id = $1
+         LIMIT 1`,
+        [client.id]
+      ),
     ]);
-    const settingMap = Object.fromEntries(settings.rows.map((row) => [row.key, row.value]));
-    res.json({ client: { id: client.id, name: settingMap.hotspot_brand_name || client.name, domain: null }, support: { phone: settingMap.hotspot_support_phone || '', text: settingMap.hotspot_support_text || 'Need access? Contact support.' }, plans: plans.rows });
+
+    const legacySettings = Object.fromEntries(
+      settings.rows.map((row) => [row.key, row.value])
+    );
+    const saved = portalConfigResult.rows[0]?.hotspot_portal_config || {};
+    const brandName = String(
+      saved.brand_name
+      || legacySettings.hotspot_brand_name
+      || client.name
+      || 'Nexa'
+    ).trim();
+
+    const flashPlan = plans.rows.find(
+      (plan) => Number(plan.id) === Number(saved.flash_plan_id)
+    );
+    const originalPrice = Number(flashPlan?.price || 0);
+    const discountPrice = Number(saved.flash_discount_price);
+    const startsAt = saved.flash_starts_at || null;
+    const endsAt = saved.flash_ends_at || null;
+    const startTime = startsAt ? Date.parse(startsAt) : null;
+    const endTime = endsAt ? Date.parse(endsAt) : null;
+    const now = Date.now();
+
+    const validFlash = (
+      publicBoolean(saved.flash_enabled)
+      && flashPlan
+      && Number.isFinite(discountPrice)
+      && discountPrice >= 0
+      && discountPrice < originalPrice
+      && Number.isFinite(endTime)
+      && endTime > now
+    );
+
+    let flashOffer = null;
+    if (validFlash) {
+      flashOffer = {
+        enabled: true,
+        status: Number.isFinite(startTime) && now < startTime ? 'scheduled' : 'active',
+        plan_id: flashPlan.id,
+        name: flashPlan.name,
+        price: flashPlan.price,
+        original_price: originalPrice,
+        discount_price: discountPrice,
+        starts_at: startsAt,
+        ends_at: endsAt,
+        duration_minutes: flashPlan.duration_minutes,
+        data_limit_mb: flashPlan.data_limit_mb,
+        mikrotik_rate_limit: flashPlan.mikrotik_rate_limit,
+      };
+    }
+
+    return res.json({
+      server_now: new Date().toISOString(),
+      client: {
+        id: client.id,
+        name: brandName,
+        domain: null,
+      },
+      portal: {
+        brand_name: brandName,
+        tagline: String(saved.tagline || `Stay connected with ${brandName} Hotspot`).trim(),
+        wallet_label: String(saved.wallet_label || 'MY WALLET').trim(),
+        wallet_balance: Number.isFinite(Number(saved.wallet_balance))
+          ? Math.max(0, Number(saved.wallet_balance))
+          : 0,
+        popular_plan_id: saved.popular_plan_id ? Number(saved.popular_plan_id) : null,
+      },
+      support: {
+        phone: String(
+          saved.support_phone
+          || legacySettings.hotspot_support_phone
+          || ''
+        ).trim(),
+        whatsapp: String(
+          saved.whatsapp_phone
+          || saved.support_phone
+          || legacySettings.hotspot_support_phone
+          || ''
+        ).trim(),
+        text: String(
+          saved.support_text
+          || legacySettings.hotspot_support_text
+          || 'Need access? Contact support.'
+        ).trim(),
+      },
+      flash_offer: flashOffer,
+      plans: plans.rows,
+    });
   } catch (err) {
     console.error('Public hotspot config error:', err.message);
-    res.status(500).json({ error: 'Could not load hotspot access options' });
+    return res.status(500).json({ error: 'Could not load hotspot access options' });
   }
 });
 

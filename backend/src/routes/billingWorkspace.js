@@ -1154,4 +1154,173 @@ router.post('/hotspot/vouchers/:id/simulate-login', async (req, res) => {
   }
 });
 
+
+async function ensureHotspotPortalConfigColumn() {
+  await db.query(`
+    ALTER TABLE clients
+    ADD COLUMN IF NOT EXISTS hotspot_portal_config JSONB NOT NULL DEFAULT '{}'::jsonb
+  `);
+}
+
+function hotspotBoolean(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function hotspotText(value, maxLength = 160) {
+  return String(value || '').trim().slice(0, maxLength);
+}
+
+function hotspotPortalResponse(config = {}) {
+  return {
+    brand_name: hotspotText(config.brand_name, 80),
+    tagline: hotspotText(config.tagline, 180),
+    support_phone: hotspotText(config.support_phone, 50),
+    whatsapp_phone: hotspotText(config.whatsapp_phone, 50),
+    support_text: hotspotText(config.support_text, 180),
+    wallet_label: hotspotText(config.wallet_label || 'MY WALLET', 40),
+    wallet_balance: Number.isFinite(Number(config.wallet_balance))
+      ? Math.max(0, Number(config.wallet_balance))
+      : 0,
+    flash_enabled: hotspotBoolean(config.flash_enabled),
+    flash_plan_id: config.flash_plan_id ? Number(config.flash_plan_id) : '',
+    flash_discount_price: config.flash_discount_price === null
+      || config.flash_discount_price === undefined
+      || config.flash_discount_price === ''
+      ? ''
+      : Number(config.flash_discount_price),
+    flash_starts_at: config.flash_starts_at || '',
+    flash_ends_at: config.flash_ends_at || '',
+    popular_plan_id: config.popular_plan_id ? Number(config.popular_plan_id) : '',
+  };
+}
+
+router.get('/hotspot/portal-settings', async (req, res) => {
+  try {
+    await ensureHotspotPortalConfigColumn();
+    const result = await db.query(
+      `SELECT name, hotspot_portal_config
+       FROM clients
+       WHERE id = $1 AND account_type = 'billing'
+       LIMIT 1`,
+      [req.scope.clientId]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Billing account not found' });
+    const response = hotspotPortalResponse(result.rows[0].hotspot_portal_config || {});
+    if (!response.brand_name) response.brand_name = result.rows[0].name || '';
+    return res.json(response);
+  } catch (err) {
+    console.error('Load hotspot portal settings error:', err.message);
+    return res.status(500).json({ error: 'Could not load hotspot portal settings' });
+  }
+});
+
+router.put('/hotspot/portal-settings', async (req, res) => {
+  try {
+    await ensureHotspotPortalConfigColumn();
+
+    const raw = req.body || {};
+    const flashEnabled = hotspotBoolean(raw.flash_enabled);
+    const flashPlanId = raw.flash_plan_id ? Number(raw.flash_plan_id) : null;
+    const popularPlanId = raw.popular_plan_id ? Number(raw.popular_plan_id) : null;
+    const walletBalance = Number(raw.wallet_balance || 0);
+    const discountPrice = raw.flash_discount_price === null
+      || raw.flash_discount_price === undefined
+      || raw.flash_discount_price === ''
+      ? null
+      : Number(raw.flash_discount_price);
+
+    if (!Number.isFinite(walletBalance) || walletBalance < 0) {
+      return res.status(400).json({ error: 'Displayed wallet balance must be zero or more' });
+    }
+
+    let flashPlan = null;
+    if (flashPlanId) {
+      const planResult = await db.query(
+        `SELECT id, name, price, is_active
+         FROM billing_hotspot_plans
+         WHERE id = $1 AND client_id = $2
+         LIMIT 1`,
+        [flashPlanId, req.scope.clientId]
+      );
+      flashPlan = planResult.rows[0] || null;
+    }
+
+    if (flashEnabled) {
+      if (!flashPlan || flashPlan.is_active === false) {
+        return res.status(400).json({ error: 'Choose an active hotspot package for the flash offer' });
+      }
+      if (!Number.isFinite(discountPrice) || discountPrice < 0 || discountPrice >= Number(flashPlan.price)) {
+        return res.status(400).json({
+          error: `Flash price must be lower than the package price of KSh ${Number(flashPlan.price).toLocaleString()}`,
+        });
+      }
+    }
+
+    if (popularPlanId) {
+      const popularResult = await db.query(
+        `SELECT id FROM billing_hotspot_plans
+         WHERE id = $1 AND client_id = $2 AND is_active = TRUE
+         LIMIT 1`,
+        [popularPlanId, req.scope.clientId]
+      );
+      if (!popularResult.rows[0]) {
+        return res.status(400).json({ error: 'Popular package must be an active hotspot package' });
+      }
+    }
+
+    const startDate = raw.flash_starts_at ? new Date(raw.flash_starts_at) : null;
+    const endDate = raw.flash_ends_at ? new Date(raw.flash_ends_at) : null;
+
+    if (raw.flash_starts_at && Number.isNaN(startDate.getTime())) {
+      return res.status(400).json({ error: 'Enter a valid flash-offer start time' });
+    }
+    if (raw.flash_ends_at && Number.isNaN(endDate.getTime())) {
+      return res.status(400).json({ error: 'Enter a valid flash-offer end time' });
+    }
+    if (flashEnabled && !endDate) {
+      return res.status(400).json({ error: 'Set when the flash offer should end' });
+    }
+    if (flashEnabled && startDate && endDate <= startDate) {
+      return res.status(400).json({ error: 'Flash-offer end time must be after its start time' });
+    }
+    if (flashEnabled && endDate <= new Date()) {
+      return res.status(400).json({ error: 'Flash-offer end time must be in the future' });
+    }
+
+    const config = {
+      version: 1,
+      brand_name: hotspotText(raw.brand_name, 80),
+      tagline: hotspotText(raw.tagline, 180),
+      support_phone: hotspotText(raw.support_phone, 50),
+      whatsapp_phone: hotspotText(raw.whatsapp_phone, 50),
+      support_text: hotspotText(raw.support_text, 180),
+      wallet_label: hotspotText(raw.wallet_label || 'MY WALLET', 40),
+      wallet_balance: walletBalance,
+      flash_enabled: flashEnabled,
+      flash_plan_id: flashPlanId,
+      flash_discount_price: discountPrice,
+      flash_starts_at: startDate ? startDate.toISOString() : null,
+      flash_ends_at: endDate ? endDate.toISOString() : null,
+      popular_plan_id: popularPlanId,
+      updated_at: new Date().toISOString(),
+    };
+
+    const result = await db.query(
+      `UPDATE clients
+       SET hotspot_portal_config = $2::jsonb
+       WHERE id = $1 AND account_type = 'billing'
+       RETURNING name, hotspot_portal_config`,
+      [req.scope.clientId, JSON.stringify(config)]
+    );
+
+    if (!result.rows[0]) return res.status(404).json({ error: 'Billing account not found' });
+
+    const response = hotspotPortalResponse(result.rows[0].hotspot_portal_config || {});
+    if (!response.brand_name) response.brand_name = result.rows[0].name || '';
+    return res.json(response);
+  } catch (err) {
+    console.error('Save hotspot portal settings error:', err.message);
+    return res.status(500).json({ error: 'Could not save hotspot portal settings' });
+  }
+});
 module.exports = router;

@@ -1,32 +1,692 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const apiBase = '/api/public/hotspot';
-const money = (value) => `KSh ${Number(value || 0).toLocaleString()}`;
 const params = new URLSearchParams(window.location.search);
+const money = (value) => `KSh ${Number(value || 0).toLocaleString()}`;
 
-function Icon({ name }) {
-  const paths = { wifi: <><path d="M3 9a14 14 0 0 1 18 0"/><path d="M6 13a9 9 0 0 1 12 0"/><path d="M9 17a4 4 0 0 1 6 0"/><circle cx="12" cy="21" r="1" fill="currentColor"/></>, bolt: <path d="m13 2-8 12h7l-1 8 8-12h-7z"/>, clock: <><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></>, shield: <><path d="M12 3 20 6v5c0 5-3.5 8.5-8 10-4.5-1.5-8-5-8-10V6z"/><path d="m9 12 2 2 4-4"/></> };
-  return <svg viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[name]}</svg>;
+function Icon({ name, className = 'h-5 w-5' }) {
+  const paths = {
+    wifi: (
+      <>
+        <path d="M3 9a14 14 0 0 1 18 0" />
+        <path d="M6 13a9 9 0 0 1 12 0" />
+        <path d="M9 17a4 4 0 0 1 6 0" />
+        <circle cx="12" cy="21" r="1" fill="currentColor" />
+      </>
+    ),
+    menu: <path d="M4 7h16M4 12h16M4 17h16" />,
+    wallet: (
+      <>
+        <path d="M5 7.5h13a2 2 0 0 1 2 2v8H5a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h11v5" />
+        <path d="M15 11h6v4h-6a2 2 0 0 1 0-4Z" />
+      </>
+    ),
+    plus: <path d="M12 5v14M5 12h14" />,
+    bolt: <path d="m13 2-8 12h7l-1 8 8-12h-7z" />,
+    clock: (
+      <>
+        <circle cx="12" cy="12" r="9" />
+        <path d="M12 7v5l3 2" />
+      </>
+    ),
+    calendar: (
+      <>
+        <rect x="4" y="5" width="16" height="15" rx="2" />
+        <path d="M8 2v6M16 2v6M4 10h16" />
+      </>
+    ),
+    ticket: (
+      <>
+        <path d="M4 7h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4V7Z" />
+        <path d="M9 7v12" />
+      </>
+    ),
+    user: (
+      <>
+        <circle cx="12" cy="8" r="3.5" />
+        <path d="M5 21a7 7 0 0 1 14 0" />
+      </>
+    ),
+    lock: (
+      <>
+        <rect x="5" y="10" width="14" height="11" rx="2" />
+        <path d="M8 10V7a4 4 0 0 1 8 0v3M12 14v3" />
+      </>
+    ),
+    chevron: <path d="m9 5 7 7-7 7" />,
+    headset: (
+      <>
+        <path d="M4 13a8 8 0 0 1 16 0v5a2 2 0 0 1-2 2h-3v-7h5" />
+        <path d="M4 13h5v7H6a2 2 0 0 1-2-2v-5Z" />
+      </>
+    ),
+    whatsapp: (
+      <>
+        <path d="M20 11.5a8 8 0 0 1-11.8 7L4 20l1.5-4A8 8 0 1 1 20 11.5Z" />
+        <path d="M9 8.5c.5 2.5 2 4 4.5 5l1.4-1.4 2 1c-.5 2-2 3-4 2.3-3.5-1.2-5.5-3.3-6.5-6.5-.6-2 1-3.6 2.5-4l1 2-1 1.6Z" />
+      </>
+    ),
+    eye: (
+      <>
+        <path d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6S2.5 12 2.5 12Z" />
+        <circle cx="12" cy="12" r="2.5" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={`${className} fill-none stroke-current`}
+      strokeWidth="1.9"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
+function WalletArt() {
+  return (
+    <div className="relative flex h-16 w-20 items-center justify-center">
+      <div className="absolute right-1 top-2 h-12 w-14 rounded-xl bg-gradient-to-br from-sky-400 to-blue-700 shadow-lg shadow-blue-600/30" />
+      <div className="absolute right-4 top-0 h-6 w-10 rounded-lg bg-blue-300" />
+      <div className="absolute right-0 top-7 h-7 w-8 rounded-lg bg-blue-800">
+        <span className="absolute left-2 top-2 h-2.5 w-2.5 rounded-full bg-cyan-200" />
+      </div>
+      <Icon name="wallet" className="absolute left-0 bottom-0 h-8 w-8 text-blue-700" />
+    </div>
+  );
+}
+
+function durationParts(minutesValue) {
+  const minutes = Number(minutesValue || 0);
+  if (minutes >= 1440 && minutes % 1440 === 0) {
+    const days = minutes / 1440;
+    return { value: days, unit: days === 1 ? 'DAY' : 'DAYS', icon: 'calendar' };
+  }
+  if (minutes >= 60 && minutes % 60 === 0) {
+    const hours = minutes / 60;
+    return { value: hours, unit: hours === 1 ? 'HOUR' : 'HOURS', icon: 'clock' };
+  }
+  return { value: minutes, unit: minutes === 1 ? 'MIN' : 'MINS', icon: 'clock' };
+}
+
+function planHeadline(plan) {
+  const rate = String(plan?.mikrotik_rate_limit || '');
+  const match = rate.match(/(\d+(?:\.\d+)?)\s*[mM]/);
+  if (match) return `${match[1]} Mbps`;
+  const nameMatch = String(plan?.name || '').match(/(\d+(?:\.\d+)?)\s*Mbps/i);
+  if (nameMatch) return `${nameMatch[1]} Mbps`;
+  return plan?.name || 'Internet package';
+}
+
+function planDescription(plan, index) {
+  if (plan?.data_limit_mb) return `${Number(plan.data_limit_mb).toLocaleString()} MB included`;
+  const descriptions = ['High speed internet', 'Ideal for browsing', 'Great for streaming', 'Perfect for all usage'];
+  return descriptions[index % descriptions.length];
+}
+
+function useServerClock(serverNow) {
+  const offset = useRef(0);
+  const [now, setNow] = useState(Date.now());
+
+  useEffect(() => {
+    const parsed = Date.parse(serverNow || '');
+    offset.current = Number.isFinite(parsed) ? parsed - Date.now() : 0;
+    setNow(Date.now() + offset.current);
+    const timer = window.setInterval(() => setNow(Date.now() + offset.current), 1000);
+    return () => window.clearInterval(timer);
+  }, [serverNow]);
+
+  return now;
+}
+
+function CountdownRing({ offer, now }) {
+  const start = Date.parse(offer?.starts_at || '');
+  const end = Date.parse(offer?.ends_at || '');
+  const scheduled = Number.isFinite(start) && now < start;
+  const target = scheduled ? start : end;
+  const remaining = Math.max(0, target - now);
+  const activeTotal = Number.isFinite(start) && Number.isFinite(end) && end > start
+    ? end - start
+    : 60 * 60 * 1000;
+  const scheduledTotal = Number.isFinite(start)
+    ? Math.max(start - Date.parse(offer?.server_now || new Date(now).toISOString()), 1000)
+    : activeTotal;
+  const total = scheduled ? scheduledTotal : activeTotal;
+  const progress = Math.max(0.04, Math.min(1, remaining / Math.max(total, 1)));
+  const circumference = 2 * Math.PI * 52;
+  const dashOffset = circumference * (1 - progress);
+  const totalSeconds = Math.floor(remaining / 1000);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  const pad = (value) => String(value).padStart(2, '0');
+
+  return (
+    <div className="text-center">
+      <p className="text-[10px] font-black uppercase tracking-[.06em] text-slate-700">
+        {scheduled ? 'Starts in' : 'Time remaining'}
+      </p>
+      <div className="relative mx-auto mt-2 h-[126px] w-[126px]">
+        <svg className="-rotate-90" viewBox="0 0 120 120" aria-hidden="true">
+          <circle cx="60" cy="60" r="52" fill="none" stroke="#e5e7eb" strokeWidth="9" />
+          <circle
+            cx="60"
+            cy="60"
+            r="52"
+            fill="none"
+            stroke="#ff0b61"
+            strokeWidth="9"
+            strokeLinecap="round"
+            strokeDasharray={circumference}
+            strokeDashoffset={dashOffset}
+            className="transition-[stroke-dashoffset] duration-700"
+          />
+        </svg>
+        <div className="absolute inset-0 flex flex-col items-center justify-center">
+          <div className="font-mono text-[19px] font-black tracking-tight text-[#101938]">
+            {pad(hours)}:{pad(minutes)}:{pad(seconds)}
+          </div>
+          <div className="mt-1 grid grid-cols-3 gap-2 text-[7px] font-black uppercase text-slate-500">
+            <span>HRS</span><span>MIN</span><span>SEC</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function MikroTikLogin({ login }) {
   useEffect(() => {
-    if (!login?.url) return;
-    const form = document.createElement('form'); form.method = 'post'; form.action = login.url;
-    [['username', login.username], ['password', login.password], ['dst', login.destination || '']].forEach(([name, value]) => { const input = document.createElement('input'); input.type = 'hidden'; input.name = name; input.value = value || ''; form.appendChild(input); });
-    document.body.appendChild(form); form.submit();
+    if (!login?.url) return undefined;
+    const form = document.createElement('form');
+    form.method = 'post';
+    form.action = login.url;
+
+    [
+      ['username', login.username],
+      ['password', login.password],
+      ['dst', login.destination || ''],
+    ].forEach(([name, value]) => {
+      const input = document.createElement('input');
+      input.type = 'hidden';
+      input.name = name;
+      input.value = value || '';
+      form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
     return () => form.remove();
   }, [login]);
-  return <div className="rounded-2xl bg-emerald-50 p-4 text-center text-sm font-bold text-emerald-700">Connecting you to the internet…</div>;
+
+  return (
+    <div className="rounded-2xl bg-emerald-50 p-4 text-center text-sm font-bold text-emerald-700">
+      Connecting you to the internet...
+    </div>
+  );
 }
 
 export default function HotspotPortal() {
   const portalToken = params.get('portalToken') || '';
-  const [config, setConfig] = useState(null); const [code, setCode] = useState(''); const [busy, setBusy] = useState(false); const [error, setError] = useState(''); const [login, setLogin] = useState(null); const [active, setActive] = useState(null);
-  useEffect(() => { fetch(`${apiBase}/config?portalToken=${encodeURIComponent(portalToken)}`).then((r) => r.json().then((data) => r.ok ? setConfig(data) : Promise.reject(new Error(data.error || 'Unable to load access options')))).catch((e) => setError(e.message)); }, [portalToken]);
   const origin = params.get('link-orig') || params.get('link_orig') || '';
   const loginUrl = params.get('link-login-only') || params.get('link_login_only') || '';
-  const availablePlans = useMemo(() => config?.plans || [], [config]);
-  const submit = async (event) => { event.preventDefault(); setError(''); setBusy(true); try { const response = await fetch(`${apiBase}/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ portal_token: portalToken, code, mac: params.get('mac') || '', ip: params.get('ip') || '', link_login_only: loginUrl, link_orig: origin }) }); const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Voucher login failed'); setActive(data.voucher); if (data.login?.url) setLogin(data.login); else setLogin(null); } catch (e) { setError(e.message); } finally { setBusy(false); } };
-  return <main className="min-h-screen bg-[#f7f7fb] px-4 py-6 text-slate-900 sm:px-6"><div className="mx-auto max-w-5xl"><header className="flex items-center justify-between"><div><div className="flex items-center gap-2 text-sm font-extrabold tracking-wide text-violet-700"><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-600 text-white"><Icon name="wifi" /></span>{config?.client?.name || 'Nexa Wi-Fi'}</div><p className="mt-3 text-xs font-bold uppercase tracking-[.24em] text-slate-400">Guest internet access</p></div><span className="rounded-full border border-slate-200 bg-white px-3 py-1.5 text-xs font-bold text-slate-500">Secure hotspot</span></header><section className="mt-8 grid gap-6 lg:grid-cols-[1.05fr_.95fr]"><div className="rounded-[2rem] bg-gradient-to-br from-[#26006b] via-[#5b20d8] to-[#9b43ff] p-7 text-white shadow-xl sm:p-10"><span className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-bold"><Icon name="shield" /> Fast and secure access</span><h1 className="mt-6 text-4xl font-black leading-tight sm:text-5xl">Connect to the internet in seconds.</h1><p className="mt-4 max-w-md text-sm leading-6 text-violet-100">Enter your voucher code to get online. Your access time starts when you connect.</p><div className="mt-8 grid grid-cols-3 gap-2 text-center text-xs font-bold"><div className="rounded-2xl bg-white/10 p-3"><Icon name="bolt" /><span className="mt-2 block">Instant</span></div><div className="rounded-2xl bg-white/10 p-3"><Icon name="wifi" /><span className="mt-2 block">Reliable</span></div><div className="rounded-2xl bg-white/10 p-3"><Icon name="shield" /><span className="mt-2 block">Protected</span></div></div></div><div className="rounded-[2rem] border border-slate-200 bg-white p-6 shadow-sm sm:p-8"><div className="flex items-center justify-between"><div><p className="text-xs font-black uppercase tracking-[.2em] text-violet-600">Already have access?</p><h2 className="mt-2 text-2xl font-black">Enter voucher</h2></div><span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-violet-50 text-violet-600"><Icon name="wifi" /></span></div><form onSubmit={submit} className="mt-7 space-y-4"><label className="block text-sm font-bold text-slate-600">Voucher code<input autoFocus required value={code} onChange={(e) => setCode(e.target.value.toUpperCase())} placeholder="NX-XXXXXXXX" className="mt-2 w-full rounded-2xl border border-slate-200 px-4 py-4 font-mono text-lg font-black tracking-widest outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10" /></label>{error && <p className="rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-700">{error}</p>}{login && <MikroTikLogin login={login} />}{active && !login && <div className="rounded-2xl bg-emerald-50 p-4 text-sm text-emerald-700"><b>Voucher activated.</b><br />Valid until {new Date(active.expires_at).toLocaleString()}.</div>}<button disabled={busy || Boolean(login)} className="flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-600 py-4 text-sm font-black text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-700 disabled:opacity-60">{busy ? 'Checking voucher…' : login ? 'Connecting…' : 'Connect now'} <span>→</span></button></form><p className="mt-5 text-center text-xs leading-5 text-slate-400">By connecting, you agree to the network terms and responsible-use policy.</p></div></section><section className="mt-8"><div className="flex items-end justify-between"><div><p className="text-xs font-black uppercase tracking-[.2em] text-violet-600">Access packages</p><h2 className="mt-2 text-2xl font-black">Choose your connection</h2></div><span className="text-xs font-bold text-slate-400">Ask support for a voucher</span></div>{availablePlans.length ? <div className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">{availablePlans.map((plan, index) => <article key={plan.id} className={`rounded-3xl border bg-white p-5 shadow-sm ${index === 1 ? 'border-violet-300 ring-2 ring-violet-100' : 'border-slate-200'}`}><div className="flex items-center justify-between"><span className="rounded-xl bg-violet-50 p-2 text-violet-600"><Icon name={index === 1 ? 'bolt' : 'clock'} /></span>{index === 1 && <span className="rounded-full bg-violet-600 px-2.5 py-1 text-[10px] font-black uppercase text-white">Popular</span>}</div><h3 className="mt-5 text-lg font-black">{plan.name}</h3><p className="mt-1 text-2xl font-black text-violet-700">{money(plan.price)}</p><p className="mt-2 text-sm text-slate-500">{plan.duration_minutes >= 1440 ? `${Math.round(plan.duration_minutes / 1440)} day${plan.duration_minutes >= 2880 ? 's' : ''}` : `${plan.duration_minutes} minutes`} access{plan.data_limit_mb ? ` · ${plan.data_limit_mb} MB` : ''}</p><p className="mt-4 text-xs font-bold text-emerald-600">Voucher activation available</p></article>)}</div> : <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">Access packages will appear here.</div>}</section><footer className="mt-8 flex flex-wrap items-center justify-between gap-3 border-t border-slate-200 py-5 text-xs text-slate-400"><span>Powered by Nexa billing</span><span>{config?.support?.text || 'Need help? Contact support.'}{config?.support?.phone ? ` ${config.support.phone}` : ''}</span></footer></div></main>;
+
+  const [config, setConfig] = useState(null);
+  const [voucherUser, setVoucherUser] = useState('');
+  const [voucherPassword, setVoucherPassword] = useState('');
+  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [login, setLogin] = useState(null);
+  const [active, setActive] = useState(null);
+  const [selectedPlanId, setSelectedPlanId] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+
+  const packagesRef = useRef(null);
+  const voucherRef = useRef(null);
+  const now = useServerClock(config?.server_now);
+
+  useEffect(() => {
+    let mounted = true;
+    fetch(`${apiBase}/config?portalToken=${encodeURIComponent(portalToken)}`)
+      .then((response) => response.json().then((data) => {
+        if (!response.ok) throw new Error(data.error || 'Unable to load access options');
+        return data;
+      }))
+      .then((data) => {
+        if (!mounted) return;
+        setConfig(data);
+        if (data?.flash_offer?.plan_id) setSelectedPlanId(Number(data.flash_offer.plan_id));
+      })
+      .catch((requestError) => {
+        if (mounted) setError(requestError.message);
+      });
+    return () => { mounted = false; };
+  }, [portalToken]);
+
+  const plans = useMemo(() => config?.plans || [], [config]);
+  const flashOffer = useMemo(() => {
+    const offer = config?.flash_offer;
+    const end = Date.parse(offer?.ends_at || '');
+    if (!offer?.enabled || !Number.isFinite(end) || now >= end) return null;
+    return { ...offer, server_now: config?.server_now };
+  }, [config, now]);
+
+  const selectedPlan = useMemo(
+    () => plans.find((plan) => Number(plan.id) === Number(selectedPlanId)) || null,
+    [plans, selectedPlanId],
+  );
+
+  const popularPlanId = Number(config?.portal?.popular_plan_id || 0);
+  const brandName = config?.portal?.brand_name || config?.client?.name || 'Nexa';
+  const tagline = config?.portal?.tagline || `Stay connected with ${brandName} Hotspot`;
+  const supportPhone = config?.support?.phone || '';
+  const whatsappPhone = config?.support?.whatsapp || supportPhone;
+  const walletBalance = Number(config?.portal?.wallet_balance || 0);
+  const walletLabel = config?.portal?.wallet_label || 'MY WALLET';
+
+  const scrollToPackages = () => {
+    packagesRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setMenuOpen(false);
+  };
+
+  const scrollToVoucher = () => {
+    voucherRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    setMenuOpen(false);
+  };
+
+  const choosePlan = (plan) => {
+    setSelectedPlanId(Number(plan.id));
+    window.setTimeout(scrollToVoucher, 80);
+  };
+
+  const updateVoucherUser = (value) => {
+    const next = value.toUpperCase();
+    setVoucherUser(next);
+    if (!passwordTouched) setVoucherPassword(next);
+  };
+
+  const submit = async (event) => {
+    event.preventDefault();
+    setError('');
+
+    if (!voucherUser.trim()) {
+      setError('Enter your voucher username.');
+      return;
+    }
+    if (!voucherPassword.trim()) {
+      setError('Enter your voucher password.');
+      return;
+    }
+    if (voucherPassword.trim().toUpperCase() !== voucherUser.trim().toUpperCase()) {
+      setError('For this hotspot, the voucher username and password must be the same code.');
+      return;
+    }
+
+    setBusy(true);
+    try {
+      const response = await fetch(`${apiBase}/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          portal_token: portalToken,
+          code: voucherUser.trim(),
+          mac: params.get('mac') || '',
+          ip: params.get('ip') || '',
+          link_login_only: loginUrl,
+          link_orig: origin,
+        }),
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Voucher login failed');
+      setActive(data.voucher);
+      setLogin(data.login?.url ? data.login : null);
+    } catch (requestError) {
+      setError(requestError.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const whatsAppHref = whatsappPhone
+    ? `https://wa.me/${String(whatsappPhone).replace(/\D/g, '')}`
+    : '#';
+
+  const flashDiscount = flashOffer
+    ? Math.max(
+      0,
+      Math.round(
+        ((Number(flashOffer.original_price) - Number(flashOffer.discount_price))
+          / Math.max(Number(flashOffer.original_price), 1)) * 100,
+      ),
+    )
+    : 0;
+
+  return (
+    <main className="min-h-screen bg-[#edf2fb] text-[#101938]">
+      <style>{`
+        .hotspot-page {
+          font-family: Inter, "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
+        }
+        .hotspot-blue-grid {
+          background:
+            radial-gradient(circle at 88% 18%, rgba(0, 136, 255, .55), transparent 31%),
+            radial-gradient(circle at 10% 85%, rgba(18, 72, 190, .38), transparent 36%),
+            linear-gradient(135deg, #061a55 0%, #031243 48%, #073bc7 100%);
+        }
+        .hotspot-blue-grid::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          pointer-events: none;
+          opacity: .25;
+          background-image:
+            repeating-radial-gradient(ellipse at 100% 0%, transparent 0 12px, rgba(75, 166, 255, .28) 13px 14px, transparent 15px 23px);
+          transform: scale(1.15);
+        }
+        .hotspot-card-shadow {
+          box-shadow: 0 12px 32px rgba(22, 39, 82, .13);
+        }
+        .hotspot-flash-badge {
+          clip-path: polygon(8% 0, 92% 0, 100% 15%, 100% 78%, 50% 100%, 0 78%, 0 15%);
+        }
+      `}</style>
+
+      <div className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden bg-[#fbfcff] shadow-2xl shadow-slate-900/10">
+        <section className="hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8">
+          <header className="relative z-20 flex items-start justify-between">
+            <div className="flex items-center gap-3">
+              <Icon name="wifi" className="h-12 w-12 sm:h-14 sm:w-14" />
+              <div className="leading-none">
+                <div className="max-w-[210px] truncate text-xl font-black uppercase tracking-wide sm:text-2xl">
+                  {brandName}
+                </div>
+                <div className="mt-1 text-[11px] font-semibold uppercase tracking-[.38em] text-blue-100 sm:text-sm">
+                  Hotspot
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              aria-label="Open hotspot menu"
+              onClick={() => setMenuOpen((value) => !value)}
+              className="flex h-11 w-11 items-center justify-center rounded-xl text-white transition hover:bg-white/10"
+            >
+              <Icon name="menu" className="h-8 w-8" />
+            </button>
+
+            {menuOpen && (
+              <div className="absolute right-0 top-[52px] w-48 overflow-hidden rounded-2xl border border-white/15 bg-[#071747]/95 p-2 shadow-2xl backdrop-blur">
+                <button type="button" onClick={scrollToPackages} className="block w-full rounded-xl px-4 py-3 text-left text-sm font-bold hover:bg-white/10">
+                  Packages
+                </button>
+                <button type="button" onClick={scrollToVoucher} className="block w-full rounded-xl px-4 py-3 text-left text-sm font-bold hover:bg-white/10">
+                  Voucher login
+                </button>
+                {supportPhone && (
+                  <a href={`tel:${supportPhone}`} className="block rounded-xl px-4 py-3 text-sm font-bold hover:bg-white/10">
+                    Contact support
+                  </a>
+                )}
+              </div>
+            )}
+          </header>
+
+          <div className="relative z-10 mt-10 grid gap-7 min-[520px]:grid-cols-[.92fr_1.08fr] min-[520px]:items-center sm:mt-12">
+            <div>
+              <h1 className="text-[38px] font-black leading-[1.05] tracking-tight sm:text-[48px]">
+                Fast Internet.
+                <span className="block text-[#21a7ff]">Everywhere.</span>
+              </h1>
+              <p className="mt-5 max-w-[320px] text-lg font-medium leading-7 text-blue-50">
+                {tagline}
+              </p>
+            </div>
+
+            <div className="rounded-[24px] bg-white p-5 text-[#101938] shadow-2xl shadow-blue-950/25">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-extrabold uppercase tracking-wide text-slate-500">
+                    {walletLabel}
+                  </p>
+                  <p className="mt-3 text-[28px] font-black tracking-tight text-[#0462dc]">
+                    {money(walletBalance)}
+                  </p>
+                </div>
+                <WalletArt />
+              </div>
+              <button
+                type="button"
+                onClick={scrollToPackages}
+                className="mt-5 flex w-full items-center justify-center gap-3 rounded-xl bg-gradient-to-r from-[#0876f9] to-[#073cc9] py-3 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-blue-600/25"
+              >
+                Top up
+                <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white text-blue-700">
+                  <Icon name="plus" className="h-4 w-4" />
+                </span>
+              </button>
+            </div>
+          </div>
+        </section>
+
+        {flashOffer && (
+          <section className="relative z-20 -mt-[68px] px-5 sm:-mt-20 sm:px-9">
+            <button
+              type="button"
+              onClick={() => choosePlan(flashOffer)}
+              className="hotspot-card-shadow relative w-full rounded-[22px] border border-slate-200 bg-white p-5 text-left transition hover:-translate-y-0.5 sm:p-7"
+            >
+              <span className="absolute -left-1 -top-4 inline-flex items-center gap-2 rounded-tl-2xl rounded-br-2xl bg-[#ff1464] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-pink-500/25">
+                <Icon name="bolt" className="h-4 w-4 fill-white stroke-white" />
+                Flash package
+              </span>
+
+              <span className="hotspot-flash-badge absolute -right-1 -top-2 flex h-[76px] w-[78px] flex-col items-center justify-center bg-[#ff0b61] text-center text-lg font-black leading-5 text-white shadow-lg shadow-pink-500/25">
+                {flashDiscount}%
+                <span>OFF</span>
+              </span>
+
+              <div className="grid gap-5 pt-7 min-[480px]:grid-cols-[1fr_150px] min-[480px]:items-center">
+                <div className="min-w-0 pr-14 min-[480px]:border-r min-[480px]:border-slate-200 min-[480px]:pr-6">
+                  <h2 className="text-[25px] font-black tracking-tight text-[#111a38]">
+                    {planHeadline(flashOffer)} - {durationParts(flashOffer.duration_minutes).value} {durationParts(flashOffer.duration_minutes).unit}
+                  </h2>
+
+                  <div className="mt-6 grid grid-cols-2 divide-x divide-slate-200">
+                    <div className="pr-5">
+                      <p className="text-xs font-bold text-slate-600">Original Price</p>
+                      <p className="mt-2 text-xl font-bold text-slate-800 line-through decoration-2">
+                        {money(flashOffer.original_price)}
+                      </p>
+                    </div>
+                    <div className="pl-5">
+                      <p className="text-xs font-bold text-slate-600">Discounted Price</p>
+                      <p className="mt-1 text-[30px] font-black tracking-tight text-[#ff0b61]">
+                        {money(flashOffer.discount_price)}
+                      </p>
+                    </div>
+                  </div>
+
+                  <p className="mt-7 flex items-center gap-2 text-sm font-semibold text-slate-700">
+                    <Icon name="bolt" className="h-5 w-5 fill-[#ff0b61] stroke-[#ff0b61]" />
+                    Hurry up! This offer expires soon.
+                  </p>
+                </div>
+
+                <CountdownRing offer={flashOffer} now={now} />
+              </div>
+            </button>
+          </section>
+        )}
+
+        <section ref={packagesRef} className={`${flashOffer ? 'pt-8' : 'pt-10'} px-5 sm:px-9`}>
+          <div className="flex items-center justify-center gap-5">
+            <span className="h-px w-16 bg-slate-300" />
+            <h2 className="text-base font-black uppercase tracking-wide text-[#121b3b]">Packages</h2>
+            <span className="h-px w-16 bg-slate-300" />
+          </div>
+
+          {plans.length ? (
+            <div className="mt-5 space-y-4">
+              {plans.map((plan, index) => {
+                const duration = durationParts(plan.duration_minutes);
+                const popular = popularPlanId
+                  ? Number(plan.id) === popularPlanId
+                  : index === Math.min(2, plans.length - 1);
+                const selected = Number(selectedPlanId) === Number(plan.id);
+
+                return (
+                  <button
+                    type="button"
+                    key={plan.id}
+                    onClick={() => choosePlan(plan)}
+                    className={`hotspot-card-shadow grid w-full grid-cols-[105px_minmax(0,1fr)_auto] overflow-hidden rounded-[18px] border bg-white text-left transition hover:-translate-y-0.5 sm:grid-cols-[145px_minmax(0,1fr)_auto] ${
+                      selected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'
+                    }`}
+                  >
+                    <div className="flex min-h-[92px] items-center justify-center gap-3 bg-gradient-to-br from-[#0781ff] to-[#064ccf] px-3 text-white sm:min-h-[102px]">
+                      <Icon name={duration.icon} className="h-8 w-8 shrink-0" />
+                      <div className="text-center leading-none">
+                        <div className="text-[28px] font-black">{duration.value}</div>
+                        <div className="mt-2 text-[11px] font-black uppercase">{duration.unit}</div>
+                      </div>
+                    </div>
+
+                    <div className="min-w-0 px-4 py-4 sm:px-6">
+                      {popular && (
+                        <span className="inline-flex rounded-md bg-[#ff0b61] px-2 py-1 text-[9px] font-black uppercase text-white">
+                          Popular
+                        </span>
+                      )}
+                      <div className={`${popular ? 'mt-2' : ''} truncate text-base font-black text-[#101938]`}>
+                        {planHeadline(plan)}
+                      </div>
+                      <p className="mt-1 truncate text-xs font-medium text-slate-600 sm:text-sm">
+                        {planDescription(plan, index)}
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2 px-3 text-[#0656d7] sm:gap-4 sm:px-6">
+                      <span className="whitespace-nowrap text-base font-black sm:text-xl">
+                        {money(plan.price)}
+                      </span>
+                      <Icon name="chevron" className="h-5 w-5 text-slate-600" />
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm font-bold text-slate-500">
+              Access packages will appear here.
+            </div>
+          )}
+        </section>
+
+        <section ref={voucherRef} className="px-5 pb-7 pt-7 sm:px-9">
+          <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
+            <div className="flex items-center gap-3 text-[#064ebd]">
+              <Icon name="ticket" className="h-7 w-7" />
+              <h2 className="text-lg font-black uppercase tracking-wide">Voucher login</h2>
+            </div>
+
+            {selectedPlan && (
+              <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-xs font-bold text-blue-700">
+                Selected: {selectedPlan.name} - {money(selectedPlan.price)}
+              </p>
+            )}
+
+            <form onSubmit={submit} className="mt-5 space-y-4">
+              <label className="relative block">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#3e6eca]">
+                  <Icon name="user" className="h-6 w-6" />
+                </span>
+                <input
+                  autoFocus
+                  required
+                  value={voucherUser}
+                  onChange={(event) => updateVoucherUser(event.target.value)}
+                  placeholder="Voucher Username"
+                  autoComplete="username"
+                  className="w-full rounded-xl border border-[#b9c9e7] bg-white py-4 pl-[52px] pr-4 font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                />
+              </label>
+
+              <label className="relative block">
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#3e6eca]">
+                  <Icon name="lock" className="h-6 w-6" />
+                </span>
+                <input
+                  required
+                  type="password"
+                  value={voucherPassword}
+                  onChange={(event) => {
+                    setPasswordTouched(true);
+                    setVoucherPassword(event.target.value.toUpperCase());
+                  }}
+                  placeholder="Voucher Password"
+                  autoComplete="current-password"
+                  className="w-full rounded-xl border border-[#b9c9e7] bg-white py-4 pl-[52px] pr-4 font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                />
+              </label>
+
+              {error && (
+                <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                  {error}
+                </p>
+              )}
+
+              {login && <MikroTikLogin login={login} />}
+
+              {active && !login && (
+                <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                  <b>Voucher activated.</b>
+                  <br />
+                  Valid until {new Date(active.expires_at).toLocaleString()}.
+                </div>
+              )}
+
+              <button
+                disabled={busy || Boolean(login)}
+                className="w-full rounded-xl bg-gradient-to-r from-[#0876f9] to-[#073cc9] py-4 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-blue-700/20 disabled:opacity-60"
+              >
+                {busy ? 'Checking voucher...' : login ? 'Connecting...' : 'Login'}
+              </button>
+            </form>
+          </div>
+        </section>
+
+        <footer className="grid grid-cols-2 divide-x divide-white/20 bg-gradient-to-r from-[#071846] to-[#07317c] px-5 py-5 text-white sm:px-9">
+          <a href={supportPhone ? `tel:${supportPhone}` : '#'} className="flex items-center justify-center gap-3 pr-4">
+            <Icon name="headset" className="h-9 w-9" />
+            <span>
+              <span className="block text-xs text-blue-100">Support</span>
+              <b className="mt-1 block text-sm">{supportPhone || 'Contact admin'}</b>
+            </span>
+          </a>
+
+          <a
+            href={whatsAppHref}
+            target={whatsappPhone ? '_blank' : undefined}
+            rel={whatsappPhone ? 'noreferrer' : undefined}
+            className="flex items-center justify-center gap-3 pl-4"
+          >
+            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#20c763] text-white">
+              <Icon name="whatsapp" className="h-7 w-7" />
+            </span>
+            <span>
+              <span className="block text-xs text-blue-100">WhatsApp</span>
+              <b className="mt-1 block text-sm">{whatsappPhone || 'Contact admin'}</b>
+            </span>
+          </a>
+        </footer>
+      </div>
+    </main>
+  );
 }

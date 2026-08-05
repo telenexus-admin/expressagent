@@ -124,9 +124,13 @@ function q(value) {
 
 function script({ apiPassword, executorPassword, tunnelIp, callbackToken }) {
   const wgName = `wg-nexa-${tunnelIp.split('.').pop()}`;
-  return `# Nexa secure bootstrap-only enrollment
-# Creates only the private management path and scoped Nexa identities.
-# Subscriber services are planned later after read-only discovery and approval.
+
+  // The outer braces are essential. WinBox may submit pasted physical
+  // lines separately; this keeps every :local value inside one scope.
+  return `{
+# NEXA SECURE SINGLE-PASTE ONBOARDING
+# Keep this opening brace and the final closing brace.
+
 :local nexaWg "${q(wgName)}"
 :local nexaCallback "${q(CALLBACK_BASE)}/api/public/mikrotik/onboard"
 :local nexaPassword "${q(apiPassword)}"
@@ -134,25 +138,114 @@ function script({ apiPassword, executorPassword, tunnelIp, callbackToken }) {
 :local nexaTunnel "${q(tunnelIp)}"
 :local nexaCallbackToken "${q(callbackToken)}"
 
-:if ([:len [/interface/wireguard/find name=\$nexaWg]] = 0) do={ /interface/wireguard/add name=\$nexaWg mtu=1420 comment="NEXA managed WireGuard" }
-:if ([:len [/ip/address/find address~("^" . \$nexaTunnel . "/") interface=\$nexaWg]] = 0) do={ /ip/address/add address=(\$nexaTunnel . "/24") interface=\$nexaWg comment="NEXA management tunnel" }
-:if ([:len [/interface/wireguard/peers/find interface=\$nexaWg public-key="${q(WG_PUBLIC_KEY)}"]] = 0) do={ /interface/wireguard/peers/add interface=\$nexaWg public-key="${q(WG_PUBLIC_KEY)}" endpoint-address="${q(WG_ENDPOINT)}" endpoint-port=${WG_PORT} allowed-address="${WG_SERVER_IP}/32" persistent-keepalive=25s comment="NEXA server" }
-:if ([:len [/ip/firewall/filter/find comment="NEXA API via WireGuard"]] = 0) do={ /ip/firewall/filter/add chain=input in-interface=\$nexaWg protocol=tcp dst-port=8728 src-address=${WG_SERVER_IP} action=accept comment="NEXA API via WireGuard" }
-:if ([:len [/user/group/find name="nexa-readonly"]] = 0) do={/user/group/add name=nexa-readonly policy=read,test,api}
-:if ([:len [/user/find name="nexa"]] = 0) do={/user/add name=nexa group=nexa-readonly password=\$nexaPassword}
-/user/set [find name="nexa"] group=nexa-readonly password=\$nexaPassword
-:if ([:len [/user/group/find name="nexa-executor"]] = 0) do={/user/group/add name=nexa-executor policy=read,write,test,api}
-:if ([:len [/user/find name="nexa-executor"]] = 0) do={/user/add name=nexa-executor group=nexa-executor password=\$nexaExecutorPassword}
-/user/set [find name="nexa-executor"] group=nexa-executor password=\$nexaExecutorPassword
-/ip/service/enable api
-/ip/service/set api port=8728 address="${WG_SERVER_IP}/32"
+:put "NEXA: Creating secure management interface..."
 
-# Prove enrollment to Nexa. No RADIUS, PPPoE, Hotspot, VLAN, pool, NAT, DNS, or portal configuration occurs here.
+:if ([:len [/interface/wireguard/find where name=$nexaWg]] = 0) do={
+  /interface/wireguard/add \
+    name=$nexaWg \
+    mtu=1420 \
+    comment="NEXA managed WireGuard"
+}
+
+:local nexaWgId [/interface/wireguard/find where name=$nexaWg]
+
+:if ([:len $nexaWgId] = 0) do={
+  :error "NEXA: WireGuard interface creation failed"
+}
+
+:if ([:len [/ip/address/find where comment="NEXA management tunnel" and interface=$nexaWg]] = 0) do={
+  /ip/address/add \
+    address=($nexaTunnel . "/24") \
+    interface=$nexaWg \
+    comment="NEXA management tunnel"
+}
+
+:if ([:len [/interface/wireguard/peers/find where interface=$nexaWg and comment="NEXA server"]] = 0) do={
+  /interface/wireguard/peers/add \
+    interface=$nexaWg \
+    public-key="${q(WG_PUBLIC_KEY)}" \
+    endpoint-address="${q(WG_ENDPOINT)}" \
+    endpoint-port=${WG_PORT} \
+    allowed-address="${WG_SERVER_IP}/32" \
+    persistent-keepalive=25s \
+    comment="NEXA server"
+}
+
+:if ([:len [/ip/firewall/filter/find where comment="NEXA API via WireGuard"]] = 0) do={
+  /ip/firewall/filter/add \
+    chain=input \
+    in-interface=$nexaWg \
+    protocol=tcp \
+    dst-port=8728 \
+    src-address=${WG_SERVER_IP} \
+    action=accept \
+    comment="NEXA API via WireGuard"
+}
+
+:if ([:len [/user/group/find where name="nexa-readonly"]] = 0) do={
+  /user/group/add \
+    name=nexa-readonly \
+    policy=read,test,api
+}
+
+:if ([:len [/user/find where name="nexa"]] = 0) do={
+  /user/add \
+    name=nexa \
+    group=nexa-readonly \
+    password=$nexaPassword
+}
+
+/user/set \
+  [find where name="nexa"] \
+  group=nexa-readonly \
+  password=$nexaPassword
+
+:if ([:len [/user/group/find where name="nexa-executor"]] = 0) do={
+  /user/group/add \
+    name=nexa-executor \
+    policy=read,write,test,api
+}
+
+:if ([:len [/user/find where name="nexa-executor"]] = 0) do={
+  /user/add \
+    name=nexa-executor \
+    group=nexa-executor \
+    password=$nexaExecutorPassword
+}
+
+/user/set \
+  [find where name="nexa-executor"] \
+  group=nexa-executor \
+  password=$nexaExecutorPassword
+
+/ip/service/enable api
+/ip/service/set \
+  [find where name="api"] \
+  port=8728 \
+  address="${WG_SERVER_IP}/32"
+
 :delay 3s
-:local nexaPublicKey [/interface/wireguard/get [find name=\$nexaWg] public-key]
-:local nexaBody ("{\\\"token\\\":\\\"" . \$nexaCallbackToken . "\\",\\\"public_key\\\":\\\"" . \$nexaPublicKey . "\\",\\\"tunnel_ip\\\":\\\"" . \$nexaTunnel . "\\"}")
-/tool/fetch url=\$nexaCallback http-method=post http-header-field="Content-Type:application/json" http-data=\$nexaBody output=none
-:put "NEXA SECURE ENROLLMENT SENT: discovery will continue in the billing dashboard"`;
+
+:local nexaPublicKey [/interface/wireguard/get $nexaWgId public-key]
+
+:if ([:len $nexaPublicKey] = 0) do={
+  :error "NEXA: MikroTik public key was not generated"
+}
+
+:local nexaBody ("{\\\"token\\\":\\\"" . $nexaCallbackToken . "\\\",\\\"public_key\\\":\\\"" . $nexaPublicKey . "\\\",\\\"tunnel_ip\\\":\\\"" . $nexaTunnel . "\\\"}")
+
+:put "NEXA: Registering router with the billing platform..."
+
+/tool/fetch \
+  url=$nexaCallback \
+  http-method=post \
+  http-header-field="Content-Type:application/json" \
+  http-data=$nexaBody \
+  output=none
+
+:put "NEXA SECURE ENROLLMENT CONFIRMED"
+:put "Return to the billing dashboard. The router will appear automatically."
+}`;
 }
 
 async function prepareSinglePaste(clientId, payload = {}) {

@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import BillingSubscribers from './BillingSubscribers';
 import NexaAgentChat from '../components/NexaAgentChat';
 import HotspotPortalSettingsPanel from '../components/HotspotPortalSettingsPanel';
+import RouterServiceWizard from '../components/RouterServiceWizard';
 const InvoiceManagement = lazy(() => import('./InvoiceManagement'));
 const BillingCommunication = lazy(() => import('./BillingCommunication'));
 const BillingTr069 = lazy(() => import('./BillingTr069'));
@@ -359,6 +360,7 @@ function Routers({
   darkMode = false,
 }) {
   const [open, setOpen] = useState(false);
+  const [serviceRouter, setServiceRouter] = useState(null);
   const safeRouters = Array.isArray(routers)
     ? routers.filter(Boolean)
     : [];
@@ -638,7 +640,7 @@ function Routers({
 
                 <button
                   type="button"
-                  onClick={() => provision(router)}
+                  onClick={() => setServiceRouter(router)}
                   disabled={saving}
                   className={`rounded-xl border px-3 py-2 text-xs font-extrabold disabled:opacity-50 ${
                     darkMode
@@ -646,7 +648,7 @@ function Routers({
                       : 'border-slate-200 text-slate-600'
                   }`}
                 >
-                  Preview setup
+                  {router.provisioning_status === 'ready' ? 'Services ready' : 'Configure services'}
                 </button>
               </div>
             </section>
@@ -1041,6 +1043,16 @@ function Routers({
             )}
           </div>
         </div>
+      )}
+      {serviceRouter && (
+        <RouterServiceWizard
+          router={serviceRouter}
+          onClose={() => setServiceRouter(null)}
+          onComplete={async () => {
+            await reload?.();
+          }}
+          darkMode={darkMode}
+        />
       )}
     </div>
   );

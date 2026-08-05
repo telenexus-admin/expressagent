@@ -148,6 +148,8 @@ async function ensureMikrotikTables() {
   await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_interface VARCHAR(80)`);
   await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_mikrotik_public_key TEXT`);
   await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS wireguard_billing_api_ips TEXT`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS provisioning_status VARCHAR(40) NOT NULL DEFAULT 'not_configured'`);
+  await db.query(`ALTER TABLE mikrotik_routers ADD COLUMN IF NOT EXISTS provisioned_at TIMESTAMP WITH TIME ZONE`);
   await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_mikrotik_routers_wg_ip ON mikrotik_routers(wireguard_tunnel_ip) WHERE wireguard_tunnel_ip IS NOT NULL`);
 }
 
@@ -170,6 +172,8 @@ function safeRouter(row) {
     wireguard_interface: row.wireguard_interface || '',
     wireguard_mikrotik_public_key: row.wireguard_mikrotik_public_key || '',
     wireguard_billing_api_ips: row.wireguard_billing_api_ips || '',
+    provisioning_status: row.provisioning_status || 'not_configured',
+    provisioned_at: row.provisioned_at || null,
     password_configured: Boolean(row.password_encrypted),
     features,
     is_active: row.is_active !== false,

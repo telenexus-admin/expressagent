@@ -73,43 +73,339 @@ async function notifyBillingWorkflowBySms({ client, payment }) {
   }
 }
 
+function callbackObject(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  )
+    ? value
+    : null;
+}
+
+function callbackField(
+  objects,
+  fieldNames
+) {
+  for (const object of objects) {
+    if (!object) continue;
+
+    for (const fieldName of fieldNames) {
+      if (
+        Object.prototype.hasOwnProperty.call(
+          object,
+          fieldName
+        ) &&
+        object[fieldName] !== null &&
+        object[fieldName] !== undefined &&
+        object[fieldName] !== ''
+      ) {
+        return object[fieldName];
+      }
+    }
+  }
+
+  return null;
+}
+
+function normalizePayHeroCallback(body = {}) {
+  const objects = [
+    callbackObject(body.response),
+    callbackObject(body.data?.response),
+    callbackObject(body.data),
+    callbackObject(body.Body?.stkCallback),
+    callbackObject(body.stkCallback),
+    callbackObject(body),
+  ].filter(Boolean);
+
+  const rawResultCode = callbackField(
+    objects,
+    [
+      'ResultCode',
+      'result_code',
+      'resultCode',
+      'ResponseCode',
+      'response_code',
+    ]
+  );
+
+  const resultCode =
+    rawResultCode === null
+      ? null
+      : Number(rawResultCode);
+
+  const statusText = String(
+    callbackField(
+      objects,
+      [
+        'Status',
+        'status',
+        'payment_status',
+        'transaction_status',
+        'state',
+      ]
+    ) || ''
+  ).trim().toLowerCase();
+
+  const externalReference = String(
+    callbackField(
+      objects,
+      [
+        'ExternalReference',
+        'external_reference',
+        'externalReference',
+        'account_reference',
+        'AccountReference',
+      ]
+    ) || ''
+  ).trim();
+
+  const checkoutRequestId = String(
+    callbackField(
+      objects,
+      [
+        'CheckoutRequestID',
+        'checkout_request_id',
+        'checkoutRequestId',
+      ]
+    ) || ''
+  ).trim();
+
+  const payheroReference = String(
+    callbackField(
+      objects,
+      [
+        'merchant_reference',
+        'MerchantReference',
+        'reference',
+        'payhero_reference',
+        'MerchantRequestID',
+      ]
+    ) || ''
+  ).trim();
+
+  const receipt = String(
+    callbackField(
+      objects,
+      [
+        'MpesaReceiptNumber',
+        'mpesa_receipt_number',
+        'mpesaReceiptNumber',
+        'TransactionID',
+        'transaction_id',
+        'transactionId',
+        'receipt_number',
+        'ReceiptNumber',
+      ]
+    ) || ''
+  ).trim();
+
+  const description = String(
+    callbackField(
+      objects,
+      [
+        'ResultDesc',
+        'result_description',
+        'result_desc',
+        'message',
+        'Message',
+        'description',
+      ]
+    ) || statusText || ''
+  ).trim();
+
+  const amountValue = callbackField(
+    objects,
+    [
+      'Amount',
+      'amount',
+      'TransAmount',
+    ]
+  );
+
+  const amount =
+    amountValue === null
+      ? null
+      : Number(amountValue);
+
+  const successfulStatuses = new Set([
+    'success',
+    'successful',
+    'paid',
+    'completed',
+    'complete',
+    'processed',
+  ]);
+
+  const failedStatuses = new Set([
+    'failed',
+    'failure',
+    'cancelled',
+    'canceled',
+    'rejected',
+    'declined',
+    'expired',
+    'timeout',
+  ]);
+
+  const explicitFailure = (
+    (
+      Number.isFinite(resultCode) &&
+      resultCode !== 0
+    ) ||
+    failedStatuses.has(statusText)
+  );
+
+  const successful = (
+    !explicitFailure &&
+    (
+      (
+        Number.isFinite(resultCode) &&
+        resultCode === 0
+      ) ||
+      successfulStatuses.has(statusText) ||
+      Boolean(receipt)
+    )
+  );
+
+  return {
+    successful,
+    explicitFailure,
+    resultCode:
+      Number.isFinite(resultCode)
+        ? resultCode
+        : null,
+    statusText,
+    externalReference,
+    checkoutRequestId,
+    payheroReference,
+    receipt,
+    description,
+    amount:
+      Number.isFinite(amount)
+        ? amount
+        : null,
+  };
+}
+
 router.post('/callback/:clientId', async (req, res) => {
-  res.status(200).json({ received: true });
+  res.status(200).json({
+    received: true,
+  });
+
   try {
     await ensurePayHeroSchema();
+
     const clientResult = await db.query(
-      `SELECT * FROM clients WHERE id = $1 AND payhero_callback_secret = $2 LIMIT 1`,
-      [req.params.clientId, String(req.query.token || '')]
+      `SELECT *
+       FROM clients
+       WHERE id = $1
+         AND payhero_callback_secret = $2
+       LIMIT 1`,
+      [
+        req.params.clientId,
+        String(req.query.token || ''),
+      ]
     );
+
     const client = clientResult.rows[0];
-    if (!client) return;
-    const response = req.body?.response || {};
-    const externalReference = String(response.ExternalReference || '');
-    if (!externalReference) return;
-    const successful = Number(response.ResultCode) === 0 || String(response.Status || '').toLowerCase() === 'success';
-    const status = successful ? 'paid' : 'failed';
+
+    if (!client) {
+      return;
+    }
+
+    const callback =
+      normalizePayHeroCallback(
+        req.body || {}
+      );
+
+    if (
+      !callback.externalReference &&
+      !callback.checkoutRequestId &&
+      !callback.payheroReference
+    ) {
+      console.warn(
+        `[client ${client.id}] PayHero callback did not contain a usable payment reference.`
+      );
+
+      return;
+    }
+
+    const status =
+      callback.successful
+        ? 'paid'
+        : 'failed';
+
     const updated = await db.query(
       `UPDATE payhero_payment_requests
-       SET status = $1, result_description = $2, mpesa_receipt_number = $3,
-           checkout_request_id = COALESCE($4, checkout_request_id), raw_response = $5::jsonb, updated_at = NOW()
-       WHERE client_id = $6 AND external_reference = $7 AND status <> 'paid'
+       SET
+         status =
+           CASE
+             WHEN status = 'paid'
+             THEN 'paid'
+             ELSE $1
+           END,
+         result_description =
+           COALESCE(
+             NULLIF($2, ''),
+             result_description
+           ),
+         mpesa_receipt_number =
+           COALESCE(
+             NULLIF($3, ''),
+             mpesa_receipt_number
+           ),
+         checkout_request_id =
+           COALESCE(
+             NULLIF($4, ''),
+             checkout_request_id
+           ),
+         payhero_reference =
+           COALESCE(
+             NULLIF($5, ''),
+             payhero_reference
+           ),
+         raw_response = $6::jsonb,
+         updated_at = NOW()
+       WHERE client_id = $7
+         AND (
+           external_reference =
+             NULLIF($8, '')
+           OR checkout_request_id =
+             NULLIF($9, '')
+           OR payhero_reference =
+             NULLIF($10, '')
+         )
+         AND (
+           status <> 'paid'
+           OR $1 = 'paid'
+         )
        RETURNING *`,
       [
         status,
-        response.ResultDesc || response.Status || null,
-        response.MpesaReceiptNumber || null,
-        response.CheckoutRequestID || null,
+        callback.description,
+        callback.receipt,
+        callback.checkoutRequestId,
+        callback.payheroReference,
         JSON.stringify(req.body || {}),
         client.id,
-        externalReference,
+        callback.externalReference,
+        callback.checkoutRequestId,
+        callback.payheroReference,
       ]
     );
-    const payment = updated.rows[0];
-    if (!payment) return;
 
-    if (successful) {
+    const payment = updated.rows[0];
+
+    if (!payment) {
+      return;
+    }
+
+    if (callback.successful) {
       try {
-        await fulfillHotspotPayment(payment);
+        await fulfillHotspotPayment(
+          payment
+        );
       } catch (fulfillmentError) {
         console.error(
           'Hotspot payment fulfillment failed:',
@@ -118,22 +414,88 @@ router.post('/callback/:clientId', async (req, res) => {
       }
     }
 
-    const text = successful
-      ? `Payment received successfully. KES ${payment.amount}${payment.mpesa_receipt_number ? `, receipt ${payment.mpesa_receipt_number}` : ''}. Thank you.`
-      : `The M-Pesa payment was not completed. ${payment.result_description || 'You can request another prompt when ready.'}`;
-    if (client.connection_provider === 'evolution') await sendClientText(client, payment.customer_phone, text);
-    else await sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, payment.customer_phone, text);
-    if (payment.conversation_id) {
-      await db.query(
-        `INSERT INTO messages (conversation_id, role, content, timestamp) VALUES ($1, 'assistant', $2, NOW())`,
-        [payment.conversation_id, text]
+    const message = callback.successful
+      ? (
+          `Payment received successfully. ` +
+          `KES ${payment.amount}` +
+          (
+            payment.mpesa_receipt_number
+              ? `, receipt ${
+                  payment.mpesa_receipt_number
+                }`
+              : ''
+          ) +
+          '. Thank you.'
+        )
+      : (
+          `The M-Pesa payment was not completed. ${
+            payment.result_description ||
+            'You can request another prompt when ready.'
+          }`
+        );
+
+    try {
+      if (
+        client.connection_provider ===
+        'evolution'
+      ) {
+        await sendClientText(
+          client,
+          payment.customer_phone,
+          message
+        );
+      } else if (
+        client.meta_phone_number_id &&
+        client.meta_access_token
+      ) {
+        await sendWhatsAppMessage(
+          client.meta_phone_number_id,
+          client.meta_access_token,
+          payment.customer_phone,
+          message
+        );
+      }
+    } catch (notificationError) {
+      console.error(
+        'PayHero customer notification failed:',
+        notificationError.message
       );
     }
-    if (successful) {
-      await notifyBillingWorkflowBySms({ client, payment });
+
+    if (payment.conversation_id) {
+      await db.query(
+        `INSERT INTO messages
+           (
+             conversation_id,
+             role,
+             content,
+             timestamp
+           )
+         VALUES (
+           $1,
+           'assistant',
+           $2,
+           NOW()
+         )`,
+        [
+          payment.conversation_id,
+          message,
+        ]
+      );
     }
-  } catch (err) {
-    console.error('PayHero callback processing failed:', err.response?.data || err.message);
+
+    if (callback.successful) {
+      await notifyBillingWorkflowBySms({
+        client,
+        payment,
+      });
+    }
+  } catch (error) {
+    console.error(
+      'PayHero callback processing failed:',
+      error.response?.data ||
+      error.message
+    );
   }
 });
 

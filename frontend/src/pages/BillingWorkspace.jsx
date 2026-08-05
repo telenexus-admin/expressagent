@@ -28,7 +28,7 @@ export default function BillingWorkspace() {
   const { admin, logout } = useAuth();
   const [tab, setTab] = useState('overview'); const [open, setOpen] = useState(false); const [sidebarCollapsed, setSidebarCollapsed] = useState(false); const [darkMode, setDarkMode] = useState(false); const [profileOpen, setProfileOpen] = useState(false); const [mobileExpanded, setMobileExpanded] = useState(false); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
   const [summary, setSummary] = useState(null); const [employees, setEmployees] = useState([]); const [reportTickets, setReportTickets] = useState([]); const [plans, setPlans] = useState([]); const [subscribers, setSubscribers] = useState([]); const [invoices, setInvoices] = useState([]); const [payments, setPayments] = useState([]); const [radiusStatus, setRadiusStatus] = useState(null); const [routers, setRouters] = useState([]); const [bandwidthHistory, setBandwidthHistory] = useState([]); const [bandwidthTick, setBandwidthTick] = useState(0); const [hotspotPlans, setHotspotPlans] = useState([]); const [vouchers, setVouchers] = useState([]); const [search, setSearch] = useState(''); const [subscriberView, setSubscriberView] = useState('pppoe'); const [packageView, setPackageView] = useState('pppoe'); const [subscriberCreateOpen, setSubscriberCreateOpen] = useState(false);
-  const [planForm, setPlanForm] = useState(emptyPlan); const [subscriberForm, setSubscriberForm] = useState(emptySubscriber); const [invoiceForm, setInvoiceForm] = useState(emptyInvoice); const [paymentForm, setPaymentForm] = useState(emptyPayment); const [radiusForm, setRadiusForm] = useState(emptyRadius); const [routerForm, setRouterForm] = useState({ name: '', password: '', publicKey: '' }); const [routerPlan, setRouterPlan] = useState(null); const [routerNotice, setRouterNotice] = useState(''); const [hotspotPlanForm, setHotspotPlanForm] = useState(emptyHotspotPlan); const [voucherForm, setVoucherForm] = useState({ plan_id: '', quantity: '1' });
+  const [planForm, setPlanForm] = useState(emptyPlan); const [subscriberForm, setSubscriberForm] = useState(emptySubscriber); const [invoiceForm, setInvoiceForm] = useState(emptyInvoice); const [paymentForm, setPaymentForm] = useState(emptyPayment); const [radiusForm, setRadiusForm] = useState(emptyRadius); const [routerForm, setRouterForm] = useState({ name: '', password: '' }); const [routerPlan, setRouterPlan] = useState(null); const [routerNotice, setRouterNotice] = useState(''); const [hotspotPlanForm, setHotspotPlanForm] = useState(emptyHotspotPlan); const [voucherForm, setVoucherForm] = useState({ plan_id: '', quantity: '1' });
   const loadDetails = async () => { try { const [r, routerResult, hotspotPlanResult, voucherResult] = await Promise.all([Promise.all(['/plans', '/subscribers', '/invoices', '/payments', '/radius/status'].map((path) => api.get(`/billing-workspace${path}`))), api.get('/mikrotik'), api.get('/billing-workspace/hotspot/plans'), api.get('/billing-workspace/hotspot/vouchers')]); setPlans(Array.isArray(r[0].data) ? r[0].data : []); setSubscribers(Array.isArray(r[1].data) ? r[1].data : []); setInvoices(Array.isArray(r[2].data) ? r[2].data : []); setPayments(Array.isArray(r[3].data) ? r[3].data : []); setRadiusStatus(r[4].data); const routerData = routerResult.data; setRouters(Array.isArray(routerData) ? routerData : Array.isArray(routerData?.routers) ? routerData.routers : []); setHotspotPlans(Array.isArray(hotspotPlanResult.data) ? hotspotPlanResult.data : []); setVouchers(Array.isArray(voucherResult.data) ? voucherResult.data : []); } catch (_) { /* The home screen remains usable while optional workspace data retries on the next action. */ } const traffic = await api.get('/noc/traffic/history?range=24h').catch(() => ({ data: [] })); setBandwidthHistory(Array.isArray(traffic.data) ? traffic.data : []); const employeeResult = await api.get('/employees').catch(() => ({ data: [] })); const ticketResult = await api.get('/tickets').catch(() => ({ data: [] })); setEmployees(Array.isArray(employeeResult.data) ? employeeResult.data : Array.isArray(employeeResult.data?.employees) ? employeeResult.data.employees : []); setReportTickets(Array.isArray(ticketResult.data) ? ticketResult.data : Array.isArray(ticketResult.data?.tickets) ? ticketResult.data.tickets : []); };
   const load = async () => { try { setLoading(true); const result = await api.get('/billing-workspace/summary'); setSummary(result.data); setError(''); void loadDetails(); } catch (e) { setError(e.response?.data?.error || 'We could not load your billing workspace.'); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
@@ -65,8 +65,37 @@ export default function BillingWorkspace() {
   const savePayment = (e) => save(e, '/billing-workspace/payments', { ...paymentForm, invoice_id: Number(paymentForm.invoice_id), amount: Number(paymentForm.amount) }, () => setPaymentForm(emptyPayment));
   const saveRadius = (e) => save(e, `/billing-workspace/subscribers/${radiusForm.subscriber_id}/radius`, { radius_username: radiusForm.radius_username, radius_password: radiusForm.radius_password, radius_status: radiusForm.radius_status }, () => setRadiusForm(emptyRadius));
   const resync = async (id) => { try { setSaving(true); await api.post(`/billing-workspace/subscribers/${id}/radius/sync`); await load(); } catch (e) { setError(e.response?.data?.error || 'RADIUS sync failed.'); } finally { setSaving(false); } };
-  const prepareRouter = async (event) => { event.preventDefault(); try { setSaving(true); setRouterNotice(''); const result = await api.post('/mikrotik/wireguard/prepare', { name: routerForm.name, password: routerForm.password }); setRouterPlan(result.data); } catch (e) { setError(e.response?.data?.error || 'Could not prepare router onboarding.'); } finally { setSaving(false); } };
-  const activateRouter = async (event) => { event.preventDefault(); if (!routerPlan) return; if (routerPlan.single_paste) { setRouterNotice('Paste the one-time script into the MikroTik terminal. It will configure the router and register itself automatically.'); return; } try { setSaving(true); setRouterNotice(''); await api.post('/mikrotik/wireguard/activate', { public_key: routerForm.publicKey, tunnel_ip: routerPlan.tunnel_ip }); await api.post('/mikrotik', { name: routerForm.name, host: routerPlan.api_host, port: 8728, connection_type: 'api', username: 'nexa', password: routerForm.password, connection_method: 'wireguard', wireguard_tunnel_ip: routerPlan.tunnel_ip, wireguard_interface: routerPlan.interfaceName, wireguard_mikrotik_public_key: routerForm.publicKey }); setRouterNotice('Router securely added. Run a connection test once the MikroTik script has completed.'); setRouterForm({ name: '', password: '', publicKey: '' }); setRouterPlan(null); await load(); } catch (e) { setError(e.response?.data?.error || 'Router activation failed. Check the public key and try again.'); } finally { setSaving(false); } };  const testRouter = async (id) => { try { setSaving(true); setRouterNotice(''); const result = await api.post('/mikrotik/test', { id }); setRouterNotice(`${result.data.identity || 'Router'} is online and responding through its private tunnel.`); await load(); } catch (e) { setError(e.response?.data?.error || 'Router connection test failed.'); } finally { setSaving(false); } };
+  const prepareRouter = async (event) => {
+    event.preventDefault();
+
+    try {
+      setSaving(true);
+      setRouterNotice('');
+      setError('');
+
+      const result = await api.post(
+        '/mikrotik/wireguard/prepare',
+        {
+          name: routerForm.name,
+          password: routerForm.password,
+        }
+      );
+
+      setRouterPlan(result.data);
+      setRouterNotice(
+        'Onboarding script ready. Copy it and paste it once into the MikroTik terminal.'
+      );
+    } catch (error) {
+      setError(
+        error.response?.data?.error ||
+        'Could not prepare router onboarding.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const testRouter = async (id) => { try { setSaving(true); setRouterNotice(''); const result = await api.post('/mikrotik/test', { id }); setRouterNotice(`${result.data.identity || 'Router'} is online and responding through its private tunnel.`); await load(); } catch (e) { setError(e.response?.data?.error || 'Router connection test failed.'); } finally { setSaving(false); } };
   const previewRouterProvision = async (router) => { try { setSaving(true); setRouterNotice(''); const result = await api.post(`/mikrotik/${router.id}/provision/preview`, { radius_secret: 'preview-only-secret-12345' }); const stages = (result.data.stages || []).map((stage) => stage.label).join(' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ '); setRouterNotice(`Provisioning preview for ${router.name}: ${stages}`); } catch (e) { setError(e.response?.data?.error || 'Provisioning preview failed.'); } finally { setSaving(false); } };  const saveHotspotPlan = (e) => save(e, '/billing-workspace/hotspot/plans', { ...packagePayload(hotspotPlanForm), price: Number(hotspotPlanForm.price || 0), duration_minutes: Number(hotspotPlanForm.duration_minutes), data_limit_mb: hotspotPlanForm.data_limit_mb ? Number(hotspotPlanForm.data_limit_mb) : null }, () => setHotspotPlanForm(emptyHotspotPlan));
   const toggleHotspotPlan = async (id, isActive) => { try { setSaving(true); await api.patch(`/billing-workspace/hotspot/plans/${id}/status`, { is_active: isActive }); await load(); } catch (e) { setError(e.response?.data?.error || 'Hotspot package status could not be updated.'); } finally { setSaving(false); } };
   const deleteHotspotPlan = async (id) => { const plan = hotspotPlans.find((item) => item.id === id); if (!plan || !window.confirm(`Delete hotspot package ${plan.name}?`)) return; try { setSaving(true); await api.delete(`/billing-workspace/hotspot/plans/${id}`); await load(); } catch (e) { setError(e.response?.data?.error || 'Hotspot package could not be deleted.'); } finally { setSaving(false); } };
@@ -115,7 +144,7 @@ export default function BillingWorkspace() {
         {tab === 'payments' && <Payments payments={payments} invoices={invoices} form={paymentForm} setForm={setPaymentForm} save={savePayment} saving={saving} />}
         {tab === 'hotspot' && <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}
         {tab === 'vouchers' && <Vouchers plans={hotspotPlans} vouchers={vouchers} form={voucherForm} setForm={setVoucherForm} generate={generateVouchers} simulate={simulateVoucher} saving={saving} reload={load} setError={setError} />}
-        {tab === 'routers' && <Routers routers={routers} form={routerForm} setForm={setRouterForm} plan={routerPlan} setPlan={setRouterPlan} prepare={prepareRouter} activate={activateRouter} test={testRouter} provision={previewRouterProvision} notice={routerNotice} saving={saving} darkMode={darkMode} />}
+        {tab === 'routers' && <Routers routers={routers} form={routerForm} setForm={setRouterForm} plan={routerPlan} setPlan={setRouterPlan} prepare={prepareRouter} reload={loadDetails} test={testRouter} provision={previewRouterProvision} notice={routerNotice} saving={saving} darkMode={darkMode} />}
         {tab === 'radius' && <Radius subscribers={subscribers} status={radiusStatus} form={radiusForm} setForm={setRadiusForm} save={saveRadius} resync={resync} saving={saving} />}
         {tab === 'reports' && <Reports invoices={invoices} payments={payments} subscribers={subscribers} routers={routers} bandwidthHistory={bandwidthHistory} employees={employees} tickets={reportTickets} money={money} />}
         {tab === 'communication' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingCommunication /></Suspense>}
@@ -247,7 +276,7 @@ function Routers({
   plan,
   setPlan,
   prepare,
-  activate,
+  reload,
   test,
   provision,
   notice,
@@ -258,6 +287,87 @@ function Routers({
   const safeRouters = Array.isArray(routers)
     ? routers.filter(Boolean)
     : [];
+
+  const [scriptCopied, setScriptCopied] = useState(false);
+
+  const onboardingScript = String(
+    plan?.mikrotikScript || ''
+  );
+
+  const connectedRouter = plan
+    ? safeRouters.find((router) =>
+        String(
+          router.wireguard_tunnel_ip ||
+          router.host ||
+          ''
+        ) === String(plan.tunnel_ip || '')
+      )
+    : null;
+
+  useEffect(() => {
+    if (
+      !plan?.single_paste ||
+      connectedRouter
+    ) {
+      return undefined;
+    }
+
+    const refresh = () => {
+      void reload?.();
+    };
+
+    refresh();
+
+    const timer = window.setInterval(
+      refresh,
+      5000
+    );
+
+    return () => window.clearInterval(timer);
+  }, [
+    plan?.single_paste,
+    plan?.tunnel_ip,
+    connectedRouter?.id,
+  ]);
+
+  const copyOnboardingScript = async () => {
+    if (!onboardingScript) return;
+
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(
+          onboardingScript
+        );
+      } else {
+        const temporary = document.createElement(
+          'textarea'
+        );
+
+        temporary.value = onboardingScript;
+        temporary.setAttribute('readonly', '');
+        temporary.style.position = 'fixed';
+        temporary.style.opacity = '0';
+
+        document.body.appendChild(temporary);
+        temporary.select();
+        document.execCommand('copy');
+        temporary.remove();
+      }
+
+      setScriptCopied(true);
+    } catch (_) {
+      setScriptCopied(false);
+    }
+  };
+
+  const resetOnboarding = () => {
+    setPlan(null);
+    setScriptCopied(false);
+    setForm({
+      name: '',
+      password: '',
+    });
+  };
 
   const pageBackground = darkMode
     ? 'bg-[#0b1020] text-slate-100'
@@ -511,22 +621,25 @@ function Routers({
 
       {open && (
         <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/65 p-3 backdrop-blur-sm sm:items-center">
-          <form
-            onSubmit={plan ? activate : prepare}
-            className={`router-modal max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl border p-5 ${surface}`}
+          <div
+            className={`router-modal max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-3xl border p-5 ${surface}`}
           >
             <div className="flex items-center justify-between gap-4">
               <div>
                 <p className="text-[10px] font-extrabold uppercase tracking-[.18em] text-violet-500">
-                  Secure onboarding
+                  Simple secure onboarding
                 </p>
 
                 <h3
                   className={`mt-1 text-xl font-black ${
-                    darkMode ? 'text-white' : 'text-slate-900'
+                    darkMode
+                      ? 'text-white'
+                      : 'text-slate-900'
                   }`}
                 >
-                  Add a router
+                  {plan
+                    ? 'Connect your MikroTik'
+                    : 'Add a router'}
                 </h3>
               </div>
 
@@ -552,79 +665,307 @@ function Routers({
               </button>
             </div>
 
-            <div className="mt-5 space-y-4">
-              <Field label="Router name">
-                <input
-                  required
-                  className={input}
-                  value={form.name}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      name: event.target.value,
-                    })
-                  }
-                  placeholder="Main MikroTik"
-                />
-              </Field>
+            {!plan ? (
+              <form
+                onSubmit={prepare}
+                className="mt-6 space-y-4"
+              >
+                <div
+                  className={`rounded-2xl border p-4 text-sm leading-6 ${
+                    darkMode
+                      ? 'border-violet-400/20 bg-violet-500/10 text-violet-200'
+                      : 'border-violet-100 bg-violet-50 text-violet-800'
+                  }`}
+                >
+                  Enter two details. Nexa will generate
+                  everything else automatically.
+                </div>
 
-              <Field label="Onboarding password">
-                <input
-                  required
-                  type="password"
-                  className={input}
-                  value={form.password}
-                  onChange={(event) =>
-                    setForm({
-                      ...form,
-                      password: event.target.value,
-                    })
-                  }
-                />
-              </Field>
-
-              {plan && (
-                <Field label="MikroTik public key">
+                <Field label="Router name">
                   <input
                     required
                     className={input}
-                    value={form.publicKey}
+                    value={form.name}
                     onChange={(event) =>
                       setForm({
                         ...form,
-                        publicKey: event.target.value,
+                        name: event.target.value,
                       })
                     }
-                    placeholder="Paste the key generated by the router"
+                    placeholder="Main MikroTik"
                   />
                 </Field>
-              )}
 
-              <button
-                disabled={saving}
-                className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white transition hover:bg-violet-500 disabled:opacity-50"
-              >
-                {saving
-                  ? 'Preparing...'
-                  : plan
-                    ? 'Complete onboarding'
-                    : 'Generate onboarding script'}
-              </button>
+                <Field label="Secure onboarding password">
+                  <input
+                    required
+                    minLength={8}
+                    type="password"
+                    className={input}
+                    value={form.password}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        password: event.target.value,
+                      })
+                    }
+                    placeholder="At least 8 characters"
+                  />
+                </Field>
 
-              {plan?.single_paste && (
-                <p
-                  className={`rounded-xl p-3 text-xs leading-5 ${
+                <button
+                  disabled={saving}
+                  className="w-full rounded-xl bg-violet-600 py-3.5 text-sm font-extrabold text-white shadow-lg shadow-violet-600/20 transition hover:bg-violet-500 disabled:opacity-50"
+                >
+                  {saving
+                    ? 'Creating script...'
+                    : 'Create onboarding script'}
+                </button>
+              </form>
+            ) : connectedRouter ? (
+              <div className="mt-6">
+                <div
+                  className={`rounded-3xl border p-6 text-center ${
                     darkMode
-                      ? 'bg-slate-800 text-slate-300'
-                      : 'bg-slate-50 text-slate-600'
+                      ? 'border-emerald-400/25 bg-emerald-500/10'
+                      : 'border-emerald-200 bg-emerald-50'
                   }`}
                 >
-                  Copy the one-time script from the next step and
-                  paste it in the MikroTik terminal.
-                </p>
-              )}
-            </div>
-          </form>
+                  <span
+                    className={`mx-auto flex h-14 w-14 items-center justify-center rounded-full ${
+                      darkMode
+                        ? 'bg-emerald-400/20 text-emerald-300'
+                        : 'bg-emerald-500 text-white'
+                    }`}
+                  >
+                    <svg
+                      viewBox="0 0 24 24"
+                      className="h-7 w-7 fill-none stroke-current"
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m6 12 4 4 8-8" />
+                    </svg>
+                  </span>
+
+                  <h4
+                    className={`mt-4 text-xl font-black ${
+                      darkMode
+                        ? 'text-white'
+                        : 'text-slate-900'
+                    }`}
+                  >
+                    Router connected
+                  </h4>
+
+                  <p
+                    className={`mt-2 text-sm ${
+                      darkMode
+                        ? 'text-slate-300'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    {connectedRouter.name ||
+                      form.name ||
+                      'Your MikroTik'}{' '}
+                    has registered automatically through
+                    the secure tunnel.
+                  </p>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    resetOnboarding();
+                    setOpen(false);
+                  }}
+                  className="mt-4 w-full rounded-xl bg-emerald-500 py-3.5 text-sm font-extrabold text-emerald-950 transition hover:bg-emerald-400"
+                >
+                  Finish
+                </button>
+              </div>
+            ) : (
+              <div className="mt-6 space-y-4">
+                <div
+                  className={`rounded-2xl border p-4 ${
+                    darkMode
+                      ? 'border-emerald-400/20 bg-emerald-500/10'
+                      : 'border-emerald-200 bg-emerald-50'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full ${
+                        darkMode
+                          ? 'bg-emerald-400/20 text-emerald-300'
+                          : 'bg-emerald-500 text-white'
+                      }`}
+                    >
+                      <svg
+                        viewBox="0 0 24 24"
+                        className="h-5 w-5 fill-none stroke-current"
+                        strokeWidth="2.2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="m6 12 4 4 8-8" />
+                      </svg>
+                    </span>
+
+                    <div>
+                      <h4
+                        className={`font-black ${
+                          darkMode
+                            ? 'text-white'
+                            : 'text-slate-900'
+                        }`}
+                      >
+                        Script ready
+                      </h4>
+
+                      <p
+                        className={`mt-1 text-xs ${
+                          darkMode
+                            ? 'text-slate-300'
+                            : 'text-slate-600'
+                        }`}
+                      >
+                        It remains valid for approximately{' '}
+                        {plan.expires_in_minutes || 60}{' '}
+                        minutes.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <textarea
+                  readOnly
+                  aria-label="MikroTik onboarding script"
+                  value={onboardingScript}
+                  rows={11}
+                  className={`w-full resize-none rounded-2xl border p-4 font-mono text-[11px] leading-5 outline-none ${
+                    darkMode
+                      ? 'border-slate-700 bg-[#080c18] text-slate-300'
+                      : 'border-slate-200 bg-slate-950 text-slate-200'
+                  }`}
+                />
+
+                <button
+                  type="button"
+                  onClick={copyOnboardingScript}
+                  disabled={!onboardingScript}
+                  className={`flex w-full items-center justify-center gap-2 rounded-xl py-3.5 text-sm font-extrabold transition disabled:opacity-50 ${
+                    scriptCopied
+                      ? 'bg-emerald-500 text-emerald-950'
+                      : 'bg-violet-600 text-white hover:bg-violet-500'
+                  }`}
+                >
+                  <svg
+                    viewBox="0 0 24 24"
+                    className="h-5 w-5 fill-none stroke-current"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    {scriptCopied ? (
+                      <path d="m6 12 4 4 8-8" />
+                    ) : (
+                      <>
+                        <rect
+                          x="8"
+                          y="8"
+                          width="11"
+                          height="11"
+                          rx="2"
+                        />
+                        <path d="M16 8V5a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h3" />
+                      </>
+                    )}
+                  </svg>
+
+                  {scriptCopied
+                    ? 'Script copied'
+                    : 'Copy onboarding script'}
+                </button>
+
+                <div
+                  className={`rounded-2xl border p-4 ${
+                    darkMode
+                      ? 'border-slate-700 bg-slate-800/60'
+                      : 'border-slate-200 bg-slate-50'
+                  }`}
+                >
+                  <h4
+                    className={`text-sm font-black ${
+                      darkMode
+                        ? 'text-white'
+                        : 'text-slate-900'
+                    }`}
+                  >
+                    Finish in three simple steps
+                  </h4>
+
+                  <ol
+                    className={`mt-3 space-y-3 text-xs leading-5 ${
+                      darkMode
+                        ? 'text-slate-300'
+                        : 'text-slate-600'
+                    }`}
+                  >
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 font-black text-white">
+                        1
+                      </span>
+                      Click Copy onboarding script.
+                    </li>
+
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 font-black text-white">
+                        2
+                      </span>
+                      Open WinBox, select New Terminal
+                      and paste it once.
+                    </li>
+
+                    <li className="flex gap-3">
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-violet-600 font-black text-white">
+                        3
+                      </span>
+                      Wait here. Nexa checks automatically
+                      every five seconds.
+                    </li>
+                  </ol>
+                </div>
+
+                <div className="flex gap-3">
+                  <button
+                    type="button"
+                    onClick={() => void reload?.()}
+                    className={`flex-1 rounded-xl border py-3 text-xs font-extrabold ${
+                      darkMode
+                        ? 'border-violet-400/30 text-violet-300'
+                        : 'border-violet-200 text-violet-700'
+                    }`}
+                  >
+                    Check connection
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={resetOnboarding}
+                    className={`flex-1 rounded-xl border py-3 text-xs font-extrabold ${
+                      darkMode
+                        ? 'border-slate-700 text-slate-400'
+                        : 'border-slate-200 text-slate-500'
+                    }`}
+                  >
+                    Start over
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
     </div>

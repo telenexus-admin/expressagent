@@ -837,7 +837,12 @@ async function configureRouter({
       'hotspot-address': hotspotGatewayIp,
       'dns-name': config.hotspot_dns_name,
       'html-directory': 'nexa-hotspot',
-      'login-by': 'http-chap,http-pap,cookie',
+      'login-by':
+        'mac,http-chap,http-pap,cookie',
+      'mac-auth-password':
+        process.env.HOTSPOT_MAC_AUTH_PASSWORD,
+      'radius-mac-format':
+        'XX:XX:XX:XX:XX:XX',
       'use-radius': 'yes',
       'radius-accounting': 'yes',
       'radius-interim-update': '1m',

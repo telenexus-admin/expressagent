@@ -202,6 +202,218 @@ async function syncSubscriberRadius(subscriber) {
   }
 }
 
+function normalizeHotspotMac(value) {
+  const compact = String(value || '')
+    .replace(/[^A-Fa-f0-9]/g, '')
+    .toUpperCase();
+
+  if (compact.length !== 12) {
+    return null;
+  }
+
+  return compact
+    .match(/.{2}/g)
+    .join(':');
+}
+
+async function syncHotspotMacRadius({
+  macAddress,
+  expiresAt,
+  rateLimit = null,
+  dataLimitMb = null,
+}) {
+  if (!radiusEnabled()) {
+    throw new Error(
+      'RADIUS synchronization is not enabled'
+    );
+  }
+
+  const username =
+    normalizeHotspotMac(macAddress);
+
+  if (!username) {
+    throw new Error(
+      'A valid hotspot device MAC address is required'
+    );
+  }
+
+  const password = String(
+    process.env.HOTSPOT_MAC_AUTH_PASSWORD || ''
+  ).trim();
+
+  if (!password) {
+    throw new Error(
+      'HOTSPOT_MAC_AUTH_PASSWORD is not configured'
+    );
+  }
+
+  const expiry = new Date(expiresAt);
+
+  if (
+    !Number.isFinite(expiry.getTime()) ||
+    expiry <= new Date()
+  ) {
+    throw new Error(
+      'The hotspot package has already expired'
+    );
+  }
+
+  const radiusClient =
+    await getRadiusPool().connect();
+
+  try {
+    await radiusClient.query('BEGIN');
+
+    await radiusClient.query(
+      'SELECT pg_advisory_xact_lock(hashtext($1))',
+      [username]
+    );
+
+    await radiusClient.query(
+      'DELETE FROM radcheck WHERE username = $1',
+      [username]
+    );
+
+    await radiusClient.query(
+      'DELETE FROM radreply WHERE username = $1',
+      [username]
+    );
+
+    const expiration =
+      formatRadiusExpiration(expiry);
+
+    const sessionTimeout = Math.max(
+      1,
+      Math.ceil(
+        (
+          expiry.getTime() -
+          Date.now()
+        ) / 1000
+      )
+    );
+
+    await radiusClient.query(
+      `INSERT INTO radcheck
+         (
+           username,
+           attribute,
+           op,
+           value
+         )
+       VALUES
+         (
+           $1,
+           'Cleartext-Password',
+           ':=',
+           $2
+         ),
+         (
+           $1,
+           'Expiration',
+           ':=',
+           $3
+         )`,
+      [
+        username,
+        password,
+        expiration,
+      ]
+    );
+
+    await radiusClient.query(
+      `INSERT INTO radreply
+         (
+           username,
+           attribute,
+           op,
+           value
+         )
+       VALUES
+         (
+           $1,
+           'Session-Timeout',
+           ':=',
+           $2
+         )`,
+      [
+        username,
+        String(sessionTimeout),
+      ]
+    );
+
+    if (rateLimit) {
+      await radiusClient.query(
+        `INSERT INTO radreply
+           (
+             username,
+             attribute,
+             op,
+             value
+           )
+         VALUES
+           (
+             $1,
+             'Mikrotik-Rate-Limit',
+             ':=',
+             $2
+           )`,
+        [
+          username,
+          String(rateLimit),
+        ]
+      );
+    }
+
+    if (
+      Number.isFinite(
+        Number(dataLimitMb)
+      ) &&
+      Number(dataLimitMb) > 0
+    ) {
+      await radiusClient.query(
+        `INSERT INTO radreply
+           (
+             username,
+             attribute,
+             op,
+             value
+           )
+         VALUES
+           (
+             $1,
+             'Mikrotik-Total-Limit',
+             ':=',
+             $2
+           )`,
+        [
+          username,
+          String(
+            Number(dataLimitMb) *
+            1024 *
+            1024
+          ),
+        ]
+      );
+    }
+
+    await radiusClient.query('COMMIT');
+
+    return {
+      status: 'synced',
+      username,
+      expires_at: expiry.toISOString(),
+    };
+  } catch (error) {
+    await radiusClient.query(
+      'ROLLBACK'
+    ).catch(() => {});
+
+    throw error;
+  } finally {
+    radiusClient.release();
+  }
+}
+
 async function syncHotspotVoucherRadius(voucher) {
   if (!voucher?.code) throw new Error('Hotspot voucher code is required');
   const radius = getRadiusPool();
@@ -448,4 +660,4 @@ async function testRouterNasRegistration(input, options = {}) {
     error: result.rows[0]?.last_error || null,
   };
 }
-module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, registerRouterNas, probeRouterRadius, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotVoucherRadius, syncSubscriberRadius, testRouterNasRegistration, unregisterRouterNas };
+module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, registerRouterNas, probeRouterRadius, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotMacRadius, syncHotspotVoucherRadius, syncSubscriberRadius, testRouterNasRegistration, unregisterRouterNas };

@@ -4,6 +4,9 @@ const {
   radiusEnabled,
   syncHotspotVoucherRadius,
 } = require('./radiusSync');
+const {
+  activatePaidHotspotDevice,
+} = require('./hotspotMacAccess');
 
 let schemaPromise;
 
@@ -36,6 +39,25 @@ async function ensureHotspotPaymentSchema() {
           updated_at TIMESTAMP WITH TIME ZONE
             NOT NULL DEFAULT NOW()
         )
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          device_activation_status VARCHAR(30)
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          device_activation_error TEXT
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          device_activated_at
+            TIMESTAMP WITH TIME ZONE
       `);
 
       await db.query(`
@@ -403,11 +425,23 @@ async function fulfillHotspotPayment(
       voucher = voucherResult.rows[0] || null;
     }
 
+    const needsDeviceActivation =
+      Boolean(metadata.mac);
+
+    const deviceAlreadyActivated =
+      ['active', 'triggered'].includes(
+        fulfillment.device_activation_status
+      );
+
     if (
       fulfillment.status === 'active' &&
       voucher &&
       voucher.expires_at &&
-      new Date(voucher.expires_at) > new Date()
+      new Date(voucher.expires_at) > new Date() &&
+      (
+        !needsDeviceActivation ||
+        deviceAlreadyActivated
+      )
     ) {
       await connection.query('COMMIT');
 
@@ -417,6 +451,13 @@ async function fulfillHotspotPayment(
         plan,
         radius_status:
           fulfillment.radius_status,
+        authentication:
+          needsDeviceActivation
+            ? 'mac'
+            : 'voucher',
+        device_activation_status:
+          fulfillment.device_activation_status ||
+          null,
       };
     }
 
@@ -551,10 +592,37 @@ async function fulfillHotspotPayment(
       );
     }
 
+    let deviceActivation = null;
+
+    if (metadata.mac) {
+      deviceActivation =
+        await activatePaidHotspotDevice({
+          clientId: payment.client_id,
+          routerId: plan.router_id || null,
+          macAddress: metadata.mac,
+          ipAddress: metadata.ip || '',
+          expiresAt: voucher.expires_at,
+          rateLimit:
+            plan.mikrotik_rate_limit ||
+            null,
+          dataLimitMb:
+            plan.data_limit_mb ||
+            null,
+        });
+    }
+
     await db.query(
       `UPDATE hotspot_payment_fulfillments
        SET status = 'active',
            radius_status = $2,
+           device_activation_status = $3,
+           device_activation_error = NULL,
+           device_activated_at =
+             CASE
+               WHEN $3 IS NULL
+               THEN device_activated_at
+               ELSE NOW()
+             END,
            error = NULL,
            activated_at = NOW(),
            updated_at = NOW()
@@ -562,6 +630,8 @@ async function fulfillHotspotPayment(
       [
         payment.id,
         radiusSync.status,
+        deviceActivation?.status ||
+          null,
       ]
     );
 
@@ -570,12 +640,21 @@ async function fulfillHotspotPayment(
       voucher,
       plan,
       radius_status: radiusSync.status,
+      authentication:
+        deviceActivation
+          ? 'mac'
+          : 'voucher',
+      device_activation_status:
+        deviceActivation?.status ||
+        null,
     };
   } catch (error) {
     await db.query(
       `UPDATE hotspot_payment_fulfillments
        SET status = 'paid',
            radius_status = 'failed',
+           device_activation_status = 'failed',
+           device_activation_error = $2,
            error = $2,
            updated_at = NOW()
        WHERE payment_request_id = $1`,
@@ -666,6 +745,15 @@ async function getHotspotPaymentStatus({
       amount: payment.amount,
       receipt:
         payment.mpesa_receipt_number || null,
+      authentication:
+        ['active', 'triggered'].includes(
+          source.device_activation_status
+        )
+          ? 'mac'
+          : 'voucher',
+      device_activation_status:
+        source.device_activation_status ||
+        null,
       voucher: {
         code:
           source.code ||

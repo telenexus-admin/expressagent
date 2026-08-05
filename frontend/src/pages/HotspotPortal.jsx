@@ -480,6 +480,23 @@ export default function HotspotPortal() {
           setPaymentOpen(false);
           setActive(data.voucher);
 
+          if (
+            data.authentication === 'mac'
+          ) {
+            setPaymentError(
+              'Payment confirmed. Internet access is active.',
+            );
+
+            window.setTimeout(() => {
+              window.location.replace(
+                origin ||
+                'http://neverssl.com/'
+              );
+            }, 1200);
+
+            return;
+          }
+
           if (loginUrl && data.login) {
             setLogin({
               ...data.login,

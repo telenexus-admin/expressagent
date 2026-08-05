@@ -13,6 +13,10 @@ const {
 const {
   createHotspotPortalToken,
 } = require('./hotspotPortalToken');
+const {
+  inspectRadiusNasRegistration,
+  registerRadiusNas,
+} = require('./radiusNasRegistry');
 
 const DEFAULTS = {
   wan_interface: 'ether1',
@@ -419,21 +423,27 @@ function getRadiusPool() {
 
 async function radiusDatabasePreflight() {
   if (!process.env.RADIUS_DATABASE_URL) {
-    return { ok: false, error: 'RADIUS_DATABASE_URL is not configured' };
+    return {
+      ok: false,
+      error: 'RADIUS_DATABASE_URL is not configured',
+    };
   }
+
   try {
-    const result = await getRadiusPool().query(
-      "SELECT to_regclass('public.nas') AS nas_table"
-    );
-    if (!result.rows[0]?.nas_table) {
-      return {
-        ok: false,
-        error: 'The FreeRADIUS SQL nas table is missing',
-      };
-    }
-    return { ok: true };
+    const registration =
+      await inspectRadiusNasRegistration(
+        getRadiusPool()
+      );
+
+    return {
+      ok: true,
+      registration,
+    };
   } catch (error) {
-    return { ok: false, error: `RADIUS database: ${error.message}` };
+    return {
+      ok: false,
+      error: `RADIUS registration: ${error.message}`,
+    };
   }
 }
 
@@ -490,52 +500,6 @@ async function getRadiusCredential(clientId, router) {
   };
 }
 
-async function registerRadiusNas(credential, routerName) {
-  const pool = getRadiusPool();
-  const columnsResult = await pool.query(
-    `SELECT column_name
-     FROM information_schema.columns
-     WHERE table_schema = 'public' AND table_name = 'nas'`
-  );
-  const columns = new Set(
-    columnsResult.rows.map((row) => row.column_name)
-  );
-  if (!columns.has('nasname') || !columns.has('secret')) {
-    throw new Error('The FreeRADIUS nas table has an unsupported schema');
-  }
-
-  const values = {
-    nasname: credential.nas_ip,
-    shortname: credential.nas_identifier,
-    type: 'other',
-    ports: null,
-    secret: credential.secret,
-    server: null,
-    community: null,
-    description: `Nexa managed MikroTik: ${routerName}`,
-  };
-  const writable = Object.keys(values).filter((key) => columns.has(key));
-  const updateColumns = writable.filter((key) => key !== 'nasname');
-  const updateParams = updateColumns.map((key) => values[key]);
-  const updateSql = updateColumns
-    .map((key, index) => `${key} = $${index + 2}`)
-    .join(', ');
-
-  const updated = await pool.query(
-    `UPDATE nas SET ${updateSql} WHERE nasname = $1`,
-    [values.nasname, ...updateParams]
-  );
-
-  if (!updated.rowCount) {
-    const placeholders = writable
-      .map((_, index) => `$${index + 1}`)
-      .join(', ');
-    await pool.query(
-      `INSERT INTO nas (${writable.join(', ')}) VALUES (${placeholders})`,
-      writable.map((key) => values[key])
-    );
-  }
-}
 
 async function ensureResource({
   client,
@@ -1040,20 +1004,46 @@ async function applyProvisioning(clientId, routerId, input = {}) {
   };
 
   try {
-    const credential = await getRadiusCredential(clientId, router);
-    await registerRadiusNas(credential, router.name);
+    client = await connectRouter(router);
+
+    await client.command(
+      '/system/backup/save',
+      { name: backupName }
+    );
+
+    await record(
+      'backup',
+      'completed',
+      `Backup ${backupName} created`
+    );
+
+    const credential = await getRadiusCredential(
+      clientId,
+      router
+    );
+
+    const registration = await registerRadiusNas(
+      getRadiusPool(),
+      credential,
+      router.name
+    );
+
     await db.query(
       `UPDATE router_radius_credentials
-       SET registration_status = 'registered', last_error = NULL,
+       SET registration_status = 'registered',
+           last_error = NULL,
            registered_at = NOW()
        WHERE client_id = $1 AND router_id = $2`,
       [clientId, routerId]
     );
-    await record('radius-registration', 'completed', 'FreeRADIUS NAS registered');
 
-    client = await connectRouter(router);
-    await client.command('/system/backup/save', { name: backupName });
-    await record('backup', 'completed', `Backup ${backupName} created`);
+    await record(
+      'radius-registration',
+      'completed',
+      `FreeRADIUS client registered through ${
+        registration.mode
+      }`
+    );
 
     await configureRouter({
       client,
@@ -1114,7 +1104,17 @@ async function applyProvisioning(clientId, routerId, input = {}) {
        WHERE client_id = $1 AND router_id = $2`,
       [clientId, routerId, error.message]
     ).catch(() => {});
-    throw new Error(`${error.message}. Router backup: ${backupName}`);
+    const backupCreated = steps.some(
+      (step) =>
+        step.stage === 'backup' &&
+        step.status === 'completed'
+    );
+
+    throw new Error(
+      backupCreated
+        ? `${error.message}. Router backup: ${backupName}`
+        : `${error.message}. No router service changes were applied.`
+    );
   } finally {
     if (client) client.close();
   }

@@ -3,7 +3,7 @@ const db = require('../db');
 const { ensureMikrotikTables, activateWireguardPeer, decryptSecret, encryptSecret, saveRouter } = require('./mikrotik');
 const { recordBillingEvent } = require('./events');
 const { setRouterExecutorCredential, testRouterExecutorCredential } = require('./networkExecutor');
-const { createEnrollment, markBootstrapConnected, queueEnrollmentDiscovery } = require('./networkEnrollment');
+const { createEnrollment, ensureNetworkEnrollmentSchema, markBootstrapConnected, queueEnrollmentDiscovery } = require('./networkEnrollment');
 
 const WG_SERVER_IP = process.env.MIKROTIK_WG_SERVER_IP || process.env.WIREGUARD_SERVER_IP || '10.77.0.1';
 const WG_PREFIX = process.env.MIKROTIK_WG_SUBNET_PREFIX || process.env.WIREGUARD_SUBNET_PREFIX || '10.77.0';
@@ -34,15 +34,87 @@ async function ensureTokens() {
   await db.query(`ALTER TABLE mikrotik_onboarding_tokens ADD COLUMN IF NOT EXISTS enrollment_id UUID`);
 }
 
-async function allocate() {
+async function releaseAbandonedEnrollments() {
+  await ensureNetworkEnrollmentSchema();
+
+  const result = await db.query(`
+    WITH released AS (
+      UPDATE router_enrollments e
+      SET
+        status = 'failed',
+        last_error = 'Onboarding token expired or was not created',
+        updated_at = NOW()
+      WHERE e.status = 'token_issued'
+        AND e.router_id IS NULL
+        AND NOT EXISTS (
+          SELECT 1
+          FROM mikrotik_onboarding_tokens t
+          WHERE t.enrollment_id = e.id
+            AND t.used_at IS NULL
+            AND t.expires_at > NOW()
+        )
+      RETURNING e.id, e.client_id
+    )
+    INSERT INTO router_enrollment_transitions (
+      enrollment_id,
+      client_id,
+      from_status,
+      to_status,
+      reason,
+      metadata
+    )
+    SELECT
+      id,
+      client_id,
+      'token_issued',
+      'failed',
+      'Expired or missing onboarding token released automatically',
+      '{"automatic_cleanup":true}'::jsonb
+    FROM released
+    RETURNING enrollment_id
+  `);
+
+  return result.rowCount;
+}
+
+async function allocate(excluded = new Set()) {
   await ensureTokens();
-  const used = await db.query(`SELECT wireguard_tunnel_ip FROM mikrotik_routers WHERE wireguard_tunnel_ip IS NOT NULL
-    UNION SELECT tunnel_ip FROM mikrotik_onboarding_tokens WHERE used_at IS NULL AND expires_at>NOW()`);
-  const taken = new Set(used.rows.map((row) => row.wireguard_tunnel_ip || row.tunnel_ip));
+  await ensureNetworkEnrollmentSchema();
+  await releaseAbandonedEnrollments();
+
+  const used = await db.query(`
+    SELECT wireguard_tunnel_ip AS tunnel_ip
+    FROM mikrotik_routers
+    WHERE wireguard_tunnel_ip IS NOT NULL
+
+    UNION
+
+    SELECT tunnel_ip
+    FROM mikrotik_onboarding_tokens
+    WHERE used_at IS NULL
+      AND expires_at > NOW()
+
+    UNION
+
+    SELECT tunnel_ip
+    FROM router_enrollments
+    WHERE status NOT IN ('failed', 'rolled_back')
+  `);
+
+  const taken = new Set(
+    used.rows
+      .map((row) => String(row.tunnel_ip || '').trim())
+      .filter(Boolean)
+  );
+
   for (let octet = 2; octet <= 254; octet += 1) {
     const ip = `${WG_PREFIX}.${octet}`;
-    if (!taken.has(ip)) return ip;
+
+    if (!taken.has(ip) && !excluded.has(ip)) {
+      return ip;
+    }
   }
+
   throw new Error('No available private onboarding tunnel IPs remain');
 }
 
@@ -89,13 +161,44 @@ async function prepareSinglePaste(clientId, payload = {}) {
   if (!name || password.length < 8) throw new Error('Router name and API password of at least 8 characters are required');
   const executorUsername = 'nexa-executor';
   const executorPassword = crypto.randomBytes(24).toString('base64url');
-  const tunnelIp = await allocate();
+  const desiredServices =
+    payload.desired_services || { pppoe: true, hotspot: true };
+
+  const excludedTunnelIps = new Set();
+  let tunnelIp = '';
+  let enrollment = null;
+
+  for (let attempt = 0; attempt < 253; attempt += 1) {
+    tunnelIp = await allocate(excludedTunnelIps);
+
+    try {
+      enrollment = await createEnrollment(clientId, {
+        router_name: name,
+        tunnel_ip: tunnelIp,
+        desired_services: desiredServices,
+      });
+      break;
+    } catch (error) {
+      if (
+        error?.code === '23505'
+        && error?.constraint ===
+          'idx_router_enrollments_active_tunnel'
+      ) {
+        excludedTunnelIps.add(tunnelIp);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  if (!enrollment) {
+    throw new Error(
+      'Could not allocate a unique private onboarding tunnel IP'
+    );
+  }
+
   const token = crypto.randomBytes(32).toString('base64url');
-  const enrollment = await createEnrollment(clientId, {
-    router_name: name,
-    tunnel_ip: tunnelIp,
-    desired_services: payload.desired_services || { pppoe: true, hotspot: true },
-  });
   const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
   await db.query(`INSERT INTO mikrotik_onboarding_tokens
     (token_hash,client_id,router_name,tunnel_ip,api_password_encrypted,executor_username,

@@ -18,6 +18,17 @@ const emptyRadius = { subscriber_id: '', radius_username: '', radius_password: '
 const input = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10';
 const nav = [['overview', 'Overview', 'home'], ['subscribers', 'Subscribers', 'clients'], ['services', 'Services', 'packages'], ['invoices', 'Invoices', 'invoices'], ['payments', 'Payments', 'payments'], ['vouchers', 'Vouchers', 'vouchers'], ['routers', 'Routers', 'network'], ['radius', 'RADIUS', 'radius'], ['tr069', 'TR-069 & ONTs', 'network'], ['communication', 'Communication', 'clients'], ['reports', 'Reports', 'reports']];
 const money = (v) => `KSh ${Number(v || 0).toLocaleString()}`;
+const routerDisplayStatus = (router) => {
+  const status = String(
+    router?.last_status ||
+    router?.status ||
+    ''
+  ).trim().toLowerCase();
+
+  if (status === 'error') return 'offline';
+
+  return status || 'pending';
+};
 const Badge = ({ children, tone = 'slate' }) => <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[.12em] ${tone === 'green' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : tone === 'amber' ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' : tone === 'indigo' ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : 'bg-slate-100 text-slate-600'}`}>{children}</span>;
 const Field = ({ label, children, hint }) => <label className="block"><span className="text-xs font-bold text-slate-700">{label}</span>{hint && <span className="ml-1 text-[11px] text-slate-400">{hint}</span>}<div className="mt-1.5">{children}</div></label>;
 const Card = ({ className = '', children }) => <section className={`rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)] ${className}`}>{children}</section>;
@@ -95,7 +106,71 @@ export default function BillingWorkspace() {
     }
   };
 
-  const testRouter = async (id) => { try { setSaving(true); setRouterNotice(''); const result = await api.post('/mikrotik/test', { id }); setRouterNotice(`${result.data.identity || 'Router'} is online and responding through its private tunnel.`); await load(); } catch (e) { setError(e.response?.data?.error || 'Router connection test failed.'); } finally { setSaving(false); } };
+  const testRouter = async (id) => {
+    try {
+      setSaving(true);
+      setRouterNotice('');
+      setError('');
+
+      const result = await api.post(
+        '/mikrotik/test',
+        { id }
+      );
+
+      setRouters((current) =>
+        current.map((router) =>
+          Number(router.id) === Number(id)
+            ? {
+                ...router,
+                last_status: 'online',
+                last_error: '',
+                last_identity:
+                  result.data.identity ||
+                  router.last_identity ||
+                  '',
+                last_version:
+                  result.data.version ||
+                  router.last_version ||
+                  '',
+                last_uptime:
+                  result.data.uptime ||
+                  router.last_uptime ||
+                  '',
+                last_seen_at:
+                  new Date().toISOString(),
+              }
+            : router
+        )
+      );
+
+      setRouterNotice(
+        `${
+          result.data.identity || 'MikroTik'
+        } is online and responding through its private tunnel.`
+      );
+
+      void loadDetails();
+    } catch (error) {
+      setRouters((current) =>
+        current.map((router) =>
+          Number(router.id) === Number(id)
+            ? {
+                ...router,
+                last_status: 'error',
+              }
+            : router
+        )
+      );
+
+      setError(
+        error.response?.data?.error ||
+        'Router connection test failed.'
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const previewRouterProvision = async (router) => { try { setSaving(true); setRouterNotice(''); const result = await api.post(`/mikrotik/${router.id}/provision/preview`, { radius_secret: 'preview-only-secret-12345' }); const stages = (result.data.stages || []).map((stage) => stage.label).join(' ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢ '); setRouterNotice(`Provisioning preview for ${router.name}: ${stages}`); } catch (e) { setError(e.response?.data?.error || 'Provisioning preview failed.'); } finally { setSaving(false); } };  const saveHotspotPlan = (e) => save(e, '/billing-workspace/hotspot/plans', { ...packagePayload(hotspotPlanForm), price: Number(hotspotPlanForm.price || 0), duration_minutes: Number(hotspotPlanForm.duration_minutes), data_limit_mb: hotspotPlanForm.data_limit_mb ? Number(hotspotPlanForm.data_limit_mb) : null }, () => setHotspotPlanForm(emptyHotspotPlan));
   const toggleHotspotPlan = async (id, isActive) => { try { setSaving(true); await api.patch(`/billing-workspace/hotspot/plans/${id}/status`, { is_active: isActive }); await load(); } catch (e) { setError(e.response?.data?.error || 'Hotspot package status could not be updated.'); } finally { setSaving(false); } };
   const deleteHotspotPlan = async (id) => { const plan = hotspotPlans.find((item) => item.id === id); if (!plan || !window.confirm(`Delete hotspot package ${plan.name}?`)) return; try { setSaving(true); await api.delete(`/billing-workspace/hotspot/plans/${id}`); await load(); } catch (e) { setError(e.response?.data?.error || 'Hotspot package could not be deleted.'); } finally { setSaving(false); } };
@@ -538,13 +613,12 @@ function Routers({
 
                 <Badge
                   tone={
-                    router.status === 'online' ||
-                    router.status === 'active'
+                    ['online', 'active'].includes(routerDisplayStatus(router))
                       ? 'green'
                       : 'amber'
                   }
                 >
-                  {router.status || 'pending'}
+                  {routerDisplayStatus(router)}
                 </Badge>
               </div>
 

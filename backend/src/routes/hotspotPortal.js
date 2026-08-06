@@ -15,6 +15,13 @@ const { verifyHotspotPortalToken } = require('../services/hotspotPortalToken');
 
 const router = express.Router();
 
+router.use(
+  express.urlencoded({
+    extended: false,
+    limit: '32kb',
+  })
+);
+
 router.use((req, res, next) => {
   res.set({
     'Access-Control-Allow-Origin':

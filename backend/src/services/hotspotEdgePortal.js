@@ -1166,6 +1166,42 @@ byId("payment-form")
         );
       }catch(error){}
 
+      /*
+       * Use a CORS-simple form request.
+       * application/json causes an OPTIONS
+       * preflight, which captive portals can
+       * block before authentication.
+       */
+      var checkoutBody =
+        new URLSearchParams();
+
+      checkoutBody.set(
+        "portal_token",
+        PORTAL_TOKEN
+      );
+
+      checkoutBody.set(
+        "plan_id",
+        String(
+          selectedPlan.id
+        )
+      );
+
+      checkoutBody.set(
+        "phone",
+        phone
+      );
+
+      checkoutBody.set(
+        "mac",
+        MAC
+      );
+
+      checkoutBody.set(
+        "ip",
+        IP
+      );
+
       fetch(
         API_BASE +
         "/checkout",
@@ -1173,26 +1209,15 @@ byId("payment-form")
           method:"POST",
           mode:"cors",
           credentials:"omit",
+          cache:"no-store",
+
           headers:{
-            "Content-Type":
+            "Accept":
               "application/json"
           },
-          body:JSON.stringify({
-            portal_token:
-              PORTAL_TOKEN,
 
-            plan_id:
-              selectedPlan.id,
-
-            phone:
-              phone,
-
-            mac:
-              MAC,
-
-            ip:
-              IP
-          })
+          body:
+            checkoutBody
         }
       )
         .then(function(response){

@@ -6,7 +6,11 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, syncHotspotVoucherRadius, syncSubscriberRadius } = require('../services/radiusSync');
 const { enqueueRadiusSyncJob, processRadiusSyncJobs } = require('../services/radiusJobs');
-const { ensureMikrotikTables, syncStaticDhcpLease } = require('../services/mikrotik');
+const {
+  ensureMikrotikTables,
+  syncMikrotikClients,
+  syncStaticDhcpLease,
+} = require('../services/mikrotik');
 const { createHotspotPortalToken } = require('../services/hotspotPortalToken');
 const {
   appendBillingEvent,
@@ -52,26 +56,291 @@ async function resolveStaticConfig(body, clientId, selectedRouter) {
 router.get('/summary', async (req, res) => {
   try {
     const clientId = req.scope.clientId;
-    const [subscribers, plans, invoices, payments, recentPayments] = await Promise.all([
-      db.query('SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE service_status = \'active\')::int AS active FROM billing_subscribers WHERE client_id = $1', [clientId]),
-      db.query('SELECT COUNT(*)::int AS total FROM billing_plans WHERE client_id = $1 AND is_active = TRUE', [clientId]),
-      db.query('SELECT COUNT(*)::int AS total, COALESCE(SUM(amount), 0)::numeric AS outstanding FROM billing_invoices WHERE client_id = $1 AND status IN (\'issued\', \'overdue\')', [clientId]),
-      db.query('SELECT COALESCE(SUM(amount), 0)::numeric AS total FROM billing_payments WHERE client_id = $1 AND status = \'completed\' AND paid_at >= CURRENT_DATE AND paid_at < CURRENT_DATE + INTERVAL \'1 day\'', [clientId]),
-      db.query(`SELECT p.id, p.amount, p.method, p.reference, p.status, p.paid_at, i.invoice_number
-                FROM billing_payments p
-                LEFT JOIN billing_invoices i ON i.id = p.invoice_id AND i.client_id = p.client_id
-                WHERE p.client_id = $1 ORDER BY p.paid_at DESC, p.created_at DESC LIMIT 4`, [clientId]),
+
+    await ensureMikrotikTables();
+
+    const networkSync =
+      await syncMikrotikClients(
+        clientId
+      ).catch((error) => {
+        console.error(
+          'Live MikroTik client sync failed:',
+          error.message
+        );
+
+        return {
+          routers: 0,
+          synced: 0,
+          failed: 1,
+          errors: [
+            {
+              error: error.message,
+            },
+          ],
+        };
+      });
+
+    const [
+      subscribers,
+      plans,
+      invoices,
+      billingCollections,
+      hotspotCollections,
+      recentPayments,
+    ] = await Promise.all([
+      db.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (
+             WHERE is_online = TRUE
+           )::int AS active,
+           COUNT(*) FILTER (
+             WHERE service_type = 'pppoe'
+           )::int AS pppoe,
+           COUNT(*) FILTER (
+             WHERE service_type = 'hotspot'
+           )::int AS hotspot,
+           MAX(last_synced_at) AS last_synced_at
+         FROM mikrotik_clients
+         WHERE client_id = $1`,
+        [clientId]
+      ),
+
+      db.query(
+        `SELECT
+           (
+             SELECT COUNT(*)
+             FROM billing_plans
+             WHERE client_id = $1
+               AND is_active = TRUE
+           ) +
+           (
+             SELECT COUNT(*)
+             FROM billing_hotspot_plans
+             WHERE client_id = $1
+               AND is_active = TRUE
+           ) AS total`,
+        [clientId]
+      ),
+
+      db.query(
+        `SELECT
+           COUNT(*)::int AS total,
+           COUNT(*) FILTER (
+             WHERE status = 'overdue'
+           )::int AS overdue,
+           COALESCE(
+             SUM(amount) FILTER (
+               WHERE status IN (
+                 'issued',
+                 'overdue'
+               )
+             ),
+             0
+           )::numeric AS outstanding
+         FROM billing_invoices
+         WHERE client_id = $1`,
+        [clientId]
+      ),
+
+      db.query(
+        `SELECT
+           COALESCE(
+             SUM(amount),
+             0
+           )::numeric AS total
+         FROM billing_payments
+         WHERE client_id = $1
+           AND status = 'completed'
+           AND paid_at >=
+             DATE_TRUNC(
+               'month',
+               CURRENT_DATE
+             )
+           AND paid_at <
+             DATE_TRUNC(
+               'month',
+               CURRENT_DATE
+             ) + INTERVAL '1 month'`,
+        [clientId]
+      ),
+
+      db.query(
+        `SELECT
+           COALESCE(
+             SUM(amount),
+             0
+           )::numeric AS total,
+           COUNT(*)::int AS transactions
+         FROM payhero_payment_requests
+         WHERE client_id = $1
+           AND status = 'paid'
+           AND metadata->>'purpose' =
+             'hotspot'
+           AND updated_at >=
+             DATE_TRUNC(
+               'month',
+               CURRENT_DATE
+             )
+           AND updated_at <
+             DATE_TRUNC(
+               'month',
+               CURRENT_DATE
+             ) + INTERVAL '1 month'`,
+        [clientId]
+      ),
+
+      db.query(
+        `SELECT *
+         FROM (
+           SELECT
+             'billing-' ||
+               payment.id::text AS id,
+             payment.amount::numeric
+               AS amount,
+             COALESCE(
+               payment.method,
+               'Payment'
+             ) AS method,
+             COALESCE(
+               payment.reference,
+               ''
+             ) AS reference,
+             payment.status,
+             payment.paid_at,
+             invoice.invoice_number,
+             subscriber.full_name
+               AS subscriber_name,
+             subscriber.account_number,
+             'billing' AS source
+           FROM billing_payments payment
+           LEFT JOIN billing_subscribers
+             subscriber
+             ON subscriber.id =
+               payment.subscriber_id
+            AND subscriber.client_id =
+               payment.client_id
+           LEFT JOIN billing_invoices
+             invoice
+             ON invoice.id =
+               payment.invoice_id
+            AND invoice.client_id =
+               payment.client_id
+           WHERE payment.client_id = $1
+
+           UNION ALL
+
+           SELECT
+             'hotspot-' ||
+               payment.id::text AS id,
+             payment.amount::numeric
+               AS amount,
+             'M-Pesa' AS method,
+             COALESCE(
+               payment.mpesa_receipt_number,
+               payment.external_reference
+             ) AS reference,
+             payment.status,
+             payment.updated_at AS paid_at,
+             'Hotspot package'
+               AS invoice_number,
+             COALESCE(
+               payment.customer_name,
+               'Hotspot customer'
+             ) AS subscriber_name,
+             payment.customer_phone
+               AS account_number,
+             'hotspot' AS source
+           FROM payhero_payment_requests
+             payment
+           WHERE payment.client_id = $1
+             AND payment.status = 'paid'
+             AND payment.metadata->>'purpose' =
+               'hotspot'
+         ) activity
+         ORDER BY paid_at DESC NULLS LAST
+         LIMIT 8`,
+        [clientId]
+      ),
     ]);
+
+    const billingTotal =
+      Number(
+        billingCollections.rows[0]
+          ?.total || 0
+      );
+
+    const hotspotTotal =
+      Number(
+        hotspotCollections.rows[0]
+          ?.total || 0
+      );
+
     res.json({
-      subscribers: subscribers.rows[0],
-      plans: plans.rows[0],
-      invoices: invoices.rows[0],
-      payments: payments.rows[0],
-      recent_payments: recentPayments.rows,
+      subscribers:
+        subscribers.rows[0] || {
+          total: 0,
+          active: 0,
+          pppoe: 0,
+          hotspot: 0,
+        },
+
+      plans: {
+        total:
+          Number(
+            plans.rows[0]?.total || 0
+          ),
+      },
+
+      invoices:
+        invoices.rows[0] || {
+          total: 0,
+          overdue: 0,
+          outstanding: 0,
+        },
+
+      payments: {
+        total:
+          billingTotal +
+          hotspotTotal,
+        billing_total:
+          billingTotal,
+        hotspot_total:
+          hotspotTotal,
+        hotspot_transactions:
+          Number(
+            hotspotCollections.rows[0]
+              ?.transactions || 0
+          ),
+        period: 'current_month',
+      },
+
+      recent_payments:
+        recentPayments.rows,
+
+      data_sources: {
+        subscribers:
+          'mikrotik-live',
+        traffic:
+          'mikrotik-noc-snapshots',
+        hotspot_payments:
+          'payhero-confirmed',
+        billing_payments:
+          'billing-payments',
+        simulated: false,
+        network_sync: networkSync,
+      },
     });
-  } catch (err) {
-    console.error('Billing summary error:', err.message);
-    res.status(500).json({ error: 'Failed to load billing summary' });
+  } catch (error) {
+    console.error(
+      'Billing summary error:',
+      error.message
+    );
+
+    res.status(500).json({
+      error:
+        'Failed to load live billing summary',
+    });
   }
 });
 
@@ -645,16 +914,100 @@ router.post('/invoices', [
 });
 
 router.get('/payments', async (req, res) => {
-  const result = await db.query(
-    `SELECT p.*, s.full_name AS subscriber_name, s.account_number, i.invoice_number
-     FROM billing_payments p
-     LEFT JOIN billing_subscribers s ON s.id = p.subscriber_id AND s.client_id = p.client_id
-     LEFT JOIN billing_invoices i ON i.id = p.invoice_id AND i.client_id = p.client_id
-     WHERE p.client_id = $1
-     ORDER BY p.paid_at DESC, p.created_at DESC`,
-    [req.scope.clientId]
-  );
-  res.json(result.rows);
+  try {
+    const result = await db.query(
+      `SELECT *
+       FROM (
+         SELECT
+           'billing-' ||
+             payment.id::text AS id,
+           payment.client_id,
+           payment.subscriber_id,
+           payment.invoice_id,
+           payment.amount::numeric
+             AS amount,
+           COALESCE(
+             payment.method,
+             'Payment'
+           ) AS method,
+           COALESCE(
+             payment.reference,
+             ''
+           ) AS reference,
+           payment.status,
+           payment.paid_at,
+           payment.created_at,
+           subscriber.full_name
+             AS subscriber_name,
+           subscriber.account_number,
+           invoice.invoice_number,
+           'billing' AS source
+         FROM billing_payments payment
+         LEFT JOIN billing_subscribers
+           subscriber
+           ON subscriber.id =
+             payment.subscriber_id
+          AND subscriber.client_id =
+             payment.client_id
+         LEFT JOIN billing_invoices invoice
+           ON invoice.id =
+             payment.invoice_id
+          AND invoice.client_id =
+             payment.client_id
+         WHERE payment.client_id = $1
+
+         UNION ALL
+
+         SELECT
+           'hotspot-' ||
+             payment.id::text AS id,
+           payment.client_id,
+           NULL::integer AS subscriber_id,
+           NULL::integer AS invoice_id,
+           payment.amount::numeric
+             AS amount,
+           'M-Pesa' AS method,
+           COALESCE(
+             payment.mpesa_receipt_number,
+             payment.external_reference
+           ) AS reference,
+           payment.status,
+           payment.updated_at AS paid_at,
+           payment.created_at,
+           COALESCE(
+             payment.customer_name,
+             'Hotspot customer'
+           ) AS subscriber_name,
+           payment.customer_phone
+             AS account_number,
+           'Hotspot package'
+             AS invoice_number,
+           'hotspot' AS source
+         FROM payhero_payment_requests
+           payment
+         WHERE payment.client_id = $1
+           AND payment.status = 'paid'
+           AND payment.metadata->>'purpose' =
+             'hotspot'
+       ) payments
+       ORDER BY
+         paid_at DESC NULLS LAST,
+         created_at DESC`,
+      [req.scope.clientId]
+    );
+
+    res.json(result.rows);
+  } catch (error) {
+    console.error(
+      'List live payments error:',
+      error.message
+    );
+
+    res.status(500).json({
+      error:
+        'Failed to load live payments',
+    });
+  }
 });
 
 router.post('/payments', [
@@ -1098,61 +1451,16 @@ router.post('/hotspot/vouchers', [
   }
 });
 
-router.post('/hotspot/vouchers/:id/simulate-login', async (req, res) => {
-  try {
-    const voucherResult = await db.query(
-      `SELECT v.*, p.duration_minutes, p.data_limit_mb, p.mikrotik_rate_limit, p.fup_enabled,
-              p.fup_threshold_mb, p.fup_download_speed_mbps, p.fup_upload_speed_mbps
-       FROM billing_hotspot_vouchers v
-       JOIN billing_hotspot_plans p ON p.id = v.plan_id AND p.client_id = v.client_id
-       WHERE v.id = $1 AND v.client_id = $2 FOR UPDATE`,
-      [req.params.id, req.scope.clientId]
-    );
-    const voucher = voucherResult.rows[0];
-    if (!voucher) return res.status(404).json({ error: 'Voucher not found' });
-    if (voucher.status !== 'available') return res.status(400).json({ error: 'Only an available voucher can be activated' });
-    const result = await db.query(
-      `UPDATE billing_hotspot_vouchers SET status = 'active', used_by = 'Simulated hotspot user', activated_at = NOW(), expires_at = NOW() + ($1::text || ' minutes')::interval
-       WHERE id = $2 AND client_id = $3 RETURNING *`,
-      [voucher.duration_minutes, voucher.id, req.scope.clientId]
-    );
-    let radiusSync = { status: 'not_configured' };
-    if (radiusEnabled()) radiusSync = await syncHotspotVoucherRadius({
-      ...result.rows[0],
-      mikrotik_rate_limit: voucher.mikrotik_rate_limit,
-      data_limit_mb: voucher.data_limit_mb,
-      fup_enabled: voucher.fup_enabled,
-      fup_threshold_mb: voucher.fup_threshold_mb,
-      fup_download_speed_mbps: voucher.fup_download_speed_mbps,
-      fup_upload_speed_mbps: voucher.fup_upload_speed_mbps,
+router.post(
+  '/hotspot/vouchers/:id/simulate-login',
+  (_req, res) => {
+    res.status(410).json({
+      error:
+        'Simulated hotspot logins are disabled. Use a real voucher login or confirmed payment.',
+      simulated: false,
     });
-    await recordRequestEvent(req, {
-      eventType: 'hotspot.voucher_activated',
-      category: 'hotspot',
-      source: 'billing_workspace',
-      entityType: 'hotspot_voucher',
-      entityId: result.rows[0].id,
-      title: 'Hotspot voucher activated',
-      payload: {
-        plan_id: result.rows[0].plan_id,
-        expires_at: result.rows[0].expires_at,
-        radius_sync_status: radiusSync.status,
-      },
-      newState: {
-        status: result.rows[0].status,
-        activated_at: result.rows[0].activated_at,
-        expires_at: result.rows[0].expires_at,
-      },
-      relatedEntities: [{ entityType: 'hotspot_package', entityId: result.rows[0].plan_id, relationship: 'package' }],
-      deduplicationKey: `hotspot-voucher:${result.rows[0].id}:activated`,
-      sensitivity: 'confidential',
-    });
-    res.json({ simulated: true, voucher: result.rows[0], radius_sync: radiusSync });
-  } catch (err) {
-    console.error('Simulate hotspot login error:', err.message);
-    res.status(500).json({ error: 'Failed to simulate hotspot login' });
   }
-});
+);
 
 
 async function ensureHotspotPortalConfigColumn() {

@@ -55,7 +55,21 @@ export default function BillingWorkspace() {
     }
   }, []);
   useEffect(() => { let mounted = true; const hasActiveRouter = routers.some((router) => router.status === 'active' || router.status === 'online'); const pollLiveTraffic = async () => { setBandwidthTick((value) => value + 1); if (!hasActiveRouter) return; try { const result = await api.get('/noc/overview'); const sample = result.data; if (!mounted || !sample?.checked_at) return; setBandwidthHistory((current) => [...current.filter((row) => row.timestamp !== sample.checked_at), { timestamp: sample.checked_at, download_mbps: Number(sample.download_mbps || 0), upload_mbps: Number(sample.upload_mbps || 0) }].slice(-72)); } catch (_) { /* Preview motion remains available while a router reconnects. */ } }; pollLiveTraffic(); const timer = hasActiveRouter ? window.setInterval(pollLiveTraffic, 5000) : null; const animation = window.setInterval(() => setBandwidthTick((value) => value + 1), 1000); return () => { mounted = false; if (timer) window.clearInterval(timer); window.clearInterval(animation); }; }, [routers]);
-  const active = useMemo(() => subscribers.filter((s) => s.service_status === 'active').length, [subscribers]);
+  const active = useMemo(
+    () =>
+      Number(
+        summary?.subscribers?.active ??
+        subscribers.filter(
+          subscriber =>
+            subscriber.service_status ===
+            'active'
+        ).length
+      ),
+    [
+      summary,
+      subscribers,
+    ]
+  );
   const filtered = useMemo(() => subscribers.filter((s) => `${s.full_name} ${s.account_number} ${s.phone || ''}`.toLowerCase().includes(search.toLowerCase())), [subscribers, search]);
   const greetingHour = new Date().getHours();
   const greetingText = greetingHour < 12
@@ -1060,17 +1074,405 @@ function Routers({
 
 function MobileTile({ icon, title, text, onClick, panel, muted }) { return <button onClick={onClick} className={`flex items-center gap-3 rounded-2xl p-4 text-left shadow-sm ${panel}`}><span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">{icon}</span><span><span className="block text-sm font-black">{title}</span><span className={`mt-0.5 block text-[10px] font-semibold ${muted}`}>{text}</span></span></button>; }
 function MobileAction({ icon, label, onClick }) { return <button onClick={onClick} className="flex flex-col items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><NavIcon kind={label.toLowerCase()} /></span>{label}</button>; }
-function BandwidthOverviewExact({ history = [], tick = 0, panel = 'rounded-2xl p-5 shadow-sm bg-white text-slate-900', muted = 'text-slate-400' }) {
-  const liveRows = (Array.isArray(history) ? history : []).filter((row) => row && row.timestamp);
-  const previewRows = [38, 44, 31, 49, 42, 58, 51, 67, 60, 76, 70, 84].map((download, index) => ({ timestamp: new Date(Date.now() - (11 - index) * 2 * 60 * 60 * 1000).toISOString(), download_mbps: Math.max(8, Math.round(download + Math.sin((index + tick) / 1.8) * 8)), upload_mbps: Math.max(8, Math.round(download * .42 + Math.cos((index + tick) / 2.2) * 4)) }));
-  const rows = liveRows.length ? liveRows : previewRows;
-  const max = Math.max(...rows.map((row) => Math.max(Number(row.download_mbps || 0), Number(row.upload_mbps || 0))), 1);
-  const smoothPath = (key) => { const coords = rows.map((row, index) => [rows.length === 1 ? 50 : (index / (rows.length - 1)) * 100, 100 - (Math.min(Number(row[key] || 0), max) / max) * 82 - 9]); return coords.reduce((path, point, index) => { if (index === 0) return `M ${point[0]} ${point[1]}`; const previous = coords[index - 1]; const mid = (previous[0] + point[0]) / 2; return `${path} C ${mid} ${previous[1]}, ${mid} ${point[1]}, ${point[0]} ${point[1]}`; }, ''); };
-  const areaPath = (key) => `${smoothPath(key)} L 100 100 L 0 100 Z`;
-  const latest = rows[rows.length - 1]; const peak = Math.max(...rows.map((row) => Number(row.download_mbps || 0) + Number(row.upload_mbps || 0)), 0); const throughput = latest ? Number(latest.download_mbps || 0) + Number(latest.upload_mbps || 0) : 0; const maxKbps = Math.round(max * 125);
-  const icon = (kind) => <svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">{kind === 'down' ? <><path d="M12 4v15" /><path d="m6 13 6 6 6-6" /></> : kind === 'up' ? <><path d="M12 20V5" /><path d="m6 11 6-6 6 6" /></> : kind === 'peak' ? <><path d="m4 16 5-5 4 3 7-8" /><path d="M4 20h16" /></> : <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>}</svg>;
-  return <section className={`rounded-2xl p-5 shadow-sm ${panel}`}><div className="flex items-start justify-between gap-3"><div><h2 className="text-[19px] font-black tracking-tight">Bandwidth overview</h2><p className={`mt-1 text-xs ${muted}`}>Traffic trend - last 24 hours</p></div><span className="rounded-full bg-violet-50 px-3 py-1.5 text-[10px] font-black text-violet-700">24 HOUR TREND</span></div><div className="mt-4 grid grid-cols-[1fr_1fr] gap-x-4"><div className="border-r border-slate-100 pr-3"><p className={`text-[10px] font-bold uppercase tracking-wider ${muted}`}>Current throughput</p><p className="mt-1 text-[28px] font-black tracking-tight">{throughput.toFixed(2)} Mbps</p></div><div className="grid grid-cols-2 gap-x-3 gap-y-3"><div className="flex items-center gap-2 border-b border-slate-100 pb-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-lg text-violet-600">{icon('down')}</span><span><small className={`block text-[10px] ${muted}`}>Download</small><b className="text-sm">{Number(latest?.download_mbps || 0).toFixed(0)} Mbps</b></span></div><div className="flex items-center gap-2 border-b border-slate-100 pb-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-lg text-violet-600">{icon('up')}</span><span><small className={`block text-[10px] ${muted}`}>Upload</small><b className="text-sm">{Number(latest?.upload_mbps || 0).toFixed(0)} Mbps</b></span></div><div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-lg text-violet-600">{icon('peak')}</span><span><small className={`block text-[10px] ${muted}`}>Peak</small><b className="text-sm">{peak.toFixed(0)} Mbps</b></span></div><div className="flex items-center gap-2"><span className="flex h-8 w-8 items-center justify-center rounded-full bg-violet-50 text-lg text-violet-600">{icon('latency')}</span><span><small className={`block text-[10px] ${muted}`}>Avg. latency</small><b className="text-sm">19 ms</b></span></div></div></div><div className="mt-5 rounded-2xl border border-slate-100 bg-white p-2"><div className="flex h-48"><div className="flex w-12 flex-col justify-between py-2 text-[10px] text-slate-500"><span>{maxKbps} KB/s</span><span>{Math.round(maxKbps * .66)} KB/s</span><span>{Math.round(maxKbps * .33)} KB/s</span><span>0 KB/s</span></div><div className="min-w-0 flex-1"><svg viewBox="0 0 100 100" preserveAspectRatio="none" className="h-full w-full" role="img" aria-label="Live bandwidth traffic graph"><defs><linearGradient id="bw-down-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#7c3aed" stopOpacity=".28" /><stop offset="100%" stopColor="#7c3aed" stopOpacity=".02" /></linearGradient><linearGradient id="bw-up-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#d946ef" stopOpacity=".18" /><stop offset="100%" stopColor="#d946ef" stopOpacity=".02" /></linearGradient></defs><path d="M0 10H100 M0 37H100 M0 64H100 M0 91H100" stroke="#e2e8f0" strokeWidth=".5" fill="none" /><path d={areaPath('download_mbps')} fill="url(#bw-down-fill)" /><path d={areaPath('upload_mbps')} fill="url(#bw-up-fill)" /><path d={smoothPath('download_mbps')} fill="none" stroke="#6d28d9" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" /><path d={smoothPath('upload_mbps')} fill="none" stroke="#d946ef" strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinecap="round" /></svg></div></div><div className="ml-12 mt-1 flex justify-between text-[10px] text-slate-500"><span>12 AM</span><span>6 AM</span><span>12 PM</span><span>6 PM</span><span>12 AM</span></div><div className="mt-3 flex justify-center gap-5 text-[10px] font-semibold text-slate-500"><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-violet-700" />Download (Mbps)</span><span><i className="mr-1 inline-block h-2 w-2 rounded-full bg-fuchsia-500" />Upload (Mbps)</span></div></div></section>;
-}function Overview({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, money }) { const overdue = invoices.filter((i) => i.status === 'overdue').length; const recent = payments.slice(0, 4); const cards = [['Subscribers', summary?.subscribers?.total || 0, `${active} active service`, 'bg-emerald-500'], ['Collections', money(summary?.payments?.total), 'This month', 'bg-sky-500'], ['Outstanding', money(summary?.invoices?.outstanding), `${overdue} overdue`, 'bg-violet-500'], ['Packages', summary?.plans?.total || 0, 'Ready to sell', 'bg-orange-500']]; return <div className="space-y-6"><section><div className="text-sm font-bold text-slate-500">Good day.</div><h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Your business at a glance</h2></section><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, note, color]) => <div key={label} className={`${color} min-h-[144px] rounded-2xl p-5 text-white shadow-lg shadow-slate-200/60`}><div className="text-xs font-bold text-white/80">{label}</div><div className="mt-3 text-3xl font-black tracking-tight">{value}</div><div className="mt-5 border-t border-white/20 pt-3 text-[11px] font-bold text-white/80">{note}</div></div>)}</section><BandwidthOverviewExact history={bandwidthHistory} tick={bandwidthTick} /><section className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><Card><div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><div><h2 className="font-extrabold">Recent activity</h2><p className="mt-1 text-xs text-slate-400">Payments and customer activity across your business</p></div><button onClick={() => setTab('payments')} className="text-xs font-bold text-emerald-600">View all</button></div>{recent.length ? <div className="divide-y divide-slate-100">{recent.map((p) => <div key={p.id} className="flex items-center justify-between px-6 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-sm text-emerald-600">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ</div><div><div className="font-bold text-slate-800">{p.reference || 'Payment recorded'}</div><div className="mt-1 text-xs text-slate-400">{p.invoice_number || 'Invoice'} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {p.method}</div></div></div><div className="font-extrabold text-slate-800">{money(p.amount)}</div></div>)}</div> : <Empty title="No activity yet" text="New payments and subscriber actions will show here." />}</Card><Card><div className="border-b border-slate-100 px-6 py-5"><h2 className="font-extrabold">Business health</h2><p className="mt-1 text-xs text-slate-400">Live billing snapshot</p></div><div className="space-y-5 p-6"><Health label="Active subscribers" value={active} total={summary?.subscribers?.total || 0} color="bg-emerald-500" /><Health label="Paid collections" value={payments.length} total={Math.max(payments.length, 1)} color="bg-sky-500" /><Health label="Open invoices" value={invoices.filter((i) => i.status !== 'paid').length} total={Math.max(invoices.length, 1)} color="bg-violet-500" /><button onClick={() => setTab('plans')} className="mt-2 text-xs font-bold text-emerald-600">Manage packages ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢</button></div></Card></section></div>; }
+function BandwidthOverviewExact({
+  history = [],
+  panel =
+    'rounded-2xl p-5 shadow-sm bg-white text-slate-900',
+  muted = 'text-slate-400',
+}) {
+  const rows = (
+    Array.isArray(history)
+      ? history
+      : []
+  )
+    .filter(
+      row =>
+        row &&
+        row.timestamp
+    )
+    .sort(
+      (left, right) =>
+        new Date(left.timestamp) -
+        new Date(right.timestamp)
+    );
+
+  const hasData = rows.length > 0;
+
+  const max = Math.max(
+    1,
+    ...rows.map(row =>
+      Math.max(
+        Number(
+          row.download_mbps || 0
+        ),
+        Number(
+          row.upload_mbps || 0
+        )
+      )
+    )
+  );
+
+  const smoothPath = key => {
+    const coordinates =
+      rows.map(
+        (row, index) => [
+          rows.length === 1
+            ? 50
+            : (
+                index /
+                (rows.length - 1)
+              ) * 100,
+
+          100 -
+            (
+              Math.min(
+                Number(
+                  row[key] || 0
+                ),
+                max
+              ) /
+              max
+            ) *
+              82 -
+            9,
+        ]
+      );
+
+    return coordinates.reduce(
+      (
+        currentPath,
+        point,
+        index
+      ) => {
+        if (index === 0) {
+          return (
+            `M ${point[0]} ` +
+            `${point[1]}`
+          );
+        }
+
+        const previous =
+          coordinates[index - 1];
+
+        const middle =
+          (
+            previous[0] +
+            point[0]
+          ) / 2;
+
+        return (
+          `${currentPath} C ` +
+          `${middle} ${previous[1]}, ` +
+          `${middle} ${point[1]}, ` +
+          `${point[0]} ${point[1]}`
+        );
+      },
+      ''
+    );
+  };
+
+  const areaPath = key =>
+    rows.length > 1
+      ? (
+          `${smoothPath(key)} ` +
+          'L 100 100 L 0 100 Z'
+        )
+      : '';
+
+  const latest =
+    rows[rows.length - 1];
+
+  const download =
+    Number(
+      latest?.download_mbps || 0
+    );
+
+  const upload =
+    Number(
+      latest?.upload_mbps || 0
+    );
+
+  const throughput =
+    download + upload;
+
+  const peak = Math.max(
+    0,
+    ...rows.map(
+      row =>
+        Number(
+          row.download_mbps || 0
+        ) +
+        Number(
+          row.upload_mbps || 0
+        )
+    )
+  );
+
+  const timeLabel = value => {
+    const parsed = new Date(value);
+
+    if (
+      Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return '';
+    }
+
+    return parsed.toLocaleTimeString(
+      [],
+      {
+        hour: '2-digit',
+        minute: '2-digit',
+      }
+    );
+  };
+
+  const firstTime =
+    rows[0]?.timestamp;
+
+  const middleTime =
+    rows[
+      Math.floor(
+        rows.length / 2
+      )
+    ]?.timestamp;
+
+  const lastTime =
+    rows[
+      rows.length - 1
+    ]?.timestamp;
+
+  return (
+    <section
+      className={`rounded-2xl p-5 shadow-sm ${panel}`}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-[19px] font-black tracking-tight">
+            Bandwidth overview
+          </h2>
+
+          <p
+            className={`mt-1 text-xs ${muted}`}
+          >
+            Live MikroTik traffic samples
+          </p>
+        </div>
+
+        <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700">
+          LIVE DATA ONLY
+        </span>
+      </div>
+
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
+        <div className="rounded-xl bg-violet-50 p-3">
+          <small className="text-[10px] font-bold uppercase text-violet-500">
+            Throughput
+          </small>
+
+          <strong className="mt-1 block text-lg font-black">
+            {throughput.toFixed(2)} Mbps
+          </strong>
+        </div>
+
+        <div className="rounded-xl bg-sky-50 p-3">
+          <small className="text-[10px] font-bold uppercase text-sky-500">
+            Download
+          </small>
+
+          <strong className="mt-1 block text-lg font-black">
+            {download.toFixed(2)} Mbps
+          </strong>
+        </div>
+
+        <div className="rounded-xl bg-fuchsia-50 p-3">
+          <small className="text-[10px] font-bold uppercase text-fuchsia-500">
+            Upload
+          </small>
+
+          <strong className="mt-1 block text-lg font-black">
+            {upload.toFixed(2)} Mbps
+          </strong>
+        </div>
+
+        <div className="rounded-xl bg-emerald-50 p-3">
+          <small className="text-[10px] font-bold uppercase text-emerald-600">
+            Live samples
+          </small>
+
+          <strong className="mt-1 block text-lg font-black">
+            {rows.length}
+          </strong>
+        </div>
+      </div>
+
+      {hasData ? (
+        <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-3">
+          <div className="flex h-48">
+            <div className="flex w-16 flex-col justify-between py-2 text-[10px] text-slate-500">
+              <span>
+                {max.toFixed(1)} Mbps
+              </span>
+
+              <span>
+                {(max * 0.66).toFixed(1)}
+              </span>
+
+              <span>
+                {(max * 0.33).toFixed(1)}
+              </span>
+
+              <span>0 Mbps</span>
+            </div>
+
+            <div className="min-w-0 flex-1">
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="h-full w-full"
+                role="img"
+                aria-label="Live bandwidth traffic graph"
+              >
+                <defs>
+                  <linearGradient
+                    id="bw-live-down"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor="#7c3aed"
+                      stopOpacity=".28"
+                    />
+
+                    <stop
+                      offset="100%"
+                      stopColor="#7c3aed"
+                      stopOpacity=".02"
+                    />
+                  </linearGradient>
+
+                  <linearGradient
+                    id="bw-live-up"
+                    x1="0"
+                    y1="0"
+                    x2="0"
+                    y2="1"
+                  >
+                    <stop
+                      offset="0%"
+                      stopColor="#d946ef"
+                      stopOpacity=".18"
+                    />
+
+                    <stop
+                      offset="100%"
+                      stopColor="#d946ef"
+                      stopOpacity=".02"
+                    />
+                  </linearGradient>
+                </defs>
+
+                <path
+                  d="M0 10H100 M0 37H100 M0 64H100 M0 91H100"
+                  stroke="#e2e8f0"
+                  strokeWidth=".5"
+                  fill="none"
+                />
+
+                {rows.length > 1 && (
+                  <>
+                    <path
+                      d={areaPath(
+                        'download_mbps'
+                      )}
+                      fill="url(#bw-live-down)"
+                    />
+
+                    <path
+                      d={areaPath(
+                        'upload_mbps'
+                      )}
+                      fill="url(#bw-live-up)"
+                    />
+                  </>
+                )}
+
+                <path
+                  d={smoothPath(
+                    'download_mbps'
+                  )}
+                  fill="none"
+                  stroke="#6d28d9"
+                  strokeWidth="2"
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round"
+                />
+
+                <path
+                  d={smoothPath(
+                    'upload_mbps'
+                  )}
+                  fill="none"
+                  stroke="#d946ef"
+                  strokeWidth="2"
+                  vectorEffect="non-scaling-stroke"
+                  strokeLinecap="round"
+                />
+              </svg>
+            </div>
+          </div>
+
+          <div className="ml-16 mt-1 flex justify-between text-[10px] text-slate-500">
+            <span>
+              {timeLabel(firstTime)}
+            </span>
+
+            <span>
+              {timeLabel(middleTime)}
+            </span>
+
+            <span>
+              {timeLabel(lastTime)}
+            </span>
+          </div>
+
+          <div className="mt-3 flex justify-center gap-5 text-[10px] font-semibold text-slate-500">
+            <span>
+              <i className="mr-1 inline-block h-2 w-2 rounded-full bg-violet-700" />
+              Download
+            </span>
+
+            <span>
+              <i className="mr-1 inline-block h-2 w-2 rounded-full bg-fuchsia-500" />
+              Upload
+            </span>
+
+            <span>
+              Peak {peak.toFixed(2)} Mbps
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-14 text-center">
+          <h3 className="font-black text-slate-700">
+            Collecting live traffic
+          </h3>
+
+          <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
+            The graph will appear after Nexa stores genuine
+            MikroTik traffic samples. No preview or generated
+            values are displayed.
+          </p>
+        </div>
+      )}
+    </section>
+  );
+}
+function Overview({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, money }) { const overdue = invoices.filter((i) => i.status === 'overdue').length; const recent = payments.slice(0, 4); const cards = [['Subscribers', summary?.subscribers?.total || 0, `${active} active service`, 'bg-emerald-500'], ['Collections', money(summary?.payments?.total), 'This month', 'bg-sky-500'], ['Outstanding', money(summary?.invoices?.outstanding), `${overdue} overdue`, 'bg-violet-500'], ['Packages', summary?.plans?.total || 0, 'Ready to sell', 'bg-orange-500']]; return <div className="space-y-6"><section><div className="text-sm font-bold text-slate-500">Good day.</div><h2 className="mt-1 text-2xl font-black tracking-tight text-slate-900">Your business at a glance</h2></section><section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{cards.map(([label, value, note, color]) => <div key={label} className={`${color} min-h-[144px] rounded-2xl p-5 text-white shadow-lg shadow-slate-200/60`}><div className="text-xs font-bold text-white/80">{label}</div><div className="mt-3 text-3xl font-black tracking-tight">{value}</div><div className="mt-5 border-t border-white/20 pt-3 text-[11px] font-bold text-white/80">{note}</div></div>)}</section><BandwidthOverviewExact history={bandwidthHistory} tick={bandwidthTick} /><section className="grid gap-6 xl:grid-cols-[1.2fr_.8fr]"><Card><div className="flex items-center justify-between border-b border-slate-100 px-6 py-5"><div><h2 className="font-extrabold">Recent activity</h2><p className="mt-1 text-xs text-slate-400">Payments and customer activity across your business</p></div><button onClick={() => setTab('payments')} className="text-xs font-bold text-emerald-600">View all</button></div>{recent.length ? <div className="divide-y divide-slate-100">{recent.map((p) => <div key={p.id} className="flex items-center justify-between px-6 py-4"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-50 text-sm text-emerald-600">ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ</div><div><div className="font-bold text-slate-800">{p.reference || 'Payment recorded'}</div><div className="mt-1 text-xs text-slate-400">{p.invoice_number || 'Invoice'} ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã‚Â¡ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â· {p.method}</div></div></div><div className="font-extrabold text-slate-800">{money(p.amount)}</div></div>)}</div> : <Empty title="No activity yet" text="New payments and subscriber actions will show here." />}</Card><Card><div className="border-b border-slate-100 px-6 py-5"><h2 className="font-extrabold">Business health</h2><p className="mt-1 text-xs text-slate-400">Live billing snapshot</p></div><div className="space-y-5 p-6"><Health label="Active subscribers" value={active} total={summary?.subscribers?.total || 0} color="bg-emerald-500" /><Health label="Paid collections" value={payments.length} total={Math.max(payments.length, 1)} color="bg-sky-500" /><Health label="Open invoices" value={invoices.filter((i) => i.status !== 'paid').length} total={Math.max(invoices.length, 1)} color="bg-violet-500" /><button onClick={() => setTab('plans')} className="mt-2 text-xs font-bold text-emerald-600">Manage packages ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¾Ãƒâ€šÃ‚Â¢</button></div></Card></section></div>; }
 function Health({ label, value, total, color }) { const percent = Math.min(100, Math.round((value / total) * 100)); return <div><div className="flex justify-between text-xs"><span className="font-bold text-slate-600">{label}</span><span className="font-black text-slate-800">{value}</span></div><div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100"><div className={`${color} h-full rounded-full`} style={{ width: `${percent}%` }} /></div></div>; }
 function Stat({ label, value, note, icon }) { return <Card className="p-5"><div className="flex items-start justify-between"><div><div className="text-[11px] font-extrabold uppercase tracking-[.13em] text-slate-400">{label}</div><div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{value}</div><div className="mt-2 text-xs text-slate-500">{note}</div></div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-lg text-indigo-600">{icon}</div></div></Card>; }
 function Step({ number, title, text, done, onClick }) { return <button onClick={onClick} className="flex w-full items-start gap-3 text-left"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>{done ? 'ÃƒÆ’Ã†â€™Ãƒâ€ Ã¢â‚¬â„¢ÃƒÆ’Ã¢â‚¬Å¡Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã†â€™ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â¦ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€¦Ã¢â‚¬Å“ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã¢â‚¬Â¦ÃƒÂ¢Ã¢â€šÂ¬Ã…â€œ' : number}</span><span><span className="block text-sm font-bold text-slate-800">{title}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{text}</span></span></button>; }

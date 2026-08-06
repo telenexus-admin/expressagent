@@ -1121,20 +1121,293 @@ async function collectMikrotikClientRows(
   };
 }
 
+
 function isExpiredMikrotikClient(row) {
-  const expiry = String(row.expiry_date || '').trim();
-  if (!expiry) return false;
-  const match = expiry.match(/20\d{2}-\d{1,2}-\d{1,2}/);
-  if (!match) return false;
-  const date = new Date(`${match[0]}T23:59:59`);
-  return !Number.isNaN(date.getTime()) && date < new Date();
+  const expiryText =
+    String(
+      row.expiry_date || ''
+    ).trim();
+
+  if (!expiryText) {
+    return false;
+  }
+
+  const expiryTime =
+    String(
+      row.expiry_time || ''
+    ).trim();
+
+  const candidates = [
+    expiryTime &&
+    !/[T ]\d{1,2}:\d{2}/.test(
+      expiryText
+    )
+      ? `${expiryText}T${expiryTime}`
+      : expiryText,
+
+    expiryText,
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    const parsed =
+      new Date(candidate);
+
+    if (
+      !Number.isNaN(
+        parsed.getTime()
+      )
+    ) {
+      return (
+        parsed.getTime() <=
+        Date.now()
+      );
+    }
+  }
+
+  const dateMatch =
+    expiryText.match(
+      /20\d{2}-\d{1,2}-\d{1,2}/
+    );
+
+  if (!dateMatch) {
+    return false;
+  }
+
+  const endOfDay =
+    new Date(
+      `${dateMatch[0]}T23:59:59`
+    );
+
+  return (
+    !Number.isNaN(
+      endOfDay.getTime()
+    ) &&
+    endOfDay.getTime() <=
+      Date.now()
+  );
 }
 
 function publicMikrotikClient(row) {
+  const expired =
+    isExpiredMikrotikClient(row);
+
+  const effectiveStatus =
+    expired
+      ? 'expired'
+      : row.is_online === true
+        ? 'active'
+        : 'offline';
+
   return {
     ...row,
-    is_online: row.is_online === true,
-    is_expired: isExpiredMikrotikClient(row),
+    status: effectiveStatus,
+    is_online:
+      row.is_online === true,
+    is_expired: expired,
+  };
+}
+
+async function enrichHotspotClientsWithBillingAccess(
+  clientId,
+  routerId
+) {
+  const tableResult =
+    await db.query(
+      `SELECT
+         TO_REGCLASS(
+           'public.hotspot_payment_fulfillments'
+         ) AS table_name`
+    );
+
+  if (
+    !tableResult.rows[0]
+      ?.table_name
+  ) {
+    return {
+      matched: 0,
+    };
+  }
+
+  const result =
+    await db.query(
+      `WITH raw_access AS (
+         SELECT
+           UPPER(
+             REGEXP_REPLACE(
+               COALESCE(
+                 fulfillment.mac_address,
+                 ''
+               ),
+               '[^0-9A-Fa-f]',
+               '',
+               'g'
+             )
+           ) AS normalized_mac,
+
+           plan.name AS package_name,
+
+           voucher.expires_at,
+
+           COALESCE(
+             voucher.expires_at,
+             fulfillment.activated_at,
+             fulfillment.paid_at,
+             fulfillment.updated_at
+           ) AS access_time
+
+         FROM hotspot_payment_fulfillments
+           fulfillment
+
+         JOIN payhero_payment_requests
+           payment
+           ON payment.id =
+                fulfillment.payment_request_id
+          AND payment.client_id =
+                fulfillment.client_id
+          AND payment.status = 'paid'
+
+         JOIN billing_hotspot_plans
+           plan
+           ON plan.id =
+                fulfillment.plan_id
+          AND plan.client_id =
+                fulfillment.client_id
+
+         LEFT JOIN billing_hotspot_vouchers
+           voucher
+           ON voucher.id =
+                fulfillment.voucher_id
+          AND voucher.client_id =
+                fulfillment.client_id
+
+         WHERE fulfillment.client_id = $1
+           AND fulfillment.status IN (
+             'paid',
+             'active'
+           )
+       ),
+
+       latest_access AS (
+         SELECT DISTINCT ON (
+           normalized_mac
+         )
+           normalized_mac,
+           package_name,
+           expires_at
+
+         FROM raw_access
+
+         WHERE normalized_mac <> ''
+
+         ORDER BY
+           normalized_mac,
+           access_time DESC NULLS LAST
+       )
+
+       UPDATE mikrotik_clients
+         hotspot_client
+
+       SET
+         package_name =
+           latest_access.package_name,
+
+         expiry_date =
+           COALESCE(
+             latest_access.expires_at::text,
+             ''
+           ),
+
+         expiry_time = '',
+
+         status =
+           CASE
+             WHEN
+               latest_access.expires_at
+                 IS NOT NULL
+               AND
+               latest_access.expires_at
+                 <= NOW()
+             THEN 'expired'
+
+             WHEN
+               hotspot_client.is_online
+                 = TRUE
+             THEN 'active'
+
+             ELSE 'offline'
+           END,
+
+         updated_at = NOW()
+
+       FROM latest_access
+
+       WHERE
+         hotspot_client.client_id = $1
+         AND
+         hotspot_client.router_id = $2
+         AND
+         hotspot_client.service_type =
+           'hotspot'
+         AND
+         UPPER(
+           REGEXP_REPLACE(
+             COALESCE(
+               hotspot_client.mac_address,
+               hotspot_client.username,
+               ''
+             ),
+             '[^0-9A-Fa-f]',
+             '',
+             'g'
+           )
+         ) =
+           latest_access.normalized_mac
+
+       RETURNING
+         hotspot_client.username,
+         hotspot_client.package_name,
+         hotspot_client.status,
+         hotspot_client.expiry_date`,
+      [
+        clientId,
+        routerId,
+      ]
+    );
+
+  await db.query(
+    `UPDATE mikrotik_clients
+     SET package_name = '',
+         status =
+           CASE
+             WHEN is_online = TRUE
+             THEN 'active'
+             ELSE 'offline'
+           END,
+         updated_at = NOW()
+     WHERE client_id = $1
+       AND router_id = $2
+       AND service_type = 'hotspot'
+       AND COALESCE(
+         package_name,
+         ''
+       ) ~* $3`,
+    [
+      clientId,
+      routerId,
+      (
+        '^(NEXA[-_ ]?HOTSPOT' +
+        '([-_ ]?PROFILE)?|' +
+        'NEXA[-_ ]?PAID.*|' +
+        'DEFAULT)$'
+      ),
+    ]
+  );
+
+  return {
+    matched:
+      result.rowCount,
+    clients:
+      result.rows,
   };
 }
 
@@ -1177,7 +1450,21 @@ async function syncMikrotikClients(clientId) {
             router.id,
           ]
         );
-        return { ok: true, synced: collected.rows.length, sources: collected.sources };
+        const billingAccess =
+          await enrichHotspotClientsWithBillingAccess(
+            clientId,
+            router.id
+          );
+
+        return {
+          ok: true,
+          synced:
+            collected.rows.length,
+          sources:
+            collected.sources,
+          billing_access:
+            billingAccess,
+        };
       } catch (err) {
         console.error(`MikroTik client sync failed for router ${router.id}:`, err.message);
         return { ok: false, error: { router_id: router.id, router: router.name, error: err.message } };

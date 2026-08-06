@@ -77,6 +77,29 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
         .join(':');
     };
 
+
+  const realHotspotPackage =
+    (...values) => {
+      const genericProfile =
+        /^(?:NEXA[-_\s]?HOTSPOT(?:[-_\s]?PROFILE)?|NEXA[-_\s]?PAID(?:[-_\s].*)?|DEFAULT)$/i;
+
+      return (
+        values
+          .map(value =>
+            String(
+              value || ''
+            ).trim()
+          )
+          .find(value =>
+            value &&
+            !genericProfile.test(
+              value
+            )
+          ) ||
+        'No active package'
+      );
+    };
+
   const normalizedNetworkClients =
     (Array.isArray(networkClients)
       ? networkClients
@@ -204,11 +227,20 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
           null,
 
         plan_name:
-          client.package_name ||
-          client.profile ||
-          managedSubscriber
-            ?.plan_name ||
-          'No package',
+          hotspot
+            ? realHotspotPackage(
+                client.package_name,
+                client.profile,
+                managedSubscriber
+                  ?.plan_name
+              )
+            : (
+                client.package_name ||
+                client.profile ||
+                managedSubscriber
+                  ?.plan_name ||
+                'No package'
+              ),
 
         router_name:
           client.router_name ||
@@ -233,14 +265,23 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
 
         is_expired:
           Boolean(
-            client.is_expired
+            client.is_expired ||
+            client.status ===
+              'expired'
           ),
 
         expires_at:
-          managedSubscriber
-            ?.expires_at ||
-          client.expiry_date ||
-          null,
+          hotspot
+            ? (
+                client.expiry_date ||
+                null
+              )
+            : (
+                managedSubscriber
+                  ?.expires_at ||
+                client.expiry_date ||
+                null
+              ),
 
         mac_address:
           macAddress,
@@ -865,15 +906,6 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               }
                             </div>
 
-                            <div className="mt-1 text-xs text-slate-500">
-                              {subscriber.ip_address
-                                ? `IP ${subscriber.ip_address}`
-                                : 'No IP returned'}
-
-                              {subscriber.uptime
-                                ? ` · ${subscriber.uptime}`
-                                : ''}
-                            </div>
                           </div>
                         </div>
                       </td>

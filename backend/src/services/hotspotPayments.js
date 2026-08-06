@@ -615,11 +615,11 @@ async function fulfillHotspotPayment(
       `UPDATE hotspot_payment_fulfillments
        SET status = 'active',
            radius_status = $2,
-           device_activation_status = $3,
+           device_activation_status = $3::varchar,
            device_activation_error = NULL,
            device_activated_at =
              CASE
-               WHEN $3 IS NULL
+               WHEN $3::varchar IS NULL
                THEN device_activated_at
                ELSE NOW()
              END,

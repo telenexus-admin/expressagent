@@ -17,6 +17,90 @@ const normalizeMpesaPhone = (value) => {
   return phone;
 };
 
+const HOTSPOT_CONFIG_CACHE_TTL =
+  6 * 60 * 60 * 1000;
+
+function hotspotConfigCacheKey(token) {
+  const suffix =
+    String(token || '')
+      .slice(-36)
+      .replace(
+        /[^A-Za-z0-9_-]/g,
+        ''
+      );
+
+  return suffix
+    ? `nexa-hotspot-config-v4:${suffix}`
+    : '';
+}
+
+function readHotspotConfigCache(token) {
+  const key =
+    hotspotConfigCacheKey(token);
+
+  if (!key) {
+    return null;
+  }
+
+  try {
+    const raw =
+      window.localStorage.getItem(
+        key
+      );
+
+    if (!raw) {
+      return null;
+    }
+
+    const stored =
+      JSON.parse(raw);
+
+    const savedAt =
+      Number(stored?.saved_at || 0);
+
+    if (
+      !stored?.payload ||
+      !savedAt ||
+      Date.now() - savedAt >
+        HOTSPOT_CONFIG_CACHE_TTL
+    ) {
+      window.localStorage
+        .removeItem(key);
+
+      return null;
+    }
+
+    return stored.payload;
+  } catch (_) {
+    return null;
+  }
+}
+
+function writeHotspotConfigCache(
+  token,
+  payload
+) {
+  const key =
+    hotspotConfigCacheKey(token);
+
+  if (!key || !payload) {
+    return;
+  }
+
+  try {
+    window.localStorage.setItem(
+      key,
+      JSON.stringify({
+        saved_at: Date.now(),
+        payload,
+      })
+    );
+  } catch (_) {
+    // Restricted captive-portal
+    // storage must not block loading.
+  }
+}
+
 function Icon({ name, className = 'h-5 w-5' }) {
   const paths = {
     wifi: (
@@ -142,17 +226,52 @@ function planDescription(plan, index) {
   return descriptions[index % descriptions.length];
 }
 
-function useServerClock(serverNow) {
+function useServerClock(
+  serverNow,
+  enabled
+) {
   const offset = useRef(0);
-  const [now, setNow] = useState(Date.now());
+
+  const [now, setNow] =
+    useState(Date.now());
 
   useEffect(() => {
-    const parsed = Date.parse(serverNow || '');
-    offset.current = Number.isFinite(parsed) ? parsed - Date.now() : 0;
-    setNow(Date.now() + offset.current);
-    const timer = window.setInterval(() => setNow(Date.now() + offset.current), 1000);
-    return () => window.clearInterval(timer);
-  }, [serverNow]);
+    const parsed =
+      Date.parse(
+        serverNow || ''
+      );
+
+    offset.current =
+      Number.isFinite(parsed)
+        ? parsed - Date.now()
+        : 0;
+
+    setNow(
+      Date.now() +
+      offset.current
+    );
+
+    if (!enabled) {
+      return undefined;
+    }
+
+    const timer =
+      window.setInterval(
+        () => {
+          setNow(
+            Date.now() +
+            offset.current
+          );
+        },
+        1000
+      );
+
+    return () =>
+      window.clearInterval(timer);
+  }, [
+    serverNow,
+    enabled,
+  ]);
 
   return now;
 }
@@ -249,7 +368,12 @@ export default function HotspotPortal() {
   const origin = params.get('link-orig') || params.get('link_orig') || '';
   const loginUrl = params.get('link-login-only') || params.get('link_login_only') || '';
 
-  const [config, setConfig] = useState(null);
+  const [config, setConfig] = useState(
+    () =>
+      readHotspotConfigCache(
+        portalToken
+      )
+  );
   const [voucherUser, setVoucherUser] = useState('');
   const [voucherPassword, setVoucherPassword] = useState('');
   const [passwordTouched, setPasswordTouched] = useState(false);
@@ -257,7 +381,17 @@ export default function HotspotPortal() {
   const [error, setError] = useState('');
   const [login, setLogin] = useState(null);
   const [active, setActive] = useState(null);
-  const [selectedPlanId, setSelectedPlanId] = useState(null);
+  const [
+    selectedPlanId,
+    setSelectedPlanId,
+  ] = useState(
+    () =>
+      config?.flash_offer?.plan_id
+        ? Number(
+            config.flash_offer.plan_id
+          )
+        : null
+  );
   const [menuOpen, setMenuOpen] = useState(false);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentPhone, setPaymentPhone] = useState(
@@ -273,25 +407,132 @@ export default function HotspotPortal() {
 
   const packagesRef = useRef(null);
   const voucherRef = useRef(null);
-  const now = useServerClock(config?.server_now);
+  const now = useServerClock(
+    config?.server_now,
+    Boolean(
+      config?.flash_offer?.enabled
+    )
+  );
 
-  useEffect(() => {
+  const cachedConfigOnLoad =
+    useRef(Boolean(config));
+
+useEffect(() => {
     let mounted = true;
-    fetch(`${apiBase}/config?portalToken=${encodeURIComponent(portalToken)}`)
-      .then((response) => response.json().then((data) => {
-        if (!response.ok) throw new Error(data.error || 'Unable to load access options');
+
+    const controller =
+      typeof AbortController !==
+        'undefined'
+        ? new AbortController()
+        : null;
+
+    const timeout =
+      window.setTimeout(
+        () => {
+          controller?.abort();
+        },
+        8000
+      );
+
+    fetch(
+      `${apiBase}/config?portalToken=${
+        encodeURIComponent(
+          portalToken
+        )
+      }`,
+      {
+        method: 'GET',
+        credentials: 'omit',
+        cache: 'default',
+        headers: {
+          Accept:
+            'application/json',
+        },
+        signal:
+          controller?.signal,
+      }
+    )
+      .then(async response => {
+        const data =
+          await response
+            .json()
+            .catch(() => ({}));
+
+        if (!response.ok) {
+          throw new Error(
+            data.error ||
+            'Unable to load access options'
+          );
+        }
+
         return data;
-      }))
-      .then((data) => {
-        if (!mounted) return;
-        setConfig(data);
-        if (data?.flash_offer?.plan_id) setSelectedPlanId(Number(data.flash_offer.plan_id));
       })
-      .catch((requestError) => {
-        if (mounted) setError(requestError.message);
+      .then(data => {
+        if (!mounted) {
+          return;
+        }
+
+        setConfig(data);
+        setError('');
+
+        writeHotspotConfigCache(
+          portalToken,
+          data
+        );
+
+        if (
+          data?.flash_offer?.plan_id
+        ) {
+          setSelectedPlanId(
+            current =>
+              current ??
+              Number(
+                data.flash_offer
+                  .plan_id
+              )
+          );
+        }
+
+        document.title =
+          `${
+            data?.portal
+              ?.brand_name ||
+            data?.client?.name ||
+            'Nexa'
+          } Hotspot`;
+      })
+      .catch(requestError => {
+        if (
+          mounted &&
+          !cachedConfigOnLoad.current
+        ) {
+          setError(
+            requestError?.name ===
+              'AbortError'
+              ? 'The hotspot is taking too long to respond. Reconnect to Wi-Fi and reload.'
+              : requestError.message
+          );
+        }
+      })
+      .finally(() => {
+        window.clearTimeout(
+          timeout
+        );
       });
-    return () => { mounted = false; };
-  }, [portalToken]);
+
+    return () => {
+      mounted = false;
+
+      window.clearTimeout(
+        timeout
+      );
+
+      controller?.abort();
+    };
+  }, [
+    portalToken,
+  ]);
+
 
   const plans = useMemo(() => config?.plans || [], [config]);
   const flashOffer = useMemo(() => {
@@ -962,7 +1203,6 @@ export default function HotspotPortal() {
                   <Icon name="user" className="h-6 w-6" />
                 </span>
                 <input
-                  autoFocus
                   required
                   value={voucherUser}
                   onChange={(event) => updateVoucherUser(event.target.value)}

@@ -8,12 +8,18 @@
 
     <script>
       (function () {
+        var isHotspot = /^\/hotspot\/?$/.test(
+          window.location.pathname
+        );
+        window.__nexaIsHotspot = isHotspot;
         var isOperator = window.location.pathname.indexOf('/onboarding') === 0;
         var isExpressNet = /express/i.test(window.location.hostname);
         var manifest = document.createElement('link');
         manifest.rel = 'manifest';
         manifest.href = isOperator ? '/nexus-manifest.webmanifest' : (isExpressNet ? '/expressnet-manifest.webmanifest' : '/manifest.webmanifest');
-        document.head.appendChild(manifest);
+        if (!isHotspot) {
+          document.head.appendChild(manifest);
+        }
 
         if (isExpressNet && !isOperator) {
           document.title = 'ExpressNet Agent';
@@ -62,6 +68,10 @@
   </head>
   <body>
     <div id="root"></div>
-    <script type="module" src="/src/main.jsx"></script>
+    <script
+      type="module"
+      src="/src/main.jsx"
+      fetchpriority="high"
+    ></script>
   </body>
 </html>

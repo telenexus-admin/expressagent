@@ -1,48 +1,216 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
-import App from './App.jsx';
+
+import HotspotPortal from './pages/HotspotPortal.jsx';
 import './index.css';
 
-import { applyTheme } from './utils/theme';
-import { mountSubscriberCrm } from './subscriberCrm';
+const rootElement =
+  document.getElementById('root');
 
-applyTheme();
-mountSubscriberCrm();
+const hotspotPath =
+  /^\/hotspot\/?$/.test(
+    window.location.pathname
+  );
 
-// A stale service worker can retain an older hashed route bundle after a
-// deployment. Vite raises this event when that bundle can no longer be loaded;
-// recover once automatically instead of leaving the application blank.
-window.addEventListener('vite:preloadError', (event) => {
-  event.preventDefault();
-  const retryKey = 'nexa-preload-retry-v3';
-  if (!sessionStorage.getItem(retryKey)) {
-    sessionStorage.setItem(retryKey, '1');
-    const recover = async () => {
-      const registrations = 'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistrations() : [];
-      await Promise.all(registrations.map((registration) => registration.unregister()));
-      if ('caches' in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.filter((key) => key.includes('workbox') || key.includes('precache') || key.includes('nexa')).map((key) => caches.delete(key)));
-      }
-      window.location.replace(`${window.location.pathname}?refresh=${Date.now()}`);
-    };
-    void recover();
+function recoveryUrl() {
+  const url =
+    new URL(
+      window.location.href
+    );
+
+  url.searchParams.set(
+    'refresh',
+    String(Date.now())
+  );
+
+  return url.toString();
+}
+
+window.addEventListener(
+  'vite:preloadError',
+  event => {
+    event.preventDefault();
+
+    const retryKey =
+      'nexa-preload-retry-v4';
+
+    if (
+      sessionStorage.getItem(
+        retryKey
+      )
+    ) {
+      return;
+    }
+
+    sessionStorage.setItem(
+      retryKey,
+      '1'
+    );
+
+    window.location.replace(
+      recoveryUrl()
+    );
   }
-});
-
-ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
 );
 
-void (async () => {
-  if ('serviceWorker' in navigator) {
-    const registrations = await navigator.serviceWorker.getRegistrations();
-    await Promise.all(registrations.map((registration) => registration.unregister()));
+function showFatalError(error) {
+  console.error(
+    'Nexa bootstrap failed:',
+    error
+  );
+
+  rootElement.innerHTML = `
+    <main style="
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      padding:24px;
+      background:#edf2fb;
+      font-family:system-ui,sans-serif;
+    ">
+      <section style="
+        width:100%;
+        max-width:390px;
+        padding:28px;
+        border-radius:24px;
+        background:white;
+        text-align:center;
+        box-shadow:0 20px 55px rgba(15,23,42,.14);
+      ">
+        <strong style="
+          display:block;
+          color:#101938;
+          font-size:20px;
+        ">
+          Unable to open Nexa
+        </strong>
+
+        <p style="
+          margin:10px 0 0;
+          color:#64748b;
+          line-height:1.6;
+        ">
+          Check the Wi-Fi connection and reload this page.
+        </p>
+
+        <button
+          type="button"
+          onclick="window.location.replace('${recoveryUrl()}')"
+          style="
+            width:100%;
+            margin-top:20px;
+            border:0;
+            border-radius:13px;
+            padding:14px;
+            background:#086de9;
+            color:white;
+            font-weight:800;
+          "
+        >
+          Reload
+        </button>
+      </section>
+    </main>
+  `;
+}
+
+function showDashboardLoader() {
+  rootElement.innerHTML = `
+    <main style="
+      min-height:100vh;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+      background:#f8fafc;
+      font-family:system-ui,sans-serif;
+      color:#64748b;
+    ">
+      Loading Nexa...
+    </main>
+  `;
+}
+
+async function cleanupLegacyRuntime() {
+  const cleanupKey =
+    'nexa-runtime-clean-v4';
+
+  if (
+    sessionStorage.getItem(
+      cleanupKey
+    )
+  ) {
+    return;
   }
-  if ('caches' in window) {
-    const keys = await caches.keys();
-    await Promise.all(keys.map((key) => caches.delete(key)));
+
+  sessionStorage.setItem(
+    cleanupKey,
+    '1'
+  );
+
+  try {
+    if (
+      'serviceWorker' in navigator
+    ) {
+      const registrations =
+        await navigator
+          .serviceWorker
+          .getRegistrations();
+
+      await Promise.all(
+        registrations.map(
+          registration =>
+            registration.unregister()
+        )
+      );
+    }
+  } catch (_) {
+    // A legacy service worker must
+    // never block application startup.
   }
-})();
+}
+
+async function mountDashboard() {
+  showDashboardLoader();
+
+  const [
+    appModule,
+    themeModule,
+    crmModule,
+  ] = await Promise.all([
+    import('./App.jsx'),
+    import('./utils/theme'),
+    import('./subscriberCrm'),
+  ]);
+
+  themeModule.applyTheme?.();
+  crmModule.mountSubscriberCrm?.();
+
+  const App =
+    appModule.default;
+
+  ReactDOM
+    .createRoot(rootElement)
+    .render(
+      <React.StrictMode>
+        <App />
+      </React.StrictMode>
+    );
+
+  void cleanupLegacyRuntime();
+}
+
+try {
+  if (hotspotPath) {
+    ReactDOM
+      .createRoot(rootElement)
+      .render(
+        <HotspotPortal />
+      );
+  } else {
+    void mountDashboard()
+      .catch(showFatalError);
+  }
+} catch (error) {
+  showFatalError(error);
+}

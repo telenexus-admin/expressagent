@@ -28,12 +28,50 @@ async function resolveClientId(req, res) {
   if (result.rows[0]?.account_type !== 'billing') { res.status(404).json({ error: 'Hotspot account not found' }); return null; }
   return { id: clientId, ...result.rows[0] };
 }
+let hotspotPortalSchemaPromise = null;
+
+const hotspotConfigCache =
+  new Map();
+
+const HOTSPOT_CONFIG_CACHE_TTL_MS =
+  30 * 1000;
+
 async function ensureHotspotPortalConfigColumn() {
-  await db.query(`
-    ALTER TABLE clients
-    ADD COLUMN IF NOT EXISTS hotspot_portal_config JSONB NOT NULL DEFAULT '{}'::jsonb
-  `);
+  if (!hotspotPortalSchemaPromise) {
+    hotspotPortalSchemaPromise =
+      db.query(`
+        ALTER TABLE clients
+        ADD COLUMN IF NOT EXISTS
+          hotspot_portal_config
+          JSONB NOT NULL
+          DEFAULT '{}'::jsonb
+      `).catch(error => {
+        hotspotPortalSchemaPromise =
+          null;
+
+        throw error;
+      });
+  }
+
+  return hotspotPortalSchemaPromise;
 }
+
+function setHotspotConfigHeaders(
+  res,
+  cacheStatus
+) {
+  res.set({
+    'Cache-Control':
+      'private, max-age=30, stale-while-revalidate=300',
+
+    'X-Hotspot-Config-Cache':
+      cacheStatus,
+
+    Vary:
+      'Accept-Encoding',
+  });
+}
+
 
 function publicBoolean(value) {
   return value === true || value === 'true' || value === 1 || value === '1';
@@ -160,9 +198,67 @@ async function resolveCheckoutPlan(
 }
 router.get('/config', async (req, res) => {
   try {
+    const clientId =
+      getPortalClientId(req, res);
+
+    if (!clientId) {
+      return;
+    }
+
+    const cacheKey =
+      String(clientId);
+
+    const cached =
+      hotspotConfigCache.get(
+        cacheKey
+      );
+
+    if (
+      cached &&
+      cached.expires_at >
+        Date.now()
+    ) {
+      setHotspotConfigHeaders(
+        res,
+        'HIT'
+      );
+
+      return res.json(
+        cached.payload
+      );
+    }
+
     await ensureHotspotPortalConfigColumn();
-    const client = await resolveClientId(req, res);
-    if (!client) return;
+
+    const clientResult =
+      await db.query(
+        `SELECT
+           id,
+           name,
+           account_type
+         FROM clients
+         WHERE id = $1
+         LIMIT 1`,
+        [
+          clientId,
+        ]
+      );
+
+    if (
+      clientResult.rows[0]
+        ?.account_type !==
+      'billing'
+    ) {
+      return res.status(404).json({
+        error:
+          'Hotspot account not found',
+      });
+    }
+
+    const client = {
+      ...clientResult.rows[0],
+      id: clientId,
+    };
 
     const [plans, settings, portalConfigResult] = await Promise.all([
       db.query(
@@ -246,7 +342,7 @@ router.get('/config', async (req, res) => {
       };
     }
 
-    return res.json({
+    const payload = {
       server_now: new Date().toISOString(),
       client: {
         id: client.id,
@@ -293,7 +389,46 @@ router.get('/config', async (req, res) => {
         provider: 'payhero',
       },
       plans: plans.rows,
-    });
+    };
+
+    hotspotConfigCache.set(
+      cacheKey,
+      {
+        payload,
+        expires_at:
+          Date.now() +
+          HOTSPOT_CONFIG_CACHE_TTL_MS,
+      }
+    );
+
+    if (
+      hotspotConfigCache.size >
+      5000
+    ) {
+      const now = Date.now();
+
+      for (
+        const [
+          key,
+          entry,
+        ]
+        of hotspotConfigCache
+      ) {
+        if (
+          entry.expires_at <= now
+        ) {
+          hotspotConfigCache
+            .delete(key);
+        }
+      }
+    }
+
+    setHotspotConfigHeaders(
+      res,
+      'MISS'
+    );
+
+    return res.json(payload);
   } catch (err) {
     console.error('Public hotspot config error:', err.message);
     return res.status(500).json({ error: 'Could not load hotspot access options' });

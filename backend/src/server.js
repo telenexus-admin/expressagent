@@ -108,7 +108,16 @@ function isAllowedCorsOrigin(origin) {
 }
 
 app.use((req, res, next) => {
-  const isPublicApi = req.path.startsWith('/api/public/site-chat') || req.path.startsWith('/api/public/noc');
+  const isPublicApi =
+    req.path.startsWith(
+      '/api/public/site-chat'
+    ) ||
+    req.path.startsWith(
+      '/api/public/noc'
+    ) ||
+    req.path.startsWith(
+      '/api/public/hotspot'
+    );
   return cors({
     origin(origin, callback) {
       if (isPublicApi) return callback(null, true);

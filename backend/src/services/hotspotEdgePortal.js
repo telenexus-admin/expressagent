@@ -65,29 +65,23 @@ function safeJson(value) {
     );
 }
 
-function wrapperPage() {
-  return `<!doctype html>
-<html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="refresh" content="0;url=edge.html">
-<title>Opening Hotspot</title>
-<style>
-html,body{margin:0;min-height:100%;background:#061a55;color:#fff;font-family:system-ui,sans-serif}
-body{display:grid;place-items:center}
-div{text-align:center;font-weight:800}
-small{display:block;margin-top:8px;opacity:.7}
-</style>
-</head>
-<body>
-<div>
-Opening internet packages…
-<small>Please wait</small>
-</div>
-<script>location.replace("edge.html");</script>
-</body>
-</html>`;
+function hotspotRedirectResponse() {
+  return `$(if http-status == 302)Hotspot redirect$(endif)
+$(if http-header == "Location")$(link-redirect)$(endif)`;
+}
+
+function hotspotApiDocument() {
+  return `{
+  "captive": $(if logged-in == 'yes')false$(else)true$(endif),
+  "user-portal-url": "$(link-login-only)",
+  $(if session-timeout-secs != 0)
+  "seconds-remaining": $(session-timeout-secs),
+  $(endif)
+  $(if remain-bytes-total)
+  "bytes-remaining": $(remain-bytes-total),
+  $(endif)
+  "can-extend-session": true
+}`;
 }
 
 async function loadHotspotEdgeConfig(
@@ -402,8 +396,6 @@ function buildHotspotEdgeHtml({
   http-equiv="Content-Security-Policy"
   content="default-src 'self'; connect-src ${API_ORIGIN}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self' http: https:;"
 >
-<link rel="preconnect" href="${API_ORIGIN}" crossorigin>
-<link rel="dns-prefetch" href="//nexa.telenexustechnologies.com">
 <title>Hotspot Packages</title>
 <style>
 *{box-sizing:border-box}
@@ -1320,22 +1312,18 @@ function refreshConfig(){
     });
 }
 
-if(
-  "requestIdleCallback"
-  in window
-){
-  requestIdleCallback(
-    refreshConfig,
-    {
-      timeout:1200
-    }
-  );
-}else{
-  window.setTimeout(
-    refreshConfig,
-    250
-  );
-}
+window.addEventListener(
+  "load",
+  function(){
+    window.setTimeout(
+      refreshConfig,
+      5000
+    );
+  },
+  {
+    once:true
+  }
+);
 })();
 </script>
 </body>
@@ -1346,12 +1334,35 @@ async function replaceHotspotPortalFiles(
   client,
   edgeHtml
 ) {
-  const managedFiles = [
+  /*
+   * RouterOS displays rlogin.html directly when an
+   * unauthenticated phone requests a remote captive-check
+   * address. Therefore rlogin.html must contain the complete
+   * portal and must not navigate to a relative file.
+   */
+  const fullPortalFiles = [
     'nexa-hotspot/edge.html',
     'nexa-hotspot/login.html',
     'nexa-hotspot/rlogin.html',
-    'nexa-hotspot/redirect.html',
     'nexa-hotspot/flogin.html',
+  ];
+
+  const auxiliaryFiles = {
+    'nexa-hotspot/redirect.html':
+      hotspotRedirectResponse(),
+
+    'nexa-hotspot/alogin.html':
+      hotspotRedirectResponse(),
+
+    'nexa-hotspot/api.json':
+      hotspotApiDocument(),
+  };
+
+  const managedFiles = [
+    ...fullPortalFiles,
+    ...Object.keys(
+      auxiliaryFiles
+    ),
   ];
 
   let existing =
@@ -1379,24 +1390,32 @@ async function replaceHotspotPortalFiles(
           'directory',
       }
     );
-  }
 
-  for (
-    const fileName
-    of managedFiles
-  ) {
     existing =
       rows(
         await client.command(
           '/file/print'
         )
       );
+  }
 
+  const existingByName =
+    new Map(
+      existing.map(
+        file => [
+          file.name,
+          file,
+        ]
+      )
+    );
+
+  for (
+    const fileName
+    of managedFiles
+  ) {
     const current =
-      existing.find(
-        file =>
-          file.name ===
-          fileName
+      existingByName.get(
+        fileName
       );
 
     if (
@@ -1413,37 +1432,38 @@ async function replaceHotspotPortalFiles(
     }
   }
 
-  const wrapper =
-    wrapperPage();
-
-  await client.command(
-    '/file/add',
-    {
-      name:
-        'nexa-hotspot/edge.html',
-
-      contents:
-        edgeHtml,
-    }
-  );
-
   for (
     const fileName
-    of [
-      'login.html',
-      'rlogin.html',
-      'redirect.html',
-      'flogin.html',
-    ]
+    of fullPortalFiles
   ) {
     await client.command(
       '/file/add',
       {
         name:
-          `nexa-hotspot/${fileName}`,
+          fileName,
 
         contents:
-          wrapper,
+          edgeHtml,
+      }
+    );
+  }
+
+  for (
+    const [
+      fileName,
+      contents,
+    ]
+    of Object.entries(
+      auxiliaryFiles
+    )
+  ) {
+    await client.command(
+      '/file/add',
+      {
+        name:
+          fileName,
+
+        contents,
       }
     );
   }
@@ -1455,11 +1475,20 @@ async function replaceHotspotPortalFiles(
         'utf8'
       ),
 
-    wrapper_bytes:
+    redirect_bytes:
       Buffer.byteLength(
-        wrapper,
+        hotspotRedirectResponse(),
         'utf8'
       ),
+
+    api_bytes:
+      Buffer.byteLength(
+        hotspotApiDocument(),
+        'utf8'
+      ),
+
+    full_portal_files:
+      fullPortalFiles,
 
     files:
       managedFiles,

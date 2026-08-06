@@ -39,9 +39,209 @@ function BillingWorkspaceSkeleton() { return <div className="space-y-5" aria-lab
 export default function BillingWorkspace() {
   const { admin, logout } = useAuth();
   const [tab, setTab] = useState('overview'); const [open, setOpen] = useState(false); const [sidebarCollapsed, setSidebarCollapsed] = useState(false); const [darkMode, setDarkMode] = useState(false); const [profileOpen, setProfileOpen] = useState(false); const [mobileExpanded, setMobileExpanded] = useState(false); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
-  const [summary, setSummary] = useState(null); const [employees, setEmployees] = useState([]); const [reportTickets, setReportTickets] = useState([]); const [plans, setPlans] = useState([]); const [subscribers, setSubscribers] = useState([]); const [invoices, setInvoices] = useState([]); const [payments, setPayments] = useState([]); const [radiusStatus, setRadiusStatus] = useState(null); const [routers, setRouters] = useState([]); const [bandwidthHistory, setBandwidthHistory] = useState([]); const [bandwidthTick, setBandwidthTick] = useState(0); const [hotspotPlans, setHotspotPlans] = useState([]); const [vouchers, setVouchers] = useState([]); const [search, setSearch] = useState(''); const [subscriberView, setSubscriberView] = useState('pppoe'); const [packageView, setPackageView] = useState('pppoe'); const [subscriberCreateOpen, setSubscriberCreateOpen] = useState(false);
+  const [summary, setSummary] = useState(null); const [employees, setEmployees] = useState([]); const [reportTickets, setReportTickets] = useState([]); const [plans, setPlans] = useState([]); const [subscribers, setSubscribers] = useState([]); const [invoices, setInvoices] = useState([]); const [payments, setPayments] = useState([]); const [radiusStatus, setRadiusStatus] = useState(null); const [routers, setRouters] = useState([]); const [bandwidthHistory, setBandwidthHistory] = useState([]); const [bandwidthTick, setBandwidthTick] = useState(0); const [hotspotPlans, setHotspotPlans] = useState([]); const [vouchers, setVouchers] = useState([]); const [mikrotikClients, setMikrotikClients] = useState([]); const [search, setSearch] = useState(''); const [subscriberView, setSubscriberView] = useState('pppoe'); const [packageView, setPackageView] = useState('pppoe'); const [subscriberCreateOpen, setSubscriberCreateOpen] = useState(false);
   const [planForm, setPlanForm] = useState(emptyPlan); const [subscriberForm, setSubscriberForm] = useState(emptySubscriber); const [invoiceForm, setInvoiceForm] = useState(emptyInvoice); const [paymentForm, setPaymentForm] = useState(emptyPayment); const [radiusForm, setRadiusForm] = useState(emptyRadius); const [routerForm, setRouterForm] = useState({ name: '', password: '' }); const [routerPlan, setRouterPlan] = useState(null); const [routerNotice, setRouterNotice] = useState(''); const [hotspotPlanForm, setHotspotPlanForm] = useState(emptyHotspotPlan); const [voucherForm, setVoucherForm] = useState({ plan_id: '', quantity: '1' });
-  const loadDetails = async () => { try { const [r, routerResult, hotspotPlanResult, voucherResult] = await Promise.all([Promise.all(['/plans', '/subscribers', '/invoices', '/payments', '/radius/status'].map((path) => api.get(`/billing-workspace${path}`))), api.get('/mikrotik'), api.get('/billing-workspace/hotspot/plans'), api.get('/billing-workspace/hotspot/vouchers')]); setPlans(Array.isArray(r[0].data) ? r[0].data : []); setSubscribers(Array.isArray(r[1].data) ? r[1].data : []); setInvoices(Array.isArray(r[2].data) ? r[2].data : []); setPayments(Array.isArray(r[3].data) ? r[3].data : []); setRadiusStatus(r[4].data); const routerData = routerResult.data; setRouters(Array.isArray(routerData) ? routerData : Array.isArray(routerData?.routers) ? routerData.routers : []); setHotspotPlans(Array.isArray(hotspotPlanResult.data) ? hotspotPlanResult.data : []); setVouchers(Array.isArray(voucherResult.data) ? voucherResult.data : []); } catch (_) { /* The home screen remains usable while optional workspace data retries on the next action. */ } const traffic = await api.get('/noc/traffic/history?range=24h').catch(() => ({ data: [] })); setBandwidthHistory(Array.isArray(traffic.data) ? traffic.data : []); const employeeResult = await api.get('/employees').catch(() => ({ data: [] })); const ticketResult = await api.get('/tickets').catch(() => ({ data: [] })); setEmployees(Array.isArray(employeeResult.data) ? employeeResult.data : Array.isArray(employeeResult.data?.employees) ? employeeResult.data.employees : []); setReportTickets(Array.isArray(ticketResult.data) ? ticketResult.data : Array.isArray(ticketResult.data?.tickets) ? ticketResult.data.tickets : []); };
+
+  const loadDetails = async () => {
+    try {
+      const [
+        billingResult,
+        routerResult,
+        hotspotPlanResult,
+        voucherResult,
+      ] = await Promise.all([
+        Promise.all(
+          [
+            '/plans',
+            '/subscribers',
+            '/invoices',
+            '/payments',
+            '/radius/status',
+          ].map(path =>
+            api.get(
+              `/billing-workspace${path}`
+            )
+          )
+        ),
+
+        api.get('/mikrotik'),
+
+        api.get(
+          '/billing-workspace/hotspot/plans'
+        ),
+
+        api.get(
+          '/billing-workspace/hotspot/vouchers'
+        ),
+      ]);
+
+      setPlans(
+        Array.isArray(
+          billingResult[0].data
+        )
+          ? billingResult[0].data
+          : []
+      );
+
+      setSubscribers(
+        Array.isArray(
+          billingResult[1].data
+        )
+          ? billingResult[1].data
+          : []
+      );
+
+      setInvoices(
+        Array.isArray(
+          billingResult[2].data
+        )
+          ? billingResult[2].data
+          : []
+      );
+
+      setPayments(
+        Array.isArray(
+          billingResult[3].data
+        )
+          ? billingResult[3].data
+          : []
+      );
+
+      setRadiusStatus(
+        billingResult[4].data
+      );
+
+      const routerData =
+        routerResult.data;
+
+      setRouters(
+        Array.isArray(routerData)
+          ? routerData
+          : Array.isArray(
+              routerData?.routers
+            )
+            ? routerData.routers
+            : []
+      );
+
+      setHotspotPlans(
+        Array.isArray(
+          hotspotPlanResult.data
+        )
+          ? hotspotPlanResult.data
+          : []
+      );
+
+      setVouchers(
+        Array.isArray(
+          voucherResult.data
+        )
+          ? voucherResult.data
+          : []
+      );
+    } catch (_) {
+      // Preserve the last successful
+      // workspace state while retrying.
+    }
+
+    try {
+      await api.post(
+        '/mikrotik/clients/sync'
+      );
+
+      const [
+        liveClientResult,
+        refreshedSummary,
+      ] = await Promise.all([
+        api.get('/mikrotik/clients'),
+
+        api.get(
+          '/billing-workspace/summary'
+        ),
+      ]);
+
+      const data =
+        liveClientResult.data;
+
+      setMikrotikClients(
+        Array.isArray(data)
+          ? data
+          : Array.isArray(
+              data?.clients
+            )
+            ? data.clients
+            : []
+      );
+
+      setSummary(
+        refreshedSummary.data
+      );
+    } catch (_) {
+      // Keep the last confirmed
+      // MikroTik device list.
+    }
+
+    const traffic =
+      await api
+        .get(
+          '/noc/traffic/history?range=24h'
+        )
+        .catch(() => ({
+          data: [],
+        }));
+
+    setBandwidthHistory(
+      Array.isArray(traffic.data)
+        ? traffic.data
+        : []
+    );
+
+    const [
+      employeeResult,
+      ticketResult,
+    ] = await Promise.all([
+      api
+        .get('/employees')
+        .catch(() => ({
+          data: [],
+        })),
+
+      api
+        .get('/tickets')
+        .catch(() => ({
+          data: [],
+        })),
+    ]);
+
+    setEmployees(
+      Array.isArray(
+        employeeResult.data
+      )
+        ? employeeResult.data
+        : Array.isArray(
+            employeeResult.data
+              ?.employees
+          )
+          ? employeeResult.data
+              .employees
+          : []
+    );
+
+    setReportTickets(
+      Array.isArray(
+        ticketResult.data
+      )
+        ? ticketResult.data
+        : Array.isArray(
+            ticketResult.data
+              ?.tickets
+          )
+          ? ticketResult.data
+              .tickets
+          : []
+    );
+  };
+
   const load = async () => { try { setLoading(true); const result = await api.get('/billing-workspace/summary'); setSummary(result.data); setError(''); void loadDetails(); } catch (e) { setError(e.response?.data?.error || 'We could not load your billing workspace.'); } finally { setLoading(false); } };
   useEffect(() => { load(); }, []);
   useEffect(() => {
@@ -54,22 +254,186 @@ export default function BillingWorkspace() {
       document.head.appendChild(link);
     }
   }, []);
-  useEffect(() => { let mounted = true; const hasActiveRouter = routers.some((router) => router.status === 'active' || router.status === 'online'); const pollLiveTraffic = async () => { setBandwidthTick((value) => value + 1); if (!hasActiveRouter) return; try { const result = await api.get('/noc/overview'); const sample = result.data; if (!mounted || !sample?.checked_at) return; setBandwidthHistory((current) => [...current.filter((row) => row.timestamp !== sample.checked_at), { timestamp: sample.checked_at, download_mbps: Number(sample.download_mbps || 0), upload_mbps: Number(sample.upload_mbps || 0) }].slice(-72)); } catch (_) { /* Preview motion remains available while a router reconnects. */ } }; pollLiveTraffic(); const timer = hasActiveRouter ? window.setInterval(pollLiveTraffic, 5000) : null; const animation = window.setInterval(() => setBandwidthTick((value) => value + 1), 1000); return () => { mounted = false; if (timer) window.clearInterval(timer); window.clearInterval(animation); }; }, [routers]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const hasActiveRouter =
+      routers.some(router =>
+        [
+          'active',
+          'online',
+        ].includes(
+          routerDisplayStatus(
+            router
+          )
+        )
+      );
+
+    const pollLiveTraffic =
+      async () => {
+        if (!hasActiveRouter) {
+          return;
+        }
+
+        try {
+          const result =
+            await api.get(
+              '/noc/overview'
+            );
+
+          const sample =
+            result.data;
+
+          if (
+            !mounted ||
+            !sample?.checked_at
+          ) {
+            return;
+          }
+
+          setBandwidthTick(
+            value => value + 1
+          );
+
+          setBandwidthHistory(
+            current => [
+              ...current.filter(
+                row =>
+                  row.timestamp !==
+                  sample.checked_at
+              ),
+
+              {
+                timestamp:
+                  sample.checked_at,
+
+                download_mbps:
+                  Number(
+                    sample.download_mbps ||
+                    0
+                  ),
+
+                upload_mbps:
+                  Number(
+                    sample.upload_mbps ||
+                    0
+                  ),
+              },
+            ].slice(-240)
+          );
+        } catch (_) {
+          // Keep the latest confirmed
+          // traffic samples.
+        }
+      };
+
+    const pollLiveClients =
+      async () => {
+        if (!hasActiveRouter) {
+          return;
+        }
+
+        try {
+          await api.post(
+            '/mikrotik/clients/sync'
+          );
+
+          const [
+            result,
+            summaryResult,
+          ] = await Promise.all([
+            api.get(
+              '/mikrotik/clients'
+            ),
+
+            api.get(
+              '/billing-workspace/summary'
+            ),
+          ]);
+
+          if (!mounted) {
+            return;
+          }
+
+          const data =
+            result.data;
+
+          setMikrotikClients(
+            Array.isArray(data)
+              ? data
+              : Array.isArray(
+                  data?.clients
+                )
+                ? data.clients
+                : []
+          );
+
+          setSummary(
+            summaryResult.data
+          );
+        } catch (_) {
+          // Keep the latest confirmed
+          // device state.
+        }
+      };
+
+    if (hasActiveRouter) {
+      void pollLiveTraffic();
+      void pollLiveClients();
+    }
+
+    const trafficTimer =
+      hasActiveRouter
+        ? window.setInterval(
+            pollLiveTraffic,
+            5000
+          )
+        : null;
+
+    const clientTimer =
+      hasActiveRouter
+        ? window.setInterval(
+            pollLiveClients,
+            15000
+          )
+        : null;
+
+    return () => {
+      mounted = false;
+
+      if (trafficTimer) {
+        window.clearInterval(
+          trafficTimer
+        );
+      }
+
+      if (clientTimer) {
+        window.clearInterval(
+          clientTimer
+        );
+      }
+    };
+  }, [routers]);
+
+
   const active = useMemo(
     () =>
       Number(
-        summary?.subscribers?.active ??
-        subscribers.filter(
-          subscriber =>
-            subscriber.service_status ===
-            'active'
+        summary?.subscribers
+          ?.active ??
+        mikrotikClients.filter(
+          client =>
+            client.is_online ===
+            true
         ).length
       ),
     [
       summary,
-      subscribers,
+      mikrotikClients,
     ]
   );
+
   const filtered = useMemo(() => subscribers.filter((s) => `${s.full_name} ${s.account_number} ${s.phone || ''}`.toLowerCase().includes(search.toLowerCase())), [subscribers, search]);
   const greetingHour = new Date().getHours();
   const greetingText = greetingHour < 12
@@ -229,7 +593,7 @@ export default function BillingWorkspace() {
         {tab === 'overview' && <><div className="lg:hidden"><CurrencyMobileHome summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} onAddSubscriber={openSubscriberCreate} money={money} expanded={mobileExpanded} setExpanded={setMobileExpanded} darkMode={darkMode} /></div><div className="hidden lg:block"><Overview summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} money={money} /></div></>}
         {tab === 'services' && <ServicesWorkspace packageView={packageView} setPackageView={setPackageView} plans={plans} hotspotPlans={hotspotPlans} routers={routers} vouchers={vouchers} planForm={planForm} setPlanForm={setPlanForm} savePlan={savePlan} hotspotPlanForm={hotspotPlanForm} setHotspotPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} saveHotspotPlan={saveHotspotPlan} generateVouchers={generateVouchers} simulateVoucher={simulateVoucher} saving={saving} toggleHotspotPlan={toggleHotspotPlan} deleteHotspotPlan={deleteHotspotPlan} />}
         {tab === 'plans' && <><div className="mb-6"><div className="text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">Service catalogue</div><h2 className="mt-1 text-2xl font-black tracking-tight">Packages</h2><div className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm"><button onClick={() => setPackageView('pppoe')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'pppoe' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>PPPoE Packages <span className="ml-1 opacity-70">{plans.length}</span></button><button onClick={() => setPackageView('hotspot')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'hotspot' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Hotspot Packages <span className="ml-1 opacity-70">{hotspotPlans.length}</span></button></div></div>{packageView === 'pppoe' ? <Plans plans={plans} form={planForm} setForm={setPlanForm} save={savePlan} saving={saving} /> : <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}</>}
-        {tab === 'subscribers' && <><BillingSubscribers subscribers={subscribers} items={filtered} hotspotUsers={vouchers} plans={plans} hotspotPlans={hotspotPlans} routers={routers} createOpen={subscriberCreateOpen} setCreateOpen={setSubscriberCreateOpen} search={search} setSearch={setSearch} reload={load} setError={setError} darkMode={darkMode} /></>}
+        {tab === 'subscribers' && <><BillingSubscribers subscribers={subscribers} items={filtered} networkClients={mikrotikClients} plans={plans} hotspotPlans={hotspotPlans} routers={routers} createOpen={subscriberCreateOpen} setCreateOpen={setSubscriberCreateOpen} search={search} setSearch={setSearch} reload={load} setError={setError} darkMode={darkMode} /></>}
         {tab === 'invoices' && <Suspense fallback={<BillingWorkspaceSkeleton />}><InvoiceManagement /></Suspense>}
         {tab === 'payments' && <Payments payments={payments} invoices={invoices} form={paymentForm} setForm={setPaymentForm} save={savePayment} saving={saving} />}
         {tab === 'hotspot' && <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}

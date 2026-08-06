@@ -343,29 +343,209 @@ function parsePossibleExpiry(...values) {
   return { expiration: '', expiration_time: '' };
 }
 
-function mikrotikStatusFromRows({ router, service, profile, secret, active, lease }) {
-  const source = active || secret || lease || {};
-  const expiry = parsePossibleExpiry(secret?.comment, active?.comment, lease?.comment);
-  const disabled = String(secret?.disabled || '').toLowerCase() === 'true';
-  const status = active ? 'active' : disabled ? 'inactive' : secret ? 'offline' : lease ? 'seen' : 'unknown';
-  const activeIp = active?.address || active?.['remote-address'] || active?.['to-address'];
+
+function normalizeMacAddress(value) {
+  const compact = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[^0-9A-F]/g, '');
+
+  if (compact.length !== 12) {
+    return '';
+  }
+
+  return compact
+    .match(/.{2}/g)
+    .join(':');
+}
+
+function routerFlag(value) {
+  return [
+    'true',
+    'yes',
+    '1',
+    'on',
+    'bound',
+  ].includes(
+    String(value || '')
+      .trim()
+      .toLowerCase()
+  );
+}
+
+function mikrotikStatusFromRows({
+  router,
+  service,
+  profile,
+  secret,
+  active,
+  lease,
+}) {
+  const serviceType =
+    normalizeServiceType(service);
+
+  const source =
+    active ||
+    lease ||
+    secret ||
+    {};
+
+  const expiry =
+    parsePossibleExpiry(
+      secret?.comment,
+      active?.comment,
+      lease?.comment
+    );
+
+  const disabled =
+    routerFlag(secret?.disabled);
+
+  const macAddress =
+    normalizeMacAddress(
+      active?.['caller-id'] ||
+      active?.['mac-address'] ||
+      lease?.['mac-address'] ||
+      secret?.['caller-id'] ||
+      secret?.['mac-address']
+    );
+
+  const hotspotAuthorized =
+    serviceType === 'hotspot' &&
+    Boolean(lease) &&
+    (
+      routerFlag(lease.authorized) ||
+      routerFlag(lease.bypassed)
+    );
+
+  const dhcpBound =
+    serviceType === 'dhcp' &&
+    Boolean(lease) &&
+    routerFlag(lease.status);
+
+  const isActive =
+    Boolean(active) ||
+    hotspotAuthorized ||
+    dhcpBound;
+
+  const status =
+    isActive
+      ? 'active'
+      : disabled
+        ? 'inactive'
+        : secret
+          ? 'offline'
+          : lease
+            ? 'seen'
+            : 'unknown';
+
+  const originalUsername =
+    source.name ||
+    source.user ||
+    source['mac-address'] ||
+    source.address ||
+    '';
+
+  const canonicalUsername =
+    serviceType === 'hotspot' &&
+    macAddress
+      ? macAddress
+      : (
+          originalUsername ||
+          macAddress ||
+          source.address ||
+          ''
+        );
+
+  const activeIp =
+    active?.address ||
+    active?.['remote-address'] ||
+    active?.['to-address'];
+
+  const ipAddress =
+    activeIp ||
+    lease?.['active-address'] ||
+    lease?.['to-address'] ||
+    lease?.address ||
+    '';
+
+  const selectedProfile =
+    secret?.profile ||
+    profile ||
+    source.profile ||
+    source.server ||
+    '';
+
   return {
     source: 'mikrotik',
-    fullname: source.comment || source.name || source.user || '',
-    phone: phoneFromText(source.comment, source.name, source.user),
-    account: source.name || source.user || source['mac-address'] || source.address || '',
-    username: source.name || source.user || source['mac-address'] || source.address || '',
+
+    fullname:
+      serviceType === 'hotspot'
+        ? (
+            macAddress ||
+            canonicalUsername ||
+            ipAddress
+          )
+        : (
+            source.comment ||
+            canonicalUsername
+          ),
+
+    phone:
+      phoneFromText(
+        source.comment,
+        source.name,
+        source.user
+      ),
+
+    account:
+      serviceType === 'hotspot'
+        ? (
+            macAddress ||
+            canonicalUsername
+          )
+        : canonicalUsername,
+
+    username:
+      canonicalUsername,
+
+    original_username:
+      originalUsername,
+
     status,
-    plan: profile || source.profile || source.server || '',
-    service,
+    plan: selectedProfile,
+    service: serviceType,
     router: router.name,
-    ip_address: activeIp || lease?.['active-address'] || lease?.address || '',
-    mac_address: active?.['caller-id'] || active?.['mac-address'] || lease?.['mac-address'] || '',
-    uptime: active?.uptime || active?.['idle-time'] || lease?.['last-seen'] || '',
-    last_seen: active ? 'online now' : secret?.['last-logged-out'] || lease?.['last-seen'] || '',
-    expiration: expiry.expiration,
-    expiration_time: expiry.expiration_time,
-    raw: { secret, active, lease },
+    ip_address: ipAddress,
+    mac_address: macAddress,
+
+    uptime:
+      active?.uptime ||
+      active?.['idle-time'] ||
+      lease?.['last-seen'] ||
+      '',
+
+    last_seen:
+      isActive
+        ? 'online now'
+        : (
+            secret?.['last-logged-out'] ||
+            lease?.['last-seen'] ||
+            ''
+          ),
+
+    expiration:
+      expiry.expiration,
+
+    expiration_time:
+      expiry.expiration_time,
+
+    raw: {
+      secret,
+      active,
+      lease,
+      original_username:
+        originalUsername,
+    },
   };
 }
 
@@ -376,30 +556,119 @@ function normalizeServiceType(value) {
   return text || 'unknown';
 }
 
-function normalizeMikrotikClient({ clientId, router, service, profile, secret, active, lease }) {
-  const status = mikrotikStatusFromRows({ router, service, profile, secret, active, lease });
-  const username = status.username || status.account || status.phone || status.mac_address || status.ip_address;
-  if (!username) return null;
+
+function normalizeMikrotikClient({
+  clientId,
+  router,
+  service,
+  profile,
+  secret,
+  active,
+  lease,
+}) {
+  const status =
+    mikrotikStatusFromRows({
+      router,
+      service,
+      profile,
+      secret,
+      active,
+      lease,
+    });
+
+  const serviceType =
+    normalizeServiceType(service);
+
+  const username =
+    serviceType === 'hotspot'
+      ? (
+          status.mac_address ||
+          status.username ||
+          status.ip_address
+        )
+      : (
+          status.username ||
+          status.account ||
+          status.phone ||
+          status.mac_address ||
+          status.ip_address
+        );
+
+  if (!username) {
+    return null;
+  }
+
+  const displayName =
+    serviceType === 'hotspot'
+      ? (
+          status.mac_address ||
+          username
+        )
+      : (
+          status.fullname ||
+          username
+        );
+
   return {
     client_id: clientId,
     router_id: router.id,
     router_name: router.name,
-    service_type: normalizeServiceType(service),
-    account_number: status.account || username,
+    service_type: serviceType,
+
+    account_number:
+      serviceType === 'hotspot'
+        ? (
+            status.mac_address ||
+            username
+          )
+        : (
+            status.account ||
+            username
+          ),
+
     username,
-    display_name: status.fullname || username,
+    display_name: displayName,
     phone: status.phone || '',
     profile: status.plan || profile || '',
-    package_name: status.plan || profile || '',
-    status: status.status || 'unknown',
-    is_online: status.status === 'active',
-    expiry_date: status.expiration || '',
-    expiry_time: status.expiration_time || '',
-    ip_address: status.ip_address || '',
-    mac_address: status.mac_address || '',
-    uptime: status.uptime || '',
-    last_seen: status.last_seen || '',
-    raw: status.raw || {},
+    package_name:
+      status.plan ||
+      profile ||
+      '',
+
+    status:
+      status.status ||
+      'unknown',
+
+    is_online:
+      status.status === 'active',
+
+    expiry_date:
+      status.expiration ||
+      '',
+
+    expiry_time:
+      status.expiration_time ||
+      '',
+
+    ip_address:
+      status.ip_address ||
+      '',
+
+    mac_address:
+      status.mac_address ||
+      '',
+
+    uptime:
+      status.uptime ||
+      '',
+
+    last_seen:
+      status.last_seen ||
+      '',
+
+    raw:
+      status.raw ||
+      {},
   };
 }
 
@@ -489,79 +758,365 @@ async function markStaleMikrotikClientsOffline({ clientId, routerId, onlineRows 
   );
 }
 
-async function collectMikrotikClientRows(clientId, router, client) {
-  const [pppSecrets, pppActive, hotspotUsers, hotspotActive, hotspotHosts, dhcpLeases] = await Promise.all([
-    router.features?.ppp_secrets === false ? Promise.resolve([]) : client.command('/ppp/secret/print').catch(() => []),
-    router.features?.ppp_active === false ? Promise.resolve([]) : client.command('/ppp/active/print').catch(() => []),
-    router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/user/print').catch(() => []),
-    router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/active/print').catch(() => []),
-    router.features?.hotspot_active === false ? Promise.resolve([]) : client.command('/ip/hotspot/host/print').catch(() => []),
-    router.features?.dhcp_leases === false ? Promise.resolve([]) : client.command('/ip/dhcp-server/lease/print').catch(() => []),
+
+async function collectMikrotikClientRows(
+  clientId,
+  router,
+  client
+) {
+  const [
+    pppSecrets,
+    pppActive,
+    hotspotUsers,
+    hotspotActive,
+    hotspotHosts,
+    dhcpLeases,
+  ] = await Promise.all([
+    router.features?.ppp_secrets === false
+      ? Promise.resolve([])
+      : client
+          .command('/ppp/secret/print')
+          .catch(() => []),
+
+    router.features?.ppp_active === false
+      ? Promise.resolve([])
+      : client
+          .command('/ppp/active/print')
+          .catch(() => []),
+
+    router.features?.hotspot_active === false
+      ? Promise.resolve([])
+      : client
+          .command('/ip/hotspot/user/print')
+          .catch(() => []),
+
+    router.features?.hotspot_active === false
+      ? Promise.resolve([])
+      : client
+          .command('/ip/hotspot/active/print')
+          .catch(() => []),
+
+    router.features?.hotspot_active === false
+      ? Promise.resolve([])
+      : client
+          .command('/ip/hotspot/host/print')
+          .catch(() => []),
+
+    router.features?.dhcp_leases === false
+      ? Promise.resolve([])
+      : client
+          .command('/ip/dhcp-server/lease/print')
+          .catch(() => []),
   ]);
 
-  const seen = new Set();
   const rows = [];
-  const pushRow = (row) => {
-    if (!row) return;
-    const key = `${row.service_type}:${row.username}`;
-    if (seen.has(key)) return;
-    rows.push(row);
-    seen.add(key);
+  const indexByKey = new Map();
+
+  const rowKey = row => {
+    if (!row) {
+      return '';
+    }
+
+    if (
+      row.service_type === 'hotspot'
+    ) {
+      return [
+        row.service_type,
+        normalizeMacAddress(
+          row.mac_address
+        ) ||
+          row.ip_address ||
+          row.username,
+      ].join(':');
+    }
+
+    return [
+      row.service_type,
+      row.username,
+    ].join(':');
+  };
+
+  const pushRow = row => {
+    if (!row) {
+      return;
+    }
+
+    const key = rowKey(row);
+
+    if (!key) {
+      return;
+    }
+
+    if (!indexByKey.has(key)) {
+      indexByKey.set(
+        key,
+        rows.length
+      );
+
+      rows.push(row);
+      return;
+    }
+
+    const index =
+      indexByKey.get(key);
+
+    const existing =
+      rows[index];
+
+    const preferred =
+      row.is_online &&
+      !existing.is_online
+        ? row
+        : existing;
+
+    const secondary =
+      preferred === row
+        ? existing
+        : row;
+
+    rows[index] = {
+      ...secondary,
+      ...Object.fromEntries(
+        Object.entries(preferred)
+          .filter(
+            ([, value]) =>
+              value !== '' &&
+              value !== null &&
+              value !== undefined
+          )
+      ),
+
+      is_online:
+        Boolean(
+          existing.is_online ||
+          row.is_online
+        ),
+
+      status:
+        existing.is_online ||
+        row.is_online
+          ? 'active'
+          : (
+              preferred.status ||
+              secondary.status
+            ),
+
+      raw: {
+        ...(secondary.raw || {}),
+        ...(preferred.raw || {}),
+      },
+    };
   };
 
   for (const secret of pppSecrets) {
-    const active = pppActive.find((item) => item.name === secret.name);
-    pushRow(normalizeMikrotikClient({
-      clientId,
-      router,
-      service: 'pppoe',
-      profile: secret.profile || '',
-      secret,
-      active,
-    }));
-  }
-  for (const active of pppActive) {
-    pushRow(normalizeMikrotikClient({ clientId, router, service: 'pppoe', active }));
-  }
-  for (const user of hotspotUsers) {
-    const active = hotspotActive.find((item) => item.user === user.name);
-    pushRow(normalizeMikrotikClient({
-      clientId,
-      router,
-      service: 'hotspot',
-      profile: user.profile || '',
-      secret: user,
-      active,
-    }));
-  }
-  for (const active of hotspotActive) {
-    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', active }));
-  }
-  for (const host of hotspotHosts) {
-    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease: host }));
-  }
-  for (const lease of dhcpLeases) {
-    pushRow(normalizeMikrotikClient({ clientId, router, service: 'hotspot', lease }));
+    const active =
+      pppActive.find(
+        item =>
+          item.name ===
+          secret.name
+      );
+
+    pushRow(
+      normalizeMikrotikClient({
+        clientId,
+        router,
+        service: 'pppoe',
+        profile:
+          secret.profile ||
+          '',
+        secret,
+        active,
+      })
+    );
   }
 
-  const onlineRows = rows.filter((row) => row.is_online);
+  for (const active of pppActive) {
+    pushRow(
+      normalizeMikrotikClient({
+        clientId,
+        router,
+        service: 'pppoe',
+        active,
+      })
+    );
+  }
+
+  for (const active of hotspotActive) {
+    const activeMac =
+      normalizeMacAddress(
+        active['mac-address'] ||
+        active['caller-id']
+      );
+
+    const user =
+      hotspotUsers.find(
+        item =>
+          item.name ===
+          active.user
+      );
+
+    const host =
+      hotspotHosts.find(item => {
+        const hostMac =
+          normalizeMacAddress(
+            item['mac-address']
+          );
+
+        return (
+          (
+            activeMac &&
+            hostMac === activeMac
+          ) ||
+          (
+            active.address &&
+            (
+              item.address ===
+                active.address ||
+              item['to-address'] ===
+                active.address
+            )
+          )
+        );
+      });
+
+    pushRow(
+      normalizeMikrotikClient({
+        clientId,
+        router,
+        service: 'hotspot',
+        profile:
+          user?.profile ||
+          active.profile ||
+          '',
+        secret: user,
+        active,
+        lease: host,
+      })
+    );
+  }
+
+  for (const host of hotspotHosts) {
+    const hostMac =
+      normalizeMacAddress(
+        host['mac-address']
+      );
+
+    const active =
+      hotspotActive.find(item => {
+        const activeMac =
+          normalizeMacAddress(
+            item['mac-address'] ||
+            item['caller-id']
+          );
+
+        return (
+          (
+            hostMac &&
+            activeMac === hostMac
+          ) ||
+          (
+            host.address &&
+            (
+              item.address ===
+                host.address ||
+              item.address ===
+                host['to-address']
+            )
+          )
+        );
+      });
+
+    const user =
+      active
+        ? hotspotUsers.find(
+            item =>
+              item.name ===
+              active.user
+          )
+        : null;
+
+    pushRow(
+      normalizeMikrotikClient({
+        clientId,
+        router,
+        service: 'hotspot',
+        profile:
+          user?.profile ||
+          active?.profile ||
+          '',
+        secret: user,
+        active,
+        lease: host,
+      })
+    );
+  }
+
+  for (const lease of dhcpLeases) {
+    pushRow(
+      normalizeMikrotikClient({
+        clientId,
+        router,
+        service: 'dhcp',
+        lease,
+      })
+    );
+  }
+
+  const onlineRows =
+    rows.filter(
+      row => row.is_online
+    );
+
   return {
     rows,
     onlineRows,
-    onlinePppRows: onlineRows.filter((row) => row.service_type === 'pppoe'),
-    onlineHotspotRows: onlineRows.filter((row) => row.service_type === 'hotspot'),
+
+    onlinePppRows:
+      onlineRows.filter(
+        row =>
+          row.service_type ===
+          'pppoe'
+      ),
+
+    onlineHotspotRows:
+      onlineRows.filter(
+        row =>
+          row.service_type ===
+          'hotspot'
+      ),
+
     sources: {
       router_id: router.id,
       router: router.name,
-      ppp_secrets: pppSecrets.length,
-      ppp_active: pppActive.length,
-      hotspot_users: hotspotUsers.length,
-      hotspot_active: hotspotActive.length,
-      hotspot_hosts: hotspotHosts.length,
-      dhcp_leases: dhcpLeases.length,
-      deduped_online_pppoe: onlineRows.filter((row) => row.service_type === 'pppoe').length,
-      deduped_online_hotspot: onlineRows.filter((row) => row.service_type === 'hotspot').length,
-      deduped_total: rows.length,
+      ppp_secrets:
+        pppSecrets.length,
+      ppp_active:
+        pppActive.length,
+      hotspot_users:
+        hotspotUsers.length,
+      hotspot_active:
+        hotspotActive.length,
+      hotspot_hosts:
+        hotspotHosts.length,
+      dhcp_leases:
+        dhcpLeases.length,
+
+      deduped_online_pppoe:
+        onlineRows.filter(
+          row =>
+            row.service_type ===
+            'pppoe'
+        ).length,
+
+      deduped_online_hotspot:
+        onlineRows.filter(
+          row =>
+            row.service_type ===
+            'hotspot'
+        ).length,
+
+      deduped_total:
+        rows.length,
     },
   };
 }
@@ -602,6 +1157,26 @@ async function syncMikrotikClients(clientId) {
           routerId: router.id,
           onlineRows: collected.onlineRows,
         });
+
+        await db.query(
+          `DELETE FROM mikrotik_clients
+           WHERE client_id = $1
+             AND router_id = $2
+             AND service_type = 'hotspot'
+             AND (
+               COALESCE(mac_address, '') = ''
+               OR UPPER(username) <>
+                  UPPER(mac_address)
+               OR COALESCE(
+                    raw->'lease'->>'status',
+                    ''
+                  ) <> ''
+             )`,
+          [
+            clientId,
+            router.id,
+          ]
+        );
         return { ok: true, synced: collected.rows.length, sources: collected.sources };
       } catch (err) {
         console.error(`MikroTik client sync failed for router ${router.id}:`, err.message);

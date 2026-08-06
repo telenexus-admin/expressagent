@@ -55,37 +55,17 @@ async function resolveStaticConfig(body, clientId, selectedRouter) {
 
 router.get('/summary', async (req, res) => {
   try {
-    const clientId = req.scope.clientId;
+    const clientId =
+      req.scope.clientId;
 
     await ensureMikrotikTables();
-
-    const networkSync =
-      await syncMikrotikClients(
-        clientId
-      ).catch((error) => {
-        console.error(
-          'Live MikroTik client sync failed:',
-          error.message
-        );
-
-        return {
-          routers: 0,
-          synced: 0,
-          failed: 1,
-          errors: [
-            {
-              error: error.message,
-            },
-          ],
-        };
-      });
 
     const [
       subscribers,
       plans,
       invoices,
-      billingCollections,
-      hotspotCollections,
+      billingPayments,
+      hotspotPayments,
       recentPayments,
     ] = await Promise.all([
       db.query(
@@ -100,7 +80,11 @@ router.get('/summary', async (req, res) => {
            COUNT(*) FILTER (
              WHERE service_type = 'hotspot'
            )::int AS hotspot,
-           MAX(last_synced_at) AS last_synced_at
+           COUNT(*) FILTER (
+             WHERE service_type = 'dhcp'
+           )::int AS static,
+           MAX(last_synced_at)
+             AS last_synced_at
          FROM mikrotik_clients
          WHERE client_id = $1`,
         [clientId]
@@ -161,7 +145,8 @@ router.get('/summary', async (req, res) => {
              DATE_TRUNC(
                'month',
                CURRENT_DATE
-             ) + INTERVAL '1 month'`,
+             ) +
+             INTERVAL '1 month'`,
         [clientId]
       ),
 
@@ -170,8 +155,7 @@ router.get('/summary', async (req, res) => {
            COALESCE(
              SUM(amount),
              0
-           )::numeric AS total,
-           COUNT(*)::int AS transactions
+           )::numeric AS total
          FROM payhero_payment_requests
          WHERE client_id = $1
            AND status = 'paid'
@@ -186,46 +170,35 @@ router.get('/summary', async (req, res) => {
              DATE_TRUNC(
                'month',
                CURRENT_DATE
-             ) + INTERVAL '1 month'`,
+             ) +
+             INTERVAL '1 month'`,
         [clientId]
       ),
 
       db.query(
-        `SELECT *
+        `SELECT
+           id,
+           amount,
+           method,
+           reference,
+           status,
+           paid_at,
+           invoice_number
          FROM (
            SELECT
-             'billing-' ||
-               payment.id::text AS id,
-             payment.amount::numeric
-               AS amount,
-             COALESCE(
-               payment.method,
-               'Payment'
-             ) AS method,
-             COALESCE(
-               payment.reference,
-               ''
-             ) AS reference,
+             payment.id::text AS id,
+             payment.amount,
+             payment.method,
+             payment.reference,
              payment.status,
              payment.paid_at,
-             invoice.invoice_number,
-             subscriber.full_name
-               AS subscriber_name,
-             subscriber.account_number,
-             'billing' AS source
+             invoice.invoice_number
            FROM billing_payments payment
-           LEFT JOIN billing_subscribers
-             subscriber
-             ON subscriber.id =
-               payment.subscriber_id
-            AND subscriber.client_id =
-               payment.client_id
-           LEFT JOIN billing_invoices
-             invoice
+           LEFT JOIN billing_invoices invoice
              ON invoice.id =
-               payment.invoice_id
+                payment.invoice_id
             AND invoice.client_id =
-               payment.client_id
+                payment.client_id
            WHERE payment.client_id = $1
 
            UNION ALL
@@ -233,8 +206,7 @@ router.get('/summary', async (req, res) => {
            SELECT
              'hotspot-' ||
                payment.id::text AS id,
-             payment.amount::numeric
-               AS amount,
+             payment.amount,
              'M-Pesa' AS method,
              COALESCE(
                payment.mpesa_receipt_number,
@@ -243,76 +215,47 @@ router.get('/summary', async (req, res) => {
              payment.status,
              payment.updated_at AS paid_at,
              'Hotspot package'
-               AS invoice_number,
-             COALESCE(
-               payment.customer_name,
-               'Hotspot customer'
-             ) AS subscriber_name,
-             payment.customer_phone
-               AS account_number,
-             'hotspot' AS source
+               AS invoice_number
            FROM payhero_payment_requests
              payment
            WHERE payment.client_id = $1
              AND payment.status = 'paid'
              AND payment.metadata->>'purpose' =
                'hotspot'
-         ) activity
+         ) payments
          ORDER BY paid_at DESC NULLS LAST
          LIMIT 8`,
         [clientId]
       ),
     ]);
 
-    const billingTotal =
-      Number(
-        billingCollections.rows[0]
-          ?.total || 0
-      );
-
-    const hotspotTotal =
-      Number(
-        hotspotCollections.rows[0]
-          ?.total || 0
-      );
-
     res.json({
       subscribers:
-        subscribers.rows[0] || {
-          total: 0,
-          active: 0,
-          pppoe: 0,
-          hotspot: 0,
-        },
+        subscribers.rows[0],
 
       plans: {
         total:
           Number(
-            plans.rows[0]?.total || 0
+            plans.rows[0]?.total ||
+            0
           ),
       },
 
       invoices:
-        invoices.rows[0] || {
-          total: 0,
-          overdue: 0,
-          outstanding: 0,
-        },
+        invoices.rows[0],
 
       payments: {
         total:
-          billingTotal +
-          hotspotTotal,
-        billing_total:
-          billingTotal,
-        hotspot_total:
-          hotspotTotal,
-        hotspot_transactions:
           Number(
-            hotspotCollections.rows[0]
-              ?.transactions || 0
+            billingPayments.rows[0]
+              ?.total || 0
+          ) +
+          Number(
+            hotspotPayments.rows[0]
+              ?.total || 0
           ),
-        period: 'current_month',
+        period:
+          'current_month',
       },
 
       recent_payments:
@@ -321,14 +264,11 @@ router.get('/summary', async (req, res) => {
       data_sources: {
         subscribers:
           'mikrotik-live',
-        traffic:
+        hotspot_devices:
+          'mikrotik-hotspot-active-host',
+        graph:
           'mikrotik-noc-snapshots',
-        hotspot_payments:
-          'payhero-confirmed',
-        billing_payments:
-          'billing-payments',
         simulated: false,
-        network_sync: networkSync,
       },
     });
   } catch (error) {

@@ -473,9 +473,37 @@ async function recordHotspotSubscriberAccess({
          device_activation_status =
            EXCLUDED.device_activation_status,
 
-         cleanup_completed_at = NULL,
+         cleanup_completed_at =
+           CASE
+             WHEN
+               billing_hotspot_subscribers.payment_request_id =
+                 EXCLUDED.payment_request_id
+               AND
+               billing_hotspot_subscribers.voucher_id =
+                 EXCLUDED.voucher_id
+               AND
+               billing_hotspot_subscribers.expires_at =
+                 EXCLUDED.expires_at
+             THEN
+               billing_hotspot_subscribers.cleanup_completed_at
+             ELSE NULL
+           END,
 
-         cleanup_error = NULL,
+         cleanup_error =
+           CASE
+             WHEN
+               billing_hotspot_subscribers.payment_request_id =
+                 EXCLUDED.payment_request_id
+               AND
+               billing_hotspot_subscribers.voucher_id =
+                 EXCLUDED.voucher_id
+               AND
+               billing_hotspot_subscribers.expires_at =
+                 EXCLUDED.expires_at
+             THEN
+               billing_hotspot_subscribers.cleanup_error
+             ELSE NULL
+           END,
 
          updated_at = NOW()
 

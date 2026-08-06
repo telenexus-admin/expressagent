@@ -660,4 +660,93 @@ async function testRouterNasRegistration(input, options = {}) {
     error: result.rows[0]?.last_error || null,
   };
 }
-module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, registerRouterNas, probeRouterRadius, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotMacRadius, syncHotspotVoucherRadius, syncSubscriberRadius, testRouterNasRegistration, unregisterRouterNas };
+async function revokeHotspotRadiusAccess({
+  macAddress = null,
+  voucherCode = null,
+}) {
+  if (!radiusEnabled()) {
+    return {
+      status: 'not_configured',
+      removed: 0,
+    };
+  }
+
+  const usernames =
+    [
+      normalizeHotspotMac(
+        macAddress
+      ),
+
+      String(
+        voucherCode || ''
+      ).trim(),
+    ]
+      .filter(Boolean)
+      .filter(
+        (
+          value,
+          index,
+          values
+        ) =>
+          values.indexOf(value) ===
+          index
+      );
+
+  if (!usernames.length) {
+    return {
+      status: 'nothing_to_remove',
+      removed: 0,
+    };
+  }
+
+  const radiusClient =
+    await getRadiusPool().connect();
+
+  try {
+    await radiusClient.query(
+      'BEGIN'
+    );
+
+    const checkResult =
+      await radiusClient.query(
+        `DELETE FROM radcheck
+         WHERE username =
+           ANY($1::text[])`,
+        [
+          usernames,
+        ]
+      );
+
+    const replyResult =
+      await radiusClient.query(
+        `DELETE FROM radreply
+         WHERE username =
+           ANY($1::text[])`,
+        [
+          usernames,
+        ]
+      );
+
+    await radiusClient.query(
+      'COMMIT'
+    );
+
+    return {
+      status: 'revoked',
+      usernames,
+      removed:
+        checkResult.rowCount +
+        replyResult.rowCount,
+    };
+  } catch (error) {
+    await radiusClient.query(
+      'ROLLBACK'
+    ).catch(() => {});
+
+    throw error;
+  } finally {
+    radiusClient.release();
+  }
+}
+
+module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, registerRouterNas, revokeHotspotRadiusAccess, probeRouterRadius, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotMacRadius, syncHotspotVoucherRadius, syncSubscriberRadius, testRouterNasRegistration, unregisterRouterNas };

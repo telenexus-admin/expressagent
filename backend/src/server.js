@@ -72,6 +72,9 @@ const { startNetworkExecutorScheduler } = require('./services/networkExecutor');
 const { startNetworkEnrollmentScheduler } = require('./services/networkEnrollment');
 const { ensureEventSchema } = require('./services/events');
 const { openAIModelSummary } = require('./services/openai');
+const {
+  startHotspotSubscriberScheduler,
+} = require('./services/hotspotSubscriberAccess');
 
 const app = express();
 
@@ -188,6 +191,7 @@ app.listen(PORT, () => {
   startWebsiteKnowledgeScheduler();
   startAiTaskScheduler();
   startMikrotikMonitorScheduler();
+  startHotspotSubscriberScheduler();
   startRadiusSyncJobScheduler();
   startRadiusSessionEventScheduler();
   startKnowledgeProcessorScheduler();

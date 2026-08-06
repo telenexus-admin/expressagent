@@ -70,24 +70,131 @@ router.get('/summary', async (req, res) => {
     ] = await Promise.all([
       db.query(
         `SELECT
-           COUNT(*)::int AS total,
-           COUNT(*) FILTER (
-             WHERE is_online = TRUE
-           )::int AS active,
-           COUNT(*) FILTER (
-             WHERE service_type = 'pppoe'
-           )::int AS pppoe,
-           COUNT(*) FILTER (
-             WHERE service_type = 'hotspot'
-           )::int AS hotspot,
-           COUNT(*) FILTER (
-             WHERE service_type = 'dhcp'
-           )::int AS static,
-           MAX(last_synced_at)
-             AS last_synced_at
-         FROM mikrotik_clients
-         WHERE client_id = $1`,
-        [clientId]
+           (
+             SELECT COUNT(*)
+             FROM mikrotik_clients
+             WHERE client_id = $1
+               AND service_type <>
+                   'hotspot'
+           ) +
+
+           (
+             SELECT COUNT(*)
+             FROM billing_hotspot_subscribers
+             WHERE client_id = $1
+               AND current_mac
+                     IS NOT NULL
+               AND status <>
+                     'replaced'
+           ) AS total,
+
+           (
+             SELECT COUNT(*)
+             FROM mikrotik_clients
+             WHERE client_id = $1
+               AND service_type <>
+                   'hotspot'
+               AND is_online = TRUE
+           ) +
+
+           (
+             SELECT COUNT(*)
+             FROM billing_hotspot_subscribers
+               subscriber
+
+             JOIN LATERAL (
+               SELECT client.is_online
+               FROM mikrotik_clients client
+               WHERE client.client_id =
+                       subscriber.client_id
+
+                 AND client.service_type =
+                       'hotspot'
+
+                 AND UPPER(
+                       REGEXP_REPLACE(
+                         COALESCE(
+                           client.mac_address,
+                           client.username,
+                           ''
+                         ),
+                         '[^0-9A-Fa-f]',
+                         '',
+                         'g'
+                       )
+                     ) =
+                     UPPER(
+                       REGEXP_REPLACE(
+                         subscriber.current_mac,
+                         '[^0-9A-Fa-f]',
+                         '',
+                         'g'
+                       )
+                     )
+
+               ORDER BY
+                 client.is_online DESC,
+                 client.last_synced_at DESC
+
+               LIMIT 1
+             ) live ON TRUE
+
+             WHERE subscriber.client_id = $1
+               AND subscriber.current_mac
+                     IS NOT NULL
+               AND subscriber.status <>
+                     'replaced'
+               AND subscriber.expires_at >
+                     NOW()
+               AND live.is_online = TRUE
+           ) AS active,
+
+           (
+             SELECT COUNT(*)
+             FROM mikrotik_clients
+             WHERE client_id = $1
+               AND service_type =
+                   'pppoe'
+           ) AS pppoe,
+
+           (
+             SELECT COUNT(*)
+             FROM billing_hotspot_subscribers
+             WHERE client_id = $1
+               AND current_mac
+                     IS NOT NULL
+               AND status <>
+                     'replaced'
+           ) AS hotspot,
+
+           (
+             SELECT COUNT(*)
+             FROM mikrotik_clients
+             WHERE client_id = $1
+               AND service_type =
+                   'dhcp'
+           ) AS static,
+
+           GREATEST(
+             (
+               SELECT MAX(
+                 last_synced_at
+               )
+               FROM mikrotik_clients
+               WHERE client_id = $1
+             ),
+
+             (
+               SELECT MAX(
+                 updated_at
+               )
+               FROM billing_hotspot_subscribers
+               WHERE client_id = $1
+             )
+           ) AS last_synced_at`,
+        [
+          clientId,
+        ]
       ),
 
       db.query(
@@ -265,7 +372,7 @@ router.get('/summary', async (req, res) => {
         subscribers:
           'mikrotik-live',
         hotspot_devices:
-          'mikrotik-hotspot-active-host',
+          'confirmed-phone-mac-binding',
         graph:
           'mikrotik-noc-snapshots',
         simulated: false,

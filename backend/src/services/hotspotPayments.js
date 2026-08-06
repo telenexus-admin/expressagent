@@ -7,6 +7,11 @@ const {
 const {
   activatePaidHotspotDevice,
 } = require('./hotspotMacAccess');
+const {
+  ensureHotspotSubscriberSchema,
+  recordHotspotSubscriberAccess,
+  resolveHotspotSubscriberBinding,
+} = require('./hotspotSubscriberAccess');
 
 let schemaPromise;
 
@@ -206,13 +211,18 @@ async function fulfillHotspotPayment(
     return null;
   }
 
+  const requestedMac =
+    metadata.mac || null;
+
   await ensureHotspotPaymentSchema();
+  await ensureHotspotSubscriberSchema();
 
   const connection = await db.connect();
   let payment;
   let plan;
   let voucher;
   let fulfillment;
+  let subscriberBinding;
 
   try {
     await connection.query('BEGIN');
@@ -297,6 +307,25 @@ async function fulfillHotspotPayment(
           'The purchased hotspot package no longer exists',
       };
     }
+
+    subscriberBinding =
+      await resolveHotspotSubscriberBinding({
+        queryable: connection,
+
+        clientId:
+          payment.client_id,
+
+        customerPhone:
+          payment.customer_phone,
+
+        requestedMac,
+
+        routerId:
+          plan.router_id || null,
+      });
+
+    metadata.mac =
+      subscriberBinding.current_mac;
 
     const expectedAmount =
       metadata.expected_amount;
@@ -635,6 +664,40 @@ async function fulfillHotspotPayment(
       ]
     );
 
+    let subscriberAccess = null;
+
+    try {
+      subscriberAccess =
+        await recordHotspotSubscriberAccess({
+          clientId:
+            payment.client_id,
+
+          customerPhone:
+            payment.customer_phone,
+
+          currentMac:
+            metadata.mac,
+
+          requestedMac,
+
+          routerId:
+            plan.router_id || null,
+
+          plan,
+          payment,
+          voucher,
+
+          deviceActivationStatus:
+            deviceActivation?.status ||
+            null,
+        });
+    } catch (subscriberError) {
+      console.error(
+        'Hotspot subscriber binding update failed:',
+        subscriberError.message
+      );
+    }
+
     return {
       status: 'active',
       voucher,
@@ -647,6 +710,22 @@ async function fulfillHotspotPayment(
       device_activation_status:
         deviceActivation?.status ||
         null,
+
+      subscriber_phone:
+        subscriberAccess
+          ?.customer_phone ||
+        null,
+
+      device_mac:
+        subscriberAccess
+          ?.current_mac ||
+        metadata.mac ||
+        null,
+
+      binding_reused:
+        subscriberBinding
+          ?.binding_reused ||
+        false,
     };
   } catch (error) {
     await db.query(

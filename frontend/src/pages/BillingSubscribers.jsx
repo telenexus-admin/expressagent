@@ -155,7 +155,6 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
         hotspot
           ? (
               macAddress ||
-              client.ip_address ||
               'Hotspot device'
             )
           : (
@@ -191,14 +190,18 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
           networkName,
 
         phone:
-          managedSubscriber?.phone ||
-          (
-            hotspot
-              ? client.ip_address ||
+          hotspot
+            ? (
+                client.phone ||
+                client.account_number ||
                 ''
-              : client.phone ||
+              )
+            : (
+                managedSubscriber
+                  ?.phone ||
+                client.phone ||
                 ''
-          ),
+              ),
 
         email:
           managedSubscriber?.email ||
@@ -207,9 +210,11 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
         account_number:
           hotspot
             ? (
-                macAddress ||
-                client.username ||
-                client.account_number
+                client.phone ||
+                client.account_number ||
+                managedSubscriber
+                  ?.phone ||
+                macAddress
               )
             : (
                 client.account_number ||
@@ -826,7 +831,10 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                 </th>
 
                 <th className="px-3 py-3">
-                  Network
+                  {subscriberType ===
+                  'hotspot'
+                    ? 'Paying phone'
+                    : 'Network'}
                 </th>
 
                 <th className="px-3 py-3">
@@ -921,13 +929,9 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
 
                       <td className="px-3 py-4 text-sm text-slate-600">
                         <div>
-                          {subscriber.service_type ===
-                          'hotspot'
-                            ? (
-                                subscriber.mac_address ||
-                                subscriber.account_number
-                              )
-                            : subscriber.account_number}
+                          {subscriber.account_number ||
+                            subscriber.phone ||
+                            'No payment phone'}
                         </div>
 
                         <div className="mt-1 text-[10px] font-semibold text-violet-500">

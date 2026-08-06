@@ -1485,40 +1485,407 @@ async function syncMikrotikClients(clientId) {
   return summary;
 }
 
-async function listMikrotikClients(clientId, filters = {}) {
+async function listMikrotikClients(
+  clientId,
+  filters = {}
+) {
   await ensureMikrotikTables();
-  const params = [clientId];
-  const where = ['client_id = $1'];
-  const service = normalizeServiceType(filters.service_type || filters.service || '');
-  if (['pppoe', 'hotspot'].includes(service)) {
-    params.push(service);
-    where.push(`service_type = $${params.length}`);
+
+  const requestedService =
+    normalizeServiceType(
+      filters.service_type ||
+      filters.service ||
+      ''
+    );
+
+  const requestedStatus =
+    String(
+      filters.status || 'all'
+    ).toLowerCase();
+
+  const requestedSearch =
+    String(
+      filters.search || ''
+    )
+      .trim()
+      .toLowerCase();
+
+  const tableResult =
+    await db.query(`
+      SELECT
+        TO_REGCLASS(
+          'public.billing_hotspot_subscribers'
+        ) AS table_name
+    `);
+
+  const subscriberTableReady =
+    Boolean(
+      tableResult.rows[0]
+        ?.table_name
+    );
+
+  const rows = [];
+
+  if (
+    requestedService !==
+    'hotspot'
+  ) {
+    const parameters = [
+      clientId,
+    ];
+
+    const conditions = [
+      'client_id = $1',
+      "service_type <> 'hotspot'",
+    ];
+
+    if (
+      ['pppoe', 'dhcp']
+        .includes(
+          requestedService
+        )
+    ) {
+      parameters.push(
+        requestedService
+      );
+
+      conditions.push(
+        `service_type = $${parameters.length}`
+      );
+    }
+
+    const ordinaryResult =
+      await db.query(
+        `SELECT *
+         FROM mikrotik_clients
+         WHERE ${conditions.join(
+           ' AND '
+         )}
+         ORDER BY
+           is_online DESC,
+           last_synced_at DESC,
+           updated_at DESC
+         LIMIT 1000`,
+        parameters
+      );
+
+    rows.push(
+      ...ordinaryResult.rows
+    );
   }
-  const status = String(filters.status || 'all').toLowerCase();
-  if (status === 'online') where.push('is_online = TRUE');
-  if (status === 'offline') where.push('is_online = FALSE');
-  if (filters.search) {
-    params.push(`%${String(filters.search).toLowerCase()}%`);
-    where.push(`LOWER(COALESCE(username,'') || ' ' || COALESCE(display_name,'') || ' ' || COALESCE(phone,'') || ' ' || COALESCE(account_number,'')) LIKE $${params.length}`);
+
+  if (
+    subscriberTableReady &&
+    (
+      !requestedService ||
+      requestedService ===
+        'unknown' ||
+      requestedService ===
+        'hotspot'
+    )
+  ) {
+    const hotspotResult =
+      await db.query(
+        `SELECT
+           subscriber.id,
+           subscriber.client_id,
+
+           COALESCE(
+             subscriber.router_id,
+             live.router_id
+           ) AS router_id,
+
+           COALESCE(
+             router.name,
+             live.router_name
+           ) AS router_name,
+
+           'hotspot'
+             AS service_type,
+
+           subscriber.customer_phone
+             AS account_number,
+
+           subscriber.current_mac
+             AS username,
+
+           subscriber.current_mac
+             AS display_name,
+
+           subscriber.customer_phone
+             AS phone,
+
+           subscriber.package_name
+             AS profile,
+
+           subscriber.package_name,
+
+           CASE
+             WHEN subscriber.expires_at
+                    IS NOT NULL
+              AND subscriber.expires_at
+                    <= NOW()
+             THEN 'expired'
+
+             WHEN COALESCE(
+                    live.is_online,
+                    FALSE
+                  )
+             THEN 'active'
+
+             ELSE 'offline'
+           END AS status,
+
+           CASE
+             WHEN subscriber.expires_at
+                    IS NOT NULL
+              AND subscriber.expires_at
+                    <= NOW()
+             THEN FALSE
+
+             ELSE COALESCE(
+               live.is_online,
+               FALSE
+             )
+           END AS is_online,
+
+           COALESCE(
+             subscriber.expires_at::text,
+             ''
+           ) AS expiry_date,
+
+           '' AS expiry_time,
+
+           COALESCE(
+             live.ip_address,
+             ''
+           ) AS ip_address,
+
+           subscriber.current_mac
+             AS mac_address,
+
+           COALESCE(
+             live.uptime,
+             ''
+           ) AS uptime,
+
+           COALESCE(
+             live.last_seen,
+             ''
+           ) AS last_seen,
+
+           JSONB_BUILD_OBJECT(
+             'source',
+             'confirmed_hotspot_payment',
+
+             'customer_phone',
+             subscriber.customer_phone,
+
+             'payment_request_id',
+             subscriber.payment_request_id,
+
+             'voucher_id',
+             subscriber.voucher_id
+           ) AS raw,
+
+           COALESCE(
+             live.last_synced_at,
+             subscriber.updated_at
+           ) AS last_synced_at,
+
+           subscriber.created_at,
+
+           subscriber.updated_at
+
+         FROM billing_hotspot_subscribers
+           subscriber
+
+         LEFT JOIN mikrotik_routers
+           router
+           ON router.id =
+                subscriber.router_id
+          AND router.client_id =
+                subscriber.client_id
+
+         LEFT JOIN LATERAL (
+           SELECT client.*
+           FROM mikrotik_clients client
+           WHERE client.client_id =
+                   subscriber.client_id
+             AND client.service_type =
+                   'hotspot'
+             AND UPPER(
+                   REGEXP_REPLACE(
+                     COALESCE(
+                       client.mac_address,
+                       client.username,
+                       ''
+                     ),
+                     '[^0-9A-Fa-f]',
+                     '',
+                     'g'
+                   )
+                 ) =
+                 UPPER(
+                   REGEXP_REPLACE(
+                     subscriber.current_mac,
+                     '[^0-9A-Fa-f]',
+                     '',
+                     'g'
+                   )
+                 )
+           ORDER BY
+             client.is_online DESC,
+             client.last_synced_at DESC
+           LIMIT 1
+         ) live ON TRUE
+
+         WHERE subscriber.client_id = $1
+           AND subscriber.current_mac
+                 IS NOT NULL
+           AND subscriber.status <>
+                 'replaced'
+
+         ORDER BY
+           CASE
+             WHEN subscriber.expires_at
+                    IS NOT NULL
+              AND subscriber.expires_at
+                    <= NOW()
+             THEN 2
+
+             WHEN COALESCE(
+                    live.is_online,
+                    FALSE
+                  )
+             THEN 0
+
+             ELSE 1
+           END,
+
+           subscriber.updated_at DESC`,
+        [
+          clientId,
+        ]
+      );
+
+    rows.push(
+      ...hotspotResult.rows
+    );
   }
-  const result = await db.query(
-    `SELECT * FROM mikrotik_clients
-     WHERE ${where.join(' AND ')}
-     ORDER BY is_online DESC, last_synced_at DESC, updated_at DESC
-     LIMIT 1000`,
-    params
-  );
-  const rows = result.rows.map(publicMikrotikClient);
-  const filtered = status === 'expired' ? rows.filter((row) => row.is_expired) : rows;
+
+  let filtered =
+    rows.map(
+      publicMikrotikClient
+    );
+
+  if (
+    requestedStatus ===
+    'online'
+  ) {
+    filtered =
+      filtered.filter(
+        row =>
+          row.is_online &&
+          !row.is_expired
+      );
+  }
+
+  if (
+    requestedStatus ===
+    'offline'
+  ) {
+    filtered =
+      filtered.filter(
+        row =>
+          !row.is_online &&
+          !row.is_expired
+      );
+  }
+
+  if (
+    requestedStatus ===
+    'expired'
+  ) {
+    filtered =
+      filtered.filter(
+        row =>
+          row.is_expired
+      );
+  }
+
+  if (requestedSearch) {
+    filtered =
+      filtered.filter(row =>
+        [
+          row.username,
+          row.display_name,
+          row.phone,
+          row.account_number,
+          row.mac_address,
+          row.package_name,
+          row.router_name,
+        ]
+          .join(' ')
+          .toLowerCase()
+          .includes(
+            requestedSearch
+          )
+      );
+  }
+
+  const allRows =
+    rows.map(
+      publicMikrotikClient
+    );
+
   return {
     clients: filtered,
+
     counts: {
-      total: rows.length,
-      online: rows.filter((row) => row.is_online).length,
-      offline: rows.filter((row) => !row.is_online).length,
-      expired: rows.filter((row) => row.is_expired).length,
-      pppoe: rows.filter((row) => row.service_type === 'pppoe').length,
-      hotspot: rows.filter((row) => row.service_type === 'hotspot').length,
+      total:
+        allRows.length,
+
+      online:
+        allRows.filter(
+          row =>
+            row.is_online &&
+            !row.is_expired
+        ).length,
+
+      offline:
+        allRows.filter(
+          row =>
+            !row.is_online &&
+            !row.is_expired
+        ).length,
+
+      expired:
+        allRows.filter(
+          row =>
+            row.is_expired
+        ).length,
+
+      pppoe:
+        allRows.filter(
+          row =>
+            row.service_type ===
+            'pppoe'
+        ).length,
+
+      hotspot:
+        allRows.filter(
+          row =>
+            row.service_type ===
+            'hotspot'
+        ).length,
+
+      static:
+        allRows.filter(
+          row =>
+            row.service_type ===
+            'dhcp'
+        ).length,
     },
   };
 }

@@ -625,7 +625,191 @@ async function activatePaidHotspotDevice({
   }
 }
 
+async function revokeHotspotDeviceAccess({
+  clientId,
+  routerId = null,
+  macAddress,
+  ipAddress = '',
+}) {
+  const mac =
+    normalizeMac(macAddress);
+
+  if (!mac) {
+    throw new Error(
+      'A valid Hotspot MAC address is required for revocation'
+    );
+  }
+
+  const router =
+    await loadRouter(
+      clientId,
+      routerId
+    );
+
+  if (!router) {
+    throw new Error(
+      'A verified MikroTik executor was not found'
+    );
+  }
+
+  const client =
+    await connectRouter({
+      ...router,
+      host:
+        router.wireguard_tunnel_ip ||
+        router.host,
+      username:
+        router.executor_username,
+      password:
+        decryptSecret(
+          router.executor_password_encrypted
+        ),
+    });
+
+  const macKey =
+    compactMac(mac);
+
+  const queueName =
+    safeName(
+      'NEXA-PAID-QUEUE',
+      macKey
+    );
+
+  const schedulerName =
+    safeName(
+      'NEXA-PAID-EXPIRY',
+      macKey
+    );
+
+  try {
+    await clearDeviceSessions({
+      client,
+      mac,
+      ipAddress,
+    });
+
+    await removeRows(
+      client,
+      '/ip/hotspot/ip-binding/print',
+      '/ip/hotspot/ip-binding/remove',
+      item =>
+        normalizeMac(
+          item['mac-address']
+        ) === mac
+    );
+
+    await removeRows(
+      client,
+      '/ip/hotspot/user/print',
+      '/ip/hotspot/user/remove',
+      item =>
+        normalizeMac(
+          item['mac-address']
+        ) === mac ||
+        normalizeMac(
+          item.name
+        ) === mac
+    );
+
+    await removeRows(
+      client,
+      '/ip/hotspot/cookie/print',
+      '/ip/hotspot/cookie/remove',
+      item =>
+        normalizeMac(
+          item['mac-address']
+        ) === mac ||
+        normalizeMac(
+          item.user
+        ) === mac
+    );
+
+    await removeRows(
+      client,
+      '/queue/simple/print',
+      '/queue/simple/remove',
+      item =>
+        item.name === queueName
+    );
+
+    await removeRows(
+      client,
+      '/system/scheduler/print',
+      '/system/scheduler/remove',
+      item =>
+        item.name ===
+        schedulerName
+    );
+
+    const [
+      activeAfter,
+      bindingsAfter,
+      usersAfter,
+    ] = await Promise.all([
+      client.command(
+        '/ip/hotspot/active/print'
+      ),
+
+      client.command(
+        '/ip/hotspot/ip-binding/print'
+      ),
+
+      client.command(
+        '/ip/hotspot/user/print'
+      ),
+    ]);
+
+    const activeRemains =
+      rows(activeAfter).some(
+        item =>
+          sameDevice(
+            item,
+            mac,
+            ipAddress
+          )
+      );
+
+    const bindingRemains =
+      rows(bindingsAfter).some(
+        item =>
+          normalizeMac(
+            item['mac-address']
+          ) === mac
+      );
+
+    const userRemains =
+      rows(usersAfter).some(
+        item =>
+          normalizeMac(
+            item['mac-address']
+          ) === mac ||
+          normalizeMac(
+            item.name
+          ) === mac
+      );
+
+    if (
+      activeRemains ||
+      bindingRemains ||
+      userRemains
+    ) {
+      throw new Error(
+        'Expired Hotspot access still exists on MikroTik'
+      );
+    }
+
+    return {
+      status: 'revoked',
+      router_id: router.id,
+      mac_address: mac,
+    };
+  } finally {
+    client.close();
+  }
+}
+
 module.exports = {
   activatePaidHotspotDevice,
   normalizeMac,
+  revokeHotspotDeviceAccess,
 };

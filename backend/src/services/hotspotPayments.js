@@ -429,7 +429,7 @@ async function fulfillHotspotPayment(
       Boolean(metadata.mac);
 
     const deviceAlreadyActivated =
-      ['active', 'triggered'].includes(
+      ['active', 'bypassed'].includes(
         fulfillment.device_activation_status
       );
 
@@ -746,7 +746,7 @@ async function getHotspotPaymentStatus({
       receipt:
         payment.mpesa_receipt_number || null,
       authentication:
-        ['active', 'triggered'].includes(
+        ['active', 'bypassed'].includes(
           source.device_activation_status
         )
           ? 'mac'

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const db = require('../db');
 
 const {
@@ -16,6 +17,16 @@ function wait(milliseconds) {
   );
 }
 
+function rows(value) {
+  return Array.isArray(value)
+    ? value
+    : [];
+}
+
+function rowId(value) {
+  return value?.['.id'] || null;
+}
+
 function normalizeMac(value) {
   const compact = String(value || '')
     .replace(/[^A-Fa-f0-9]/g, '')
@@ -30,10 +41,16 @@ function normalizeMac(value) {
     .join(':');
 }
 
-function rows(value) {
-  return Array.isArray(value)
-    ? value
-    : [];
+function compactMac(value) {
+  return String(value || '')
+    .replace(/[^A-Fa-f0-9]/g, '')
+    .toUpperCase();
+}
+
+function safeName(prefix, value) {
+  return `${prefix}-${value}`
+    .replace(/[^A-Za-z0-9_.-]/g, '-')
+    .slice(0, 60);
 }
 
 function sameDevice(
@@ -45,7 +62,7 @@ function sameDevice(
     item?.['mac-address']
   );
 
-  const itemAddresses = [
+  const addresses = [
     item?.address,
     item?.['to-address'],
   ]
@@ -59,9 +76,16 @@ function sameDevice(
     ) ||
     (
       ipAddress &&
-      itemAddresses.includes(ipAddress)
+      addresses.includes(ipAddress)
     )
   );
+}
+
+function durationText(seconds) {
+  return `${Math.max(
+    1,
+    Math.ceil(Number(seconds) || 1)
+  )}s`;
 }
 
 async function loadRouter(
@@ -105,6 +129,299 @@ async function loadRouter(
   return result.rows[0] || null;
 }
 
+async function removeRows(
+  client,
+  printPath,
+  removePath,
+  predicate
+) {
+  const existing = rows(
+    await client.command(printPath)
+  );
+
+  for (const item of existing) {
+    if (
+      rowId(item) &&
+      predicate(item)
+    ) {
+      await client.command(
+        removePath,
+        {
+          '.id': rowId(item),
+        }
+      ).catch(() => {});
+    }
+  }
+}
+
+async function ensurePaidProfile(
+  client,
+  rateLimit
+) {
+  const profileHash = crypto
+    .createHash('sha256')
+    .update(
+      String(rateLimit || 'unlimited')
+    )
+    .digest('hex')
+    .slice(0, 10);
+
+  const profileName =
+    safeName(
+      'NEXA-PAID',
+      profileHash
+    );
+
+  const profiles = rows(
+    await client.command(
+      '/ip/hotspot/user/profile/print'
+    )
+  );
+
+  const existing = profiles.find(
+    item =>
+      item.name === profileName
+  );
+
+  const attributes = {
+    name: profileName,
+    'shared-users': '1',
+    'add-mac-cookie': 'yes',
+  };
+
+  if (rateLimit) {
+    attributes['rate-limit'] =
+      String(rateLimit);
+  }
+
+  if (existing && rowId(existing)) {
+    await client.command(
+      '/ip/hotspot/user/profile/set',
+      {
+        '.id': rowId(existing),
+        ...attributes,
+      }
+    );
+  } else {
+    await client.command(
+      '/ip/hotspot/user/profile/add',
+      attributes
+    );
+  }
+
+  return profileName;
+}
+
+async function createLocalMacUser({
+  client,
+  mac,
+  macPassword,
+  profileName,
+  remainingSeconds,
+  dataLimitMb,
+}) {
+  await removeRows(
+    client,
+    '/ip/hotspot/user/print',
+    '/ip/hotspot/user/remove',
+    item =>
+      String(item.name || '')
+        .toUpperCase() === mac
+  );
+
+  const attributes = {
+    name: mac,
+    password: macPassword,
+    'mac-address': mac,
+    server: 'NEXA-HOTSPOT',
+    profile: profileName,
+    'limit-uptime':
+      durationText(remainingSeconds),
+    disabled: 'no',
+  };
+
+  const dataLimit =
+    Number(dataLimitMb);
+
+  if (
+    Number.isFinite(dataLimit) &&
+    dataLimit > 0
+  ) {
+    attributes['limit-bytes-total'] =
+      String(
+        Math.round(
+          dataLimit *
+          1024 *
+          1024
+        )
+      );
+  }
+
+  await client.command(
+    '/ip/hotspot/user/add',
+    attributes
+  );
+}
+
+async function clearDeviceSessions({
+  client,
+  mac,
+  ipAddress,
+}) {
+  await removeRows(
+    client,
+    '/ip/hotspot/active/print',
+    '/ip/hotspot/active/remove',
+    item =>
+      sameDevice(
+        item,
+        mac,
+        ipAddress
+      )
+  );
+
+  await removeRows(
+    client,
+    '/ip/hotspot/host/print',
+    '/ip/hotspot/host/remove',
+    item =>
+      sameDevice(
+        item,
+        mac,
+        ipAddress
+      )
+  );
+}
+
+async function findActiveSession({
+  client,
+  mac,
+  ipAddress,
+}) {
+  const active = rows(
+    await client.command(
+      '/ip/hotspot/active/print'
+    )
+  );
+
+  return active.find(
+    item =>
+      sameDevice(
+        item,
+        mac,
+        ipAddress
+      )
+  ) || null;
+}
+
+async function installBypass({
+  client,
+  mac,
+  ipAddress,
+  remainingSeconds,
+  rateLimit,
+}) {
+  const macKey = compactMac(mac);
+
+  const queueName =
+    safeName(
+      'NEXA-PAID-QUEUE',
+      macKey
+    );
+
+  const schedulerName =
+    safeName(
+      'NEXA-PAID-EXPIRY',
+      macKey
+    );
+
+  await removeRows(
+    client,
+    '/ip/hotspot/ip-binding/print',
+    '/ip/hotspot/ip-binding/remove',
+    item =>
+      normalizeMac(
+        item['mac-address']
+      ) === mac
+  );
+
+  const binding = {
+    'mac-address': mac,
+    server: 'NEXA-HOTSPOT',
+    type: 'bypassed',
+  };
+
+  if (ipAddress) {
+    binding.address =
+      String(ipAddress);
+  }
+
+  await client.command(
+    '/ip/hotspot/ip-binding/add',
+    binding
+  );
+
+  await removeRows(
+    client,
+    '/queue/simple/print',
+    '/queue/simple/remove',
+    item =>
+      item.name === queueName
+  );
+
+  if (ipAddress && rateLimit) {
+    await client.command(
+      '/queue/simple/add',
+      {
+        name: queueName,
+        target:
+          `${String(ipAddress)}/32`,
+        'max-limit':
+          String(rateLimit),
+        disabled: 'no',
+      }
+    );
+  }
+
+  await removeRows(
+    client,
+    '/system/scheduler/print',
+    '/system/scheduler/remove',
+    item =>
+      item.name === schedulerName
+  );
+
+  const cleanup = [
+    `/ip hotspot ip-binding remove [find where mac-address="${mac}"]`,
+    `/queue simple remove [find where name="${queueName}"]`,
+    `/ip hotspot user remove [find where name="${mac}"]`,
+    `/system scheduler remove [find where name="${schedulerName}"]`,
+  ].join('; ');
+
+  await client.command(
+    '/system/scheduler/add',
+    {
+      name: schedulerName,
+      interval:
+        durationText(remainingSeconds),
+      'on-event': cleanup,
+      policy:
+        'read,write,policy,test',
+      disabled: 'no',
+    }
+  );
+
+  return {
+    status: 'bypassed',
+    queue_name:
+      ipAddress && rateLimit
+        ? queueName
+        : null,
+    scheduler_name:
+      schedulerName,
+  };
+}
+
 async function activatePaidHotspotDevice({
   clientId,
   routerId = null,
@@ -114,9 +431,8 @@ async function activatePaidHotspotDevice({
   rateLimit = null,
   dataLimitMb = null,
 }) {
-  const mac = normalizeMac(
-    macAddress
-  );
+  const mac =
+    normalizeMac(macAddress);
 
   if (!mac) {
     throw new Error(
@@ -124,8 +440,34 @@ async function activatePaidHotspotDevice({
     );
   }
 
+  const expiry = new Date(expiresAt);
+
+  if (
+    !Number.isFinite(
+      expiry.getTime()
+    )
+  ) {
+    throw new Error(
+      'The package expiry time is invalid'
+    );
+  }
+
+  const remainingSeconds = Math.ceil(
+    (
+      expiry.getTime() -
+      Date.now()
+    ) / 1000
+  );
+
+  if (remainingSeconds <= 0) {
+    throw new Error(
+      'The paid hotspot package has expired'
+    );
+  }
+
   const macPassword = String(
-    process.env.HOTSPOT_MAC_AUTH_PASSWORD || ''
+    process.env.HOTSPOT_MAC_AUTH_PASSWORD ||
+    ''
   ).trim();
 
   if (!macPassword) {
@@ -137,7 +479,7 @@ async function activatePaidHotspotDevice({
   const radius =
     await syncHotspotMacRadius({
       macAddress: mac,
-      expiresAt,
+      expiresAt: expiry,
       rateLimit,
       dataLimitMb,
     });
@@ -169,19 +511,23 @@ async function activatePaidHotspotDevice({
     });
 
   try {
-    const profiles = rows(
+    const hotspotProfiles = rows(
       await client.command(
         '/ip/hotspot/profile/print'
       )
     );
 
-    const profile = profiles.find(
-      item =>
-        item.name ===
-        'NEXA-HOTSPOT-PROFILE'
-    );
+    const hotspotProfile =
+      hotspotProfiles.find(
+        item =>
+          item.name ===
+          'NEXA-HOTSPOT-PROFILE'
+      );
 
-    if (!profile?.['.id']) {
+    if (
+      !hotspotProfile ||
+      !rowId(hotspotProfile)
+    ) {
       throw new Error(
         'NEXA Hotspot profile was not found'
       );
@@ -190,7 +536,8 @@ async function activatePaidHotspotDevice({
     await client.command(
       '/ip/hotspot/profile/set',
       {
-        '.id': profile['.id'],
+        '.id':
+          rowId(hotspotProfile),
         'login-by':
           'mac,http-chap,http-pap,cookie',
         'mac-auth-password':
@@ -201,84 +548,48 @@ async function activatePaidHotspotDevice({
       }
     );
 
-    const activeSessions = rows(
-      await client.command(
-        '/ip/hotspot/active/print'
-      )
-    );
+    const profileName =
+      await ensurePaidProfile(
+        client,
+        rateLimit
+      );
 
-    for (const session of activeSessions) {
-      if (
-        session?.['.id'] &&
-        sameDevice(
-          session,
-          mac,
-          ipAddress
-        )
-      ) {
-        await client.command(
-          '/ip/hotspot/active/remove',
-          {
-            '.id': session['.id'],
-          }
-        ).catch(() => {});
-      }
-    }
+    await createLocalMacUser({
+      client,
+      mac,
+      macPassword,
+      profileName,
+      remainingSeconds,
+      dataLimitMb,
+    });
 
-    const hosts = rows(
-      await client.command(
-        '/ip/hotspot/host/print'
-      )
-    );
-
-    for (const host of hosts) {
-      if (
-        host?.['.id'] &&
-        sameDevice(
-          host,
-          mac,
-          ipAddress
-        )
-      ) {
-        await client.command(
-          '/ip/hotspot/host/remove',
-          {
-            '.id': host['.id'],
-          }
-        ).catch(() => {});
-      }
-    }
+    await clearDeviceSessions({
+      client,
+      mac,
+      ipAddress,
+    });
 
     for (
       let attempt = 0;
-      attempt < 12;
+      attempt < 5;
       attempt += 1
     ) {
       await wait(1000);
 
-      const current = rows(
-        await client.command(
-          '/ip/hotspot/active/print'
-        )
-      );
+      const active =
+        await findActiveSession({
+          client,
+          mac,
+          ipAddress,
+        });
 
-      const authenticated =
-        current.find(
-          item =>
-            sameDevice(
-              item,
-              mac,
-              ipAddress
-            )
-        );
-
-      if (authenticated) {
+      if (active) {
         return {
           status: 'active',
           router_id: router.id,
           username: mac,
           login_by:
-            authenticated['login-by'] ||
+            active['login-by'] ||
             'mac',
           radius_status:
             radius.status,
@@ -286,12 +597,28 @@ async function activatePaidHotspotDevice({
       }
     }
 
+    const bypass =
+      await installBypass({
+        client,
+        mac,
+        ipAddress,
+        remainingSeconds,
+        rateLimit,
+      });
+
+    await clearDeviceSessions({
+      client,
+      mac,
+      ipAddress,
+    });
+
     return {
-      status: 'triggered',
+      ...bypass,
       router_id: router.id,
       username: mac,
-      login_by: 'mac',
-      radius_status: radius.status,
+      login_by: 'bypass',
+      radius_status:
+        radius.status,
     };
   } finally {
     client.close();

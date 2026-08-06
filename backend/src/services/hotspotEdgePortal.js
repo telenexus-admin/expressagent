@@ -1330,121 +1330,432 @@ window.addEventListener(
 </html>`;
 }
 
+function normalizeRouterFilePath(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^\/+/, '')
+    .replace(/\/+/g, '/');
+}
+
+function routerFileSize(value) {
+  const text =
+    String(value || '')
+      .trim();
+
+  if (/^\d+$/.test(text)) {
+    return Number(text);
+  }
+
+  const match =
+    text.match(
+      /^([\d.]+)\s*(B|KiB|KB|MiB|MB)$/i
+    );
+
+  if (!match) {
+    return 0;
+  }
+
+  const amount =
+    Number(match[1]);
+
+  const unit =
+    match[2]
+      .toUpperCase();
+
+  if (unit === 'B') {
+    return amount;
+  }
+
+  if (
+    unit === 'KIB' ||
+    unit === 'KB'
+  ) {
+    return Math.round(
+      amount * 1024
+    );
+  }
+
+  if (
+    unit === 'MIB' ||
+    unit === 'MB'
+  ) {
+    return Math.round(
+      amount * 1024 * 1024
+    );
+  }
+
+  return 0;
+}
+
+function delay(milliseconds) {
+  return new Promise(resolve => {
+    setTimeout(
+      resolve,
+      milliseconds
+    );
+  });
+}
+
+async function printRouterFiles(client) {
+  return rows(
+    await client.command(
+      '/file/print'
+    )
+  );
+}
+
+function findRouterFile(
+  files,
+  expectedPath
+) {
+  const normalizedExpected =
+    normalizeRouterFilePath(
+      expectedPath
+    );
+
+  return files.find(
+    file =>
+      normalizeRouterFilePath(
+        file.name
+      ) === normalizedExpected
+  );
+}
+
+async function waitForRouterFile({
+  client,
+  path,
+  minimumSize = null,
+  timeoutMs = 45000,
+}) {
+  const startedAt =
+    Date.now();
+
+  while (
+    Date.now() - startedAt <
+    timeoutMs
+  ) {
+    const files =
+      await printRouterFiles(
+        client
+      );
+
+    const file =
+      findRouterFile(
+        files,
+        path
+      );
+
+    if (
+      file &&
+      (
+        minimumSize === null ||
+        routerFileSize(
+          file.size
+        ) >= minimumSize
+      )
+    ) {
+      return file;
+    }
+
+    await delay(500);
+  }
+
+  throw new Error(
+    minimumSize === null
+      ? `RouterOS did not create ${path}`
+      : `RouterOS did not finish writing ${path}`
+  );
+}
+
+async function removeRouterFile(
+  client,
+  path
+) {
+  const files =
+    await printRouterFiles(
+      client
+    );
+
+  const file =
+    findRouterFile(
+      files,
+      path
+    );
+
+  if (
+    file &&
+    rowId(file)
+  ) {
+    await client.command(
+      '/file/remove',
+      {
+        '.id':
+          rowId(file),
+      }
+    );
+  }
+}
+
+async function detectHotspotDirectory(
+  client
+) {
+  const files =
+    await printRouterFiles(
+      client
+    );
+
+  const names =
+    files.map(file =>
+      normalizeRouterFilePath(
+        file.name
+      )
+    );
+
+  const hasFlash =
+    names.some(
+      name =>
+        name === 'flash' ||
+        name.startsWith(
+          'flash/'
+        )
+    );
+
+  return hasFlash
+    ? 'flash/nexa-hotspot'
+    : 'nexa-hotspot';
+}
+
+async function ensureRouterDirectory(
+  client,
+  directoryPath
+) {
+  const normalized =
+    normalizeRouterFilePath(
+      directoryPath
+    );
+
+  let files =
+    await printRouterFiles(
+      client
+    );
+
+  let directory =
+    findRouterFile(
+      files,
+      normalized
+    );
+
+  if (directory) {
+    return directory;
+  }
+
+  await client.command(
+    '/file/add',
+    {
+      name:
+        `/${normalized}`,
+
+      type:
+        'directory',
+    }
+  );
+
+  directory =
+    await waitForRouterFile({
+      client,
+      path:
+        normalized,
+      timeoutMs:
+        15000,
+  });
+
+  return directory;
+}
+
+async function writeRouterFile({
+  client,
+  path,
+  contents,
+}) {
+  const normalized =
+    normalizeRouterFilePath(
+      path
+    );
+
+  const expectedBytes =
+    Buffer.byteLength(
+      contents,
+      'utf8'
+    );
+
+  if (expectedBytes > 60000) {
+    throw new Error(
+      `${normalized} exceeds the RouterOS editable file limit`
+    );
+  }
+
+  await removeRouterFile(
+    client,
+    normalized
+  );
+
+  await client.command(
+    '/file/add',
+    {
+      name:
+        `/${normalized}`,
+
+      type:
+        'file',
+    }
+  );
+
+  const created =
+    await waitForRouterFile({
+      client,
+      path:
+        normalized,
+      timeoutMs:
+        15000,
+    });
+
+  if (!rowId(created)) {
+    throw new Error(
+      `RouterOS created ${normalized} without a file ID`
+    );
+  }
+
+  await client.command(
+    '/file/set',
+    {
+      '.id':
+        rowId(created),
+
+      contents,
+    }
+  );
+
+  const completed =
+    await waitForRouterFile({
+      client,
+      path:
+        normalized,
+
+      minimumSize:
+        expectedBytes,
+
+      timeoutMs:
+        45000,
+    });
+
+  return {
+    name:
+      normalizeRouterFilePath(
+        completed.name
+      ),
+
+    size:
+      routerFileSize(
+        completed.size
+      ),
+
+    expected_size:
+      expectedBytes,
+  };
+}
+
 async function replaceHotspotPortalFiles(
   client,
   edgeHtml
 ) {
   /*
-   * RouterOS displays rlogin.html directly when an
-   * unauthenticated phone requests a remote captive-check
-   * address. Therefore rlogin.html must contain the complete
-   * portal and must not navigate to a relative file.
+   * The complete portal must be returned as the first
+   * rlogin/login response. Android's captive browser keeps
+   * the original connectivity-check hostname, so no relative
+   * navigation is allowed.
    */
-  const fullPortalFiles = [
-    'nexa-hotspot/edge.html',
-    'nexa-hotspot/login.html',
-    'nexa-hotspot/rlogin.html',
-    'nexa-hotspot/flogin.html',
+  const htmlDirectory =
+    await detectHotspotDirectory(
+      client
+    );
+
+  await ensureRouterDirectory(
+    client,
+    htmlDirectory
+  );
+
+  const fullPortalNames = [
+    'edge.html',
+    'login.html',
+    'rlogin.html',
+    'flogin.html',
   ];
 
-  const auxiliaryFiles = {
-    'nexa-hotspot/redirect.html':
+  const auxiliaryContents = {
+    'redirect.html':
       hotspotRedirectResponse(),
 
-    'nexa-hotspot/alogin.html':
+    'alogin.html':
       hotspotRedirectResponse(),
 
-    'nexa-hotspot/api.json':
+    'api.json':
       hotspotApiDocument(),
   };
 
-  const managedFiles = [
-    ...fullPortalFiles,
+  /*
+   * Remove stale copies from both the RAM-root and
+   * persistent flash directory before installing.
+   */
+  const possibleDirectories =
+    new Set([
+      'nexa-hotspot',
+      'flash/nexa-hotspot',
+      htmlDirectory,
+    ]);
+
+  const allNames = [
+    ...fullPortalNames,
     ...Object.keys(
-      auxiliaryFiles
+      auxiliaryContents
     ),
   ];
 
-  let existing =
-    rows(
-      await client.command(
-        '/file/print'
-      )
-    );
-
-  const directory =
-    existing.find(
-      file =>
-        file.name ===
-        'nexa-hotspot'
-    );
-
-  if (!directory) {
-    await client.command(
-      '/file/add',
-      {
-        name:
-          'nexa-hotspot',
-
-        type:
-          'directory',
-      }
-    );
-
-    existing =
-      rows(
-        await client.command(
-          '/file/print'
-        )
-      );
-  }
-
-  const existingByName =
-    new Map(
-      existing.map(
-        file => [
-          file.name,
-          file,
-        ]
-      )
-    );
-
   for (
-    const fileName
-    of managedFiles
+    const directory
+    of possibleDirectories
   ) {
-    const current =
-      existingByName.get(
-        fileName
-      );
-
-    if (
-      current &&
-      rowId(current)
+    for (
+      const fileName
+      of allNames
     ) {
-      await client.command(
-        '/file/remove',
-        {
-          '.id':
-            rowId(current),
-        }
+      await removeRouterFile(
+        client,
+        `${directory}/${fileName}`
       );
     }
   }
 
+  await ensureRouterDirectory(
+    client,
+    htmlDirectory
+  );
+
+  const writtenFiles = [];
+
   for (
     const fileName
-    of fullPortalFiles
+    of fullPortalNames
   ) {
-    await client.command(
-      '/file/add',
-      {
-        name:
-          fileName,
+    writtenFiles.push(
+      await writeRouterFile({
+        client,
+
+        path:
+          `${htmlDirectory}/${fileName}`,
 
         contents:
           edgeHtml,
-      }
+      })
     );
   }
 
@@ -1454,21 +1765,37 @@ async function replaceHotspotPortalFiles(
       contents,
     ]
     of Object.entries(
-      auxiliaryFiles
+      auxiliaryContents
     )
   ) {
-    await client.command(
-      '/file/add',
-      {
-        name:
-          fileName,
+    writtenFiles.push(
+      await writeRouterFile({
+        client,
+
+        path:
+          `${htmlDirectory}/${fileName}`,
 
         contents,
-      }
+      })
     );
   }
 
+  const fullPortalFiles =
+    fullPortalNames.map(
+      fileName =>
+        `${htmlDirectory}/${fileName}`
+    );
+
+  const managedFiles =
+    allNames.map(
+      fileName =>
+        `${htmlDirectory}/${fileName}`
+    );
+
   return {
+    html_directory:
+      htmlDirectory,
+
     edge_bytes:
       Buffer.byteLength(
         edgeHtml,
@@ -1492,6 +1819,9 @@ async function replaceHotspotPortalFiles(
 
     files:
       managedFiles,
+
+    written_files:
+      writtenFiles,
   };
 }
 
@@ -1639,7 +1969,7 @@ async function installHotspotEdgePortal({
           rowId(profile),
 
         'html-directory':
-          'nexa-hotspot',
+          install.html_directory,
       }
     );
 
@@ -1695,6 +2025,11 @@ async function installHotspotEdgePortal({
       );
     }
 
+    const portalPrefix =
+      `${normalizeRouterFilePath(
+        install.html_directory
+      )}/`;
+
     const files =
       rows(
         await client.command(
@@ -1702,10 +2037,11 @@ async function installHotspotEdgePortal({
         )
       ).filter(
         file =>
-          String(file.name || '')
-            .startsWith(
-              'nexa-hotspot/'
-            )
+          normalizeRouterFilePath(
+            file.name
+          ).startsWith(
+            portalPrefix
+          )
       );
 
     return {
@@ -1727,8 +2063,8 @@ async function installHotspotEdgePortal({
               file.name,
 
             size:
-              Number(
-                file.size || 0
+              routerFileSize(
+                file.size
               ),
           })
         ),

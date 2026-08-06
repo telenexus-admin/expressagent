@@ -14,6 +14,31 @@ const {
 const { verifyHotspotPortalToken } = require('../services/hotspotPortalToken');
 
 const router = express.Router();
+
+router.use((req, res, next) => {
+  res.set({
+    'Access-Control-Allow-Origin':
+      '*',
+
+    'Access-Control-Allow-Methods':
+      'GET,POST,OPTIONS',
+
+    'Access-Control-Allow-Headers':
+      'Content-Type',
+
+    'Access-Control-Max-Age':
+      '86400',
+
+    'Cross-Origin-Resource-Policy':
+      'cross-origin',
+  });
+
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  return next();
+});
 function getPortalClientId(req, res) {
   const token = req.query.portalToken || req.body?.portal_token;
   const decoded = verifyHotspotPortalToken(token);

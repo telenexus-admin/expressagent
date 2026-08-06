@@ -17,6 +17,11 @@ const {
   createHotspotPortalToken,
 } = require('./hotspotPortalToken');
 const {
+  buildHotspotEdgeHtml,
+  loadHotspotEdgeConfig,
+  replaceHotspotPortalFiles,
+} = require('./hotspotEdgePortal');
+const {
   inspectRadiusNasRegistration,
   registerRadiusNas,
 } = require('./radiusNasRegistry');
@@ -690,34 +695,37 @@ async function ensureBridgePorts(client, config, record) {
   );
 }
 
-async function writePortalFile(client, config, portalToken, record) {
-  const files = await routerRows(client, '/file/print');
-  const existingFile = files.find(
-    (item) => String(item.name || '') === 'nexa-hotspot/login.html'
-  );
-  if (existingFile && rowId(existingFile)) {
-    await client.command('/file/remove', { '.id': rowId(existingFile) });
-  }
+async function writePortalFile(
+  client,
+  clientId,
+  portalToken,
+  record
+) {
+  const edgeConfig =
+    await loadHotspotEdgeConfig(
+      clientId
+    );
 
-  const existingDirectory = files.find(
-    (item) => String(item.name || '') === 'nexa-hotspot'
-  );
-  if (!existingDirectory) {
-    await client.command('/file/add', {
-      name: 'nexa-hotspot',
-      type: 'directory',
+  const edgeHtml =
+    buildHotspotEdgeHtml({
+      portalToken,
+      config:
+        edgeConfig,
     });
-  }
 
-  const portal = config.portal_url;
-  const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting to Nexa</title></head><body><p>Opening the secure internet portal...</p><script>(function(){var q=new URLSearchParams();q.set('portalToken','${portalToken}');q.set('mac','$(mac)');q.set('ip','$(ip)');q.set('link-login-only','$(link-login-only)');q.set('link-orig','$(link-orig)');window.location.replace('${portal}?'+q.toString());})();</script></body></html>`;
+  const installed =
+    await replaceHotspotPortalFiles(
+      client,
+      edgeHtml
+    );
 
-  await client.command('/file/add', {
-    name: 'nexa-hotspot/login.html',
-    contents: html,
-  });
-  await record('portal', 'completed', 'Signed captive portal installed');
+  await record(
+    'portal',
+    'completed',
+    `Local edge portal installed (${installed.edge_bytes} bytes)`
+  );
 }
+
 
 async function configureRouter({
   client,
@@ -996,7 +1004,12 @@ async function configureRouter({
     record,
   });
 
-  await writePortalFile(client, config, portalToken, record);
+  await writePortalFile(
+    client,
+    clientId,
+    portalToken,
+    record
+  );
 
   await ensureResource({
     client,

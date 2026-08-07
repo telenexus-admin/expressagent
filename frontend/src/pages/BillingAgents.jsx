@@ -6,6 +6,11 @@ import React, {
 
 import api from '../utils/api';
 
+import {
+  AgentLocationOverview,
+  AgentLocationPicker,
+} from '../components/AgentMaps';
+
 const money = value =>
   `KSh ${Number(
     value || 0
@@ -466,6 +471,20 @@ function AddAgentModal({
       false,
     ],
     [
+      'business_area',
+      'Business area',
+      'text',
+      'Example: Roysambu, Kilimani, Kitengela',
+      false,
+    ],
+    [
+      'business_address',
+      'Physical address / landmark',
+      'text',
+      'Example: Taji Mall, 1st floor',
+      false,
+    ],
+    [
       'email',
       'Login email',
       'email',
@@ -501,7 +520,7 @@ function AddAgentModal({
         onSubmit={
           submit
         }
-        className="relative z-10 max-h-[92vh] w-full max-w-lg overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:p-7"
+        className="relative z-10 max-h-[94vh] w-full max-w-3xl overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:p-7"
       >
         <div className="flex items-start justify-between gap-4">
           <div>
@@ -574,6 +593,43 @@ function AddAgentModal({
             )
           )}
         </div>
+
+
+        <div className="mt-6">
+          <div className="mb-3">
+            <p className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">
+              Business location
+            </p>
+
+            <h4 className="mt-1 text-sm font-black text-slate-900">
+              Pin the agent on the map
+            </h4>
+
+            <p className="mt-1 text-[10px] leading-4 text-slate-400">
+              This location will appear in the network's Agent Locations statistics map.
+            </p>
+          </div>
+
+          <AgentLocationPicker
+            latitude={
+              form.latitude
+            }
+            longitude={
+              form.longitude
+            }
+            onChange={({
+              latitude,
+              longitude,
+            }) =>
+              setForm({
+                ...form,
+                latitude,
+                longitude,
+              })
+            }
+          />
+        </div>
+
 
         <div className="mt-6 grid grid-cols-2 gap-3">
           <button
@@ -651,6 +707,10 @@ export default function BillingAgents() {
   ] = useState({
     name: '',
     business_name: '',
+    business_area: '',
+    business_address: '',
+    latitude: null,
+    longitude: null,
     email: '',
     phone: '',
     password: '',
@@ -841,6 +901,8 @@ export default function BillingAgents() {
               [
                 agent.name,
                 agent.business_name,
+                agent.business_area,
+                agent.business_address,
                 agent.email,
                 agent.phone,
               ]
@@ -910,6 +972,10 @@ export default function BillingAgents() {
         setAgentForm({
           name: '',
           business_name: '',
+          business_area: '',
+          business_address: '',
+          latitude: null,
+          longitude: null,
           email: '',
           phone: '',
           password: '',
@@ -1408,6 +1474,13 @@ export default function BillingAgents() {
             </div>
 
 
+            <AgentLocationOverview
+              agents={
+                agents
+              }
+            />
+
+
             <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
 
               <div className="border-b border-slate-100 p-4 sm:flex sm:items-center sm:justify-between sm:gap-4 sm:p-5">
@@ -1518,6 +1591,14 @@ export default function BillingAgents() {
                                   {' · '}
                                   {agent.email}
                                 </p>
+
+                                {(agent.business_area ||
+                                  agent.business_address) && (
+                                  <p className="mt-1 truncate text-[10px] font-bold text-violet-500">
+                                    {agent.business_area ||
+                                     agent.business_address}
+                                  </p>
+                                )}
                               </div>
 
                               <span

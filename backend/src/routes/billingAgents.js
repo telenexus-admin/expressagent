@@ -168,6 +168,41 @@ async function ensureAgentSchema() {
       `);
 
       await db.query(`
+        ALTER TABLE billing_agents
+        ADD COLUMN IF NOT EXISTS
+          business_area VARCHAR(180)
+      `);
+
+      await db.query(`
+        ALTER TABLE billing_agents
+        ADD COLUMN IF NOT EXISTS
+          business_address TEXT
+      `);
+
+      await db.query(`
+        ALTER TABLE billing_agents
+        ADD COLUMN IF NOT EXISTS
+          latitude NUMERIC(10,7)
+      `);
+
+      await db.query(`
+        ALTER TABLE billing_agents
+        ADD COLUMN IF NOT EXISTS
+          longitude NUMERIC(10,7)
+      `);
+
+      await db.query(`
+        CREATE INDEX IF NOT EXISTS
+          idx_billing_agents_location
+
+        ON billing_agents (
+          client_id,
+          latitude,
+          longitude
+        )
+      `);
+
+      await db.query(`
         CREATE UNIQUE INDEX IF NOT EXISTS
           idx_billing_agents_email
         ON billing_agents (
@@ -1364,6 +1399,42 @@ adminRouter.post(
           ''
         ).trim();
 
+      const businessArea =
+        String(
+          req.body.business_area ||
+          ''
+        ).trim();
+
+      const businessAddress =
+        String(
+          req.body.business_address ||
+          ''
+        ).trim();
+
+      const rawLatitude =
+        req.body.latitude;
+
+      const rawLongitude =
+        req.body.longitude;
+
+      const latitude =
+        rawLatitude === undefined ||
+        rawLatitude === null ||
+        rawLatitude === ''
+          ? null
+          : Number(
+              rawLatitude
+            );
+
+      const longitude =
+        rawLongitude === undefined ||
+        rawLongitude === null ||
+        rawLongitude === ''
+          ? null
+          : Number(
+              rawLongitude
+            );
+
       const email =
         normalizeEmail(
           req.body.email
@@ -1383,6 +1454,52 @@ adminRouter.post(
         return res.status(400).json({
           error:
             'Agent name is required',
+        });
+      }
+
+      if (
+        (
+          latitude === null
+        ) !==
+        (
+          longitude === null
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Select both latitude and longitude by pinning the business on the map',
+        });
+      }
+
+      if (
+        latitude !== null &&
+        (
+          !Number.isFinite(
+            latitude
+          ) ||
+          latitude < -90 ||
+          latitude > 90
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Invalid agent latitude',
+        });
+      }
+
+      if (
+        longitude !== null &&
+        (
+          !Number.isFinite(
+            longitude
+          ) ||
+          longitude < -180 ||
+          longitude > 180
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Invalid agent longitude',
         });
       }
 
@@ -1463,10 +1580,58 @@ adminRouter.post(
           passwordHash,
         ]);
 
+      const located =
+        await db.query(`
+          UPDATE billing_agents
+
+          SET
+            business_area = $1,
+            business_address = $2,
+            latitude = $3,
+            longitude = $4,
+            updated_at = NOW()
+
+          WHERE id = $5
+            AND client_id = $6
+
+          RETURNING
+            id,
+            client_id,
+            name,
+            business_name,
+            business_area,
+            business_address,
+            latitude,
+            longitude,
+            email,
+            phone,
+            status,
+            voucher_balance,
+            total_funded,
+            total_credit_issued,
+            total_generated,
+            created_at,
+            updated_at
+        `, [
+          businessArea ||
+            null,
+
+          businessAddress ||
+            null,
+
+          latitude,
+
+          longitude,
+
+          result.rows[0].id,
+
+          req.scope.clientId,
+        ]);
+
       return res
         .status(201)
         .json(
-          result.rows[0]
+          located.rows[0]
         );
     } catch (error) {
       if (

@@ -17,7 +17,29 @@ const emptyInvoice = { subscriber_id: '', amount: '', due_date: '' };
 const emptyPayment = { invoice_id: '', amount: '', method: 'M-Pesa', reference: '' };
 const emptyRadius = { subscriber_id: '', radius_username: '', radius_password: '', radius_status: 'active' };
 const input = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10';
-const nav = [['overview', 'Overview', 'home'], ['subscribers', 'Subscribers', 'clients'], ['services', 'Services', 'packages'], ['invoices', 'Invoices', 'invoices'], ['payments', 'Payments', 'payments'], ['vouchers', 'Vouchers', 'vouchers'], ['routers', 'Routers', 'network'], ['radius', 'RADIUS', 'radius'], ['tr069', 'TR-069 & ONTs', 'network'], ['communication', 'Communication', 'clients'], ['reports', 'Reports', 'reports']];
+const nav = [
+  ['overview', 'Overview', 'home'],
+  ['subscribers', 'Subscribers', 'clients'],
+  ['services', 'Packages', 'packages'],
+  ['invoices', 'Invoices', 'invoices'],
+  ['payments', 'Payments', 'payments'],
+  ['vouchers', 'Vouchers', 'vouchers'],
+  ['routers', 'Routers', 'network'],
+  ['radius', 'RADIUS', 'radius'],
+  ['tr069', 'TR-069 & ONTs', 'network'],
+  ['communication', 'Communication', 'clients'],
+  ['reports', 'Reports', 'reports'],
+];
+
+const mainNav = nav.filter(
+  ([key]) =>
+    key !== 'services'
+);
+
+const servicesNav = nav.filter(
+  ([key]) =>
+    key === 'services'
+);
 const money = (v) => `KSh ${Number(v || 0).toLocaleString()}`;
 const routerDisplayStatus = (router) => {
   const status = String(
@@ -555,7 +577,13 @@ export default function BillingWorkspace() {
   const deleteHotspotPlan = async (id) => { const plan = hotspotPlans.find((item) => item.id === id); if (!plan || !window.confirm(`Delete hotspot package ${plan.name}?`)) return; try { setSaving(true); await api.delete(`/billing-workspace/hotspot/plans/${id}`); await load(); } catch (e) { setError(e.response?.data?.error || 'Hotspot package could not be deleted.'); } finally { setSaving(false); } };
   const generateVouchers = (e) => save(e, '/billing-workspace/hotspot/vouchers', { plan_id: Number(voucherForm.plan_id), quantity: Number(voucherForm.quantity) }, () => setVoucherForm({ plan_id: '', quantity: '1' }));
   const simulateVoucher = async (id) => { try { setSaving(true); await api.post(`/billing-workspace/hotspot/vouchers/${id}/simulate-login`); await load(); } catch (e) { setError(e.response?.data?.error || 'Voucher simulation failed.'); } finally { setSaving(false); } };
-  const panelTitle = nav.find((n) => n[0] === tab)?.[1] || 'Billing';
+  const panelTitle =
+    tab === 'services'
+      ? 'Services'
+      : nav.find(
+          (item) =>
+            item[0] === tab
+        )?.[1] || 'Billing';
   const action = tab === 'subscribers' ? openSubscriberCreate : tab === 'payments' ? () => document.getElementById('payment-form')?.scrollIntoView({ behavior: 'smooth' }) : null;
   const actionText = tab === 'subscribers' ? 'Add a client' : tab === 'payments' ? 'Record payment' : '';
   return <div data-billing-tab={tab} style={{ fontFamily: "'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif" }} className={`min-h-screen ${darkMode ? 'bg-[#101223] text-slate-100' : 'bg-[#f7f8f7] text-slate-950'}`}>
@@ -585,7 +613,65 @@ export default function BillingWorkspace() {
     {open && <button aria-label="Close menu" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" />}
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col overflow-hidden border-r border-slate-100 bg-white px-4 py-7 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.025)] transition-transform duration-300 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}>
       <div className="flex items-center gap-2 px-4"><div className="text-2xl font-black tracking-[-.09em] text-slate-900">nexa<span className="text-emerald-500">.</span></div><div className="mt-1 border-l border-slate-200 pl-2 text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">billing</div></div>
-      <div className="mt-10 px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">Main menu</div><nav className="mt-2 space-y-1">{nav.map(([key, label, icon]) => <button key={key} type="button" onClick={() => go(key)} className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-3 text-left text-sm font-bold transition ${tab === key ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600' : 'border-l-[3px] border-transparent hover:bg-slate-50 hover:text-slate-900'}`}><span className="flex h-6 w-6 items-center justify-center text-slate-500"><NavIcon kind={icon} /></span>{label}{key === 'radius' && radiusStatus?.enabled && <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />}</button>)}</nav>
+      <div className="mt-10 px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
+        MAIN MENU
+      </div>
+
+      <nav className="mt-2 space-y-1">
+        {mainNav.map(
+          ([key, label, icon]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => go(key)}
+              className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-3 text-left text-sm font-bold transition ${
+                tab === key
+                  ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600'
+                  : 'border-l-[3px] border-transparent hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <span className="flex h-6 w-6 items-center justify-center text-slate-500">
+                <NavIcon kind={icon} />
+              </span>
+
+              {label}
+
+              {key === 'radius' &&
+                radiusStatus?.enabled && (
+                  <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />
+                )}
+            </button>
+          )
+        )}
+      </nav>
+
+      <div className="mt-7 px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
+        SERVICES
+      </div>
+
+      <nav className="mt-2 space-y-1">
+        {servicesNav.map(
+          ([key, label, icon]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => go(key)}
+              className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-3 text-left text-sm font-bold transition ${
+                tab === key
+                  ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600'
+                  : 'border-l-[3px] border-transparent hover:bg-slate-50 hover:text-slate-900'
+              }`}
+            >
+              <span className="flex h-6 w-6 items-center justify-center text-slate-500">
+                <NavIcon kind={icon} />
+              </span>
+
+              {label}
+            </button>
+          )
+        )}
+      </nav>
+
       <div className="mt-auto border-t border-slate-100 px-3 pt-5"><div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">{(admin.name || 'B').slice(0, 1).toUpperCase()}</div><div className="min-w-0"><div className="truncate text-xs font-bold text-slate-800">{admin.name || 'Billing admin'}</div><div className="truncate text-[11px] text-slate-400">{admin.client_business_name || admin.client_name}</div></div></div><button type="button" onClick={logout} className="mt-4 flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-rose-600"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" /></svg><span>Sign out</span></button></div>
     </aside>
     <div className={`min-h-screen transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[260px]'}`}>{!['subscribers', 'routers'].includes(tab) && <header className={`sticky top-0 z-20 flex h-[64px] items-center justify-between px-3 backdrop-blur sm:h-[76px] sm:px-10 ${darkMode ? 'bg-[#101223]/90' : 'bg-[#f7f8f7]/90'}`}><div className="flex items-center gap-2 sm:gap-3"><button type="button" aria-label="Toggle navigation" onClick={() => window.innerWidth < 1024 ? setOpen(true) : setSidebarCollapsed((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white/80"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div><div className="text-[10px] font-semibold text-slate-400 sm:text-xs">{admin.client_business_name || admin.client_name || 'Billing workspace'}</div><h1 className="max-w-[230px] truncate text-base font-extrabold tracking-tight sm:max-w-none sm:text-lg">{tab === 'overview' ? `${greetingText}, ${adminFirstName}` : panelTitle}</h1></div></div><div className="flex items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Toggle dark mode" onClick={() => setDarkMode((value) => !value)} className={darkMode ? 'flex h-9 w-9 items-center justify-center rounded-xl text-amber-300 transition hover:bg-white/80' : 'flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white/80'}><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{darkMode ? <path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z" /> : <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>}</svg></button><div className="relative"><button type="button" aria-label="Open account menu" onClick={() => setProfileOpen(!profileOpen)} className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-black text-white shadow-sm sm:h-9 sm:w-9 sm:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</button>{profileOpen && <div className={`absolute right-0 top-12 z-50 w-48 rounded-2xl border p-2 shadow-xl ${darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}><div className="px-3 py-2 text-xs"><div className="font-black">{admin.name || 'Billing admin'}</div><div className="mt-0.5 truncate text-slate-400">{admin.email}</div></div><button type="button" onClick={logout} className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50">Sign out</button></div>}</div><div className="hidden items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm sm:flex"><span className={`h-2 w-2 rounded-full ${radiusStatus?.enabled ? 'bg-emerald-500' : 'bg-amber-400'}`} />RADIUS {radiusStatus?.enabled ? 'connected' : 'pending'}</div>{action && <button type="button" onClick={action} aria-label={actionText} className="rounded-xl bg-emerald-500 px-2.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-emerald-600 sm:px-3.5 sm:py-2.5 sm:text-xs">{tab === 'subscribers' ? actionText : <>+ <span className="hidden sm:inline">{actionText}</span></>}</button>}</div></header>}

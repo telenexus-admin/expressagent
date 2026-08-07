@@ -228,6 +228,122 @@ async function resolveCheckoutPlan(
     discount_applied: discountApplied,
   };
 }
+router.get(
+  '/theme-background',
+  async (
+    req,
+    res
+  ) => {
+    try {
+      const clientId =
+        getPortalClientId(
+          req,
+          res
+        );
+
+      if (!clientId) {
+        return;
+      }
+
+      await ensureHotspotPortalConfigColumn();
+
+      const result =
+        await db.query(`
+          SELECT
+            hotspot_portal_config
+
+          FROM clients
+
+          WHERE id = $1
+            AND account_type =
+                'billing'
+
+          LIMIT 1
+        `, [
+          clientId,
+        ]);
+
+      const source =
+        String(
+          result.rows[0]
+            ?.hotspot_portal_config
+            ?.background_image_data ||
+          ''
+        );
+
+      if (!source) {
+        return res
+          .status(404)
+          .end();
+      }
+
+      const match =
+        source.match(
+          /^data:image\/(jpeg|jpg|png|webp);base64,(.+)$/is
+        );
+
+      if (!match) {
+        return res
+          .status(404)
+          .end();
+      }
+
+      const type =
+        match[1]
+          .toLowerCase() ===
+          'jpg'
+          ? 'jpeg'
+          : match[1]
+              .toLowerCase();
+
+      const data =
+        Buffer.from(
+          match[2],
+          'base64'
+        );
+
+      if (
+        !data.length ||
+        data.length >
+          1000000
+      ) {
+        return res
+          .status(413)
+          .end();
+      }
+
+      res.set({
+        'Content-Type':
+          `image/${type}`,
+
+        'Cache-Control':
+          'public, max-age=3600, stale-while-revalidate=86400',
+
+        'Content-Length':
+          String(
+            data.length
+          ),
+      });
+
+      return res.send(
+        data
+      );
+    } catch (
+      error
+    ) {
+      console.error(
+        'Hotspot background image error:',
+        error.message
+      );
+
+      return res
+        .status(500)
+        .end();
+    }
+  }
+);
+
+
 router.get('/config', async (req, res) => {
   try {
     const clientId =
@@ -382,14 +498,157 @@ router.get('/config', async (req, res) => {
         domain: null,
       },
       portal: {
-        brand_name: brandName,
-        tagline: String(saved.tagline || `Stay connected with ${brandName} Hotspot`).trim(),
-        wallet_label: String(saved.wallet_label || 'MY WALLET').trim(),
-        wallet_balance: Number.isFinite(Number(saved.wallet_balance))
-          ? Math.max(0, Number(saved.wallet_balance))
-          : 0,
-        popular_plan_id: saved.popular_plan_id ? Number(saved.popular_plan_id) : null,
+        brand_name:
+          brandName,
+
+        tagline:
+          String(
+            saved.tagline ||
+            `Stay connected with ${brandName} Hotspot`
+          ).trim(),
+
+        hero_heading:
+          String(
+            saved.hero_heading ||
+            'Fast Internet. Everywhere.'
+          ).trim(),
+
+        wallet_enabled:
+          saved.wallet_enabled ===
+            undefined
+            ? true
+            : publicBoolean(
+                saved.wallet_enabled
+              ),
+
+        wallet_label:
+          String(
+            saved.wallet_label ||
+            'MY WALLET'
+          ).trim(),
+
+        wallet_balance:
+          Number.isFinite(
+            Number(
+              saved.wallet_balance
+            )
+          )
+            ? Math.max(
+                0,
+                Number(
+                  saved.wallet_balance
+                )
+              )
+            : 0,
+
+        popular_plan_id:
+          saved.popular_plan_id
+            ? Number(
+                saved.popular_plan_id
+              )
+            : null,
+
+        package_layout:
+          [
+            'featured',
+            'grid2',
+            'compact',
+            'list',
+            'circles',
+          ].includes(
+            String(
+              saved.package_layout ||
+              ''
+            )
+          )
+            ? String(
+                saved.package_layout
+              )
+            : 'featured',
+
+        theme_preset:
+          [
+            'blue',
+            'dark',
+            'orange',
+            'green',
+            'purple',
+          ].includes(
+            String(
+              saved.theme_preset ||
+              ''
+            )
+          )
+            ? String(
+                saved.theme_preset
+              )
+            : 'blue',
+
+        accent_color:
+          /^#[0-9A-Fa-f]{6}$/
+            .test(
+              String(
+                saved.accent_color ||
+                ''
+              )
+            )
+              ? String(
+                  saved.accent_color
+                )
+              : '#0878f9',
+
+        background_image_enabled:
+          Boolean(
+            saved.background_image_data
+          ),
+
+        background_image_version:
+          saved.background_image_updated_at ||
+          saved.updated_at ||
+          '',
+
+        background_overlay:
+          Number.isFinite(
+            Number(
+              saved.background_overlay
+            )
+          )
+            ? Math.max(
+                0,
+                Math.min(
+                  85,
+                  Number(
+                    saved.background_overlay
+                  )
+                )
+              )
+            : 46,
+
+        show_support:
+          saved.show_support ===
+            undefined
+            ? true
+            : publicBoolean(
+                saved.show_support
+              ),
+
+        show_whatsapp:
+          saved.show_whatsapp ===
+            undefined
+            ? true
+            : publicBoolean(
+                saved.show_whatsapp
+              ),
+
+        show_voucher_login:
+          saved.show_voucher_login ===
+            undefined
+            ? true
+            : publicBoolean(
+                saved.show_voucher_login
+              ),
       },
+
       support: {
         phone: String(
           saved.support_phone

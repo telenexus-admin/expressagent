@@ -322,6 +322,122 @@ async function loadHotspotEdgeConfig(
               saved.popular_plan_id
             )
           : null,
+
+      wallet_enabled:
+        saved.wallet_enabled ===
+          undefined
+          ? true
+          : publicBoolean(
+              saved.wallet_enabled
+            ),
+
+      wallet_label:
+        String(
+          saved.wallet_label ||
+          'MY WALLET'
+        ).trim(),
+
+      wallet_balance:
+        Number.isFinite(
+          Number(
+            saved.wallet_balance
+          )
+        )
+          ? Math.max(
+              0,
+              Number(
+                saved.wallet_balance
+              )
+            )
+          : 0,
+
+      package_layout:
+        [
+          'featured',
+          'grid2',
+          'compact',
+          'list',
+          'circles',
+        ].includes(
+          String(
+            saved.package_layout ||
+            ''
+          )
+        )
+          ? String(
+              saved.package_layout
+            )
+          : 'featured',
+
+      theme_preset:
+        String(
+          saved.theme_preset ||
+          'orange'
+        ),
+
+      accent_color:
+        /^#[0-9A-Fa-f]{6}$/
+          .test(
+            String(
+              saved.accent_color ||
+              ''
+            )
+          )
+            ? String(
+                saved.accent_color
+              )
+            : '#ffb221',
+
+      background_image_enabled:
+        Boolean(
+          saved.background_image_data
+        ),
+
+      background_image_version:
+        saved.background_image_updated_at ||
+        saved.updated_at ||
+        '',
+
+      background_overlay:
+        Number.isFinite(
+          Number(
+            saved.background_overlay
+          )
+        )
+          ? Math.max(
+              0,
+              Math.min(
+                85,
+                Number(
+                  saved.background_overlay
+                )
+              )
+            )
+          : 46,
+
+      show_support:
+        saved.show_support ===
+          undefined
+          ? true
+          : publicBoolean(
+              saved.show_support
+            ),
+
+      show_whatsapp:
+        saved.show_whatsapp ===
+          undefined
+          ? true
+          : publicBoolean(
+              saved.show_whatsapp
+            ),
+
+      show_voucher_login:
+        saved.show_voucher_login ===
+          undefined
+          ? true
+          : publicBoolean(
+              saved.show_voucher_login
+            ),
     },
 
     support: {
@@ -394,12 +510,17 @@ function buildHotspotEdgeHtml({
 <meta http-equiv="Cache-Control" content="no-store">
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; connect-src ${API_ORIGIN}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self' http: https:;"
+  content="default-src 'self'; connect-src ${API_ORIGIN}; img-src 'self' data: ${API_ORIGIN}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self' http: https:;"
 >
 <title>Hotspot Packages</title>
 <style>
 *{
   box-sizing:border-box
+}
+
+:root{
+  --accent:#ffb221;
+  --accent-text:#050505;
 }
 
 html,
@@ -634,8 +755,8 @@ button{
   padding:16px 8px;
   border:0;
   border-radius:19px;
-  background:#ffb221;
-  color:#050505;
+  background:var(--accent);
+  color:var(--accent-text);
   text-align:center;
   box-shadow:none;
   transition:
@@ -720,7 +841,7 @@ button{
   padding:4px 7px;
   border-radius:7px;
   background:#000;
-  color:#ffb221;
+  color:var(--accent);
   font-size:8px;
 }
 
@@ -747,7 +868,122 @@ button{
 .flash{
   border:2px solid #fff;
   box-shadow:
-    0 0 0 2px #ffb221;
+    0 0 0 2px var(--accent);
+}
+
+
+
+.wallet-card{
+  display:none;
+  margin-top:18px;
+  border:1px solid #252525;
+  border-radius:18px;
+  padding:15px 18px;
+  background:#111;
+  color:#fff;
+}
+
+.wallet-card small{
+  display:block;
+  color:#888;
+  font-size:9px;
+  font-weight:900;
+  letter-spacing:.12em;
+}
+
+.wallet-card b{
+  display:block;
+  margin-top:5px;
+  color:var(--accent);
+  font-size:21px;
+}
+
+.plans.layout-list{
+  display:flex;
+  flex-direction:column;
+}
+
+.plans.layout-list .plan{
+  min-height:105px;
+  display:grid;
+  grid-template-columns:100px 1fr auto;
+  padding:10px 14px;
+  text-align:left;
+}
+
+.plans.layout-list .plan-duration{
+  text-align:center;
+}
+
+.plans.layout-list .plan-main b,
+.plans.layout-list .plan-main small{
+  display:block;
+}
+
+.plans.layout-list .price{
+  align-self:center;
+  padding:0 8px;
+}
+
+.plans.layout-grid2{
+  grid-template-columns:
+    repeat(2,minmax(0,1fr));
+}
+
+.plans.layout-grid2 .plan{
+  grid-column:auto;
+}
+
+.plans.layout-grid2 .plan:nth-child(4),
+.plans.layout-grid2 .plan:nth-child(5){
+  grid-column:auto;
+}
+
+.plans.layout-compact{
+  grid-template-columns:
+    repeat(3,minmax(0,1fr));
+  gap:10px;
+}
+
+.plans.layout-compact .plan{
+  min-height:145px;
+  grid-column:auto;
+}
+
+.plans.layout-compact .plan:nth-child(4),
+.plans.layout-compact .plan:nth-child(5){
+  grid-column:auto;
+}
+
+.plans.layout-circles{
+  grid-template-columns:
+    repeat(3,minmax(0,1fr));
+  gap:12px;
+}
+
+.plans.layout-circles .plan{
+  min-height:0;
+  grid-column:auto;
+  aspect-ratio:1;
+  border-radius:50%;
+}
+
+.plans.layout-circles .plan:nth-child(4),
+.plans.layout-circles .plan:nth-child(5){
+  grid-column:auto;
+}
+
+@media(max-width:430px){
+  .plans.layout-compact,
+  .plans.layout-circles{
+    grid-template-columns:
+      repeat(2,minmax(0,1fr));
+  }
+
+  .plans.layout-list .plan{
+    grid-template-columns:
+      78px 1fr auto;
+  }
 }
 
 
@@ -787,7 +1023,7 @@ button{
 }
 
 .field:focus{
-  border-color:#ffb221;
+  border-color:var(--accent);
   box-shadow:
     0 0 0 4px #ffb22133;
 }
@@ -798,8 +1034,8 @@ button{
   border:0;
   border-radius:8px;
   padding:16px;
-  background:#ffb221;
-  color:#050505;
+  background:var(--accent);
+  color:var(--accent-text);
   font-weight:900;
 }
 
@@ -870,7 +1106,7 @@ button{
 
 .dialog-price{
   margin-top:6px;
-  color:#ffb221;
+  color:var(--accent);
   font-size:30px;
   font-weight:900;
 }
@@ -968,7 +1204,7 @@ button{
 <meta id="ctx-origin" content="$(link-orig)">
 
 <main class="shell">
-  <section class="hero">
+  <section id="hero" class="hero">
 
     <div class="hero-person"></div>
 
@@ -1011,6 +1247,19 @@ button{
 
   </section>
 
+  <section
+    id="wallet-card"
+    class="wallet-card"
+  >
+    <small id="wallet-label">
+      MY WALLET
+    </small>
+
+    <b id="wallet-balance">
+      KSh 0
+    </b>
+  </section>
+
   <section class="content">
     <div class="panel">
       <div class="heading">
@@ -1021,7 +1270,7 @@ button{
       <div id="plans" class="plans"></div>
     </div>
 
-    <div class="panel voucher">
+    <div id="voucher-panel" class="panel voucher">
       <h2>Voucher login</h2>
 
       <form
@@ -1056,7 +1305,7 @@ button{
       </form>
     </div>
 
-    <div class="support">
+    <div id="support-panel" class="support">
       <a id="support-call" href="#">Support</a>
       <a id="support-whatsapp" href="#">WhatsApp</a>
     </div>
@@ -1317,6 +1566,197 @@ function render(config){
   currentConfig =
     config || EMBEDDED;
 
+  var portal =
+    currentConfig.portal ||
+    {};
+
+  var accent =
+    /^#[0-9A-Fa-f]{6}$/
+      .test(
+        String(
+          portal.accent_color ||
+          ""
+        )
+      )
+      ? portal.accent_color
+      : "#ffb221";
+
+  document.documentElement
+    .style
+    .setProperty(
+      "--accent",
+      accent
+    );
+
+  var layout =
+    [
+      "featured",
+      "grid2",
+      "compact",
+      "list",
+      "circles"
+    ].indexOf(
+      String(
+        portal.package_layout ||
+        ""
+      )
+    ) >= 0
+      ? String(
+          portal.package_layout
+        )
+      : "featured";
+
+  var plansNode =
+    byId("plans");
+
+  plansNode.className =
+    "plans layout-" +
+    layout;
+
+  var walletCard =
+    byId(
+      "wallet-card"
+    );
+
+  if(walletCard){
+    walletCard.style.display =
+      portal.wallet_enabled === false
+        ? "none"
+        : "block";
+
+    byId(
+      "wallet-label"
+    ).textContent =
+      portal.wallet_label ||
+      "MY WALLET";
+
+    byId(
+      "wallet-balance"
+    ).textContent =
+      "KSh " +
+      Number(
+        portal.wallet_balance ||
+        0
+      ).toLocaleString();
+  }
+
+  var voucherPanel =
+    byId(
+      "voucher-panel"
+    );
+
+  if(voucherPanel){
+    voucherPanel.style.display =
+      portal.show_voucher_login === false
+        ? "none"
+        : "block";
+  }
+
+  var supportPanel =
+    byId(
+      "support-panel"
+    );
+
+  if(supportPanel){
+    supportPanel.style.display =
+      (
+        portal.show_support === false &&
+        portal.show_whatsapp === false
+      )
+        ? "none"
+        : "flex";
+  }
+
+  var hero =
+    byId(
+      "hero"
+    );
+
+  var themeMap = {
+    blue:[
+      "#061a55",
+      "#073bc7"
+    ],
+
+    dark:[
+      "#050505",
+      "#202020"
+    ],
+
+    orange:[
+      "#211005",
+      "#a64b05"
+    ],
+
+    green:[
+      "#022c22",
+      "#047857"
+    ],
+
+    purple:[
+      "#2e1065",
+      "#6d28d9"
+    ]
+  };
+
+  var theme =
+    themeMap[
+      portal.theme_preset
+    ] ||
+    themeMap.orange;
+
+  if(hero){
+    if(
+      portal.background_image_enabled
+    ){
+      var overlay =
+        Math.max(
+          0,
+          Math.min(
+            85,
+            Number(
+              portal.background_overlay ||
+              46
+            )
+          )
+        ) / 100;
+
+      var backgroundUrl =
+        API_BASE +
+        "/theme-background?portalToken=" +
+        encodeURIComponent(
+          PORTAL_TOKEN
+        ) +
+        "&v=" +
+        encodeURIComponent(
+          portal.background_image_version ||
+          ""
+        );
+
+      hero.style.backgroundImage =
+        "linear-gradient(rgba(0,0,0," +
+        overlay +
+        "),rgba(0,0,0," +
+        overlay +
+        ")),url('" +
+        backgroundUrl +
+        "')";
+
+      hero.style.backgroundSize =
+        "cover";
+
+      hero.style.backgroundPosition =
+        "center";
+    }else{
+      hero.style.background =
+        "linear-gradient(145deg," +
+        theme[0] +
+        "," +
+        theme[1] +
+        ")";
+    }
+  }
+
   var brand =
     currentConfig.portal &&
     currentConfig.portal
@@ -1374,6 +1814,13 @@ function render(config){
       ? "tel:" + phone
       : "#";
 
+  supportCall.style.display =
+    currentConfig.portal &&
+    currentConfig.portal
+      .show_support === false
+      ? "none"
+      : "inline";
+
   var supportWhatsapp =
     byId(
       "support-whatsapp"
@@ -1384,6 +1831,13 @@ function render(config){
       ? "https://wa.me/" +
         whatsapp
       : "#";
+
+  supportWhatsapp.style.display =
+    currentConfig.portal &&
+    currentConfig.portal
+      .show_whatsapp === false
+      ? "none"
+      : "inline";
 
   var container =
     byId("plans");

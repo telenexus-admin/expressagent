@@ -4,7 +4,7 @@ import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import BillingSubscribers from './BillingSubscribers';
 import NexaAgentChat from '../components/NexaAgentChat';
-import HotspotPortalSettingsPanel from '../components/HotspotPortalSettingsPanel';
+import HotspotControlCenter from '../components/HotspotControlCenter';
 import RouterServiceWizard from '../components/RouterServiceWizard';
 const InvoiceManagement = lazy(() => import('./InvoiceManagement'));
 const BillingCommunication = lazy(() => import('./BillingCommunication'));
@@ -21,7 +21,8 @@ const input = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 
 const nav = [
   ['overview', 'Overview', 'home'],
   ['subscribers', 'Subscribers', 'clients'],
-  ['services', 'Packages', 'packages'],
+  ['services', 'PPPoE', 'packages'],
+  ['hotspot', 'Hotspot', 'hotspot'],
   ['agents', 'Agents', 'clients'],
   ['invoices', 'Invoices', 'invoices'],
   ['payments', 'Payments', 'payments'],
@@ -37,6 +38,7 @@ const mainNav = nav.filter(
   ([key]) =>
     ![
       'services',
+      'hotspot',
       'agents',
     ].includes(key)
 );
@@ -45,6 +47,7 @@ const servicesNav = nav.filter(
   ([key]) =>
     [
       'services',
+      'hotspot',
       'agents',
     ].includes(key)
 );
@@ -586,12 +589,10 @@ export default function BillingWorkspace() {
   const generateVouchers = (e) => save(e, '/billing-workspace/hotspot/vouchers', { plan_id: Number(voucherForm.plan_id), quantity: Number(voucherForm.quantity) }, () => setVoucherForm({ plan_id: '', quantity: '1' }));
   const simulateVoucher = async (id) => { try { setSaving(true); await api.post(`/billing-workspace/hotspot/vouchers/${id}/simulate-login`); await load(); } catch (e) { setError(e.response?.data?.error || 'Voucher simulation failed.'); } finally { setSaving(false); } };
   const panelTitle =
-    tab === 'services'
-      ? 'Services'
-      : nav.find(
-          (item) =>
-            item[0] === tab
-        )?.[1] || 'Billing';
+    nav.find(
+      item =>
+        item[0] === tab
+    )?.[1] || 'Billing';
   const action = tab === 'subscribers' ? openSubscriberCreate : tab === 'payments' ? () => document.getElementById('payment-form')?.scrollIntoView({ behavior: 'smooth' }) : null;
   const actionText = tab === 'subscribers' ? 'Add a client' : tab === 'payments' ? 'Record payment' : '';
   return <div data-billing-tab={tab} style={{ fontFamily: "'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif" }} className={`min-h-screen overflow-x-hidden ${darkMode ? 'bg-[#101223] text-slate-100' : 'bg-[#f7f8f7] text-slate-950'}`}>
@@ -689,13 +690,13 @@ export default function BillingWorkspace() {
     <div className={`min-h-screen transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[260px]'}`}>{!['subscribers', 'routers'].includes(tab) && <header className={`sticky top-0 z-20 flex h-[64px] items-center justify-between px-3 backdrop-blur sm:h-[76px] sm:px-10 ${darkMode ? 'bg-[#101223]/90' : 'bg-[#f7f8f7]/90'}`}><div className="flex items-center gap-2 sm:gap-3"><button type="button" aria-label="Toggle navigation" onClick={() => window.innerWidth < 1024 ? setOpen(true) : setSidebarCollapsed((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-600 transition hover:bg-white/80"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div><div className="text-[10px] font-semibold text-slate-400 sm:text-xs">{admin.client_business_name || admin.client_name || 'Billing workspace'}</div><h1 className="max-w-[230px] truncate text-base font-extrabold tracking-tight sm:max-w-none sm:text-lg">{tab === 'overview' ? `${greetingText}, ${adminFirstName}` : panelTitle}</h1></div></div><div className="flex items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Toggle dark mode" onClick={() => setDarkMode((value) => !value)} className={darkMode ? 'flex h-9 w-9 items-center justify-center rounded-xl text-amber-300 transition hover:bg-white/80' : 'flex h-9 w-9 items-center justify-center rounded-xl text-slate-500 transition hover:bg-white/80'}><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{darkMode ? <path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z" /> : <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>}</svg></button><div className="relative"><button type="button" aria-label="Open account menu" onClick={() => setProfileOpen(!profileOpen)} className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-black text-white shadow-sm sm:h-9 sm:w-9 sm:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</button>{profileOpen && <div className={`absolute right-0 top-12 z-50 w-48 rounded-2xl border p-2 shadow-xl ${darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}><div className="px-3 py-2 text-xs"><div className="font-black">{admin.name || 'Billing admin'}</div><div className="mt-0.5 truncate text-slate-400">{admin.email}</div></div><button type="button" onClick={logout} className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50">Sign out</button></div>}</div><div className="hidden items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-bold text-slate-600 shadow-sm sm:flex"><span className={`h-2 w-2 rounded-full ${radiusStatus?.enabled ? 'bg-emerald-500' : 'bg-amber-400'}`} />RADIUS {radiusStatus?.enabled ? 'connected' : 'pending'}</div>{action && <button type="button" onClick={action} aria-label={actionText} className="rounded-xl bg-emerald-500 px-2.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-emerald-600 sm:px-3.5 sm:py-2.5 sm:text-xs">{tab === 'subscribers' ? actionText : <>+ <span className="hidden sm:inline">{actionText}</span></>}</button>}</div></header>}
       <main className="mx-auto max-w-[1500px] p-3 pb-24 sm:p-8 lg:pb-8">{error && <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold text-rose-700 sm:mb-5 sm:px-4 sm:py-3 sm:text-sm"><span>{error}</span><button type="button" aria-label="Dismiss error" onClick={() => setError('')} className="text-lg leading-none">&times;</button></div>}{loading ? <BillingWorkspaceSkeleton /> : <>
         {tab === 'overview' && <><div className="lg:hidden"><CurrencyMobileHome summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} onAddSubscriber={openSubscriberCreate} money={money} expanded={mobileExpanded} setExpanded={setMobileExpanded} darkMode={darkMode} /></div><div className="hidden lg:block"><Overview summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} money={money} /></div></>}
-        {tab === 'services' && <ServicesWorkspace packageView={packageView} setPackageView={setPackageView} plans={plans} hotspotPlans={hotspotPlans} routers={routers} vouchers={vouchers} planForm={planForm} setPlanForm={setPlanForm} savePlan={savePlan} hotspotPlanForm={hotspotPlanForm} setHotspotPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} saveHotspotPlan={saveHotspotPlan} generateVouchers={generateVouchers} simulateVoucher={simulateVoucher} saving={saving} toggleHotspotPlan={toggleHotspotPlan} deleteHotspotPlan={deleteHotspotPlan} />}
+        {tab === 'services' && <ServicesWorkspace plans={plans} routers={routers} planForm={planForm} setPlanForm={setPlanForm} savePlan={savePlan} saving={saving} />}
         {tab === 'agents' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingAgents /></Suspense>}
         {tab === 'plans' && <><div className="mb-6"><div className="text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">Service catalogue</div><h2 className="mt-1 text-2xl font-black tracking-tight">Packages</h2><div className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm"><button onClick={() => setPackageView('pppoe')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'pppoe' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>PPPoE Packages <span className="ml-1 opacity-70">{plans.length}</span></button><button onClick={() => setPackageView('hotspot')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'hotspot' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Hotspot Packages <span className="ml-1 opacity-70">{hotspotPlans.length}</span></button></div></div>{packageView === 'pppoe' ? <Plans plans={plans} form={planForm} setForm={setPlanForm} save={savePlan} saving={saving} /> : <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}</>}
         {tab === 'subscribers' && <><BillingSubscribers subscribers={subscribers} items={filtered} networkClients={mikrotikClients} plans={plans} hotspotPlans={hotspotPlans} routers={routers} createOpen={subscriberCreateOpen} setCreateOpen={setSubscriberCreateOpen} search={search} setSearch={setSearch} reload={load} setError={setError} darkMode={darkMode} /></>}
         {tab === 'invoices' && <Suspense fallback={<BillingWorkspaceSkeleton />}><InvoiceManagement /></Suspense>}
         {tab === 'payments' && <Payments payments={payments} invoices={invoices} form={paymentForm} setForm={setPaymentForm} save={savePayment} saving={saving} />}
-        {tab === 'hotspot' && <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}
+        {tab === 'hotspot' && <HotspotControlCenter plans={hotspotPlans} routers={routers} reload={loadDetails} setWorkspaceError={setError} />}
         {tab === 'vouchers' && <Vouchers plans={hotspotPlans} vouchers={vouchers} form={voucherForm} setForm={setVoucherForm} generate={generateVouchers} simulate={simulateVoucher} saving={saving} reload={load} setError={setError} />}
         {tab === 'routers' && <Routers routers={routers} form={routerForm} setForm={setRouterForm} plan={routerPlan} setPlan={setRouterPlan} prepare={prepareRouter} reload={loadDetails} test={testRouter} provision={previewRouterProvision} notice={routerNotice} saving={saving} darkMode={darkMode} />}
         {tab === 'radius' && <Radius subscribers={subscribers} status={radiusStatus} form={radiusForm} setForm={setRadiusForm} save={saveRadius} resync={resync} saving={saving} />}
@@ -2305,65 +2306,320 @@ function Health({
 
 function Stat({ label, value, note, icon }) { return <Card className="p-5"><div className="flex items-start justify-between"><div><div className="text-[11px] font-extrabold uppercase tracking-[.13em] text-slate-400">{label}</div><div className="mt-2 text-2xl font-black tracking-tight text-slate-900">{value}</div><div className="mt-2 text-xs text-slate-500">{note}</div></div><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-50 text-lg text-indigo-600">{icon}</div></div></Card>; }
 function Step({ number, title, text, done, onClick }) { return <button onClick={onClick} className="flex w-full items-start gap-3 text-left"><span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-black ${done ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>{done ? '✓' : number}</span><span><span className="block text-sm font-bold text-slate-800">{title}</span><span className="mt-0.5 block text-xs leading-5 text-slate-500">{text}</span></span></button>; }
-function ServicesWorkspace({ packageView, setPackageView, plans, hotspotPlans, routers, vouchers, planForm, setPlanForm, savePlan, hotspotPlanForm, setHotspotPlanForm, voucherForm, setVoucherForm, saveHotspotPlan, generateVouchers, simulateVoucher, saving, toggleHotspotPlan, deleteHotspotPlan }) {
-  const [createOpen, setCreateOpen] = useState(false);
-  const [packageSearch, setPackageSearch] = useState('');
-  const [packageStatus, setPackageStatus] = useState('all');
-  const [packageDisplay, setPackageDisplay] = useState('grid');
-  const serviceTabs = [
-    { key: 'pppoe', label: 'PPPoE', description: 'Subscriber broadband', count: plans.length },
-    { key: 'hotspot', label: 'Hotspot', description: 'Vouchers and Wi-Fi', count: hotspotPlans.length },
-  ];
-  const selectedPackages = packageView === 'pppoe' ? plans : hotspotPlans;
-  const isPackageActive = (item) => item.is_active !== false && item.active !== false && !['inactive', 'disabled', 'archived'].includes(String(item.status || '').toLowerCase());
-  const visiblePackages = selectedPackages.filter((item) => {
-    const matchesSearch = String(item.name || '').toLowerCase().includes(packageSearch.trim().toLowerCase());
-    const active = isPackageActive(item);
-    return matchesSearch && (packageStatus === 'all' || (packageStatus === 'active' ? active : !active));
-  });
-  const changeService = (service) => { setPackageView(service); setCreateOpen(false); setPackageSearch(''); setPackageStatus('all'); };
-  const submitPackage = async (event) => {
-    const saved = await (packageView === 'pppoe' ? savePlan(event) : saveHotspotPlan(event));
-    if (saved) setCreateOpen(false);
-  };
-  return <div data-services-workspace className="-mx-1 space-y-3 pb-6 sm:space-y-7" style={{ WebkitTextSizeAdjust: '100%', WebkitTouchCallout: 'none', touchAction: 'manipulation' }}>
-    <section aria-label="Service type" className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-      <div className="grid grid-cols-2">
-        {serviceTabs.map((service) => {
-          const selected = packageView === service.key;
-          return <button key={service.key} type="button" role="tab" aria-selected={selected} onClick={() => changeService(service.key)} className={`relative flex min-w-0 items-center justify-center gap-2 px-3 py-3 text-center transition sm:gap-3 sm:py-7 ${selected ? 'bg-gradient-to-r from-[#7138ef] to-[#5426df] text-white shadow-lg shadow-violet-200' : 'bg-white text-slate-500 hover:bg-slate-50 hover:text-slate-900'} ${service.key === 'hotspot' ? 'border-l border-slate-200' : ''}`}>
-            <span className="text-sm font-black sm:text-xl">{service.label}</span>
-            <span className={`flex h-7 min-w-7 items-center justify-center rounded-full px-2 text-[11px] font-black sm:h-10 sm:min-w-10 sm:text-sm ${selected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-500'}`}>{service.count}</span>
-            {selected && <span className="absolute -bottom-1 h-2.5 w-14 rounded-t-full bg-white" />}
-          </button>;
-        })}
-      </div>
-    </section>
-    <section aria-label={`${packageView === 'pppoe' ? 'PPPoE' : 'Hotspot'} packages`}>
-      <div className="rounded-[22px] border border-slate-100 bg-white px-3.5 py-4 shadow-[0_15px_40px_rgba(76,29,149,.08)] sm:rounded-[26px] sm:px-8 sm:py-8">
-        <div className="flex flex-col gap-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-5">
-          <div className="flex min-w-0 items-center gap-3 sm:gap-6">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-[#7138ef] to-[#5426df] text-white shadow-lg shadow-violet-200 sm:h-20 sm:w-20"><ServicePackageIcon type={packageView} /></span>
-            <div><h2 className="text-base font-black tracking-tight text-slate-950 sm:text-2xl">{packageView === 'pppoe' ? 'PPPoE packages' : 'Hotspot packages'}</h2><p className="mt-0.5 max-w-md text-[11px] leading-4 text-slate-500 sm:mt-1 sm:text-base sm:leading-5">View and manage the packages already created for this service.</p></div>
-          </div>
-          <button type="button" onClick={() => setCreateOpen(true)} className="flex items-center justify-center gap-2 self-stretch rounded-xl bg-gradient-to-r from-[#7138ef] to-[#5426df] px-4 py-2 text-[11px] font-black text-white shadow-lg shadow-violet-200 transition hover:-translate-y-0.5 hover:shadow-xl sm:self-auto sm:gap-3 sm:px-7 sm:py-4 sm:text-sm"><span className="text-lg font-light leading-none sm:text-2xl">+</span>Create package</button>
+function ServicesWorkspace({
+  plans,
+  routers,
+  planForm,
+  setPlanForm,
+  savePlan,
+  saving,
+}) {
+  const [
+    createOpen,
+    setCreateOpen,
+  ] = useState(
+    false
+  );
+
+  const [
+    packageSearch,
+    setPackageSearch,
+  ] = useState('');
+
+  const [
+    packageStatus,
+    setPackageStatus,
+  ] = useState(
+    'all'
+  );
+
+  const [
+    packageDisplay,
+    setPackageDisplay,
+  ] = useState(
+    'grid'
+  );
+
+  const isPackageActive =
+    item =>
+      item.is_active !==
+        false &&
+      item.active !==
+        false &&
+      ![
+        'inactive',
+        'disabled',
+        'archived',
+      ].includes(
+        String(
+          item.status ||
+          ''
+        ).toLowerCase()
+      );
+
+  const visiblePackages =
+    plans.filter(
+      item => {
+        const matchesSearch =
+          String(
+            item.name ||
+            ''
+          )
+            .toLowerCase()
+            .includes(
+              packageSearch
+                .trim()
+                .toLowerCase()
+            );
+
+        const active =
+          isPackageActive(
+            item
+          );
+
+        return (
+          matchesSearch &&
+          (
+            packageStatus ===
+              'all' ||
+            (
+              packageStatus ===
+                'active'
+                ? active
+                : !active
+            )
+          )
+        );
+      }
+    );
+
+  const submitPackage =
+    async event => {
+      const saved =
+        await savePlan(
+          event
+        );
+
+      if (saved) {
+        setCreateOpen(
+          false
+        );
+      }
+    };
+
+  return (
+    <div
+      data-services-workspace
+      className="-mx-1 space-y-5 pb-6"
+    >
+
+      <section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-14 pt-7 text-white sm:px-8">
+
+        <p className="text-[10px] font-black uppercase tracking-[.2em] text-violet-200">
+          Services / PPPoE
+        </p>
+
+        <h2 className="mt-2 text-3xl font-black">
+          PPPoE Packages
+        </h2>
+
+        <p className="mt-2 max-w-xl text-sm leading-6 text-violet-100">
+          Manage recurring broadband packages for PPPoE subscribers. Hotspot packages now have their own dedicated Services tab.
+        </p>
+
+        <button
+          type="button"
+          onClick={() =>
+            setCreateOpen(
+              true
+            )
+          }
+          className="mt-5 inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-black text-emerald-950"
+        >
+          <span className="text-lg leading-none">
+            +
+          </span>
+
+          Add PPPoE package
+        </button>
+
+
+        <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-11">
+
+          <svg
+            viewBox="0 0 1200 180"
+            preserveAspectRatio="none"
+            className="h-full w-full"
+          >
+            <path
+              d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z"
+              fill="#f7f8fb"
+            />
+          </svg>
         </div>
-      </div>
-      <div className="mt-3 flex flex-col gap-2.5 sm:mt-7 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
-        <label className="relative block w-full sm:max-w-[420px]"><span className="sr-only">Search packages</span><svg viewBox="0 0 24 24" className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 fill-none stroke-slate-400" strokeWidth="2" strokeLinecap="round"><circle cx="11" cy="11" r="7" /><path d="m16.5 16.5 4 4" /></svg><input value={packageSearch} onChange={(event) => setPackageSearch(event.target.value)} placeholder="Search packages..." className="h-11 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:ring-4 focus:ring-violet-100 sm:h-14 sm:pl-12 sm:text-sm" /></label>
-        <div className="flex items-center gap-3">
-          <label className="min-w-0 flex-1 sm:w-48 sm:flex-none"><span className="sr-only">Filter package status</span><select value={packageStatus} onChange={(event) => setPackageStatus(event.target.value)} className="h-11 w-full appearance-auto rounded-xl border border-slate-200 bg-white px-3 text-xs font-black text-slate-700 outline-none focus:border-violet-400 sm:h-14 sm:px-4 sm:text-sm"><option value="all">All status</option><option value="active">Active</option><option value="inactive">Inactive</option></select></label>
-          <div className="flex h-11 overflow-hidden rounded-xl border border-slate-200 bg-white sm:h-14" role="group" aria-label="Package display">
-            <button type="button" aria-label="Grid display" aria-pressed={packageDisplay === 'grid'} onClick={() => setPackageDisplay('grid')} className={`flex w-14 items-center justify-center transition ${packageDisplay === 'grid' ? 'border border-violet-500 bg-violet-50 text-violet-600' : 'text-slate-500 hover:bg-slate-50'}`}><DisplayIcon kind="grid" /></button>
-            <button type="button" aria-label="List display" aria-pressed={packageDisplay === 'list'} onClick={() => setPackageDisplay('list')} className={`flex w-14 items-center justify-center border-l border-slate-200 transition ${packageDisplay === 'list' ? 'bg-violet-50 text-violet-600' : 'text-slate-500 hover:bg-slate-50'}`}><DisplayIcon kind="list" /></button>
+      </section>
+
+
+      <section>
+
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+
+          <label className="relative block w-full sm:max-w-[420px]">
+
+            <svg
+              viewBox="0 0 24 24"
+              className="pointer-events-none absolute left-3.5 top-1/2 h-4 w-4 -translate-y-1/2 fill-none stroke-slate-400"
+              strokeWidth="2"
+              strokeLinecap="round"
+            >
+              <circle
+                cx="11"
+                cy="11"
+                r="7"
+              />
+
+              <path d="m16.5 16.5 4 4" />
+            </svg>
+
+            <input
+              value={
+                packageSearch
+              }
+              onChange={
+                event =>
+                  setPackageSearch(
+                    event
+                      .target
+                      .value
+                  )
+              }
+              placeholder="Search PPPoE packages..."
+              className="h-12 w-full rounded-xl border border-slate-200 bg-white pl-10 pr-4 text-xs font-semibold outline-none focus:border-violet-400 focus:ring-4 focus:ring-violet-100"
+            />
+          </label>
+
+
+          <div className="flex gap-2">
+
+            <select
+              value={
+                packageStatus
+              }
+              onChange={
+                event =>
+                  setPackageStatus(
+                    event
+                      .target
+                      .value
+                  )
+              }
+              className="h-12 rounded-xl border border-slate-200 bg-white px-4 text-xs font-black"
+            >
+              <option value="all">
+                All status
+              </option>
+
+              <option value="active">
+                Active
+              </option>
+
+              <option value="inactive">
+                Inactive
+              </option>
+            </select>
+
+
+            <div className="flex h-12 overflow-hidden rounded-xl border border-slate-200 bg-white">
+
+              <button
+                type="button"
+                onClick={() =>
+                  setPackageDisplay(
+                    'grid'
+                  )
+                }
+                className={`w-12 ${
+                  packageDisplay ===
+                  'grid'
+                    ? 'bg-violet-50 text-violet-600'
+                    : 'text-slate-400'
+                }`}
+              >
+                <DisplayIcon kind="grid" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setPackageDisplay(
+                    'list'
+                  )
+                }
+                className={`w-12 border-l border-slate-200 ${
+                  packageDisplay ===
+                  'list'
+                    ? 'bg-violet-50 text-violet-600'
+                    : 'text-slate-400'
+                }`}
+              >
+                <DisplayIcon kind="list" />
+              </button>
+            </div>
           </div>
         </div>
-      </div>
-      {packageView === 'hotspot' && <HotspotPortalSettingsPanel plans={hotspotPlans} />}
-      <PackageCatalogue packages={visiblePackages} type={packageView} display={packageDisplay} hasPackages={selectedPackages.length > 0} hasFilters={Boolean(packageSearch.trim()) || packageStatus !== 'all'} toggleHotspotPlan={toggleHotspotPlan} deleteHotspotPlan={deleteHotspotPlan} />
-    </section>
-    {createOpen && <PackageCreateModal type={packageView} routers={routers} form={packageView === 'pppoe' ? planForm : hotspotPlanForm} setForm={packageView === 'pppoe' ? setPlanForm : setHotspotPlanForm} onSubmit={submitPackage} onClose={() => setCreateOpen(false)} saving={saving} />}
-  </div>;
+
+
+        <PackageCatalogue
+          packages={
+            visiblePackages
+          }
+          type="pppoe"
+          display={
+            packageDisplay
+          }
+          hasPackages={
+            plans.length >
+            0
+          }
+          hasFilters={
+            Boolean(
+              packageSearch
+                .trim()
+            ) ||
+            packageStatus !==
+              'all'
+          }
+        />
+      </section>
+
+
+      {createOpen && (
+        <PackageCreateModal
+          type="pppoe"
+          routers={
+            routers
+          }
+          form={
+            planForm
+          }
+          setForm={
+            setPlanForm
+          }
+          onSubmit={
+            submitPackage
+          }
+          onClose={() =>
+            setCreateOpen(
+              false
+            )
+          }
+          saving={
+            saving
+          }
+        />
+      )}
+    </div>
+  );
 }
 
 function ServicePackageIcon({ type }) {

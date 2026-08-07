@@ -17,6 +17,44 @@ const normalizeMpesaPhone = (value) => {
   return phone;
 };
 
+const HOTSPOT_THEMES = {
+  blue: {
+    deep: '#061a55',
+    secondary: '#073bc7',
+    accent: '#0878f9',
+    page: '#edf2fb',
+  },
+
+  dark: {
+    deep: '#020617',
+    secondary: '#111827',
+    accent: '#f59e0b',
+    page: '#0f172a',
+  },
+
+  orange: {
+    deep: '#241006',
+    secondary: '#7c2d12',
+    accent: '#f59e0b',
+    page: '#fff7ed',
+  },
+
+  green: {
+    deep: '#022c22',
+    secondary: '#047857',
+    accent: '#10b981',
+    page: '#ecfdf5',
+  },
+
+  purple: {
+    deep: '#2e1065',
+    secondary: '#6d28d9',
+    accent: '#7c3aed',
+    page: '#f5f3ff',
+  },
+};
+
+
 const HOTSPOT_CONFIG_CACHE_TTL =
   6 * 60 * 60 * 1000;
 
@@ -559,6 +597,136 @@ useEffect(() => {
     Number(config?.payments?.channel_id) === 9010
   );
 
+  const packageLayout =
+    [
+      'featured',
+      'grid2',
+      'compact',
+      'list',
+      'circles',
+    ].includes(
+      String(
+        config?.portal
+          ?.package_layout ||
+        ''
+      )
+    )
+      ? String(
+          config.portal
+            .package_layout
+        )
+      : 'featured';
+
+  const themePreset =
+    String(
+      config?.portal
+        ?.theme_preset ||
+      'blue'
+    );
+
+  const theme =
+    HOTSPOT_THEMES[
+      themePreset
+    ] ||
+    HOTSPOT_THEMES.blue;
+
+  const accentColor =
+    /^#[0-9A-Fa-f]{6}$/
+      .test(
+        String(
+          config?.portal
+            ?.accent_color ||
+          ''
+        )
+      )
+      ? String(
+          config.portal
+            .accent_color
+        )
+      : theme.accent;
+
+  const walletEnabled =
+    config?.portal
+      ?.wallet_enabled !==
+    false;
+
+  const showSupport =
+    config?.portal
+      ?.show_support !==
+    false;
+
+  const showWhatsApp =
+    config?.portal
+      ?.show_whatsapp !==
+    false;
+
+  const showVoucherLogin =
+    config?.portal
+      ?.show_voucher_login !==
+    false;
+
+  const heroHeading =
+    config?.portal
+      ?.hero_heading ||
+    'Fast Internet. Everywhere.';
+
+  const backgroundOverlay =
+    Math.max(
+      0,
+      Math.min(
+        85,
+        Number(
+          config?.portal
+            ?.background_overlay ||
+          46
+        )
+      )
+    );
+
+  const backgroundImageUrl =
+    config?.portal
+      ?.background_image_enabled &&
+    portalToken
+      ? `${apiBase}/theme-background?portalToken=${
+          encodeURIComponent(
+            portalToken
+          )
+        }&v=${
+          encodeURIComponent(
+            config?.portal
+              ?.background_image_version ||
+            ''
+          )
+        }`
+      : '';
+
+  const heroStyle =
+    backgroundImageUrl
+      ? {
+          backgroundImage:
+            `linear-gradient(rgba(2,6,23,${
+              backgroundOverlay /
+              100
+            }),rgba(2,6,23,${
+              backgroundOverlay /
+              100
+            })),url("${backgroundImageUrl}")`,
+
+          backgroundSize:
+            'cover',
+
+          backgroundPosition:
+            'center',
+        }
+      : {
+          background:
+            `linear-gradient(135deg,${
+              theme.deep
+            },${
+              theme.secondary
+            })`,
+        };
+
   const selectedCheckoutPrice = (() => {
     if (!selectedPlan) return 0;
 
@@ -863,7 +1031,13 @@ useEffect(() => {
     : 0;
 
   return (
-    <main className="min-h-screen bg-[#edf2fb] text-[#101938]">
+    <main
+      className="min-h-screen text-[#101938]"
+      style={{
+        backgroundColor:
+          theme.page,
+      }}
+    >
       <style>{`
         .hotspot-page {
           font-family: Inter, "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
@@ -890,9 +1064,170 @@ useEffect(() => {
         .hotspot-flash-badge {
           clip-path: polygon(8% 0, 92% 0, 100% 15%, 100% 78%, 50% 100%, 0 78%, 0 15%);
         }
+        .hotspot-packages {
+          display: grid;
+          gap: 14px;
+        }
+
+        .hotspot-layout-list {
+          grid-template-columns:
+            minmax(0, 1fr);
+        }
+
+        .hotspot-layout-featured {
+          grid-template-columns:
+            repeat(6, minmax(0, 1fr));
+        }
+
+        .hotspot-layout-featured
+        .hotspot-package-card {
+          grid-column:
+            span 2;
+
+          grid-template-columns:
+            minmax(0, 1fr) !important;
+        }
+
+        .hotspot-layout-featured
+        .hotspot-package-card:nth-child(4) {
+          grid-column:
+            2 / span 2;
+        }
+
+        .hotspot-layout-featured
+        .hotspot-package-card:nth-child(5) {
+          grid-column:
+            4 / span 2;
+        }
+
+        .hotspot-layout-grid2 {
+          grid-template-columns:
+            repeat(2, minmax(0, 1fr));
+        }
+
+        .hotspot-layout-compact {
+          grid-template-columns:
+            repeat(3, minmax(0, 1fr));
+
+          gap:
+            10px;
+        }
+
+        .hotspot-layout-circles {
+          grid-template-columns:
+            repeat(3, minmax(0, 1fr));
+
+          gap:
+            14px;
+        }
+
+        .hotspot-layout-grid2
+        .hotspot-package-card,
+        .hotspot-layout-compact
+        .hotspot-package-card,
+        .hotspot-layout-circles
+        .hotspot-package-card {
+          grid-template-columns:
+            minmax(0, 1fr) !important;
+        }
+
+        .hotspot-layout-circles
+        .hotspot-package-card {
+          aspect-ratio:
+            1;
+
+          align-content:
+            center;
+
+          border-radius:
+            9999px !important;
+        }
+
+        .hotspot-layout-grid2
+        .hotspot-package-card
+        > div:last-child,
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:last-child,
+        .hotspot-layout-featured
+        .hotspot-package-card
+        > div:last-child {
+          justify-content:
+            center;
+
+          padding-bottom:
+            14px;
+        }
+
+        .hotspot-layout-circles
+        .hotspot-package-card
+        > div:first-child {
+          min-height:
+            68px !important;
+        }
+
+        .hotspot-layout-circles
+        .hotspot-package-card
+        > div:nth-child(2)
+        p {
+          display:
+            none;
+        }
+
+        .hotspot-layout-circles
+        .hotspot-package-card
+        > div:last-child {
+          justify-content:
+            center;
+
+          padding-bottom:
+            18px;
+        }
+
+        .hotspot-package-card
+        > div:first-child {
+          background:
+            linear-gradient(
+              135deg,
+              var(--hs-accent),
+              var(--hs-deep)
+            ) !important;
+        }
+
+        @media (max-width: 520px) {
+          .hotspot-layout-featured {
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
+          }
+
+          .hotspot-layout-featured
+          .hotspot-package-card,
+          .hotspot-layout-featured
+          .hotspot-package-card:nth-child(4),
+          .hotspot-layout-featured
+          .hotspot-package-card:nth-child(5) {
+            grid-column:
+              auto;
+          }
+
+          .hotspot-layout-compact,
+          .hotspot-layout-circles {
+            grid-template-columns:
+              repeat(2, minmax(0, 1fr));
+          }
+        }
       `}</style>
 
-      <div className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden bg-[#fbfcff] shadow-2xl shadow-slate-900/10">
+      <div
+        className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden bg-[#fbfcff] shadow-2xl shadow-slate-900/10"
+        style={{
+          '--hs-accent':
+            accentColor,
+
+          '--hs-deep':
+            theme.deep,
+        }}
+      >
         {paymentOpen && selectedPlan && (
           <div className="fixed inset-0 z-[100] flex items-end justify-center bg-slate-950/65 p-4 backdrop-blur-sm sm:items-center">
             <div className="w-full max-w-md rounded-[26px] bg-white p-6 shadow-2xl sm:p-7">
@@ -993,7 +1328,12 @@ useEffect(() => {
           </div>
         )}
 
-        <section className="hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8">
+        <section
+          className="hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8"
+          style={
+            heroStyle
+          }
+        >
           <header className="relative z-20 flex items-start justify-between">
             <div className="flex items-center gap-3">
               <Icon name="wifi" className="h-12 w-12 sm:h-14 sm:w-14" />
@@ -1024,11 +1364,12 @@ useEffect(() => {
                 <button type="button" onClick={scrollToVoucher} className="block w-full rounded-xl px-4 py-3 text-left text-sm font-bold hover:bg-white/10">
                   Voucher login
                 </button>
-                {supportPhone && (
-                  <a href={`tel:${supportPhone}`} className="block rounded-xl px-4 py-3 text-sm font-bold hover:bg-white/10">
-                    Contact support
-                  </a>
-                )}
+                {showSupport &&
+                  supportPhone && (
+                    <a href={`tel:${supportPhone}`} className="block rounded-xl px-4 py-3 text-sm font-bold hover:bg-white/10">
+                      Contact support
+                    </a>
+                  )}
               </div>
             )}
           </header>
@@ -1036,14 +1377,14 @@ useEffect(() => {
           <div className="relative z-10 mt-10 grid gap-7 min-[520px]:grid-cols-[.92fr_1.08fr] min-[520px]:items-center sm:mt-12">
             <div>
               <h1 className="text-[38px] font-black leading-[1.05] tracking-tight sm:text-[48px]">
-                Fast Internet.
-                <span className="block text-[#21a7ff]">Everywhere.</span>
+                {heroHeading}
               </h1>
               <p className="mt-5 max-w-[320px] text-lg font-medium leading-7 text-blue-50">
                 {tagline}
               </p>
             </div>
 
+            {walletEnabled && (
             <div className="rounded-[24px] bg-white p-5 text-[#101938] shadow-2xl shadow-blue-950/25">
               <div className="flex items-start justify-between gap-4">
                 <div>
@@ -1067,6 +1408,7 @@ useEffect(() => {
                 </span>
               </button>
             </div>
+            )}
           </div>
         </section>
 
@@ -1128,7 +1470,9 @@ useEffect(() => {
           </div>
 
           {plans.length ? (
-            <div className="mt-5 space-y-4">
+            <div
+              className={`mt-5 hotspot-packages hotspot-layout-${packageLayout}`}
+            >
               {plans.map((plan, index) => {
                 const duration = durationParts(plan.duration_minutes);
                 const popular = popularPlanId
@@ -1141,7 +1485,7 @@ useEffect(() => {
                     type="button"
                     key={plan.id}
                     onClick={() => choosePlan(plan)}
-                    className={`hotspot-card-shadow grid w-full grid-cols-[105px_minmax(0,1fr)_auto] overflow-hidden rounded-[18px] border bg-white text-left transition hover:-translate-y-0.5 sm:grid-cols-[145px_minmax(0,1fr)_auto] ${
+                    className={`hotspot-package-card hotspot-card-shadow grid w-full grid-cols-[105px_minmax(0,1fr)_auto] overflow-hidden rounded-[18px] border bg-white text-left transition hover:-translate-y-0.5 sm:grid-cols-[145px_minmax(0,1fr)_auto] ${
                       selected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'
                     }`}
                   >
@@ -1184,6 +1528,7 @@ useEffect(() => {
           )}
         </section>
 
+        {showVoucherLogin && (
         <section ref={voucherRef} className="px-5 pb-7 pt-7 sm:px-9">
           <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
             <div className="flex items-center gap-3 text-[#064ebd]">
@@ -1256,30 +1601,91 @@ useEffect(() => {
           </div>
         </section>
 
-        <footer className="grid grid-cols-2 divide-x divide-white/20 bg-gradient-to-r from-[#071846] to-[#07317c] px-5 py-5 text-white sm:px-9">
-          <a href={supportPhone ? `tel:${supportPhone}` : '#'} className="flex items-center justify-center gap-3 pr-4">
-            <Icon name="headset" className="h-9 w-9" />
-            <span>
-              <span className="block text-xs text-blue-100">Support</span>
-              <b className="mt-1 block text-sm">{supportPhone || 'Contact admin'}</b>
-            </span>
-          </a>
+        )}
 
-          <a
-            href={whatsAppHref}
-            target={whatsappPhone ? '_blank' : undefined}
-            rel={whatsappPhone ? 'noreferrer' : undefined}
-            className="flex items-center justify-center gap-3 pl-4"
+        {(showSupport ||
+          showWhatsApp) && (
+          <footer
+            className={`grid ${
+              showSupport &&
+              showWhatsApp
+                ? 'grid-cols-2 divide-x divide-white/20'
+                : 'grid-cols-1'
+            } px-5 py-5 text-white sm:px-9`}
+            style={{
+              background:
+                `linear-gradient(90deg,${
+                  theme.deep
+                },${
+                  theme.secondary
+                })`,
+            }}
           >
-            <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#20c763] text-white">
-              <Icon name="whatsapp" className="h-7 w-7" />
-            </span>
-            <span>
-              <span className="block text-xs text-blue-100">WhatsApp</span>
-              <b className="mt-1 block text-sm">{whatsappPhone || 'Contact admin'}</b>
-            </span>
-          </a>
-        </footer>
+            {showSupport && (
+              <a
+                href={
+                  supportPhone
+                    ? `tel:${supportPhone}`
+                    : '#'
+                }
+                className="flex items-center justify-center gap-3 px-4"
+              >
+                <Icon
+                  name="headset"
+                  className="h-9 w-9"
+                />
+
+                <span>
+                  <span className="block text-xs text-white/70">
+                    Support
+                  </span>
+
+                  <b className="mt-1 block text-sm">
+                    {supportPhone ||
+                     'Contact admin'}
+                  </b>
+                </span>
+              </a>
+            )}
+
+            {showWhatsApp && (
+              <a
+                href={
+                  whatsAppHref
+                }
+                target={
+                  whatsappPhone
+                    ? '_blank'
+                    : undefined
+                }
+                rel={
+                  whatsappPhone
+                    ? 'noreferrer'
+                    : undefined
+                }
+                className="flex items-center justify-center gap-3 px-4"
+              >
+                <span className="flex h-10 w-10 items-center justify-center rounded-full bg-[#20c763] text-white">
+                  <Icon
+                    name="whatsapp"
+                    className="h-7 w-7"
+                  />
+                </span>
+
+                <span>
+                  <span className="block text-xs text-white/70">
+                    WhatsApp
+                  </span>
+
+                  <b className="mt-1 block text-sm">
+                    {whatsappPhone ||
+                     'Contact admin'}
+                  </b>
+                </span>
+              </a>
+            )}
+          </footer>
+        )}
       </div>
     </main>
   );

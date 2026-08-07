@@ -12,6 +12,7 @@ const {
   syncStaticDhcpLease,
 } = require('../services/mikrotik');
 const { createHotspotPortalToken } = require('../services/hotspotPortalToken');
+const { installHotspotEdgePortal } = require('../services/hotspotEdgePortal');
 const {
   appendBillingEvent,
   appendRequestEvent,
@@ -1525,29 +1526,230 @@ function hotspotText(value, maxLength = 160) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
-function hotspotPortalResponse(config = {}) {
+function hotspotPortalResponse(
+  config = {}
+) {
+  const layouts = [
+    'featured',
+    'grid2',
+    'compact',
+    'list',
+    'circles',
+  ];
+
+  const themes = [
+    'blue',
+    'dark',
+    'orange',
+    'green',
+    'purple',
+  ];
+
+  const packageLayout =
+    layouts.includes(
+      String(
+        config.package_layout ||
+        ''
+      )
+    )
+      ? String(
+          config.package_layout
+        )
+      : 'featured';
+
+  const themePreset =
+    themes.includes(
+      String(
+        config.theme_preset ||
+        ''
+      )
+    )
+      ? String(
+          config.theme_preset
+        )
+      : 'blue';
+
+  const accentColor =
+    /^#[0-9A-Fa-f]{6}$/
+      .test(
+        String(
+          config.accent_color ||
+          ''
+        )
+      )
+      ? String(
+          config.accent_color
+        )
+      : '#0878f9';
+
   return {
-    brand_name: hotspotText(config.brand_name, 80),
-    tagline: hotspotText(config.tagline, 180),
-    support_phone: hotspotText(config.support_phone, 50),
-    whatsapp_phone: hotspotText(config.whatsapp_phone, 50),
-    support_text: hotspotText(config.support_text, 180),
-    wallet_label: hotspotText(config.wallet_label || 'MY WALLET', 40),
-    wallet_balance: Number.isFinite(Number(config.wallet_balance))
-      ? Math.max(0, Number(config.wallet_balance))
-      : 0,
-    flash_enabled: hotspotBoolean(config.flash_enabled),
-    flash_plan_id: config.flash_plan_id ? Number(config.flash_plan_id) : '',
-    flash_discount_price: config.flash_discount_price === null
-      || config.flash_discount_price === undefined
-      || config.flash_discount_price === ''
-      ? ''
-      : Number(config.flash_discount_price),
-    flash_starts_at: config.flash_starts_at || '',
-    flash_ends_at: config.flash_ends_at || '',
-    popular_plan_id: config.popular_plan_id ? Number(config.popular_plan_id) : '',
+    brand_name:
+      hotspotText(
+        config.brand_name,
+        80
+      ),
+
+    tagline:
+      hotspotText(
+        config.tagline,
+        180
+      ),
+
+    hero_heading:
+      hotspotText(
+        config.hero_heading ||
+        'Fast Internet. Everywhere.',
+        100
+      ),
+
+    support_phone:
+      hotspotText(
+        config.support_phone,
+        50
+      ),
+
+    whatsapp_phone:
+      hotspotText(
+        config.whatsapp_phone,
+        50
+      ),
+
+    support_text:
+      hotspotText(
+        config.support_text,
+        180
+      ),
+
+    wallet_enabled:
+      config.wallet_enabled ===
+        undefined
+        ? true
+        : hotspotBoolean(
+            config.wallet_enabled
+          ),
+
+    wallet_label:
+      hotspotText(
+        config.wallet_label ||
+        'MY WALLET',
+        40
+      ),
+
+    wallet_balance:
+      Number.isFinite(
+        Number(
+          config.wallet_balance
+        )
+      )
+        ? Math.max(
+            0,
+            Number(
+              config.wallet_balance
+            )
+          )
+        : 0,
+
+    flash_enabled:
+      hotspotBoolean(
+        config.flash_enabled
+      ),
+
+    flash_plan_id:
+      config.flash_plan_id
+        ? Number(
+            config.flash_plan_id
+          )
+        : '',
+
+    flash_discount_price:
+      config.flash_discount_price ===
+        null ||
+      config.flash_discount_price ===
+        undefined ||
+      config.flash_discount_price ===
+        ''
+        ? ''
+        : Number(
+            config.flash_discount_price
+          ),
+
+    flash_starts_at:
+      config.flash_starts_at ||
+      '',
+
+    flash_ends_at:
+      config.flash_ends_at ||
+      '',
+
+    popular_plan_id:
+      config.popular_plan_id
+        ? Number(
+            config.popular_plan_id
+          )
+        : '',
+
+    package_layout:
+      packageLayout,
+
+    theme_preset:
+      themePreset,
+
+    accent_color:
+      accentColor,
+
+    background_image_data:
+      String(
+        config.background_image_data ||
+        ''
+      ),
+
+    background_image_updated_at:
+      config.background_image_updated_at ||
+      '',
+
+    background_overlay:
+      Number.isFinite(
+        Number(
+          config.background_overlay
+        )
+      )
+        ? Math.max(
+            0,
+            Math.min(
+              85,
+              Number(
+                config.background_overlay
+              )
+            )
+          )
+        : 46,
+
+    show_support:
+      config.show_support ===
+        undefined
+        ? true
+        : hotspotBoolean(
+            config.show_support
+          ),
+
+    show_whatsapp:
+      config.show_whatsapp ===
+        undefined
+        ? true
+        : hotspotBoolean(
+            config.show_whatsapp
+          ),
+
+    show_voucher_login:
+      config.show_voucher_login ===
+        undefined
+        ? true
+        : hotspotBoolean(
+            config.show_voucher_login
+          ),
   };
 }
+
 
 router.get('/hotspot/portal-settings', async (req, res) => {
   try {
@@ -1569,113 +1771,744 @@ router.get('/hotspot/portal-settings', async (req, res) => {
   }
 });
 
-router.put('/hotspot/portal-settings', async (req, res) => {
-  try {
-    await ensureHotspotPortalConfigColumn();
+router.put(
+  '/hotspot/portal-settings',
+  async (
+    req,
+    res
+  ) => {
+    try {
+      await ensureHotspotPortalConfigColumn();
 
-    const raw = req.body || {};
-    const flashEnabled = hotspotBoolean(raw.flash_enabled);
-    const flashPlanId = raw.flash_plan_id ? Number(raw.flash_plan_id) : null;
-    const popularPlanId = raw.popular_plan_id ? Number(raw.popular_plan_id) : null;
-    const walletBalance = Number(raw.wallet_balance || 0);
-    const discountPrice = raw.flash_discount_price === null
-      || raw.flash_discount_price === undefined
-      || raw.flash_discount_price === ''
-      ? null
-      : Number(raw.flash_discount_price);
+      const existingResult =
+        await db.query(`
+          SELECT
+            name,
+            hotspot_portal_config
 
-    if (!Number.isFinite(walletBalance) || walletBalance < 0) {
-      return res.status(400).json({ error: 'Displayed wallet balance must be zero or more' });
-    }
+          FROM clients
 
-    let flashPlan = null;
-    if (flashPlanId) {
-      const planResult = await db.query(
-        `SELECT id, name, price, is_active
-         FROM billing_hotspot_plans
-         WHERE id = $1 AND client_id = $2
-         LIMIT 1`,
-        [flashPlanId, req.scope.clientId]
-      );
-      flashPlan = planResult.rows[0] || null;
-    }
+          WHERE id = $1
+            AND account_type =
+                'billing'
 
-    if (flashEnabled) {
-      if (!flashPlan || flashPlan.is_active === false) {
-        return res.status(400).json({ error: 'Choose an active hotspot package for the flash offer' });
-      }
-      if (!Number.isFinite(discountPrice) || discountPrice < 0 || discountPrice >= Number(flashPlan.price)) {
-        return res.status(400).json({
-          error: `Flash price must be lower than the package price of KSh ${Number(flashPlan.price).toLocaleString()}`,
+          LIMIT 1
+        `, [
+          req.scope.clientId,
+        ]);
+
+      if (
+        !existingResult.rows[0]
+      ) {
+        return res.status(404).json({
+          error:
+            'Billing account not found',
         });
       }
-    }
 
-    if (popularPlanId) {
-      const popularResult = await db.query(
-        `SELECT id FROM billing_hotspot_plans
-         WHERE id = $1 AND client_id = $2 AND is_active = TRUE
-         LIMIT 1`,
-        [popularPlanId, req.scope.clientId]
-      );
-      if (!popularResult.rows[0]) {
-        return res.status(400).json({ error: 'Popular package must be an active hotspot package' });
+      const previous =
+        existingResult
+          .rows[0]
+          .hotspot_portal_config ||
+        {};
+
+      const raw = {
+        ...previous,
+        ...(req.body || {}),
+      };
+
+      const flashEnabled =
+        hotspotBoolean(
+          raw.flash_enabled
+        );
+
+      const flashPlanId =
+        raw.flash_plan_id
+          ? Number(
+              raw.flash_plan_id
+            )
+          : null;
+
+      const popularPlanId =
+        raw.popular_plan_id
+          ? Number(
+              raw.popular_plan_id
+            )
+          : null;
+
+      const walletBalance =
+        Number(
+          raw.wallet_balance ||
+          0
+        );
+
+      const discountPrice =
+        raw.flash_discount_price ===
+          null ||
+        raw.flash_discount_price ===
+          undefined ||
+        raw.flash_discount_price ===
+          ''
+          ? null
+          : Number(
+              raw.flash_discount_price
+            );
+
+      if (
+        !Number.isFinite(
+          walletBalance
+        ) ||
+        walletBalance <
+          0
+      ) {
+        return res.status(400).json({
+          error:
+            'Displayed wallet balance must be zero or more',
+        });
       }
-    }
 
-    const startDate = raw.flash_starts_at ? new Date(raw.flash_starts_at) : null;
-    const endDate = raw.flash_ends_at ? new Date(raw.flash_ends_at) : null;
 
-    if (raw.flash_starts_at && Number.isNaN(startDate.getTime())) {
-      return res.status(400).json({ error: 'Enter a valid flash-offer start time' });
-    }
-    if (raw.flash_ends_at && Number.isNaN(endDate.getTime())) {
-      return res.status(400).json({ error: 'Enter a valid flash-offer end time' });
-    }
-    if (flashEnabled && !endDate) {
-      return res.status(400).json({ error: 'Set when the flash offer should end' });
-    }
-    if (flashEnabled && startDate && endDate <= startDate) {
-      return res.status(400).json({ error: 'Flash-offer end time must be after its start time' });
-    }
-    if (flashEnabled && endDate <= new Date()) {
-      return res.status(400).json({ error: 'Flash-offer end time must be in the future' });
-    }
+      const layouts = [
+        'featured',
+        'grid2',
+        'compact',
+        'list',
+        'circles',
+      ];
 
-    const config = {
-      version: 1,
-      brand_name: hotspotText(raw.brand_name, 80),
-      tagline: hotspotText(raw.tagline, 180),
-      support_phone: hotspotText(raw.support_phone, 50),
-      whatsapp_phone: hotspotText(raw.whatsapp_phone, 50),
-      support_text: hotspotText(raw.support_text, 180),
-      wallet_label: hotspotText(raw.wallet_label || 'MY WALLET', 40),
-      wallet_balance: walletBalance,
-      flash_enabled: flashEnabled,
-      flash_plan_id: flashPlanId,
-      flash_discount_price: discountPrice,
-      flash_starts_at: startDate ? startDate.toISOString() : null,
-      flash_ends_at: endDate ? endDate.toISOString() : null,
-      popular_plan_id: popularPlanId,
-      updated_at: new Date().toISOString(),
-    };
+      const packageLayout =
+        String(
+          raw.package_layout ||
+          'featured'
+        );
 
-    const result = await db.query(
-      `UPDATE clients
-       SET hotspot_portal_config = $2::jsonb
-       WHERE id = $1 AND account_type = 'billing'
-       RETURNING name, hotspot_portal_config`,
-      [req.scope.clientId, JSON.stringify(config)]
-    );
+      if (
+        !layouts.includes(
+          packageLayout
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Choose a valid Hotspot package layout',
+        });
+      }
 
-    if (!result.rows[0]) return res.status(404).json({ error: 'Billing account not found' });
 
-    const response = hotspotPortalResponse(result.rows[0].hotspot_portal_config || {});
-    if (!response.brand_name) response.brand_name = result.rows[0].name || '';
-    return res.json(response);
-  } catch (err) {
-    console.error('Save hotspot portal settings error:', err.message);
-    return res.status(500).json({ error: 'Could not save hotspot portal settings' });
+      const themes = [
+        'blue',
+        'dark',
+        'orange',
+        'green',
+        'purple',
+      ];
+
+      const themePreset =
+        String(
+          raw.theme_preset ||
+          'blue'
+        );
+
+      if (
+        !themes.includes(
+          themePreset
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Choose a valid Hotspot theme',
+        });
+      }
+
+
+      const accentColor =
+        String(
+          raw.accent_color ||
+          '#0878f9'
+        );
+
+      if (
+        !/^#[0-9A-Fa-f]{6}$/
+          .test(
+            accentColor
+          )
+      ) {
+        return res.status(400).json({
+          error:
+            'Accent color must be a valid six-digit hex color',
+        });
+      }
+
+
+      const backgroundOverlay =
+        Number(
+          raw.background_overlay ??
+          46
+        );
+
+      if (
+        !Number.isFinite(
+          backgroundOverlay
+        ) ||
+        backgroundOverlay <
+          0 ||
+        backgroundOverlay >
+          85
+      ) {
+        return res.status(400).json({
+          error:
+            'Background overlay must be between 0 and 85',
+        });
+      }
+
+
+      let backgroundImage =
+        String(
+          raw.background_image_data ||
+          ''
+        );
+
+      if (
+        backgroundImage
+      ) {
+        if (
+          backgroundImage.length >
+          1000000
+        ) {
+          return res.status(400).json({
+            error:
+              'Background image is too large after compression',
+          });
+        }
+
+        if (
+          !/^data:image\/(?:jpeg|jpg|png|webp);base64,/i
+            .test(
+              backgroundImage
+            )
+        ) {
+          return res.status(400).json({
+            error:
+              'Background image must be JPEG, PNG or WebP',
+          });
+        }
+      }
+
+
+      let flashPlan =
+        null;
+
+      if (
+        flashPlanId
+      ) {
+        const result =
+          await db.query(`
+            SELECT
+              id,
+              name,
+              price,
+              is_active
+
+            FROM billing_hotspot_plans
+
+            WHERE id = $1
+              AND client_id = $2
+
+            LIMIT 1
+          `, [
+            flashPlanId,
+            req.scope.clientId,
+          ]);
+
+        flashPlan =
+          result.rows[0] ||
+          null;
+      }
+
+
+      if (
+        flashEnabled
+      ) {
+        if (
+          !flashPlan ||
+          flashPlan.is_active ===
+            false
+        ) {
+          return res.status(400).json({
+            error:
+              'Choose an active hotspot package for the flash offer',
+          });
+        }
+
+        if (
+          !Number.isFinite(
+            discountPrice
+          ) ||
+          discountPrice <
+            0 ||
+          discountPrice >=
+            Number(
+              flashPlan.price
+            )
+        ) {
+          return res.status(400).json({
+            error:
+              `Flash price must be lower than the package price of KSh ${Number(
+                flashPlan.price
+              ).toLocaleString()}`,
+          });
+        }
+      }
+
+
+      if (
+        popularPlanId
+      ) {
+        const popular =
+          await db.query(`
+            SELECT id
+            FROM billing_hotspot_plans
+
+            WHERE id = $1
+              AND client_id = $2
+              AND is_active = TRUE
+
+            LIMIT 1
+          `, [
+            popularPlanId,
+            req.scope.clientId,
+          ]);
+
+        if (
+          !popular.rows[0]
+        ) {
+          return res.status(400).json({
+            error:
+              'Popular package must be an active hotspot package',
+          });
+        }
+      }
+
+
+      const startDate =
+        raw.flash_starts_at
+          ? new Date(
+              raw.flash_starts_at
+            )
+          : null;
+
+      const endDate =
+        raw.flash_ends_at
+          ? new Date(
+              raw.flash_ends_at
+            )
+          : null;
+
+
+      if (
+        raw.flash_starts_at &&
+        Number.isNaN(
+          startDate.getTime()
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Enter a valid flash-offer start time',
+        });
+      }
+
+
+      if (
+        raw.flash_ends_at &&
+        Number.isNaN(
+          endDate.getTime()
+        )
+      ) {
+        return res.status(400).json({
+          error:
+            'Enter a valid flash-offer end time',
+        });
+      }
+
+
+      if (
+        flashEnabled &&
+        !endDate
+      ) {
+        return res.status(400).json({
+          error:
+            'Set when the flash offer should end',
+        });
+      }
+
+
+      if (
+        flashEnabled &&
+        startDate &&
+        endDate <=
+          startDate
+      ) {
+        return res.status(400).json({
+          error:
+            'Flash-offer end time must be after its start time',
+        });
+      }
+
+
+      if (
+        flashEnabled &&
+        endDate <=
+          new Date()
+      ) {
+        return res.status(400).json({
+          error:
+            'Flash-offer end time must be in the future',
+        });
+      }
+
+
+      const backgroundChanged =
+        backgroundImage !==
+        String(
+          previous.background_image_data ||
+          ''
+        );
+
+
+      const config = {
+        version:
+          2,
+
+        brand_name:
+          hotspotText(
+            raw.brand_name,
+            80
+          ),
+
+        tagline:
+          hotspotText(
+            raw.tagline,
+            180
+          ),
+
+        hero_heading:
+          hotspotText(
+            raw.hero_heading ||
+            'Fast Internet. Everywhere.',
+            100
+          ),
+
+        support_phone:
+          hotspotText(
+            raw.support_phone,
+            50
+          ),
+
+        whatsapp_phone:
+          hotspotText(
+            raw.whatsapp_phone,
+            50
+          ),
+
+        support_text:
+          hotspotText(
+            raw.support_text,
+            180
+          ),
+
+        wallet_enabled:
+          raw.wallet_enabled ===
+            undefined
+            ? true
+            : hotspotBoolean(
+                raw.wallet_enabled
+              ),
+
+        wallet_label:
+          hotspotText(
+            raw.wallet_label ||
+            'MY WALLET',
+            40
+          ),
+
+        wallet_balance:
+          walletBalance,
+
+        flash_enabled:
+          flashEnabled,
+
+        flash_plan_id:
+          flashPlanId,
+
+        flash_discount_price:
+          discountPrice,
+
+        flash_starts_at:
+          startDate
+            ? startDate
+                .toISOString()
+            : null,
+
+        flash_ends_at:
+          endDate
+            ? endDate
+                .toISOString()
+            : null,
+
+        popular_plan_id:
+          popularPlanId,
+
+        package_layout:
+          packageLayout,
+
+        theme_preset:
+          themePreset,
+
+        accent_color:
+          accentColor,
+
+        background_image_data:
+          backgroundImage,
+
+        background_image_updated_at:
+          backgroundChanged
+            ? new Date()
+                .toISOString()
+            : (
+                previous
+                  .background_image_updated_at ||
+                null
+              ),
+
+        background_overlay:
+          backgroundOverlay,
+
+        show_support:
+          raw.show_support ===
+            undefined
+            ? true
+            : hotspotBoolean(
+                raw.show_support
+              ),
+
+        show_whatsapp:
+          raw.show_whatsapp ===
+            undefined
+            ? true
+            : hotspotBoolean(
+                raw.show_whatsapp
+              ),
+
+        show_voucher_login:
+          raw.show_voucher_login ===
+            undefined
+            ? true
+            : hotspotBoolean(
+                raw.show_voucher_login
+              ),
+
+        updated_at:
+          new Date()
+            .toISOString(),
+      };
+
+
+      const result =
+        await db.query(`
+          UPDATE clients
+
+          SET
+            hotspot_portal_config =
+              $2::jsonb
+
+          WHERE id = $1
+            AND account_type =
+                'billing'
+
+          RETURNING
+            name,
+            hotspot_portal_config
+        `, [
+          req.scope.clientId,
+          JSON.stringify(
+            config
+          ),
+        ]);
+
+
+      const response =
+        hotspotPortalResponse(
+          result.rows[0]
+            .hotspot_portal_config ||
+          {}
+        );
+
+      if (
+        !response.brand_name
+      ) {
+        response.brand_name =
+          result.rows[0]
+            .name ||
+          '';
+      }
+
+      return res.json(
+        response
+      );
+    } catch (
+      error
+    ) {
+      console.error(
+        'Save hotspot portal settings error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          'Could not save hotspot portal settings',
+      });
+    }
   }
-});
+);
+
+
+router.post(
+  '/hotspot/publish',
+  async (
+    req,
+    res
+  ) => {
+    try {
+      await ensureMikrotikTables();
+
+      const result =
+        await db.query(`
+          SELECT DISTINCT
+            router.id,
+            router.name
+
+          FROM mikrotik_routers
+            router
+
+          JOIN network_router_executor_credentials
+            executor
+
+            ON executor.client_id =
+                 router.client_id
+
+           AND executor.router_id =
+                 router.id
+
+          WHERE router.client_id =
+                  $1
+
+            AND router.is_active =
+                  TRUE
+
+            AND executor.enabled =
+                  TRUE
+
+            AND executor.verification_status =
+                  'verified'
+
+          ORDER BY
+            router.id
+        `, [
+          req.scope.clientId,
+        ]);
+
+
+      if (
+        !result.rows.length
+      ) {
+        return res.status(400).json({
+          error:
+            'No active verified MikroTik router is available for Hotspot publishing',
+        });
+      }
+
+
+      const installs =
+        await Promise.all(
+          result.rows.map(
+            async router => {
+              try {
+                const install =
+                  await installHotspotEdgePortal({
+                    clientId:
+                      req.scope.clientId,
+
+                    routerId:
+                      router.id,
+                  });
+
+                return {
+                  router_id:
+                    router.id,
+
+                  router_name:
+                    router.name,
+
+                  status:
+                    'published',
+
+                  edge_bytes:
+                    install.edge_bytes,
+                };
+              } catch (
+                error
+              ) {
+                return {
+                  router_id:
+                    router.id,
+
+                  router_name:
+                    router.name,
+
+                  status:
+                    'failed',
+
+                  error:
+                    error.message,
+                };
+              }
+            }
+          )
+        );
+
+
+      const published =
+        installs.filter(
+          item =>
+            item.status ===
+            'published'
+        ).length;
+
+      const failed =
+        installs.length -
+        published;
+
+
+      return res.json({
+        published,
+        failed,
+        routers:
+          installs,
+      });
+    } catch (
+      error
+    ) {
+      console.error(
+        'Publish hotspot portal error:',
+        error.message
+      );
+
+      return res.status(500).json({
+        error:
+          'Could not publish Hotspot portal',
+      });
+    }
+  }
+);
+
+
 module.exports = router;

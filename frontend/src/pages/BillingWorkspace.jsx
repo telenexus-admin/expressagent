@@ -596,6 +596,10 @@ export default function BillingWorkspace() {
   const actionText = tab === 'subscribers' ? 'Add a client' : tab === 'payments' ? 'Record payment' : '';
   return <div data-billing-tab={tab} style={{ fontFamily: "'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif" }} className={`min-h-screen overflow-x-hidden ${darkMode ? 'bg-[#101223] text-slate-100' : 'bg-[#f7f8f7] text-slate-950'}`}>
     <style>{`
+      [data-billing-tab=\"agents\"] > div > header {
+        display: none !important;
+      }
+
       [data-billing-tab="tr069"] header {
         display: none !important;
       }

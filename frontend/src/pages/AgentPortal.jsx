@@ -17,13 +17,99 @@ const money = value =>
     }
   )}`;
 
-function durationText(minutes) {
+function Icon({
+  name,
+  className = 'h-5 w-5',
+}) {
+  const paths = {
+    settings: (
+      <>
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
+        />
+
+        <path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1A1.7 1.7 0 0 0 9 4.6a1.7 1.7 0 0 0 1-1.6v-.2h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z" />
+      </>
+    ),
+
+    wallet: (
+      <>
+        <path d="M4 6h14a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12" />
+        <path d="M15 11h7v4h-7a2 2 0 1 1 0-4Z" />
+      </>
+    ),
+
+    voucher: (
+      <>
+        <path d="M3 7h18v10H3z" />
+        <path d="M8 7v10M16 7v10" />
+      </>
+    ),
+
+    plus: (
+      <path d="M12 5v14M5 12h14" />
+    ),
+
+    close: (
+      <>
+        <path d="m6 6 12 12" />
+        <path d="m18 6-12 12" />
+      </>
+    ),
+
+    print: (
+      <>
+        <path d="M6 9V3h12v6" />
+        <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+        <path d="M6 14h12v7H6z" />
+      </>
+    ),
+
+    sms: (
+      <>
+        <path d="M4 5h16v12H7l-3 3V5Z" />
+        <path d="M8 9h8M8 13h5" />
+      </>
+    ),
+
+    logout: (
+      <>
+        <path d="M10 17l5-5-5-5" />
+        <path d="M15 12H3" />
+        <path d="M21 19V5a2 2 0 0 0-2-2h-6" />
+      </>
+    ),
+  };
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className={`${className} fill-none stroke-current`}
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {paths[name]}
+    </svg>
+  );
+}
+
+function durationText(
+  minutes
+) {
   const value =
-    Number(minutes || 0);
+    Number(
+      minutes ||
+      0
+    );
 
   if (
     value >= 1440 &&
-    value % 1440 === 0
+    value % 1440 ===
+      0
   ) {
     return `${
       value / 1440
@@ -32,7 +118,8 @@ function durationText(minutes) {
 
   if (
     value >= 60 &&
-    value % 60 === 0
+    value % 60 ===
+      0
   ) {
     return `${
       value / 60
@@ -42,8 +129,13 @@ function durationText(minutes) {
   return `${value} minutes`;
 }
 
-function escapeHtml(value) {
-  return String(value || '')
+function escapeHtml(
+  value
+) {
+  return String(
+    value ||
+    ''
+  )
     .replace(
       /&/g,
       '&amp;'
@@ -109,7 +201,9 @@ async function apiRequest(
   const data =
     await response
       .json()
-      .catch(() => ({}));
+      .catch(
+        () => ({})
+      );
 
   if (!response.ok) {
     const error =
@@ -127,44 +221,336 @@ async function apiRequest(
   return data;
 }
 
+function WalletFlow({
+  dashboard,
+}) {
+  const agent =
+    dashboard.agent ||
+    {};
+
+  const rows = [
+    {
+      label:
+        'Cash funded',
+      value:
+        Number(
+          agent.total_funded ||
+          0
+        ),
+      className:
+        'bg-sky-500',
+    },
+    {
+      label:
+        'Voucher credit issued',
+      value:
+        Number(
+          agent.total_credit_issued ||
+          0
+        ),
+      className:
+        'bg-violet-500',
+    },
+    {
+      label:
+        'Voucher value sold',
+      value:
+        Number(
+          agent.total_generated ||
+          0
+        ),
+      className:
+        'bg-emerald-500',
+    },
+    {
+      label:
+        'Available credit',
+      value:
+        Number(
+          agent.voucher_balance ||
+          0
+        ),
+      className:
+        'bg-amber-400',
+    },
+  ];
+
+  const maximum =
+    Math.max(
+      1,
+      ...rows.map(
+        row =>
+          row.value
+      )
+    );
+
+  return (
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-[10px] font-black uppercase tracking-[.17em] text-violet-600">
+        Wallet movement
+      </div>
+
+      <h3 className="mt-1 text-lg font-black">
+        Your voucher business
+      </h3>
+
+      <p className="mt-1 text-xs text-slate-400">
+        Funding, bonus credit and voucher value generated.
+      </p>
+
+      <div className="mt-6 space-y-4">
+        {rows.map(
+          row => {
+            const width =
+              row.value > 0
+                ? Math.max(
+                    4,
+                    Math.round(
+                      (
+                        row.value /
+                        maximum
+                      ) *
+                      100
+                    )
+                  )
+                : 0;
+
+            return (
+              <div
+                key={
+                  row.label
+                }
+              >
+                <div className="flex justify-between gap-4 text-[11px]">
+                  <span className="font-bold text-slate-500">
+                    {
+                      row.label
+                    }
+                  </span>
+
+                  <strong>
+                    {money(
+                      row.value
+                    )}
+                  </strong>
+                </div>
+
+                <div className="mt-2 h-2.5 overflow-hidden rounded-full bg-slate-100">
+                  <div
+                    className={`h-full rounded-full ${row.className}`}
+                    style={{
+                      width:
+                        `${width}%`,
+                    }}
+                  />
+                </div>
+              </div>
+            );
+          }
+        )}
+      </div>
+    </section>
+  );
+}
+
+function VoucherMix({
+  dashboard,
+}) {
+  const denominations =
+    dashboard.denominations ||
+    [];
+
+  const generations =
+    dashboard.generations ||
+    [];
+
+  const rows =
+    denominations.map(
+      denomination => ({
+        ...denomination,
+
+        count:
+          generations.filter(
+            item =>
+              Number(
+                item.face_value
+              ) ===
+              Number(
+                denomination.face_value
+              )
+          ).length,
+      })
+    );
+
+  const maximum =
+    Math.max(
+      1,
+      ...rows.map(
+        row =>
+          row.count
+      )
+    );
+
+  return (
+    <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="text-[10px] font-black uppercase tracking-[.17em] text-violet-600">
+        Voucher activity
+      </div>
+
+      <h3 className="mt-1 text-lg font-black">
+        Popular voucher values
+      </h3>
+
+      <p className="mt-1 text-xs text-slate-400">
+        Recent generation activity by configured voucher value.
+      </p>
+
+      {rows.length ? (
+        <div className="mt-6 space-y-4">
+          {rows.map(
+            row => {
+              const width =
+                row.count
+                  ? Math.max(
+                      8,
+                      Math.round(
+                        (
+                          row.count /
+                          maximum
+                        ) *
+                        100
+                      )
+                    )
+                  : 0;
+
+              return (
+                <div
+                  key={
+                    row.id
+                  }
+                  className="grid grid-cols-[70px_minmax(0,1fr)_30px] items-center gap-3"
+                >
+                  <strong className="text-xs text-slate-700">
+                    KES {Number(
+                      row.face_value
+                    ).toLocaleString()}
+                  </strong>
+
+                  <div className="h-8 overflow-hidden rounded-xl bg-slate-100">
+                    <div
+                      style={{
+                        width:
+                          `${width}%`,
+                      }}
+                      className="flex h-full min-w-0 items-center rounded-xl bg-gradient-to-r from-violet-600 to-fuchsia-500 px-2 text-[9px] font-black text-white"
+                    >
+                      {row.count
+                        ? row.plan_name
+                        : ''}
+                    </div>
+                  </div>
+
+                  <strong className="text-right text-xs">
+                    {
+                      row.count
+                    }
+                  </strong>
+                </div>
+              );
+            }
+          )}
+        </div>
+      ) : (
+        <div className="py-12 text-center text-xs text-slate-400">
+          The network has not configured agent voucher values yet.
+        </div>
+      )}
+    </section>
+  );
+}
+
 export default function AgentPortal() {
   const [token, setToken] =
     useState(
       () =>
         localStorage.getItem(
           TOKEN_KEY
-        ) || ''
+        ) ||
+        ''
     );
 
-  const [dashboard, setDashboard] =
-    useState(null);
+  const [
+    dashboard,
+    setDashboard,
+  ] = useState(
+    null
+  );
 
-  const [loginForm, setLoginForm] =
-    useState({
-      identity: '',
-      password: '',
-    });
+  const [view, setView] =
+    useState(
+      'overview'
+    );
 
-  const [fundForm, setFundForm] =
-    useState({
-      amount: '',
-      phone: '',
-    });
+  const [
+    fundOpen,
+    setFundOpen,
+  ] = useState(
+    false
+  );
 
-  const [voucherAmount, setVoucherAmount] =
-    useState('');
+  const [
+    voucherOpen,
+    setVoucherOpen,
+  ] = useState(
+    false
+  );
 
-  const [generated, setGenerated] =
-    useState(null);
+  const [
+    loginForm,
+    setLoginForm,
+  ] = useState({
+    identity: '',
+    password: '',
+  });
 
-  const [smsPhone, setSmsPhone] =
-    useState('');
+  const [
+    fundForm,
+    setFundForm,
+  ] = useState({
+    amount: '',
+    phone: '',
+  });
 
-  const [loading, setLoading] =
-    useState(Boolean(token));
+  const [
+    voucherAmount,
+    setVoucherAmount,
+  ] = useState('');
 
-  const [saving, setSaving] =
-    useState(false);
+  const [
+    generated,
+    setGenerated,
+  ] = useState(
+    null
+  );
+
+  const [
+    smsPhone,
+    setSmsPhone,
+  ] = useState('');
+
+  const [
+    loading,
+    setLoading,
+  ] = useState(
+    Boolean(token)
+  );
+
+  const [
+    saving,
+    setSaving,
+  ] = useState(
+    false
+  );
 
   const [error, setError] =
     useState('');
@@ -185,7 +571,9 @@ export default function AgentPortal() {
             }
           );
 
-        setDashboard(data);
+        setDashboard(
+          data
+        );
 
         setFundForm(
           current => ({
@@ -193,7 +581,8 @@ export default function AgentPortal() {
 
             phone:
               current.phone ||
-              data.agent?.phone ||
+              data.agent
+                ?.phone ||
               '',
           })
         );
@@ -201,12 +590,16 @@ export default function AgentPortal() {
         setError('');
 
         return data;
-      } catch (requestError) {
+      } catch (
+        requestError
+      ) {
         if (
-          requestError.status ===
-          401 ||
-          requestError.status ===
-          403
+          requestError
+            .status ===
+            401 ||
+          requestError
+            .status ===
+            403
         ) {
           localStorage
             .removeItem(
@@ -214,77 +607,107 @@ export default function AgentPortal() {
             );
 
           setToken('');
-          setDashboard(null);
+          setDashboard(
+            null
+          );
         } else {
           setError(
-            requestError.message
+            requestError
+              .message
           );
         }
 
         return null;
       } finally {
-        setLoading(false);
+        setLoading(
+          false
+        );
       }
     };
 
-  useEffect(() => {
-    if (token) {
-      void loadDashboard(
-        token
-      );
-    }
-  }, []);
+  useEffect(
+    () => {
+      if (token) {
+        void loadDashboard(
+          token
+        );
+      }
+    },
+    []
+  );
 
-  const login = async event => {
-    event.preventDefault();
+  const login =
+    async event => {
+      event.preventDefault();
 
-    try {
-      setSaving(true);
-
-      const result =
-        await apiRequest(
-          '/login',
-          {
-            method:
-              'POST',
-
-            body:
-              loginForm,
-          }
+      try {
+        setSaving(
+          true
         );
 
-      localStorage.setItem(
-        TOKEN_KEY,
-        result.token
+        setError('');
+
+        const result =
+          await apiRequest(
+            '/login',
+            {
+              method:
+                'POST',
+
+              body:
+                loginForm,
+            }
+          );
+
+        localStorage.setItem(
+          TOKEN_KEY,
+          result.token
+        );
+
+        setToken(
+          result.token
+        );
+
+        setLoading(
+          true
+        );
+
+        await loadDashboard(
+          result.token
+        );
+      } catch (
+        requestError
+      ) {
+        setError(
+          requestError
+            .message
+        );
+      } finally {
+        setSaving(
+          false
+        );
+      }
+    };
+
+  const logout =
+    () => {
+      localStorage.removeItem(
+        TOKEN_KEY
       );
 
-      setToken(
-        result.token
+      setToken('');
+      setDashboard(
+        null
       );
 
-      setLoading(true);
-
-      await loadDashboard(
-        result.token
+      setGenerated(
+        null
       );
-    } catch (requestError) {
-      setError(
-        requestError.message
+
+      setView(
+        'overview'
       );
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const logout = () => {
-    localStorage.removeItem(
-      TOKEN_KEY
-    );
-
-    setToken('');
-    setDashboard(null);
-    setGenerated(null);
-  };
+    };
 
   const pollFunding =
     async reference => {
@@ -304,11 +727,7 @@ export default function AgentPortal() {
         try {
           const status =
             await apiRequest(
-              `/wallet/funding/${
-                encodeURIComponent(
-                  reference
-                )
-              }`,
+              `/wallet/funding/${encodeURIComponent(reference)}`,
               {
                 token,
               }
@@ -319,7 +738,7 @@ export default function AgentPortal() {
             'paid'
           ) {
             setNotice(
-              `Wallet funded successfully. Voucher credit balance is ${money(status.balance)}.`
+              `Wallet funded successfully. Available voucher credit is ${money(status.balance)}.`
             );
 
             await loadDashboard(
@@ -341,19 +760,20 @@ export default function AgentPortal() {
             )
           ) {
             setError(
-              status.result_description ||
+              status
+                .result_description ||
               'The M-Pesa payment was not completed.'
             );
 
             return;
           }
         } catch (_) {
-          // Poll again.
+          // Continue polling.
         }
       }
 
       setNotice(
-        'The M-Pesa request is still being processed. Refresh the dashboard after completing payment.'
+        'The M-Pesa request is still processing. Refresh after completing payment.'
       );
     };
 
@@ -362,7 +782,10 @@ export default function AgentPortal() {
       event.preventDefault();
 
       try {
-        setSaving(true);
+        setSaving(
+          true
+        );
+
         setError('');
 
         const result =
@@ -377,14 +800,20 @@ export default function AgentPortal() {
               body: {
                 amount:
                   Number(
-                    fundForm.amount
+                    fundForm
+                      .amount
                   ),
 
                 phone:
-                  fundForm.phone,
+                  fundForm
+                    .phone,
               },
             }
           );
+
+        setFundOpen(
+          false
+        );
 
         setNotice(
           `M-Pesa prompt sent for ${money(result.funding_amount)}. Successful payment will add ${money(result.credit_amount)} voucher credit.`
@@ -393,12 +822,17 @@ export default function AgentPortal() {
         void pollFunding(
           result.reference
         );
-      } catch (requestError) {
+      } catch (
+        requestError
+      ) {
         setError(
-          requestError.message
+          requestError
+            .message
         );
       } finally {
-        setSaving(false);
+        setSaving(
+          false
+        );
       }
     };
 
@@ -407,7 +841,10 @@ export default function AgentPortal() {
       event.preventDefault();
 
       try {
-        setSaving(true);
+        setSaving(
+          true
+        );
+
         setError('');
 
         const result =
@@ -432,6 +869,10 @@ export default function AgentPortal() {
           result
         );
 
+        setVoucherOpen(
+          false
+        );
+
         setNotice(
           `Voucher ${result.code} generated successfully.`
         );
@@ -439,31 +880,34 @@ export default function AgentPortal() {
         await loadDashboard(
           token
         );
-      } catch (requestError) {
+      } catch (
+        requestError
+      ) {
         setError(
-          requestError.message
+          requestError
+            .message
         );
       } finally {
-        setSaving(false);
+        setSaving(
+          false
+        );
       }
     };
 
   const sendSms =
     async () => {
-      if (
-        !generated
-      ) {
+      if (!generated) {
         return;
       }
 
       try {
-        setSaving(true);
+        setSaving(
+          true
+        );
 
         const result =
           await apiRequest(
-            `/vouchers/${
-              generated.generation_id
-            }/sms`,
+            `/vouchers/${generated.generation_id}/sms`,
             {
               token,
 
@@ -484,193 +928,141 @@ export default function AgentPortal() {
         await loadDashboard(
           token
         );
-      } catch (requestError) {
+      } catch (
+        requestError
+      ) {
         setError(
-          requestError.message
+          requestError
+            .message
         );
       } finally {
-        setSaving(false);
+        setSaving(
+          false
+        );
       }
     };
 
-  const printVoucher = () => {
-    if (!generated) {
-      return;
-    }
-
-    const popup =
-      window.open(
-        '',
-        '_blank',
-        'width=430,height=620'
-      );
-
-    if (!popup) {
-      setError(
-        'Allow pop-ups to print the voucher.'
-      );
-
-      return;
-    }
-
-    popup.document.write(`
-      <!doctype html>
-      <html>
-      <head>
-      <title>Voucher ${escapeHtml(generated.code)}</title>
-      <style>
-      body{
-        font-family:system-ui,sans-serif;
-        padding:30px;
-        background:#f3f4f6
+  const printVoucher =
+    () => {
+      if (!generated) {
+        return;
       }
-      .ticket{
-        max-width:320px;
-        margin:auto;
-        padding:28px;
-        border:2px dashed #111827;
-        border-radius:18px;
-        background:white;
-        text-align:center
+
+      const popup =
+        window.open(
+          '',
+          '_blank',
+          'width=430,height=620'
+        );
+
+      if (!popup) {
+        setError(
+          'Allow pop-ups to print the voucher.'
+        );
+
+        return;
       }
-      .code{
-        margin:20px 0;
-        font-size:25px;
-        font-weight:900;
-        letter-spacing:2px
-      }
-      p{margin:8px 0;color:#475569}
-      strong{color:#0f172a}
-      </style>
-      </head>
 
-      <body onload="window.print()">
-        <div class="ticket">
-          <h2>${escapeHtml(
-            dashboard?.network?.name ||
-            'Internet Voucher'
-          )}</h2>
+      popup.document.write(`
+<!doctype html>
+<html>
+<head>
+<title>Voucher ${escapeHtml(generated.code)}</title>
+<style>
+body{font-family:system-ui,sans-serif;padding:30px;background:#f3f4f6}
+.ticket{max-width:320px;margin:auto;padding:28px;border:2px dashed #111827;border-radius:18px;background:white;text-align:center}
+.code{margin:20px 0;font-size:25px;font-weight:900;letter-spacing:2px}
+p{margin:8px 0;color:#475569}
+strong{color:#0f172a}
+</style>
+</head>
+<body onload="window.print()">
+<div class="ticket">
+<h2>${escapeHtml(dashboard?.network?.name || 'Internet Voucher')}</h2>
+<p>Hotspot Voucher</p>
+<div class="code">${escapeHtml(generated.code)}</div>
+<p>Value: <strong>${escapeHtml(money(generated.amount))}</strong></p>
+<p>Package: <strong>${escapeHtml(generated.plan_name)}</strong></p>
+<p>Time: <strong>${escapeHtml(durationText(generated.duration_minutes))}</strong></p>
+<p>Devices: <strong>${escapeHtml(generated.device_limit)}</strong></p>
+<p style="margin-top:20px;font-size:12px">Enter this code on the Hotspot login page.</p>
+</div>
+</body>
+</html>`);
 
-          <p>Hotspot Voucher</p>
-
-          <div class="code">
-            ${escapeHtml(
-              generated.code
-            )}
-          </div>
-
-          <p>
-            Value:
-            <strong>
-              ${escapeHtml(
-                money(
-                  generated.amount
-                )
-              )}
-            </strong>
-          </p>
-
-          <p>
-            Package:
-            <strong>
-              ${escapeHtml(
-                generated.plan_name
-              )}
-            </strong>
-          </p>
-
-          <p>
-            Time:
-            <strong>
-              ${escapeHtml(
-                durationText(
-                  generated.duration_minutes
-                )
-              )}
-            </strong>
-          </p>
-
-          <p>
-            Devices:
-            <strong>
-              ${escapeHtml(
-                generated.device_limit
-              )}
-            </strong>
-          </p>
-
-          <p style="margin-top:20px;font-size:12px">
-            Enter this code on the Hotspot login page.
-          </p>
-        </div>
-      </body>
-      </html>
-    `);
-
-    popup.document.close();
-  };
-
-  const availableCredit =
-    Number(
-      dashboard?.agent
-        ?.voucher_balance ||
-      0
-    );
+      popup.document.close();
+    };
 
   const expectedCredit =
-    useMemo(() => {
-      const amount =
-        Number(
-          fundForm.amount ||
-          0
-        );
+    useMemo(
+      () => {
+        const amount =
+          Number(
+            fundForm.amount ||
+            0
+          );
 
-      const bonus =
-        Number(
-          dashboard?.settings
-            ?.bonus_percent ||
-          0
-        );
+        const bonus =
+          Number(
+            dashboard
+              ?.settings
+              ?.bonus_percent ||
+            0
+          );
 
-      return (
-        amount *
-        (
-          1 +
-          bonus / 100
-        )
-      );
-    }, [
-      fundForm.amount,
-      dashboard?.settings
-        ?.bonus_percent,
-    ]);
+        return (
+          amount *
+          (
+            1 +
+            bonus /
+              100
+          )
+        );
+      },
+      [
+        fundForm.amount,
+        dashboard
+          ?.settings
+          ?.bonus_percent,
+      ]
+    );
 
   if (!token) {
     return (
-      <main className="min-h-screen bg-[#07111f] px-4 py-12 text-slate-900">
-        <div className="mx-auto max-w-sm">
+      <main className="min-h-screen bg-[#0b0e1b] px-4 py-10 text-slate-950 sm:py-16">
+        <div className="mx-auto max-w-md">
 
           <div className="mb-8 text-center text-white">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-emerald-400 text-xl font-black text-emerald-950">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-600 text-xl font-black shadow-xl shadow-violet-950/40">
               N
             </div>
 
-            <h1 className="mt-4 text-2xl font-black">
+            <p className="mt-5 text-[10px] font-black uppercase tracking-[.2em] text-violet-300">
+              Nexa agent network
+            </p>
+
+            <h1 className="mt-2 text-3xl font-black">
               Agent Portal
             </h1>
 
-            <p className="mt-2 text-sm text-slate-400">
-              Fund your wallet and generate customer Hotspot vouchers.
+            <p className="mx-auto mt-2 max-w-xs text-sm leading-6 text-slate-400">
+              Sign in to manage your voucher wallet and generate customer access.
             </p>
           </div>
 
           <form
-            onSubmit={login}
-            className="rounded-[28px] bg-white p-6 shadow-2xl"
+            onSubmit={
+              login
+            }
+            className="rounded-[28px] bg-white p-6 shadow-2xl sm:p-7"
           >
             <h2 className="text-xl font-black">
-              Sign in
+              Welcome back
             </h2>
+
+            <p className="mt-1 text-xs text-slate-400">
+              Use the account created by your network administrator.
+            </p>
 
             {error && (
               <div className="mt-4 rounded-xl bg-rose-50 p-3 text-xs font-bold text-rose-600">
@@ -678,13 +1070,16 @@ export default function AgentPortal() {
               </div>
             )}
 
-            <label className="mt-5 block text-xs font-bold">
-              Email or phone
+            <label className="mt-6 block">
+              <span className="text-xs font-black text-slate-600">
+                Email or phone
+              </span>
 
               <input
                 required
                 value={
-                  loginForm.identity
+                  loginForm
+                    .identity
                 }
                 onChange={
                   event =>
@@ -696,18 +1091,21 @@ export default function AgentPortal() {
                           .value,
                     })
                 }
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3.5 text-sm outline-none focus:border-emerald-500"
+                className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-400"
               />
             </label>
 
-            <label className="mt-4 block text-xs font-bold">
-              Password
+            <label className="mt-4 block">
+              <span className="text-xs font-black text-slate-600">
+                Password
+              </span>
 
               <input
                 required
                 type="password"
                 value={
-                  loginForm.password
+                  loginForm
+                    .password
                 }
                 onChange={
                   event =>
@@ -719,15 +1117,19 @@ export default function AgentPortal() {
                           .value,
                     })
                 }
-                className="mt-1.5 w-full rounded-xl border border-slate-200 px-4 py-3.5 text-sm outline-none focus:border-emerald-500"
+                className="mt-2 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-400"
               />
             </label>
 
             <button
-              disabled={saving}
-              className="mt-5 w-full rounded-xl bg-emerald-500 py-3.5 text-sm font-black text-white disabled:opacity-50"
+              disabled={
+                saving
+              }
+              className="mt-6 h-12 w-full rounded-2xl bg-violet-600 text-sm font-black text-white disabled:opacity-50"
             >
-              Sign in
+              {saving
+                ? 'Signing in...'
+                : 'Sign in'}
             </button>
           </form>
         </div>
@@ -740,131 +1142,554 @@ export default function AgentPortal() {
     !dashboard
   ) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-sm text-slate-400">
-        Loading agent wallet...
+      <div className="flex min-h-screen items-center justify-center bg-[#0b0e1b] text-sm text-slate-400">
+        Loading agent dashboard...
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-[#f5f7f6] pb-12 text-slate-950">
-      <header className="bg-[#07111f] px-4 pb-20 pt-5 text-white">
-        <div className="mx-auto flex max-w-6xl items-center justify-between">
-          <div>
-            <div className="text-[10px] font-black uppercase tracking-[.16em] text-emerald-400">
-              {dashboard.network?.name}
-            </div>
+    <main className="min-h-screen overflow-x-hidden bg-[#f7f8fb] pb-20 text-slate-950">
 
-            <h1 className="mt-1 text-xl font-black">
-              {dashboard.agent?.business_name ||
-               dashboard.agent?.name}
+      <section className="relative overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-16 pt-7 text-white sm:px-8 lg:px-10">
+
+        <div className="relative z-10 mx-auto flex max-w-6xl items-start justify-between gap-3">
+
+          <div className="min-w-0">
+            <p className="truncate text-[10px] font-black uppercase tracking-[.2em] text-violet-200">
+              {dashboard
+                .network
+                ?.name}
+            </p>
+
+            <h1 className="mt-2 truncate text-2xl font-black sm:text-3xl">
+              {view ===
+              'settings'
+                ? 'Account Settings'
+                : dashboard
+                    .agent
+                    ?.business_name ||
+                  dashboard
+                    .agent
+                    ?.name ||
+                  'Agent Portal'}
             </h1>
+
+            <p className="mt-2 max-w-xl text-xs leading-5 text-violet-100 sm:text-sm sm:leading-6">
+              {view ===
+              'settings'
+                ? 'Your account details and the voucher rules configured by the network administrator.'
+                : 'Monitor your voucher credit, fund your wallet and generate customer access instantly.'}
+            </p>
           </div>
+
 
           <button
-            onClick={logout}
-            className="rounded-xl bg-white/10 px-3 py-2 text-xs font-bold"
+            type="button"
+            aria-label="Agent portal settings"
+            onClick={() =>
+              setView(
+                current =>
+                  current ===
+                  'settings'
+                    ? 'overview'
+                    : 'settings'
+              )
+            }
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl ${
+              view ===
+              'settings'
+                ? 'bg-white text-violet-700'
+                : 'bg-white/15 text-white'
+            }`}
           >
-            Sign out
+            <Icon
+              name="settings"
+            />
           </button>
         </div>
-      </header>
 
-      <div className="-mt-12 mx-auto max-w-6xl space-y-5 px-4">
 
-        <section className="rounded-[28px] bg-gradient-to-br from-emerald-500 to-teal-500 p-6 text-white shadow-xl shadow-emerald-200/50">
-          <div className="text-xs font-bold text-emerald-50">
-            Voucher wallet
+        {view ===
+        'overview' && (
+          <div className="relative z-10 mx-auto mt-5 flex max-w-6xl flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                setFundOpen(
+                  true
+                )
+              }
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-3.5 py-2.5 text-[10px] font-black text-emerald-950"
+            >
+              <Icon
+                name="wallet"
+                className="h-3.5 w-3.5"
+              />
+              Fund wallet
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setVoucherOpen(
+                  true
+                )
+              }
+              disabled={
+                !dashboard
+                  .denominations
+                  ?.length
+              }
+              className="inline-flex items-center gap-2 rounded-xl bg-white px-3.5 py-2.5 text-[10px] font-black text-violet-700 disabled:opacity-40"
+            >
+              <Icon
+                name="plus"
+                className="h-3.5 w-3.5"
+              />
+              Generate voucher
+            </button>
           </div>
+        )}
 
-          <div className="mt-2 text-4xl font-black">
-            {money(
-              availableCredit
-            )}
-          </div>
 
-          <div className="mt-5 grid grid-cols-3 gap-2">
-            <div className="rounded-xl bg-white/15 p-3">
-              <small className="text-[9px] uppercase text-emerald-50">
-                Funded
-              </small>
+        <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-12">
+          <svg
+            viewBox="0 0 1200 180"
+            preserveAspectRatio="none"
+            className="h-full w-full"
+          >
+            <path
+              d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z"
+              fill="#f7f8fb"
+            />
+          </svg>
+        </div>
+      </section>
 
-              <b className="mt-1 block text-sm">
-                {money(
-                  dashboard.agent
-                    ?.total_funded
-                )}
-              </b>
-            </div>
 
-            <div className="rounded-xl bg-white/15 p-3">
-              <small className="text-[9px] uppercase text-emerald-50">
-                Credit issued
-              </small>
-
-              <b className="mt-1 block text-sm">
-                {money(
-                  dashboard.agent
-                    ?.total_credit_issued
-                )}
-              </b>
-            </div>
-
-            <div className="rounded-xl bg-white/15 p-3">
-              <small className="text-[9px] uppercase text-emerald-50">
-                Generated
-              </small>
-
-              <b className="mt-1 block text-sm">
-                {money(
-                  dashboard.agent
-                    ?.total_generated
-                )}
-              </b>
-            </div>
-          </div>
-        </section>
+      <div className="mx-auto max-w-6xl space-y-4 px-3 sm:px-6 lg:px-8">
 
         {error && (
-          <div className="rounded-xl border border-rose-200 bg-rose-50 p-3 text-sm font-semibold text-rose-700">
+          <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
             {error}
           </div>
         )}
 
         {notice && (
-          <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm font-semibold text-emerald-700">
+          <div className="rounded-2xl border border-violet-100 bg-white px-4 py-3 text-xs font-bold text-violet-700 shadow-sm">
             {notice}
           </div>
         )}
 
-        <div className="grid gap-5 lg:grid-cols-2">
+
+        {view ===
+        'overview' ? (
+          <>
+            <section className="rounded-[26px] bg-[#11172a] p-5 text-white shadow-xl shadow-slate-300/40 sm:p-6">
+              <div className="flex items-start justify-between">
+                <div>
+                  <small className="text-[10px] font-black uppercase tracking-[.16em] text-violet-300">
+                    Voucher wallet
+                  </small>
+
+                  <strong className="mt-2 block text-3xl font-black tracking-tight sm:text-4xl">
+                    {money(
+                      dashboard
+                        .agent
+                        ?.voucher_balance
+                    )}
+                  </strong>
+
+                  <p className="mt-2 text-xs text-slate-400">
+                    Available credit for generating vouchers.
+                  </p>
+                </div>
+
+                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-300">
+                  <Icon
+                    name="wallet"
+                  />
+                </span>
+              </div>
+
+
+              <div className="mt-6 grid grid-cols-3 gap-2">
+                <div className="rounded-2xl bg-white/5 p-3">
+                  <small className="text-[8px] font-black uppercase text-slate-400 sm:text-[9px]">
+                    Funded
+                  </small>
+
+                  <b className="mt-1 block truncate text-xs sm:text-sm">
+                    {money(
+                      dashboard
+                        .agent
+                        ?.total_funded
+                    )}
+                  </b>
+                </div>
+
+                <div className="rounded-2xl bg-white/5 p-3">
+                  <small className="text-[8px] font-black uppercase text-slate-400 sm:text-[9px]">
+                    Credit
+                  </small>
+
+                  <b className="mt-1 block truncate text-xs sm:text-sm">
+                    {money(
+                      dashboard
+                        .agent
+                        ?.total_credit_issued
+                    )}
+                  </b>
+                </div>
+
+                <div className="rounded-2xl bg-white/5 p-3">
+                  <small className="text-[8px] font-black uppercase text-slate-400 sm:text-[9px]">
+                    Generated
+                  </small>
+
+                  <b className="mt-1 block truncate text-xs sm:text-sm">
+                    {money(
+                      dashboard
+                        .agent
+                        ?.total_generated
+                    )}
+                  </b>
+                </div>
+              </div>
+            </section>
+
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <WalletFlow
+                dashboard={
+                  dashboard
+                }
+              />
+
+              <VoucherMix
+                dashboard={
+                  dashboard
+                }
+              />
+            </div>
+
+
+            <section className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm">
+
+              <div className="border-b border-slate-100 p-5">
+                <div className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">
+                  Activity
+                </div>
+
+                <h3 className="mt-1 text-lg font-black">
+                  Recent vouchers
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Customer vouchers generated from your wallet.
+                </p>
+              </div>
+
+
+              {dashboard
+                .generations
+                ?.length ? (
+                <div className="divide-y divide-slate-100">
+                  {dashboard
+                    .generations
+                    .slice(
+                      0,
+                      20
+                    )
+                    .map(
+                      voucher => (
+                        <div
+                          key={
+                            voucher.id
+                          }
+                          className="flex items-center gap-3 p-4 sm:px-5"
+                        >
+                          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
+                            <Icon
+                              name="voucher"
+                              className="h-4 w-4"
+                            />
+                          </span>
+
+                          <div className="min-w-0 flex-1">
+                            <strong className="block truncate font-mono text-xs tracking-wide text-slate-900">
+                              {
+                                voucher.code
+                              }
+                            </strong>
+
+                            <span className="mt-1 block truncate text-[10px] text-slate-400">
+                              {voucher.plan_name}
+                              {' · '}
+                              {durationText(
+                                voucher.duration_minutes
+                              )}
+                              {' · '}
+                              {voucher.device_limit} device(s)
+                            </span>
+                          </div>
+
+                          <div className="shrink-0 text-right">
+                            <strong className="block text-xs">
+                              {money(
+                                voucher.face_value
+                              )}
+                            </strong>
+
+                            <small
+                              className={`mt-1 inline-flex rounded-full px-2 py-1 text-[8px] font-black uppercase ${
+                                voucher.voucher_status ===
+                                'active'
+                                  ? 'bg-emerald-50 text-emerald-700'
+                                  : 'bg-violet-50 text-violet-600'
+                              }`}
+                            >
+                              {
+                                voucher.voucher_status
+                              }
+                            </small>
+                          </div>
+                        </div>
+                      )
+                    )}
+                </div>
+              ) : (
+                <div className="px-5 py-14 text-center text-xs text-slate-400">
+                  Your generated vouchers will appear here.
+                </div>
+              )}
+            </section>
+          </>
+        ) : (
+          <div className="grid gap-4 lg:grid-cols-2">
+
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">
+                Agent account
+              </div>
+
+              <h3 className="mt-1 text-lg font-black">
+                Profile
+              </h3>
+
+              <div className="mt-5 space-y-3">
+                {[
+                  [
+                    'Agent',
+                    dashboard
+                      .agent
+                      ?.name,
+                  ],
+                  [
+                    'Business',
+                    dashboard
+                      .agent
+                      ?.business_name ||
+                    'Not set',
+                  ],
+                  [
+                    'Email',
+                    dashboard
+                      .agent
+                      ?.email,
+                  ],
+                  [
+                    'Phone',
+                    dashboard
+                      .agent
+                      ?.phone,
+                  ],
+                  [
+                    'Network',
+                    dashboard
+                      .network
+                      ?.name,
+                  ],
+                ].map(
+                  ([
+                    label,
+                    value,
+                  ]) => (
+                    <div
+                      key={
+                        label
+                      }
+                      className="flex items-center justify-between gap-5 rounded-2xl bg-slate-50 p-4"
+                    >
+                      <span className="text-xs font-bold text-slate-400">
+                        {label}
+                      </span>
+
+                      <strong className="min-w-0 truncate text-right text-xs text-slate-800">
+                        {
+                          value ||
+                          '—'
+                        }
+                      </strong>
+                    </div>
+                  )
+                )}
+              </div>
+            </section>
+
+
+            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+              <div className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">
+                Network policy
+              </div>
+
+              <h3 className="mt-1 text-lg font-black">
+                Voucher rules
+              </h3>
+
+              <div className="mt-5 grid grid-cols-2 gap-3">
+                <div className="rounded-2xl bg-violet-50 p-4">
+                  <small className="text-[9px] font-black uppercase text-violet-500">
+                    Wallet bonus
+                  </small>
+
+                  <strong className="mt-2 block text-xl text-violet-800">
+                    {Number(
+                      dashboard
+                        .settings
+                        ?.bonus_percent ||
+                      0
+                    )}%
+                  </strong>
+                </div>
+
+                <div className="rounded-2xl bg-emerald-50 p-4">
+                  <small className="text-[9px] font-black uppercase text-emerald-500">
+                    SMS sharing
+                  </small>
+
+                  <strong className="mt-2 block text-sm text-emerald-800">
+                    {dashboard
+                      .settings
+                      ?.sms_enabled
+                      ? 'Enabled'
+                      : 'Disabled'}
+                  </strong>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <small className="text-[9px] font-black uppercase text-slate-400">
+                    Min funding
+                  </small>
+
+                  <strong className="mt-2 block text-sm">
+                    {money(
+                      dashboard
+                        .settings
+                        ?.minimum_funding_amount
+                    )}
+                  </strong>
+                </div>
+
+                <div className="rounded-2xl bg-slate-50 p-4">
+                  <small className="text-[9px] font-black uppercase text-slate-400">
+                    Max funding
+                  </small>
+
+                  <strong className="mt-2 block text-sm">
+                    {money(
+                      dashboard
+                        .settings
+                        ?.maximum_funding_amount
+                    )}
+                  </strong>
+                </div>
+              </div>
+
+
+              <button
+                type="button"
+                onClick={
+                  logout
+                }
+                className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-rose-50 text-sm font-black text-rose-600"
+              >
+                <Icon
+                  name="logout"
+                  className="h-4 w-4"
+                />
+                Sign out
+              </button>
+            </section>
+          </div>
+        )}
+      </div>
+
+
+      {fundOpen && (
+        <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center">
+          <button
+            type="button"
+            aria-label="Close wallet funding"
+            className="absolute inset-0"
+            onClick={() =>
+              setFundOpen(
+                false
+              )
+            }
+          />
 
           <form
-            onSubmit={fundWallet}
-            className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+            onSubmit={
+              fundWallet
+            }
+            className="relative z-10 w-full max-w-md rounded-[28px] bg-white p-5 shadow-2xl sm:p-7"
           >
-            <h2 className="font-black">
-              Fund voucher wallet
-            </h2>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[.17em] text-violet-600">
+                  Voucher wallet
+                </p>
 
-            <p className="mt-1 text-xs leading-5 text-slate-400">
-              Current bonus: {dashboard.settings?.bonus_percent || 0}%.
-            </p>
+                <h3 className="mt-1 text-xl font-black">
+                  Fund wallet
+                </h3>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setFundOpen(
+                    false
+                  )
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+              >
+                <Icon
+                  name="close"
+                  className="h-4 w-4"
+                />
+              </button>
+            </div>
 
             <input
               required
               type="number"
               min={
-                dashboard.settings
+                dashboard
+                  .settings
                   ?.minimum_funding_amount
               }
               max={
-                dashboard.settings
+                dashboard
+                  .settings
                   ?.maximum_funding_amount
               }
               placeholder="Amount to pay"
               value={
-                fundForm.amount
+                fundForm
+                  .amount
               }
               onChange={
                 event =>
@@ -876,7 +1701,7 @@ export default function AgentPortal() {
                         .value,
                   })
               }
-              className="mt-5 w-full rounded-xl border border-slate-200 px-4 py-3.5"
+              className="mt-6 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-400"
             />
 
             <input
@@ -884,7 +1709,8 @@ export default function AgentPortal() {
               type="tel"
               placeholder="M-Pesa phone"
               value={
-                fundForm.phone
+                fundForm
+                  .phone
               }
               onChange={
                 event =>
@@ -896,45 +1722,93 @@ export default function AgentPortal() {
                         .value,
                   })
               }
-              className="mt-3 w-full rounded-xl border border-slate-200 px-4 py-3.5"
+              className="mt-3 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-400"
             />
 
             {Number(
-              fundForm.amount
+              fundForm
+                .amount
             ) > 0 && (
-              <div className="mt-3 rounded-xl bg-emerald-50 p-3 text-xs font-bold text-emerald-700">
-                You will receive approximately {money(expectedCredit)} voucher credit after confirmed payment.
+              <div className="mt-3 rounded-2xl bg-violet-50 p-4 text-xs font-bold leading-5 text-violet-700">
+                Pay {money(
+                  fundForm.amount
+                )} and receive approximately {money(
+                  expectedCredit
+                )} voucher credit.
               </div>
             )}
 
             <button
-              disabled={saving}
-              className="mt-4 w-full rounded-xl bg-slate-950 py-3.5 text-sm font-black text-white"
+              disabled={
+                saving
+              }
+              className="mt-4 h-12 w-full rounded-2xl bg-violet-600 text-sm font-black text-white disabled:opacity-50"
             >
-              Send M-Pesa prompt
+              {saving
+                ? 'Sending...'
+                : 'Send M-Pesa prompt'}
             </button>
           </form>
+        </div>
+      )}
 
+
+      {voucherOpen && (
+        <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/55 p-3 backdrop-blur-sm sm:items-center">
+          <button
+            type="button"
+            aria-label="Close voucher generator"
+            className="absolute inset-0"
+            onClick={() =>
+              setVoucherOpen(
+                false
+              )
+            }
+          />
 
           <form
             onSubmit={
               generateVoucher
             }
-            className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm"
+            className="relative z-10 w-full max-w-md rounded-[28px] bg-white p-5 shadow-2xl sm:p-7"
           >
-            <h2 className="font-black">
-              Generate voucher
-            </h2>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[.17em] text-violet-600">
+                  Sell internet
+                </p>
 
-            <p className="mt-1 text-xs leading-5 text-slate-400">
-              Enter the customer voucher value. The network automatically selects the package, time and allowed devices.
-            </p>
+                <h3 className="mt-1 text-xl font-black">
+                  Generate voucher
+                </h3>
+
+                <p className="mt-1 text-xs text-slate-400">
+                  Choose the customer voucher amount.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() =>
+                  setVoucherOpen(
+                    false
+                  )
+                }
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+              >
+                <Icon
+                  name="close"
+                  className="h-4 w-4"
+                />
+              </button>
+            </div>
+
 
             <input
               required
               type="number"
-              list="agent-denominations"
-              placeholder="Example: 20"
+              list="nexa-agent-values"
+              placeholder="Voucher amount"
               value={
                 voucherAmount
               }
@@ -946,201 +1820,213 @@ export default function AgentPortal() {
                       .value
                   )
               }
-              className="mt-5 w-full rounded-xl border border-slate-200 px-4 py-3.5 text-lg font-black"
+              className="mt-6 h-14 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-xl font-black outline-none focus:border-violet-400"
             />
 
-            <datalist id="agent-denominations">
-              {dashboard.denominations.map(
-                denomination => (
-                  <option
-                    key={
-                      denomination.id
-                    }
-                    value={
-                      denomination.face_value
-                    }
-                  />
-                )
-              )}
+            <datalist id="nexa-agent-values">
+              {dashboard
+                .denominations
+                .map(
+                  item => (
+                    <option
+                      key={
+                        item.id
+                      }
+                      value={
+                        item.face_value
+                      }
+                    />
+                  )
+                )}
             </datalist>
 
+
             <div className="mt-3 flex flex-wrap gap-2">
-              {dashboard.denominations.map(
-                denomination => (
-                  <button
-                    key={
-                      denomination.id
-                    }
-                    type="button"
-                    onClick={() =>
-                      setVoucherAmount(
-                        denomination.face_value
-                      )
-                    }
-                    className="rounded-full bg-emerald-50 px-3 py-2 text-xs font-black text-emerald-700"
-                  >
-                    KES {Number(
-                      denomination.face_value
-                    ).toLocaleString()}
-                  </button>
-                )
-              )}
+              {dashboard
+                .denominations
+                .map(
+                  item => (
+                    <button
+                      key={
+                        item.id
+                      }
+                      type="button"
+                      onClick={() =>
+                        setVoucherAmount(
+                          item.face_value
+                        )
+                      }
+                      className="rounded-full bg-violet-50 px-3 py-2 text-[10px] font-black text-violet-700"
+                    >
+                      KES {Number(
+                        item.face_value
+                      ).toLocaleString()}
+                    </button>
+                  )
+                )}
             </div>
 
             <button
               disabled={
                 saving ||
-                !dashboard.denominations
+                !dashboard
+                  .denominations
                   .length
               }
-              className="mt-5 w-full rounded-xl bg-emerald-500 py-3.5 text-sm font-black text-white disabled:opacity-40"
+              className="mt-5 h-12 w-full rounded-2xl bg-emerald-500 text-sm font-black text-white disabled:opacity-40"
             >
-              Generate voucher
+              {saving
+                ? 'Generating...'
+                : 'Generate voucher'}
             </button>
           </form>
         </div>
+      )}
 
 
-        {generated && (
-          <section className="rounded-[28px] border-2 border-dashed border-emerald-400 bg-white p-6 text-center shadow-sm">
-            <div className="text-[10px] font-black uppercase tracking-[.18em] text-emerald-600">
-              Voucher generated
-            </div>
+      {generated && (
+        <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center">
+          <button
+            type="button"
+            aria-label="Close generated voucher"
+            onClick={() =>
+              setGenerated(
+                null
+              )
+            }
+            className="absolute inset-0"
+          />
 
-            <div className="mt-4 text-2xl font-black tracking-widest">
-              {generated.code}
-            </div>
+          <div className="relative z-10 w-full max-w-md rounded-[28px] bg-white p-5 shadow-2xl sm:p-7">
 
-            <div className="mt-4 flex flex-wrap justify-center gap-2 text-xs">
-              <span className="rounded-full bg-slate-100 px-3 py-2 font-bold">
-                {money(
-                  generated.amount
-                )}
-              </span>
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="text-[10px] font-black uppercase tracking-[.17em] text-emerald-600">
+                  Voucher ready
+                </p>
 
-              <span className="rounded-full bg-slate-100 px-3 py-2 font-bold">
-                {generated.plan_name}
-              </span>
+                <h3 className="mt-1 text-xl font-black">
+                  Customer access
+                </h3>
+              </div>
 
-              <span className="rounded-full bg-slate-100 px-3 py-2 font-bold">
-                {durationText(
-                  generated.duration_minutes
-                )}
-              </span>
-
-              <span className="rounded-full bg-slate-100 px-3 py-2 font-bold">
-                {generated.device_limit} device(s)
-              </span>
-            </div>
-
-            <div className="mx-auto mt-6 max-w-md">
-              <input
-                type="tel"
-                placeholder="Customer phone for SMS"
-                value={
-                  smsPhone
+              <button
+                type="button"
+                onClick={() =>
+                  setGenerated(
+                    null
+                  )
                 }
-                onChange={
-                  event =>
-                    setSmsPhone(
-                      event
-                        .target
-                        .value
-                    )
+                className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+              >
+                <Icon
+                  name="close"
+                  className="h-4 w-4"
+                />
+              </button>
+            </div>
+
+
+            <div className="mt-5 rounded-3xl border-2 border-dashed border-violet-300 bg-violet-50/50 p-5 text-center">
+
+              <small className="text-[9px] font-black uppercase tracking-[.17em] text-violet-500">
+                Hotspot voucher
+              </small>
+
+              <div className="mt-3 break-all font-mono text-2xl font-black tracking-wider text-slate-950">
+                {
+                  generated.code
                 }
-                className="w-full rounded-xl border border-slate-200 px-4 py-3"
-              />
+              </div>
 
-              <div className="mt-3 grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={
-                    printVoucher
-                  }
-                  className="rounded-xl bg-slate-950 py-3 text-sm font-black text-white"
-                >
-                  Print
-                </button>
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {[
+                  money(
+                    generated.amount
+                  ),
 
-                <button
-                  type="button"
-                  disabled={
-                    !smsPhone ||
-                    !dashboard.settings
-                      ?.sms_enabled
-                  }
-                  onClick={
-                    sendSms
-                  }
-                  className="rounded-xl bg-emerald-500 py-3 text-sm font-black text-white disabled:opacity-40"
-                >
-                  Send SMS
-                </button>
+                  generated
+                    .plan_name,
+
+                  durationText(
+                    generated
+                      .duration_minutes
+                  ),
+
+                  `${generated.device_limit} device(s)`,
+                ].map(
+                  item => (
+                    <span
+                      key={
+                        item
+                      }
+                      className="rounded-full bg-white px-3 py-2 text-[10px] font-black text-slate-600"
+                    >
+                      {item}
+                    </span>
+                  )
+                )}
               </div>
             </div>
-          </section>
-        )}
 
 
-        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="font-black">
-            Recent vouchers
-          </h2>
+            <input
+              type="tel"
+              placeholder="Customer phone for SMS"
+              value={
+                smsPhone
+              }
+              onChange={
+                event =>
+                  setSmsPhone(
+                    event
+                      .target
+                      .value
+                  )
+              }
+              className="mt-4 h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm outline-none focus:border-violet-400"
+            />
 
-          <div className="mt-4 space-y-2">
-            {dashboard.generations
-              .slice(0, 15)
-              .map(
-                voucher => (
-                  <div
-                    key={
-                      voucher.id
-                    }
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-slate-50 p-3"
-                  >
-                    <div>
-                      <b className="text-sm">
-                        {
-                          voucher.code
-                        }
-                      </b>
 
-                      <div className="mt-1 text-[11px] text-slate-400">
-                        {voucher.plan_name}
-                        {' · '}
-                        {durationText(
-                          voucher.duration_minutes
-                        )}
-                        {' · '}
-                        {voucher.device_limit} device(s)
-                      </div>
-                    </div>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={
+                  printVoucher
+                }
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-slate-950 text-xs font-black text-white"
+              >
+                <Icon
+                  name="print"
+                  className="h-4 w-4"
+                />
+                Print
+              </button>
 
-                    <div className="text-right">
-                      <b className="text-sm">
-                        {money(
-                          voucher.face_value
-                        )}
-                      </b>
-
-                      <div className="mt-1 text-[10px] uppercase text-slate-400">
-                        {
-                          voucher.voucher_status
-                        }
-                      </div>
-                    </div>
-                  </div>
-                )
-              )}
-
-            {!dashboard.generations.length && (
-              <div className="py-8 text-center text-sm text-slate-400">
-                No vouchers generated yet.
-              </div>
-            )}
+              <button
+                type="button"
+                disabled={
+                  saving ||
+                  !smsPhone ||
+                  !dashboard
+                    .settings
+                    ?.sms_enabled
+                }
+                onClick={
+                  sendSms
+                }
+                className="inline-flex h-12 items-center justify-center gap-2 rounded-2xl bg-emerald-500 text-xs font-black text-white disabled:opacity-40"
+              >
+                <Icon
+                  name="sms"
+                  className="h-4 w-4"
+                />
+                Send SMS
+              </button>
+            </div>
           </div>
-        </section>
-      </div>
+        </div>
+      )}
     </main>
   );
 }

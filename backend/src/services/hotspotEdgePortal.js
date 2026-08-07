@@ -398,57 +398,566 @@ function buildHotspotEdgeHtml({
 >
 <title>Hotspot Packages</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;min-height:100%;font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#edf2fb;color:#101938}
-button,input{font:inherit}
-button{cursor:pointer}
-.shell{width:100%;max-width:720px;min-height:100vh;margin:auto;background:#fbfcff}
-.hero{padding:25px 20px 78px;background:radial-gradient(circle at 90% 10%,#148cff88,transparent 34%),linear-gradient(135deg,#061a55,#031243 52%,#073bc7);color:#fff}
-.brand{display:flex;align-items:center;gap:12px}
-.wifi{font-size:35px}
-.brand b{font-size:21px;text-transform:uppercase}
-.brand small{display:block;margin-top:4px;letter-spacing:.28em;color:#b9d8ff}
-.hero h1{margin:38px 0 0;font-size:38px;line-height:1.02}
-.hero h1 span{display:block;color:#24adff}
-.hero p{margin:17px 0 0;max-width:420px;color:#d9eaff;line-height:1.6}
-.content{position:relative;margin-top:-48px;padding:0 16px 28px}
-.panel{background:#fff;border:1px solid #e2e8f0;border-radius:22px;box-shadow:0 14px 36px #1627521c}
-.heading{padding:20px 20px 6px}
-.heading h2{margin:0;font-size:17px}
-.heading p{margin:7px 0 0;color:#64748b;font-size:13px}
-.plans{padding:12px}
-.plan{display:grid;grid-template-columns:88px 1fr auto;width:100%;margin:10px 0;padding:0;overflow:hidden;border:1px solid #dbe3f0;border-radius:16px;background:#fff;text-align:left}
-.plan-duration{display:grid;place-items:center;min-height:88px;padding:10px;background:linear-gradient(145deg,#0781ff,#0645c4);color:#fff;text-align:center}
-.plan-duration b{font-size:25px}
-.plan-duration small{display:block;margin-top:4px;font-size:9px;font-weight:900}
-.plan-main{min-width:0;padding:15px}
-.plan-main b{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.plan-main small{display:block;margin-top:7px;color:#64748b}
-.price{display:flex;align-items:center;padding:14px;color:#075bd4;font-size:17px;font-weight:900;white-space:nowrap}
-.flash{border-color:#ff236b;box-shadow:0 0 0 2px #ff236b18}
-.badge{display:inline-block;margin-bottom:6px;border-radius:6px;background:#ff0b61;padding:4px 7px;color:#fff;font-size:9px;font-weight:900;text-transform:uppercase}
-.voucher{margin-top:16px;padding:20px}
-.voucher h2{margin:0;font-size:17px}
-.field{width:100%;margin-top:12px;border:1px solid #b9c9e7;border-radius:12px;padding:14px;outline:none}
-.field:focus{border-color:#0876f9;box-shadow:0 0 0 4px #0876f919}
-.primary{width:100%;margin-top:13px;border:0;border-radius:12px;padding:14px;background:linear-gradient(90deg,#0876f9,#073cc9);color:#fff;font-weight:900}
-.support{display:flex;justify-content:space-between;gap:10px;margin-top:16px;padding:17px 20px;border-radius:18px;background:#071b50;color:#fff}
-.support a{color:#fff;text-decoration:none;font-size:13px;font-weight:800}
-.modal{position:fixed;inset:0;z-index:50;display:none;align-items:flex-end;justify-content:center;padding:14px;background:#020617b8}
-.modal.open{display:flex}
-.dialog{width:100%;max-width:420px;border-radius:24px;background:#fff;padding:22px;box-shadow:0 30px 80px #0006}
-.dialog-head{display:flex;justify-content:space-between;gap:15px}
-.dialog h2{margin:0}
-.dialog-price{margin-top:7px;color:#0871ee;font-size:28px;font-weight:900}
-.close{width:38px;height:38px;border:0;border-radius:50%;background:#eef2f7;font-size:22px}
-.notice{display:none;margin-top:13px;border-radius:11px;padding:12px;background:#fff7dd;color:#9a6700;font-size:13px;font-weight:700;line-height:1.45}
-.notice.show{display:block}
-.empty{padding:30px;text-align:center;color:#64748b}
-.ready{position:fixed;right:10px;bottom:10px;z-index:10;border-radius:999px;background:#052a77dd;padding:6px 10px;color:#fff;font-size:9px;font-weight:900}
-@media(min-width:560px){
-.hero{padding:34px 38px 92px}
-.content{padding:0 30px 36px}
-.modal{align-items:center}
+*{
+  box-sizing:border-box
+}
+
+html,
+body{
+  margin:0;
+  min-height:100%;
+  background:#000;
+  color:#fff;
+  font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+}
+
+body{
+  padding:0;
+}
+
+button,
+input{
+  font:inherit
+}
+
+button{
+  cursor:pointer
+}
+
+.shell{
+  width:100%;
+  max-width:720px;
+  min-height:100vh;
+  margin:0 auto;
+  padding:
+    26px
+    15px
+    44px;
+  background:#000;
+}
+
+
+/* HERO */
+
+.hero{
+  position:relative;
+  min-height:550px;
+  overflow:hidden;
+  border-radius:28px;
+  background:
+    radial-gradient(
+      circle at 54% 26%,
+      #ffad18 0,
+      #ffad18 18%,
+      transparent 18.4%
+    ),
+    radial-gradient(
+      circle at 50% 28%,
+      #202020 0,
+      #111 45%,
+      #050505 80%
+    );
+  box-shadow:
+    inset 0 0 60px #000,
+    0 18px 45px #000;
+}
+
+.hero::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  opacity:.32;
+  background:
+    repeating-linear-gradient(
+      45deg,
+      transparent 0,
+      transparent 2px,
+      #ffffff08 3px,
+      transparent 4px
+    );
+}
+
+.brand{
+  position:absolute;
+  left:22px;
+  bottom:115px;
+  z-index:3;
+}
+
+.brand-logo{
+  display:inline-flex;
+  width:84px;
+  height:84px;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  background:#fff;
+  color:#111;
+  font-size:21px;
+  font-weight:1000;
+  letter-spacing:-1px;
+}
+
+.brand-word{
+  display:block;
+  margin:
+    -4px
+    0
+    0
+    64px;
+  color:#fff;
+  font-family:cursive;
+  font-size:54px;
+  font-weight:400;
+  line-height:.85;
+  transform:rotate(-5deg);
+}
+
+.hero-person{
+  position:absolute;
+  top:95px;
+  left:50%;
+  width:225px;
+  height:310px;
+  transform:translateX(-50%);
+}
+
+.hero-person::before{
+  content:"";
+  position:absolute;
+  left:52%;
+  top:0;
+  width:118px;
+  height:118px;
+  transform:translateX(-50%);
+  border-radius:48% 52% 45% 55%;
+  background:#141414;
+  box-shadow:
+    0 100px 0 34px #151515;
+}
+
+.hero-person::after{
+  content:"";
+  position:absolute;
+  left:14px;
+  top:181px;
+  width:197px;
+  height:165px;
+  border-radius:
+    70px
+    70px
+    24px
+    24px;
+  background:
+    linear-gradient(
+      145deg,
+      #242424,
+      #090909
+    );
+}
+
+.hero-copy{
+  position:absolute;
+  left:22px;
+  right:22px;
+  bottom:25px;
+  z-index:3;
+  display:flex;
+  align-items:flex-end;
+  justify-content:space-between;
+  gap:20px;
+}
+
+.hero-contact{
+  font-size:11px;
+  color:#ddd;
+  line-height:1.25;
+}
+
+.hero-contact strong{
+  display:block;
+  font-size:16px;
+  color:#fff;
+}
+
+.hero-qr{
+  display:grid;
+  width:62px;
+  height:62px;
+  place-items:center;
+  border:4px solid #fff;
+  background:
+    repeating-conic-gradient(
+      #000 0 25%,
+      #fff 0 50%
+    )
+    0 0/10px 10px;
+}
+
+
+/* PACKAGES */
+
+.content{
+  padding-top:34px;
+}
+
+.heading{
+  display:none;
+}
+
+.panel{
+  background:transparent;
+  border:0;
+  box-shadow:none;
+}
+
+.plans{
+  display:grid;
+  grid-template-columns:
+    repeat(6,minmax(0,1fr));
+  gap:15px;
+  padding:0;
+}
+
+.plan{
+  position:relative;
+  display:flex;
+  min-width:0;
+  min-height:190px;
+  grid-column:span 2;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  overflow:hidden;
+  margin:0;
+  padding:16px 8px;
+  border:0;
+  border-radius:19px;
+  background:#ffb221;
+  color:#050505;
+  text-align:center;
+  box-shadow:none;
+  transition:
+    transform .15s ease,
+    filter .15s ease;
+}
+
+.plan:nth-child(4){
+  grid-column:
+    2/span 2;
+}
+
+.plan:nth-child(5){
+  grid-column:
+    4/span 2;
+}
+
+.plan:active{
+  transform:scale(.96);
+}
+
+.plan::before,
+.plan::after{
+  content:"";
+  position:absolute;
+  width:92px;
+  height:50px;
+  background:#fff;
+}
+
+.plan::before{
+  right:-25px;
+  top:-19px;
+  border-radius:
+    0
+    0
+    0
+    80%;
+  transform:rotate(7deg);
+}
+
+.plan::after{
+  right:-26px;
+  bottom:-21px;
+  border-radius:
+    80%
+    0
+    0
+    0;
+  transform:rotate(-8deg);
+}
+
+.plan-duration{
+  min-height:auto;
+  padding:0;
+  background:transparent;
+  color:#050505;
+}
+
+.plan-duration b{
+  font-size:25px;
+  font-weight:900;
+}
+
+.plan-duration small{
+  margin-top:3px;
+  color:#050505;
+  font-size:15px;
+  font-weight:800;
+}
+
+.plan-main{
+  padding:4px 2px 0;
+}
+
+.plan-main .badge{
+  position:absolute;
+  left:9px;
+  top:9px;
+  z-index:5;
+  margin:0;
+  padding:4px 7px;
+  border-radius:7px;
+  background:#000;
+  color:#ffb221;
+  font-size:8px;
+}
+
+.plan-main b{
+  display:none;
+}
+
+.plan-main small{
+  display:none;
+}
+
+.price{
+  display:block;
+  padding:4px 0 0;
+  color:#050505;
+  font-size:20px;
+  font-weight:900;
+}
+
+.price::before{
+  content:"KSH:";
+}
+
+.flash{
+  border:2px solid #fff;
+  box-shadow:
+    0 0 0 2px #ffb221;
+}
+
+
+/* RECONNECT / VOUCHER */
+
+.voucher{
+  margin-top:72px;
+  padding:0;
+  text-align:center;
+}
+
+.voucher h2{
+  margin:0;
+  color:#eee;
+  font-size:22px;
+  font-weight:400;
+}
+
+.voucher h2::after{
+  content:"\A\A(Enter your voucher code below to reconnect)";
+  white-space:pre;
+  color:#eee;
+  font-size:15px;
+  line-height:1.55;
+}
+
+.field{
+  width:90%;
+  margin-top:25px;
+  border:3px solid #ff1717;
+  border-radius:6px;
+  padding:17px 15px;
+  background:#fff;
+  color:#111;
+  font-size:18px;
+  outline:none;
+}
+
+.field:focus{
+  border-color:#ffb221;
+  box-shadow:
+    0 0 0 4px #ffb22133;
+}
+
+.primary{
+  width:90%;
+  margin-top:15px;
+  border:0;
+  border-radius:8px;
+  padding:16px;
+  background:#ffb221;
+  color:#050505;
+  font-weight:900;
+}
+
+.support{
+  display:flex;
+  justify-content:center;
+  gap:26px;
+  margin-top:40px;
+  padding:20px 0;
+  background:transparent;
+  color:#999;
+}
+
+.support a{
+  color:#aaa;
+  font-size:13px;
+  font-weight:700;
+  text-decoration:none;
+}
+
+
+/* M-PESA */
+
+.modal{
+  position:fixed;
+  inset:0;
+  z-index:100;
+  display:none;
+  align-items:flex-end;
+  justify-content:center;
+  padding:13px;
+  background:#000c;
+}
+
+.modal.open{
+  display:flex;
+}
+
+.dialog{
+  width:100%;
+  max-width:430px;
+  border:
+    1px solid
+    #303030;
+  border-radius:
+    25px
+    25px
+    12px
+    12px;
+  padding:24px;
+  background:#111;
+  color:#fff;
+  box-shadow:
+    0 -16px 50px #000;
+}
+
+.dialog-head{
+  display:flex;
+  align-items:flex-start;
+  justify-content:space-between;
+  gap:15px;
+}
+
+.dialog h2{
+  margin:0;
+  color:#fff;
+}
+
+.dialog-price{
+  margin-top:6px;
+  color:#ffb221;
+  font-size:30px;
+  font-weight:900;
+}
+
+.close{
+  width:40px;
+  height:40px;
+  border:0;
+  border-radius:50%;
+  background:#282828;
+  color:#fff;
+  font-size:24px;
+}
+
+.dialog .field{
+  width:100%;
+  margin-top:20px;
+}
+
+.dialog .primary{
+  width:100%;
+}
+
+.notice{
+  display:none;
+  margin-top:14px;
+  border-radius:10px;
+  padding:13px;
+  background:#241b05;
+  color:#ffce65;
+  font-size:13px;
+  font-weight:700;
+  line-height:1.5;
+}
+
+.notice.show{
+  display:block;
+}
+
+.empty{
+  grid-column:1/-1;
+  padding:35px;
+  color:#aaa;
+  text-align:center;
+}
+
+.ready{
+  position:fixed;
+  right:8px;
+  bottom:8px;
+  z-index:120;
+  padding:5px 8px;
+  border-radius:999px;
+  background:#121212d9;
+  color:#777;
+  font-size:8px;
+}
+
+
+/* SMALL PHONES */
+
+@media(max-width:390px){
+  .shell{
+    padding-left:10px;
+    padding-right:10px;
+  }
+
+  .hero{
+    min-height:500px;
+  }
+
+  .plan{
+    min-height:165px;
+    border-radius:16px;
+  }
+
+  .plan-duration b{
+    font-size:21px;
+  }
+
+  .price{
+    font-size:17px;
+  }
+
+  .plans{
+    gap:10px;
+  }
 }
 </style>
 </head>
@@ -460,22 +969,46 @@ button{cursor:pointer}
 
 <main class="shell">
   <section class="hero">
+
+    <div class="hero-person"></div>
+
     <div class="brand">
-      <div class="wifi">◉</div>
-      <div>
-        <b id="brand">Nexa</b>
-        <small>HOTSPOT</small>
+      <div
+        id="brand"
+        class="brand-logo"
+      >
+        Nexa
       </div>
+
+      <span class="brand-word">
+        hotspot
+      </span>
     </div>
 
-    <h1>
-      Fast Internet.
-      <span>Everywhere.</span>
-    </h1>
+    <div class="hero-copy">
 
-    <p id="tagline">
-      Choose a package and connect instantly.
+      <div class="hero-contact">
+        For inquiries contact
+
+        <strong id="hero-phone">
+          Internet Support
+        </strong>
+      </div>
+
+      <div
+        class="hero-qr"
+        aria-hidden="true"
+      ></div>
+
+    </div>
+
+    <p
+      id="tagline"
+      style="display:none"
+    >
+      Fast Internet
     </p>
+
   </section>
 
   <section class="content">
@@ -635,9 +1168,10 @@ function byId(id){
 }
 
 function money(value){
-  return "KSh " +
-    Number(value || 0)
-      .toLocaleString();
+  return Number(
+    value || 0
+  ).toLocaleString() +
+  "/-";
 }
 
 function normalizePhone(value){
@@ -668,6 +1202,32 @@ function duration(minutes){
     Number(minutes || 0);
 
   if(
+    amount >= 43200 &&
+    amount % 43200 === 0
+  ){
+    var months =
+      amount / 43200;
+
+    return {
+      value:
+        months === 1
+          ? "Monthly"
+          : months + " Months",
+
+      unit:""
+    };
+  }
+
+  if(
+    amount === 10080
+  ){
+    return {
+      value:"Weekly",
+      unit:""
+    };
+  }
+
+  if(
     amount >= 1440 &&
     amount % 1440 === 0
   ){
@@ -675,10 +1235,12 @@ function duration(minutes){
       amount / 1440;
 
     return {
-      value:days,
-      unit:days===1
-        ? "DAY"
-        : "DAYS"
+      value:
+        days === 7
+          ? "Weekly"
+          : days + " days",
+
+      unit:""
     };
   }
 
@@ -690,18 +1252,18 @@ function duration(minutes){
       amount / 60;
 
     return {
-      value:hours,
-      unit:hours===1
-        ? "HOUR"
-        : "HOURS"
+      value:
+        hours + "hours",
+
+      unit:""
     };
   }
 
   return {
-    value:amount,
-    unit:amount===1
-      ? "MIN"
-      : "MINS"
+    value:
+      amount + "mins",
+
+    unit:""
   };
 }
 
@@ -797,6 +1359,15 @@ function render(config){
 
   supportCall.textContent =
     phone || "Support";
+
+  var heroPhone =
+    byId("hero-phone");
+
+  if(heroPhone){
+    heroPhone.textContent =
+      phone ||
+      "Internet Support";
+  }
 
   supportCall.href =
     phone

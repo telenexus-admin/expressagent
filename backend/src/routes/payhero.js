@@ -4,6 +4,10 @@ const { ensurePayHeroSchema } = require('../services/payhero');
 const {
   fulfillHotspotPayment,
 } = require('../services/hotspotPayments');
+
+const {
+  fulfillAgentWalletPayment,
+} = require('./billingAgents');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendClientText } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
@@ -414,6 +418,19 @@ router.post('/callback/:clientId', async (req, res) => {
       }
     }
 
+    if (callback.successful) {
+      try {
+        await fulfillAgentWalletPayment(
+          payment
+        );
+      } catch (walletError) {
+        console.error(
+          'Agent wallet fulfillment failed:',
+          walletError.message
+        );
+      }
+    }
+
     const message = callback.successful
       ? (
           `Payment received successfully. ` +
@@ -541,6 +558,19 @@ router.post('/daraja-callback/:clientId', async (req, res) => {
         console.error(
           'Hotspot payment fulfillment failed:',
           fulfillmentError.message
+        );
+      }
+    }
+
+    if (successful) {
+      try {
+        await fulfillAgentWalletPayment(
+          payment
+        );
+      } catch (walletError) {
+        console.error(
+          'Agent wallet fulfillment failed:',
+          walletError.message
         );
       }
     }

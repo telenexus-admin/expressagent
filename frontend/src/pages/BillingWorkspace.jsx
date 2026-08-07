@@ -9,6 +9,7 @@ import RouterServiceWizard from '../components/RouterServiceWizard';
 const InvoiceManagement = lazy(() => import('./InvoiceManagement'));
 const BillingCommunication = lazy(() => import('./BillingCommunication'));
 const BillingTr069 = lazy(() => import('./BillingTr069'));
+const BillingAgents = lazy(() => import('./BillingAgents'));
 
 const emptyPlan = { name: '', price: '', validity_days: '30', download_speed_mbps: '', upload_speed_mbps: '', radius_profile: '', router_id: '', fup_enabled: false, fup_threshold_mb: '', fup_download_speed_mbps: '', fup_upload_speed_mbps: '' };
 const emptyHotspotPlan = { name: '', price: '', duration_minutes: '60', data_limit_mb: '', mikrotik_rate_limit: '', router_id: '', fup_enabled: false, fup_threshold_mb: '', fup_download_speed_mbps: '', fup_upload_speed_mbps: '' };
@@ -21,6 +22,7 @@ const nav = [
   ['overview', 'Overview', 'home'],
   ['subscribers', 'Subscribers', 'clients'],
   ['services', 'Packages', 'packages'],
+  ['agents', 'Agents', 'clients'],
   ['invoices', 'Invoices', 'invoices'],
   ['payments', 'Payments', 'payments'],
   ['vouchers', 'Vouchers', 'vouchers'],
@@ -33,12 +35,18 @@ const nav = [
 
 const mainNav = nav.filter(
   ([key]) =>
-    key !== 'services'
+    ![
+      'services',
+      'agents',
+    ].includes(key)
 );
 
 const servicesNav = nav.filter(
   ([key]) =>
-    key === 'services'
+    [
+      'services',
+      'agents',
+    ].includes(key)
 );
 const money = (v) => `KSh ${Number(v || 0).toLocaleString()}`;
 const routerDisplayStatus = (router) => {
@@ -678,6 +686,7 @@ export default function BillingWorkspace() {
       <main className="mx-auto max-w-[1500px] p-3 pb-24 sm:p-8 lg:pb-8">{error && <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold text-rose-700 sm:mb-5 sm:px-4 sm:py-3 sm:text-sm"><span>{error}</span><button type="button" aria-label="Dismiss error" onClick={() => setError('')} className="text-lg leading-none">&times;</button></div>}{loading ? <BillingWorkspaceSkeleton /> : <>
         {tab === 'overview' && <><div className="lg:hidden"><CurrencyMobileHome summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} onAddSubscriber={openSubscriberCreate} money={money} expanded={mobileExpanded} setExpanded={setMobileExpanded} darkMode={darkMode} /></div><div className="hidden lg:block"><Overview summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} money={money} /></div></>}
         {tab === 'services' && <ServicesWorkspace packageView={packageView} setPackageView={setPackageView} plans={plans} hotspotPlans={hotspotPlans} routers={routers} vouchers={vouchers} planForm={planForm} setPlanForm={setPlanForm} savePlan={savePlan} hotspotPlanForm={hotspotPlanForm} setHotspotPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} saveHotspotPlan={saveHotspotPlan} generateVouchers={generateVouchers} simulateVoucher={simulateVoucher} saving={saving} toggleHotspotPlan={toggleHotspotPlan} deleteHotspotPlan={deleteHotspotPlan} />}
+        {tab === 'agents' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingAgents /></Suspense>}
         {tab === 'plans' && <><div className="mb-6"><div className="text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">Service catalogue</div><h2 className="mt-1 text-2xl font-black tracking-tight">Packages</h2><div className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm"><button onClick={() => setPackageView('pppoe')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'pppoe' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>PPPoE Packages <span className="ml-1 opacity-70">{plans.length}</span></button><button onClick={() => setPackageView('hotspot')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'hotspot' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Hotspot Packages <span className="ml-1 opacity-70">{hotspotPlans.length}</span></button></div></div>{packageView === 'pppoe' ? <Plans plans={plans} form={planForm} setForm={setPlanForm} save={savePlan} saving={saving} /> : <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}</>}
         {tab === 'subscribers' && <><BillingSubscribers subscribers={subscribers} items={filtered} networkClients={mikrotikClients} plans={plans} hotspotPlans={hotspotPlans} routers={routers} createOpen={subscriberCreateOpen} setCreateOpen={setSubscriberCreateOpen} search={search} setSearch={setSearch} reload={load} setError={setError} darkMode={darkMode} /></>}
         {tab === 'invoices' && <Suspense fallback={<BillingWorkspaceSkeleton />}><InvoiceManagement /></Suspense>}

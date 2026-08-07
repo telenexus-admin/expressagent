@@ -440,6 +440,24 @@ async function syncHotspotVoucherRadius(voucher) {
       const effectiveRateLimit = fup.rate_limit || voucher.mikrotik_rate_limit;
       if (effectiveRateLimit) await radiusClient.query("INSERT INTO radreply (username, attribute, op, value) VALUES ($1, 'Mikrotik-Rate-Limit', ':=', $2)", [voucher.code, effectiveRateLimit]);
       if (voucher.data_limit_mb) await radiusClient.query("INSERT INTO radreply (username, attribute, op, value) VALUES ($1, 'Mikrotik-Total-Limit', ':=', $2)", [voucher.code, String(Number(voucher.data_limit_mb) * 1024 * 1024)]);
+      if (
+        Number.isInteger(
+          Number(voucher.max_devices)
+        ) &&
+        Number(voucher.max_devices) > 0
+      ) {
+        await radiusClient.query(
+          "INSERT INTO radcheck (username, attribute, op, value) VALUES ($1, 'Simultaneous-Use', ':=', $2)",
+          [
+            voucher.code,
+            String(
+              Number(
+                voucher.max_devices
+              )
+            ),
+          ]
+        );
+      }
     }
     await radiusClient.query('COMMIT');
     return { status: accessActive ? 'synced' : 'disabled', expires_at: expiresAt?.toISOString() || null, fup };

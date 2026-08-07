@@ -48,6 +48,7 @@ const Billing = lazy(() => import('./pages/Billing'));
 const Communication = lazy(() => import('./pages/Communication'));
 const Documentation = lazy(() => import('./pages/Documentation'));
 const BillingWorkspace = lazy(() => import('./pages/BillingWorkspace'));
+const AgentPortal = lazy(() => import('./pages/AgentPortal'));
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -212,6 +213,7 @@ export default function App() {
           <Route path="/public/noc/:token" element={<PublicNocLive />} />
           <Route path="/client-access" element={<ClientAccess />} />
           <Route path="/hotspot" element={<HotspotPortal />} />
+          <Route path="/agent" element={<AgentPortal />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />

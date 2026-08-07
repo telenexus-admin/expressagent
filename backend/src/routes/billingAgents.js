@@ -583,6 +583,37 @@ async function requireAgent(
       result.rows[0];
 
     if (
+      decoded.portal_admin_id
+    ) {
+      const portalAdmin =
+        await db.query(`
+          SELECT
+            id,
+            status,
+            permissions
+          FROM billing_agent_portal_admins
+          WHERE id = $1
+            AND agent_id = $2
+            AND client_id = $3
+          LIMIT 1
+        `, [
+          decoded.portal_admin_id,
+          decoded.agent_id,
+          decoded.client_id,
+        ]);
+
+      if (
+        !portalAdmin.rows[0] ||
+        portalAdmin.rows[0].status !== 'active'
+      ) {
+        return res.status(403).json({
+          error:
+            'This portal administrator account is not active',
+        });
+      }
+    }
+
+    if (
       !agent ||
       agent.status !== 'active'
     ) {

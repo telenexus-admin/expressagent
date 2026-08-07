@@ -4,6 +4,8 @@ import React, {
   useState,
 } from 'react';
 
+import AgentPortalSettings from '../components/AgentPortalSettings';
+
 const TOKEN_KEY =
   'nexa-agent-token-v1';
 
@@ -561,15 +563,77 @@ export default function AgentPortal() {
   const loadDashboard =
     async currentToken => {
       try {
-        const data =
-          await apiRequest(
-            '/dashboard',
+        const activeToken =
+          currentToken ||
+          token;
+
+        const [
+          base,
+          extension,
+        ] =
+          await Promise.all([
+            apiRequest(
+              '/dashboard',
+              {
+                token:
+                  activeToken,
+              }
+            ),
+
+            apiRequest(
+              '/extensions/dashboard-data',
+              {
+                token:
+                  activeToken,
+              }
+            ),
+          ]);
+
+        const data = {
+          ...base,
+          ...extension,
+
+          agent: {
+            ...(base.agent ||
+              {}),
+            ...(extension.agent ||
+              {}),
+          },
+
+          network: {
+            ...(base.network ||
+              {}),
+            ...(extension.network ||
+              {}),
+          },
+
+          settings: {
+            ...(base.settings ||
+              {}),
+            ...(extension.settings ||
+              {}),
+          },
+
+          products:
+            extension.products ||
+            [],
+
+          denominations:
+            extension.denominations ||
+            [],
+
+          generations:
+            extension.generations ||
+            base.generations ||
+            [],
+
+          access:
+            extension.access ||
             {
-              token:
-                currentToken ||
-                token,
-            }
-          );
+              role:
+                'owner',
+            },
+        };
 
         setDashboard(
           data
@@ -625,6 +689,7 @@ export default function AgentPortal() {
       }
     };
 
+
   useEffect(
     () => {
       if (token) {
@@ -647,17 +712,44 @@ export default function AgentPortal() {
 
         setError('');
 
-        const result =
-          await apiRequest(
-            '/login',
-            {
-              method:
-                'POST',
+        let result;
 
-              body:
-                loginForm,
-            }
-          );
+        try {
+          result =
+            await apiRequest(
+              '/login',
+              {
+                method:
+                  'POST',
+
+                body:
+                  loginForm,
+              }
+            );
+        } catch (
+          ownerError
+        ) {
+          if (
+            ownerError.status !==
+              401 &&
+            ownerError.status !==
+              403
+          ) {
+            throw ownerError;
+          }
+
+          result =
+            await apiRequest(
+              '/extensions/team-login',
+              {
+                method:
+                  'POST',
+
+                body:
+                  loginForm,
+              }
+            );
+        }
 
         localStorage.setItem(
           TOKEN_KEY,
@@ -688,6 +780,7 @@ export default function AgentPortal() {
         );
       }
     };
+
 
   const logout =
     () => {
@@ -849,7 +942,7 @@ export default function AgentPortal() {
 
         const result =
           await apiRequest(
-            '/vouchers/generate',
+            '/extensions/vouchers/generate',
             {
               token,
 
@@ -907,7 +1000,7 @@ export default function AgentPortal() {
 
         const result =
           await apiRequest(
-            `/vouchers/${generated.generation_id}/sms`,
+            `/extensions/vouchers/${generated.generation_id}/sms`,
             {
               token,
 
@@ -983,6 +1076,7 @@ strong{color:#0f172a}
 <div class="code">${escapeHtml(generated.code)}</div>
 <p>Value: <strong>${escapeHtml(money(generated.amount))}</strong></p>
 <p>Package: <strong>${escapeHtml(generated.plan_name)}</strong></p>
+${generated.speed_mbps ? `<p>Speed: <strong>${escapeHtml(generated.speed_mbps)} Mbps</strong></p>` : ''}
 <p>Time: <strong>${escapeHtml(durationText(generated.duration_minutes))}</strong></p>
 <p>Devices: <strong>${escapeHtml(generated.device_limit)}</strong></p>
 <p style="margin-top:20px;font-size:12px">Enter this code on the Hotspot login page.</p>
@@ -1178,7 +1272,7 @@ strong{color:#0f172a}
             <p className="mt-2 max-w-xl text-xs leading-5 text-violet-100 sm:text-sm sm:leading-6">
               {view ===
               'settings'
-                ? 'Your account details and the voucher rules configured by the network administrator.'
+                ? 'Manage your voucher meter, profile picture, portal administrators and network policy.'
                 : 'Monitor your voucher credit, fund your wallet and generate customer access instantly.'}
             </p>
           </div>
@@ -1306,11 +1400,23 @@ strong{color:#0f172a}
                   </p>
                 </div>
 
-                <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-300">
-                  <Icon
-                    name="wallet"
+                {dashboard.agent
+                  ?.profile_image_data ? (
+                  <img
+                    src={
+                      dashboard.agent
+                        .profile_image_data
+                    }
+                    alt=""
+                    className="h-11 w-11 rounded-2xl object-cover ring-2 ring-white/20"
                   />
-                </span>
+                ) : (
+                  <span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-500/20 text-violet-300">
+                    <Icon
+                      name="wallet"
+                    />
+                  </span>
+                )}
               </div>
 
 
@@ -1467,162 +1573,28 @@ strong{color:#0f172a}
             </section>
           </>
         ) : (
-          <div className="grid gap-4 lg:grid-cols-2">
-
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">
-                Agent account
-              </div>
-
-              <h3 className="mt-1 text-lg font-black">
-                Profile
-              </h3>
-
-              <div className="mt-5 space-y-3">
-                {[
-                  [
-                    'Agent',
-                    dashboard
-                      .agent
-                      ?.name,
-                  ],
-                  [
-                    'Business',
-                    dashboard
-                      .agent
-                      ?.business_name ||
-                    'Not set',
-                  ],
-                  [
-                    'Email',
-                    dashboard
-                      .agent
-                      ?.email,
-                  ],
-                  [
-                    'Phone',
-                    dashboard
-                      .agent
-                      ?.phone,
-                  ],
-                  [
-                    'Network',
-                    dashboard
-                      .network
-                      ?.name,
-                  ],
-                ].map(
-                  ([
-                    label,
-                    value,
-                  ]) => (
-                    <div
-                      key={
-                        label
-                      }
-                      className="flex items-center justify-between gap-5 rounded-2xl bg-slate-50 p-4"
-                    >
-                      <span className="text-xs font-bold text-slate-400">
-                        {label}
-                      </span>
-
-                      <strong className="min-w-0 truncate text-right text-xs text-slate-800">
-                        {
-                          value ||
-                          '—'
-                        }
-                      </strong>
-                    </div>
-                  )
-                )}
-              </div>
-            </section>
-
-
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
-              <div className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">
-                Network policy
-              </div>
-
-              <h3 className="mt-1 text-lg font-black">
-                Voucher rules
-              </h3>
-
-              <div className="mt-5 grid grid-cols-2 gap-3">
-                <div className="rounded-2xl bg-violet-50 p-4">
-                  <small className="text-[9px] font-black uppercase text-violet-500">
-                    Wallet bonus
-                  </small>
-
-                  <strong className="mt-2 block text-xl text-violet-800">
-                    {Number(
-                      dashboard
-                        .settings
-                        ?.bonus_percent ||
-                      0
-                    )}%
-                  </strong>
-                </div>
-
-                <div className="rounded-2xl bg-emerald-50 p-4">
-                  <small className="text-[9px] font-black uppercase text-emerald-500">
-                    SMS sharing
-                  </small>
-
-                  <strong className="mt-2 block text-sm text-emerald-800">
-                    {dashboard
-                      .settings
-                      ?.sms_enabled
-                      ? 'Enabled'
-                      : 'Disabled'}
-                  </strong>
-                </div>
-
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <small className="text-[9px] font-black uppercase text-slate-400">
-                    Min funding
-                  </small>
-
-                  <strong className="mt-2 block text-sm">
-                    {money(
-                      dashboard
-                        .settings
-                        ?.minimum_funding_amount
-                    )}
-                  </strong>
-                </div>
-
-                <div className="rounded-2xl bg-slate-50 p-4">
-                  <small className="text-[9px] font-black uppercase text-slate-400">
-                    Max funding
-                  </small>
-
-                  <strong className="mt-2 block text-sm">
-                    {money(
-                      dashboard
-                        .settings
-                        ?.maximum_funding_amount
-                    )}
-                  </strong>
-                </div>
-              </div>
-
-
-              <button
-                type="button"
-                onClick={
-                  logout
-                }
-                className="mt-6 inline-flex h-12 w-full items-center justify-center gap-2 rounded-2xl bg-rose-50 text-sm font-black text-rose-600"
-              >
-                <Icon
-                  name="logout"
-                  className="h-4 w-4"
-                />
-                Sign out
-              </button>
-            </section>
-          </div>
+          <AgentPortalSettings
+            dashboard={
+              dashboard
+            }
+            token={
+              token
+            }
+            onReload={() =>
+              loadDashboard(
+                token
+              )
+            }
+            onNotice={
+              setNotice
+            }
+            onError={
+              setError
+            }
+            onLogout={
+              logout
+            }
+          />
         )}
       </div>
 

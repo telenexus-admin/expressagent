@@ -21,6 +21,7 @@ const ticketRoutes = require('./routes/tickets');
 const billingRoutes = require('./routes/billing');
 const billingWorkspaceRoutes = require('./routes/billingWorkspace');
 const billingAgentRoutes = require('./routes/billingAgents');
+const billingAgentPortalExtensions = require('./routes/billingAgentPortalExtensions');
 const hotspotPortalRoutes = require('./routes/hotspotPortal');
 const mediaLibraryRoutes = require('./routes/mediaLibrary');
 const websiteKnowledgeRoutes = require('./routes/websiteKnowledge');
@@ -164,6 +165,7 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/billing-workspace', billingWorkspaceRoutes);
 app.use('/api/billing-agents', billingAgentRoutes.adminRouter);
+app.use('/api/agent-portal/extensions', billingAgentPortalExtensions);
 app.use('/api/agent-portal', billingAgentRoutes.portalRouter);
 app.use('/api/media-library', mediaLibraryRoutes);
 app.use('/api/website-knowledge', websiteKnowledgeRoutes);
@@ -194,6 +196,9 @@ const PORT = process.env.PORT || 3001;
 app.listen(PORT, () => {
   console.log(`WhatsApp Support backend running on port ${PORT}`);
   console.log(`OpenAI runtime config: ${JSON.stringify(openAIModelSummary())}`);
+  billingAgentPortalExtensions.ensureSchema()
+    .then(() => console.log('Agent portal extension schema ready.'))
+    .catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
   ensureEventSchema()
     .then(() => console.log('Billing event schema ready.'))
     .catch((error) => console.error('Billing event schema initialization failed:', error.message));

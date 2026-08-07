@@ -1295,7 +1295,7 @@ export default function BillingAgents() {
             <p className="mt-2 max-w-xl text-sm leading-6 text-violet-100">
               {view ===
               'settings'
-                ? 'Control wallet bonuses, funding limits, SMS sharing and the packages agents are allowed to sell.'
+                ? 'Control wallet bonuses, funding limits and SMS sharing. Each agent controls their own voucher meter.'
                 : 'Monitor agent wallets, voucher sales and representatives operating across your network.'}
             </p>
           </div>
@@ -1561,17 +1561,27 @@ export default function BillingAgents() {
                       >
                         <div className="flex items-start gap-3 sm:gap-4">
 
-                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-sm font-black text-violet-600">
-                            {String(
-                              agent.name ||
-                              'A'
-                            )
-                              .slice(
-                                0,
-                                1
+                          {agent.profile_image_data ? (
+                            <img
+                              src={
+                                agent.profile_image_data
+                              }
+                              alt=""
+                              className="h-11 w-11 shrink-0 rounded-2xl object-cover shadow-sm"
+                            />
+                          ) : (
+                            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-sm font-black text-violet-600">
+                              {String(
+                                agent.name ||
+                                'A'
                               )
-                              .toUpperCase()}
-                          </span>
+                                .slice(
+                                  0,
+                                  1
+                                )
+                                .toUpperCase()}
+                            </span>
+                          )}
 
                           <div className="min-w-0 flex-1">
 
@@ -1925,7 +1935,7 @@ export default function BillingAgents() {
             </form>
 
 
-            <section className="rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
+            <section className="hidden rounded-[24px] border border-slate-200 bg-white p-5 shadow-sm sm:p-6">
 
               <div>
                 <div className="text-[10px] font-black uppercase tracking-[.16em] text-violet-600">

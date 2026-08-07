@@ -704,11 +704,55 @@ router.post('/login', [
   if (!account) return;
   const client = await db.connect();
   try {    await client.query('BEGIN');
-    const voucherResult = await client.query(`SELECT v.*, p.name AS plan_name, p.duration_minutes, p.data_limit_mb,
-      p.mikrotik_rate_limit, p.price, p.router_id, p.fup_enabled, p.fup_threshold_mb,
-      p.fup_download_speed_mbps, p.fup_upload_speed_mbps
-      FROM billing_hotspot_vouchers v JOIN billing_hotspot_plans p ON p.id = v.plan_id AND p.client_id = v.client_id
-      WHERE v.client_id = $1 AND LOWER(v.code) = LOWER($2) FOR UPDATE`, [account.id, req.body.code.trim()]);
+    const voucherResult = await client.query(`
+      SELECT
+        v.*,
+
+        COALESCE(
+          v.agent_plan_name,
+          p.name,
+          'Agent voucher'
+        ) AS plan_name,
+
+        COALESCE(
+          v.agent_duration_minutes,
+          p.duration_minutes
+        ) AS duration_minutes,
+
+        p.data_limit_mb,
+
+        COALESCE(
+          v.agent_rate_limit,
+          p.mikrotik_rate_limit
+        ) AS mikrotik_rate_limit,
+
+        COALESCE(
+          v.face_value,
+          p.price,
+          0
+        ) AS price,
+
+        p.router_id,
+        p.fup_enabled,
+        p.fup_threshold_mb,
+        p.fup_download_speed_mbps,
+        p.fup_upload_speed_mbps
+
+      FROM billing_hotspot_vouchers v
+
+      LEFT JOIN billing_hotspot_plans p
+        ON p.id = v.plan_id
+       AND p.client_id = v.client_id
+
+      WHERE v.client_id = $1
+        AND LOWER(v.code) =
+            LOWER($2)
+
+      FOR UPDATE
+    `, [
+      account.id,
+      req.body.code.trim(),
+    ]);
     const voucher = voucherResult.rows[0];
     if (!voucher) { await client.query('ROLLBACK'); return res.status(401).json({ error: 'Voucher code not found' }); }
     if (voucher.status === 'active' && voucher.expires_at && new Date(voucher.expires_at) > new Date()) { await client.query('COMMIT'); return res.json({ success: true, already_active: true, voucher: { code: voucher.code, plan_name: voucher.plan_name, expires_at: voucher.expires_at, duration_minutes: voucher.duration_minutes }, login: { username: voucher.code, password: voucher.code, url: req.body.link_login_only || null, destination: req.body.link_orig || null } }); }
@@ -740,7 +784,41 @@ router.get('/session', async (req, res) => {
     if (!account) return;
     const code = String(req.query.code || '').trim();
     if (!code) return res.status(400).json({ error: 'Voucher code is required' });
-    const result = await db.query(`SELECT v.code, v.status, v.activated_at, v.expires_at, p.name AS plan_name, p.duration_minutes, p.data_limit_mb FROM billing_hotspot_vouchers v LEFT JOIN billing_hotspot_plans p ON p.id = v.plan_id AND p.client_id = v.client_id WHERE v.client_id = $1 AND LOWER(v.code) = LOWER($2) LIMIT 1`, [account.id, code]);
+    const result = await db.query(`
+      SELECT
+        v.code,
+        v.status,
+        v.activated_at,
+        v.expires_at,
+
+        COALESCE(
+          v.agent_plan_name,
+          p.name,
+          'Agent voucher'
+        ) AS plan_name,
+
+        COALESCE(
+          v.agent_duration_minutes,
+          p.duration_minutes
+        ) AS duration_minutes,
+
+        p.data_limit_mb
+
+      FROM billing_hotspot_vouchers v
+
+      LEFT JOIN billing_hotspot_plans p
+        ON p.id = v.plan_id
+       AND p.client_id = v.client_id
+
+      WHERE v.client_id = $1
+        AND LOWER(v.code) =
+            LOWER($2)
+
+      LIMIT 1
+    `, [
+      account.id,
+      code,
+    ]);
     if (!result.rows[0]) return res.status(404).json({ error: 'Session not found' });
     res.json({ session: result.rows[0] });
   } catch (err) { res.status(500).json({ error: 'Could not load hotspot session' }); }

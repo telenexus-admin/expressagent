@@ -478,7 +478,29 @@ export default function BillingWorkspace() {
     .trim()
     .split(/\s+/)[0] || 'Admin';
   if (!admin) return <Navigate to="/login" replace />; if (admin.role === 'superadmin') return <Navigate to="/onboarding" replace />; if (admin.account_type !== 'billing') return <Navigate to="/dashboard" replace />;
-  const go = (key) => { const nextTab = key === 'plans' || key === 'hotspot' ? 'services' : key; if (nextTab !== 'subscribers') setSubscriberCreateOpen(false); setTab(nextTab); setOpen(false); }
+  const go = (key) => {
+    const nextTab =
+      key === 'plans'
+        ? 'services'
+        : key;
+
+    if (
+      nextTab !==
+      'subscribers'
+    ) {
+      setSubscriberCreateOpen(
+        false
+      );
+    }
+
+    setTab(
+      nextTab
+    );
+
+    setOpen(
+      false
+    );
+  };
   const openSubscriberCreate = () => { setSubscriberCreateOpen(true); setTab('subscribers'); setOpen(false); };
   const save = async (event, path, body, done) => { event.preventDefault(); try { setSaving(true); await api.post(path, body); done(); await load(); return true; } catch (e) { setError(e.response?.data?.error || e.response?.data?.errors?.[0]?.msg || 'This record could not be saved.'); return false; } finally { setSaving(false); } };
   const packagePayload = (form) => ({ ...form, router_id: form.router_id ? Number(form.router_id) : null, fup_enabled: Boolean(form.fup_enabled), fup_threshold_mb: form.fup_enabled && form.fup_threshold_mb ? Number(form.fup_threshold_mb) : null, fup_download_speed_mbps: form.fup_enabled && form.fup_download_speed_mbps ? Number(form.fup_download_speed_mbps) : null, fup_upload_speed_mbps: form.fup_enabled && form.fup_upload_speed_mbps ? Number(form.fup_upload_speed_mbps) : null });

@@ -34,23 +34,87 @@ const nav = [
   ['reports', 'Reports', 'reports'],
 ];
 
-const mainNav = nav.filter(
-  ([key]) =>
-    ![
+const navGroups = [
+  {
+    label:
+      'WORKSPACE',
+
+    keys: [
+      'overview',
+    ],
+  },
+
+  {
+    label:
+      'CUSTOMERS',
+
+    keys: [
+      'subscribers',
+      'communication',
+    ],
+  },
+
+  {
+    label:
+      'SERVICES',
+
+    keys: [
       'services',
       'hotspot',
       'agents',
-    ].includes(key)
+    ],
+  },
+
+  {
+    label:
+      'FINANCE',
+
+    keys: [
+      'invoices',
+      'payments',
+      'vouchers',
+    ],
+  },
+
+  {
+    label:
+      'NETWORK',
+
+    keys: [
+      'routers',
+      'radius',
+      'tr069',
+    ],
+  },
+
+  {
+    label:
+      'INSIGHTS',
+
+    keys: [
+      'reports',
+    ],
+  },
+].map(
+  group => ({
+    ...group,
+
+    items:
+      group.keys
+        .map(
+          key =>
+            nav.find(
+              item =>
+                item[0] ===
+                key
+            )
+        )
+        .filter(
+          Boolean
+        ),
+  })
 );
 
-const servicesNav = nav.filter(
-  ([key]) =>
-    [
-      'services',
-      'hotspot',
-      'agents',
-    ].includes(key)
-);
 const money = (v) => `KSh ${Number(v || 0).toLocaleString()}`;
 const routerDisplayStatus = (router) => {
   const status = String(
@@ -648,64 +712,78 @@ export default function BillingWorkspace() {
     {open && <button aria-label="Close menu" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" />}
     <aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-r border-slate-100 bg-white px-4 py-7 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.025)] transition-transform duration-300 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}>
       <div className="flex items-center gap-2 px-4"><div className="text-2xl font-black tracking-[-.09em] text-slate-900">nexa<span className="text-emerald-500">.</span></div><div className="mt-1 border-l border-slate-200 pl-2 text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">billing</div></div>
-      <div className="mt-10 px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
-        MAIN MENU
-      </div>
+      <div className="mt-8 space-y-5 pb-5">
 
-      <nav className="mt-2 space-y-1">
-        {mainNav.map(
-          ([key, label, icon]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => go(key)}
-              className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-3 text-left text-sm font-bold transition ${
-                tab === key
-                  ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600'
-                  : 'border-l-[3px] border-transparent hover:bg-slate-50 hover:text-slate-900'
-              }`}
+        {navGroups.map(
+          group => (
+            <section
+              key={
+                group.label
+              }
             >
-              <span className="flex h-6 w-6 items-center justify-center text-slate-500">
-                <NavIcon kind={icon} />
-              </span>
 
-              {label}
+              <div className="px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
+                {
+                  group.label
+                }
+              </div>
 
-              {key === 'radius' &&
-                radiusStatus?.enabled && (
-                  <span className="ml-auto h-2 w-2 rounded-full bg-emerald-400" />
+
+              <nav className="mt-2 space-y-1">
+
+                {group.items.map(
+                  ([
+                    key,
+                    label,
+                    icon,
+                  ]) => (
+                    <button
+                      key={
+                        key
+                      }
+                      type="button"
+                      onClick={() =>
+                        go(
+                          key
+                        )
+                      }
+                      className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-2.5 text-left text-sm font-bold transition ${
+                        tab === key
+                          ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600'
+                          : 'border-l-[3px] border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                      }`}
+                    >
+
+                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-slate-500">
+                        <NavIcon
+                          kind={
+                            icon
+                          }
+                        />
+                      </span>
+
+
+                      <span className="min-w-0 flex-1 truncate">
+                        {
+                          label
+                        }
+                      </span>
+
+
+                      {key ===
+                        'radius' &&
+                        radiusStatus
+                          ?.enabled && (
+                          <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />
+                        )}
+                    </button>
+                  )
                 )}
-            </button>
+              </nav>
+            </section>
           )
         )}
-      </nav>
-
-      <div className="mt-7 px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
-        SERVICES
       </div>
-
-      <nav className="mt-2 space-y-1">
-        {servicesNav.map(
-          ([key, label, icon]) => (
-            <button
-              key={key}
-              type="button"
-              onClick={() => go(key)}
-              className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-3 text-left text-sm font-bold transition ${
-                tab === key
-                  ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600'
-                  : 'border-l-[3px] border-transparent hover:bg-slate-50 hover:text-slate-900'
-              }`}
-            >
-              <span className="flex h-6 w-6 items-center justify-center text-slate-500">
-                <NavIcon kind={icon} />
-              </span>
-
-              {label}
-            </button>
-          )
-        )}
-      </nav>
 
       <div className="mt-auto border-t border-slate-100 px-3 pt-5"><div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">{(admin.name || 'B').slice(0, 1).toUpperCase()}</div><div className="min-w-0"><div className="truncate text-xs font-bold text-slate-800">{admin.name || 'Billing admin'}</div><div className="truncate text-[11px] text-slate-400">{admin.client_business_name || admin.client_name}</div></div></div><button type="button" onClick={logout} className="mt-4 flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-rose-600"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" /></svg><span>Sign out</span></button></div>
     </aside>
@@ -1562,402 +1640,370 @@ function MobileTile({ icon, title, text, onClick, panel, muted }) { return <butt
 function MobileAction({ icon, label, onClick }) { return <button onClick={onClick} className="flex flex-col items-center gap-1.5 text-[10px] font-bold text-slate-500"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600"><NavIcon kind={label.toLowerCase()} /></span>{label}</button>; }
 function BandwidthOverviewExact({
   history = [],
+  tick = 0,
   panel =
-    'rounded-2xl p-5 shadow-sm bg-white text-slate-900',
-  muted = 'text-slate-400',
+    'bg-white text-slate-900',
+  muted =
+    'text-slate-400',
 }) {
-  const rows = (
-    Array.isArray(history)
-      ? history
-      : []
-  )
-    .filter(
-      row =>
-        row &&
-        row.timestamp
-    )
-    .sort(
-      (left, right) =>
-        new Date(left.timestamp) -
-        new Date(right.timestamp)
-    );
-
-  const hasData = rows.length > 0;
-
-  const max = Math.max(
-    1,
-    ...rows.map(row =>
-      Math.max(
-        Number(
-          row.download_mbps || 0
-        ),
-        Number(
-          row.upload_mbps || 0
-        )
+  const rows =
+    (
+      Array.isArray(
+        history
       )
+        ? history
+        : []
     )
-  );
-
-  const smoothPath = key => {
-    const coordinates =
-      rows.map(
-        (row, index) => [
-          rows.length === 1
-            ? 50
-            : (
-                index /
-                (rows.length - 1)
-              ) * 100,
-
-          100 -
-            (
-              Math.min(
-                Number(
-                  row[key] || 0
-                ),
-                max
-              ) /
-              max
-            ) *
-              82 -
-            9,
-        ]
+      .filter(
+        row =>
+          row &&
+          (
+            Number.isFinite(
+              Number(
+                row.download_mbps
+              )
+            ) ||
+            Number.isFinite(
+              Number(
+                row.upload_mbps
+              )
+            )
+          )
+      )
+      .slice(
+        -48
       );
 
-    return coordinates.reduce(
-      (
-        currentPath,
-        point,
-        index
-      ) => {
-        if (index === 0) {
-          return (
-            `M ${point[0]} ` +
-            `${point[1]}`
-          );
-        }
-
-        const previous =
-          coordinates[index - 1];
-
-        const middle =
-          (
-            previous[0] +
-            point[0]
-          ) / 2;
-
-        return (
-          `${currentPath} C ` +
-          `${middle} ${previous[1]}, ` +
-          `${middle} ${point[1]}, ` +
-          `${point[0]} ${point[1]}`
-        );
-      },
-      ''
-    );
-  };
-
-  const areaPath = key =>
-    rows.length > 1
-      ? (
-          `${smoothPath(key)} ` +
-          'L 100 100 L 0 100 Z'
-        )
-      : '';
 
   const latest =
-    rows[rows.length - 1];
+    rows[
+      rows.length -
+      1
+    ] ||
+    null;
+
 
   const download =
     Number(
-      latest?.download_mbps || 0
+      latest
+        ?.download_mbps ||
+      0
     );
+
 
   const upload =
     Number(
-      latest?.upload_mbps || 0
+      latest
+        ?.upload_mbps ||
+      0
     );
 
-  const throughput =
-    download + upload;
 
-  const peak = Math.max(
-    0,
-    ...rows.map(
-      row =>
-        Number(
-          row.download_mbps || 0
-        ) +
-        Number(
-          row.upload_mbps || 0
+  const peak =
+    Math.max(
+      1,
+
+      ...rows.flatMap(
+        row => [
+          Number(
+            row.download_mbps ||
+            0
+          ),
+
+          Number(
+            row.upload_mbps ||
+            0
+          ),
+        ]
+      )
+    );
+
+
+  const points =
+    key =>
+      rows
+        .map(
+          (
+            row,
+            index
+          ) => {
+            const x =
+              rows.length <=
+              1
+                ? 50
+                : (
+                    index /
+                    (
+                      rows.length -
+                      1
+                    )
+                  ) *
+                  100;
+
+            const value =
+              Number(
+                row[key] ||
+                0
+              );
+
+            const y =
+              37 -
+              (
+                value /
+                peak
+              ) *
+              31;
+
+            return `${x.toFixed(
+              2
+            )},${y.toFixed(
+              2
+            )}`;
+          }
         )
-    )
-  );
+        .join(' ');
 
-  const timeLabel = value => {
-    const parsed = new Date(value);
 
-    if (
-      Number.isNaN(
-        parsed.getTime()
-      )
-    ) {
-      return '';
-    }
+  void tick;
 
-    return parsed.toLocaleTimeString(
-      [],
-      {
-        hour: '2-digit',
-        minute: '2-digit',
-      }
-    );
-  };
-
-  const firstTime =
-    rows[0]?.timestamp;
-
-  const middleTime =
-    rows[
-      Math.floor(
-        rows.length / 2
-      )
-    ]?.timestamp;
-
-  const lastTime =
-    rows[
-      rows.length - 1
-    ]?.timestamp;
 
   return (
     <section
-      className={`rounded-2xl p-5 shadow-sm ${panel}`}
+      className={`rounded-2xl p-4 shadow-sm sm:p-5 ${panel}`}
     >
-      <div className="flex items-start justify-between gap-3">
+
+      <div className="flex items-start justify-between gap-4">
+
         <div>
-          <h2 className="text-[19px] font-black tracking-tight">
-            Bandwidth overview
-          </h2>
+
+          <div className="flex items-center gap-2">
+
+            <h2 className="text-base font-black tracking-tight sm:text-[19px]">
+              Bandwidth overview
+            </h2>
+
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-black uppercase text-emerald-600">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+
+              Live
+            </span>
+          </div>
+
 
           <p
-            className={`mt-1 text-xs ${muted}`}
+            className={`mt-1 text-[10px] sm:text-xs ${muted}`}
           >
-            Live MikroTik traffic samples
+            Current network download and upload traffic
           </p>
         </div>
 
-        <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-[10px] font-black text-emerald-700">
-          LIVE DATA ONLY
-        </span>
-      </div>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <div className="rounded-xl bg-violet-50 p-3">
-          <small className="text-[10px] font-bold uppercase text-violet-500">
-            Throughput
-          </small>
+        <div className="hidden text-right sm:block">
 
-          <strong className="mt-1 block text-lg font-black">
-            {throughput.toFixed(2)} Mbps
-          </strong>
-        </div>
+          <span
+            className={`text-[9px] font-bold uppercase ${muted}`}
+          >
+            Peak
+          </span>
 
-        <div className="rounded-xl bg-sky-50 p-3">
-          <small className="text-[10px] font-bold uppercase text-sky-500">
-            Download
-          </small>
-
-          <strong className="mt-1 block text-lg font-black">
-            {download.toFixed(2)} Mbps
-          </strong>
-        </div>
-
-        <div className="rounded-xl bg-fuchsia-50 p-3">
-          <small className="text-[10px] font-bold uppercase text-fuchsia-500">
-            Upload
-          </small>
-
-          <strong className="mt-1 block text-lg font-black">
-            {upload.toFixed(2)} Mbps
-          </strong>
-        </div>
-
-        <div className="rounded-xl bg-emerald-50 p-3">
-          <small className="text-[10px] font-bold uppercase text-emerald-600">
-            Live samples
-          </small>
-
-          <strong className="mt-1 block text-lg font-black">
-            {rows.length}
+          <strong className="mt-0.5 block text-xs">
+            {
+              peak ===
+              1 &&
+              !rows.length
+                ? '—'
+                : `${peak.toFixed(
+                    2
+                  )} Mbps`
+            }
           </strong>
         </div>
       </div>
 
-      {hasData ? (
-        <div className="mt-5 rounded-2xl border border-slate-100 bg-white p-3">
-          <div className="flex h-48">
-            <div className="flex w-16 flex-col justify-between py-2 text-[10px] text-slate-500">
-              <span>
-                {max.toFixed(1)} Mbps
-              </span>
 
-              <span>
-                {(max * 0.66).toFixed(1)}
-              </span>
+      <div className="mt-4 grid grid-cols-2 gap-2 sm:gap-3">
 
-              <span>
-                {(max * 0.33).toFixed(1)}
-              </span>
+        <article className="flex items-center gap-3 rounded-2xl bg-sky-50 p-3 sm:p-4">
 
-              <span>0 Mbps</span>
-            </div>
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-sky-500 text-white shadow-sm shadow-sky-200">
 
-            <div className="min-w-0 flex-1">
-              <svg
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-                className="h-full w-full"
-                role="img"
-                aria-label="Live bandwidth traffic graph"
-              >
-                <defs>
-                  <linearGradient
-                    id="bw-live-down"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="0%"
-                      stopColor="#7c3aed"
-                      stopOpacity=".28"
-                    />
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5 fill-none stroke-current"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 4v14" />
+              <path d="m7 13 5 5 5-5" />
+            </svg>
+          </span>
 
-                    <stop
-                      offset="100%"
-                      stopColor="#7c3aed"
-                      stopOpacity=".02"
-                    />
-                  </linearGradient>
 
-                  <linearGradient
-                    id="bw-live-up"
-                    x1="0"
-                    y1="0"
-                    x2="0"
-                    y2="1"
-                  >
-                    <stop
-                      offset="0%"
-                      stopColor="#d946ef"
-                      stopOpacity=".18"
-                    />
+          <div className="min-w-0">
 
-                    <stop
-                      offset="100%"
-                      stopColor="#d946ef"
-                      stopOpacity=".02"
-                    />
-                  </linearGradient>
-                </defs>
-
-                <path
-                  d="M0 10H100 M0 37H100 M0 64H100 M0 91H100"
-                  stroke="#e2e8f0"
-                  strokeWidth=".5"
-                  fill="none"
-                />
-
-                {rows.length > 1 && (
-                  <>
-                    <path
-                      d={areaPath(
-                        'download_mbps'
-                      )}
-                      fill="url(#bw-live-down)"
-                    />
-
-                    <path
-                      d={areaPath(
-                        'upload_mbps'
-                      )}
-                      fill="url(#bw-live-up)"
-                    />
-                  </>
-                )}
-
-                <path
-                  d={smoothPath(
-                    'download_mbps'
-                  )}
-                  fill="none"
-                  stroke="#6d28d9"
-                  strokeWidth="2"
-                  vectorEffect="non-scaling-stroke"
-                  strokeLinecap="round"
-                />
-
-                <path
-                  d={smoothPath(
-                    'upload_mbps'
-                  )}
-                  fill="none"
-                  stroke="#d946ef"
-                  strokeWidth="2"
-                  vectorEffect="non-scaling-stroke"
-                  strokeLinecap="round"
-                />
-              </svg>
-            </div>
-          </div>
-
-          <div className="ml-16 mt-1 flex justify-between text-[10px] text-slate-500">
-            <span>
-              {timeLabel(firstTime)}
-            </span>
-
-            <span>
-              {timeLabel(middleTime)}
-            </span>
-
-            <span>
-              {timeLabel(lastTime)}
-            </span>
-          </div>
-
-          <div className="mt-3 flex justify-center gap-5 text-[10px] font-semibold text-slate-500">
-            <span>
-              <i className="mr-1 inline-block h-2 w-2 rounded-full bg-violet-700" />
+            <span className="block text-[8px] font-black uppercase tracking-wide text-sky-600">
               Download
             </span>
 
-            <span>
-              <i className="mr-1 inline-block h-2 w-2 rounded-full bg-fuchsia-500" />
+            <strong className="mt-1 block truncate text-base font-black text-slate-950 sm:text-xl">
+              {
+                download.toFixed(
+                  2
+                )
+              }
+              <span className="ml-1 text-[9px] font-bold text-slate-400">
+                Mbps
+              </span>
+            </strong>
+          </div>
+        </article>
+
+
+        <article className="flex items-center gap-3 rounded-2xl bg-fuchsia-50 p-3 sm:p-4">
+
+          <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-fuchsia-500 text-white shadow-sm shadow-fuchsia-200">
+
+            <svg
+              viewBox="0 0 24 24"
+              aria-hidden="true"
+              className="h-5 w-5 fill-none stroke-current"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 20V6" />
+              <path d="m7 11 5-5 5 5" />
+            </svg>
+          </span>
+
+
+          <div className="min-w-0">
+
+            <span className="block text-[8px] font-black uppercase tracking-wide text-fuchsia-600">
               Upload
             </span>
 
-            <span>
-              Peak {peak.toFixed(2)} Mbps
+            <strong className="mt-1 block truncate text-base font-black text-slate-950 sm:text-xl">
+              {
+                upload.toFixed(
+                  2
+                )
+              }
+              <span className="ml-1 text-[9px] font-bold text-slate-400">
+                Mbps
+              </span>
+            </strong>
+          </div>
+        </article>
+      </div>
+
+
+      {rows.length >
+        1 ? (
+        <div className="mt-4 overflow-hidden rounded-2xl border border-slate-100 bg-slate-50/70 p-3">
+
+          <div className="h-32 sm:h-48">
+
+            <svg
+              viewBox="0 0 100 40"
+              preserveAspectRatio="none"
+              aria-label="Live bandwidth traffic graph"
+              className="h-full w-full overflow-visible"
+            >
+
+              {[8, 18, 28, 38].map(
+                y => (
+                  <line
+                    key={
+                      y
+                    }
+                    x1="0"
+                    x2="100"
+                    y1={
+                      y
+                    }
+                    y2={
+                      y
+                    }
+                    stroke="currentColor"
+                    className="text-slate-200"
+                    strokeWidth=".35"
+                    vectorEffect="non-scaling-stroke"
+                  />
+                )
+              )}
+
+
+              <polyline
+                points={
+                  points(
+                    'download_mbps'
+                  )
+                }
+                fill="none"
+                stroke="currentColor"
+                className="nexa-graph-line text-sky-500"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+
+
+              <polyline
+                points={
+                  points(
+                    'upload_mbps'
+                  )
+                }
+                fill="none"
+                stroke="currentColor"
+                className="nexa-graph-line text-fuchsia-500"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                vectorEffect="non-scaling-stroke"
+              />
+            </svg>
+          </div>
+
+
+          <div className="mt-3 flex items-center justify-center gap-5 text-[9px] font-bold text-slate-500">
+
+            <span className="flex items-center gap-1.5">
+
+              <i className="h-2 w-2 rounded-full bg-sky-500" />
+
+              Download
+            </span>
+
+
+            <span className="flex items-center gap-1.5">
+
+              <i className="h-2 w-2 rounded-full bg-fuchsia-500" />
+
+              Upload
             </span>
           </div>
         </div>
       ) : (
-        <div className="mt-5 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-14 text-center">
-          <h3 className="font-black text-slate-700">
-            Collecting live traffic
-          </h3>
+        <div className="mt-4 rounded-2xl border border-dashed border-slate-200 bg-slate-50 px-5 py-10 text-center">
 
-          <p className="mx-auto mt-2 max-w-sm text-sm leading-6 text-slate-500">
-            The graph will appear after Nexa stores genuine
-            MikroTik traffic samples. No preview or generated
-            values are displayed.
+          <strong className="text-xs text-slate-600">
+            Waiting for live traffic
+          </strong>
+
+          <p className={`mt-1 text-[10px] ${muted}`}>
+            Download and upload activity will appear when a connected router reports traffic.
           </p>
         </div>
       )}
     </section>
   );
 }
+
 function Overview({
   summary,
   subscribers,

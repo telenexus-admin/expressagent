@@ -63,6 +63,10 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
   const [thinking, setThinking] = useState(false);
   const [error, setError] = useState('');
   const [unread, setUnread] = useState(false);
+  const [bubbleHidden, setBubbleHidden] = useState(false);
+  const [hideBubblePrompt, setHideBubblePrompt] = useState(false);
+  const bubblePressTimer = useRef(null);
+  const bubbleLongPress = useRef(false);
   const [onboarding, setOnboarding] = useState(null);
   const [copiedId, setCopiedId] = useState('');
   const inputRef = useRef(null);
@@ -226,6 +230,87 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
     }
   };
 
+  const endBubblePress = () => {
+    if (
+      bubblePressTimer.current
+    ) {
+      window.clearTimeout(
+        bubblePressTimer.current
+      );
+
+      bubblePressTimer.current =
+        null;
+    }
+  };
+
+
+  const beginBubblePress = () => {
+    endBubblePress();
+
+    bubbleLongPress.current =
+      false;
+
+    bubblePressTimer.current =
+      window.setTimeout(
+        () => {
+          bubbleLongPress.current =
+            true;
+
+          setHideBubblePrompt(
+            true
+          );
+
+          bubblePressTimer.current =
+            null;
+        },
+
+        650
+      );
+  };
+
+
+  const openBubble = () => {
+    endBubblePress();
+
+    if (
+      bubbleLongPress.current
+    ) {
+      bubbleLongPress.current =
+        false;
+
+      return;
+    }
+
+    setHideBubblePrompt(
+      false
+    );
+
+    setOpen(
+      true
+    );
+  };
+
+
+  const hideBubble = () => {
+    endBubblePress();
+
+    bubbleLongPress.current =
+      false;
+
+    setHideBubblePrompt(
+      false
+    );
+
+    setBubbleHidden(
+      true
+    );
+
+    setOpen(
+      false
+    );
+  };
+
+
   const secretEntry = onboarding?.step === 'password' || onboarding?.step === 'confirm';
   const onboardingPlaceholder = onboarding?.step === 'name'
     ? 'Enter the MikroTik name…'
@@ -287,10 +372,90 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
       </div>
     </section>}
 
-    {!open && <button type="button" data-nexa-agent-bubble="true" aria-label="Open Nexa assistant" onClick={() => setOpen(true)} className="group fixed bottom-[84px] right-4 z-[10010] flex h-14 items-center gap-2 rounded-full bg-gradient-to-br from-[#5b21d4] to-[#9333ea] px-4 text-white shadow-[0_14px_36px_rgba(91,33,212,.4)] transition hover:-translate-y-1 lg:bottom-6 lg:right-6">
-      <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/15"><Icon name="sparkle" /><span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-violet-600 bg-emerald-400" /></span>
-      <span className="pr-1 text-xs font-extrabold">Ask Nexa</span>
-      {unread && <span className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white bg-rose-500" />}
-    </button>}
+    {!open &&
+      !bubbleHidden && (
+      <>
+
+        {hideBubblePrompt && (
+          <div className="fixed bottom-[150px] right-4 z-[10011] flex items-center gap-2 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl shadow-slate-400/30 lg:bottom-[88px] lg:right-6">
+
+            <span className="pl-2 text-[10px] font-black text-slate-600">
+              Hide Ask Nexa?
+            </span>
+
+            <button
+              type="button"
+              onClick={
+                hideBubble
+              }
+              className="rounded-xl bg-slate-950 px-3 py-2 text-[9px] font-black text-white"
+            >
+              Hide
+            </button>
+
+            <button
+              type="button"
+              onClick={() =>
+                setHideBubblePrompt(
+                  false
+                )
+              }
+              className="rounded-xl px-2 py-2 text-[9px] font-black text-slate-400"
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+
+        <button
+          type="button"
+          data-nexa-agent-bubble="true"
+          aria-label="Open Nexa assistant"
+          onPointerDown={
+            beginBubblePress
+          }
+          onPointerUp={
+            endBubblePress
+          }
+          onPointerCancel={
+            endBubblePress
+          }
+          onPointerLeave={
+            endBubblePress
+          }
+          onContextMenu={
+            event =>
+              event
+                .preventDefault()
+          }
+          onClick={
+            openBubble
+          }
+          className="group fixed bottom-[84px] right-4 z-[10010] flex h-14 select-none items-center gap-2 rounded-full bg-gradient-to-br from-[#5b21d4] to-[#9333ea] px-4 text-white shadow-[0_14px_36px_rgba(91,33,212,.4)] transition hover:-translate-y-1 lg:bottom-6 lg:right-6"
+        >
+
+          <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/15">
+
+            <Icon
+              name="sparkle"
+            />
+
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-violet-600 bg-emerald-400" />
+          </span>
+
+
+          <span className="pr-1 text-xs font-extrabold">
+            Ask Nexa
+          </span>
+
+
+          {unread && (
+            <span className="absolute -right-1 -top-1 h-4 w-4 rounded-full border-2 border-white bg-rose-500" />
+          )}
+        </button>
+      </>
+    )}
+
   </>;
 }

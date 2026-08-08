@@ -342,11 +342,153 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
     };
 
   const pppoeItems =
-    normalizedNetworkClients.filter(
-      subscriber =>
-        subscriber.service_type ===
-        'pppoe'
-    );
+    (
+      Array.isArray(
+        subscribers
+      )
+        ? subscribers
+        : []
+    )
+      .filter(
+        subscriber => {
+          const mode =
+            String(
+              subscriber.access_mode ||
+              'pppoe'
+            )
+              .trim()
+              .toLowerCase();
+
+          return (
+            mode !==
+              'dhcp_static' &&
+            mode !==
+              'hotspot'
+          );
+        }
+      )
+      .map(
+        subscriber => {
+          const identities =
+            [
+              subscriber.radius_username,
+              subscriber.account_number,
+              subscriber.static_mac,
+              subscriber.phone,
+            ]
+              .map(
+                compactIdentity
+              )
+              .filter(
+                Boolean
+              );
+
+          const liveClient =
+            normalizedNetworkClients.find(
+              networkClient => {
+                if (
+                  networkClient.billing_id &&
+                  Number(
+                    networkClient.billing_id
+                  ) ===
+                  Number(
+                    subscriber.id
+                  )
+                ) {
+                  return true;
+                }
+
+                const liveIdentities =
+                  [
+                    networkClient.radius_username,
+                    networkClient.account_number,
+                    networkClient.mac_address,
+                    networkClient.phone,
+                  ]
+                    .map(
+                      compactIdentity
+                    )
+                    .filter(
+                      Boolean
+                    );
+
+                return identities.some(
+                  identity =>
+                    liveIdentities.includes(
+                      identity
+                    )
+                );
+              }
+            );
+
+          return {
+            ...(liveClient || {}),
+            ...subscriber,
+
+            id:
+              subscriber.id,
+
+            billing_id:
+              subscriber.id,
+
+            service_type:
+              'pppoe',
+
+            full_name:
+              subscriber.full_name ||
+              liveClient?.full_name ||
+              'PPPoE client',
+
+            account_number:
+              subscriber.account_number ||
+              liveClient?.account_number ||
+              '',
+
+            radius_username:
+              subscriber.radius_username ||
+              liveClient?.radius_username ||
+              '',
+
+            plan_name:
+              subscriber.plan_name ||
+              liveClient?.plan_name ||
+              'No package',
+
+            router_name:
+              subscriber.router_name ||
+              liveClient?.router_name ||
+              '',
+
+            is_mikrotik_live:
+              Boolean(
+                liveClient
+              ),
+
+            is_online:
+              Boolean(
+                liveClient?.is_online
+              ),
+
+            ip_address:
+              liveClient?.ip_address ||
+              subscriber.static_ip ||
+              '',
+
+            mac_address:
+              liveClient?.mac_address ||
+              subscriber.static_mac ||
+              '',
+
+            uptime:
+              liveClient?.uptime ||
+              '',
+
+            last_seen:
+              liveClient?.last_seen ||
+              '',
+          };
+        }
+      );
 
   const staticItems =
     normalizedNetworkClients.filter(
@@ -939,9 +1081,12 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                     );
 
                   const canManage =
-                    Boolean(
-                      managedSubscriberId
-                    );
+                    subscriberType ===
+                    'pppoe'
+                      ? true
+                      : Boolean(
+                          managedSubscriberId
+                        );
 
                   const actionSubscriber =
                     canManage
@@ -1114,7 +1259,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                   null
                                 );
                               }}
-                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-35"
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <span>
                                 Suspend
@@ -1143,7 +1288,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                   null
                                 );
                               }}
-                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-35"
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <span>
                                 Extend
@@ -1170,7 +1315,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                   null
                                 );
                               }}
-                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-35"
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <span>
                                 Sync
@@ -1199,7 +1344,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                   null
                                 );
                               }}
-                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-35"
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <span>
                                 Delete
@@ -1225,7 +1370,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                   null
                                 );
                               }}
-                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-35"
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <span>
                                 More details

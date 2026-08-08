@@ -12,23 +12,38 @@ const DEFAULTS = {
   tagline: '',
   hero_heading:
     'Fast Internet. Everywhere.',
+
   support_phone: '',
   whatsapp_phone: '',
   support_text:
     'Need help? Contact support.',
 
-  wallet_enabled: true,
+  wallet_enabled:
+    true,
+
   wallet_label:
     'MY WALLET',
-  wallet_balance: 0,
 
-  flash_enabled: false,
-  flash_plan_id: '',
-  flash_discount_price: '',
-  flash_starts_at: '',
-  flash_ends_at: '',
+  wallet_balance:
+    0,
 
-  popular_plan_id: '',
+  flash_enabled:
+    false,
+
+  flash_plan_id:
+    '',
+
+  flash_discount_price:
+    '',
+
+  flash_starts_at:
+    '',
+
+  flash_ends_at:
+    '',
+
+  popular_plan_id:
+    '',
 
   package_layout:
     'featured',
@@ -87,7 +102,7 @@ const THEMES = {
       '#f59e0b',
 
     background:
-      'linear-gradient(135deg,#201003,#7c2d12)',
+      'linear-gradient(135deg,#241006,#9a3412)',
   },
 
   green: {
@@ -121,9 +136,6 @@ const LAYOUTS = [
 
     name:
       'Featured',
-
-    description:
-      'Large visual cards',
   },
 
   {
@@ -132,9 +144,6 @@ const LAYOUTS = [
 
     name:
       '2 Columns',
-
-    description:
-      'Balanced package grid',
   },
 
   {
@@ -143,9 +152,6 @@ const LAYOUTS = [
 
     name:
       'Compact',
-
-    description:
-      'More packages at once',
   },
 
   {
@@ -154,9 +160,6 @@ const LAYOUTS = [
 
     name:
       'List',
-
-    description:
-      'Simple vertical packages',
   },
 
   {
@@ -165,15 +168,12 @@ const LAYOUTS = [
 
     name:
       'Circles',
-
-    description:
-      'Round package buttons',
   },
 ];
 
 
 const inputClass =
-  'h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-violet-400 focus:bg-white focus:ring-4 focus:ring-violet-100';
+  'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-900 outline-none transition focus:border-violet-400 focus:bg-white focus:ring-4 focus:ring-violet-100';
 
 
 function money(
@@ -189,60 +189,6 @@ function money(
         2,
     }
   )}`;
-}
-
-
-function toInputDateTime(
-  value
-) {
-  if (!value) {
-    return '';
-  }
-
-  const date =
-    new Date(value);
-
-  if (
-    Number.isNaN(
-      date.getTime()
-    )
-  ) {
-    return '';
-  }
-
-  const local =
-    new Date(
-      date.getTime() -
-      (
-        date.getTimezoneOffset() *
-        60000
-      )
-    );
-
-  return local
-    .toISOString()
-    .slice(
-      0,
-      16
-    );
-}
-
-
-function fromInputDateTime(
-  value
-) {
-  if (!value) {
-    return '';
-  }
-
-  const date =
-    new Date(value);
-
-  return Number.isNaN(
-    date.getTime()
-  )
-    ? ''
-    : date.toISOString();
 }
 
 
@@ -291,6 +237,58 @@ function durationText(
 }
 
 
+function localDateTime(
+  value
+) {
+  if (!value) {
+    return '';
+  }
+
+  const date =
+    new Date(value);
+
+  if (
+    Number.isNaN(
+      date.getTime()
+    )
+  ) {
+    return '';
+  }
+
+  const adjusted =
+    new Date(
+      date.getTime() -
+      date.getTimezoneOffset() *
+      60000
+    );
+
+  return adjusted
+    .toISOString()
+    .slice(
+      0,
+      16
+    );
+}
+
+
+function isoDateTime(
+  value
+) {
+  if (!value) {
+    return '';
+  }
+
+  const date =
+    new Date(value);
+
+  return Number.isNaN(
+    date.getTime()
+  )
+    ? ''
+    : date.toISOString();
+}
+
+
 function Icon({
   name,
   className =
@@ -308,23 +306,15 @@ function Icon({
       <path d="m13 2-8 12h7l-1 8 8-12h-7z" />
     ),
 
-    design: (
+    settings: (
       <>
-        <rect
-          x="3"
-          y="4"
-          width="18"
-          height="16"
-          rx="2"
+        <circle
+          cx="12"
+          cy="12"
+          r="3"
         />
-        <path d="M3 9h18M8 4v5" />
-      </>
-    ),
 
-    wallet: (
-      <>
-        <path d="M4 6h14a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12" />
-        <path d="M15 11h7v4h-7a2 2 0 1 1 0-4Z" />
+        <path d="M19.4 15a1.6 1.6 0 0 0 .3 1.8l.1.1-2.9 2.9-.1-.1a1.6 1.6 0 0 0-1.8-.3 1.6 1.6 0 0 0-1 1.5V21h-4v-.1A1.6 1.6 0 0 0 9 19.4a1.6 1.6 0 0 0-1.8.3l-.1.1-2.9-2.9.1-.1a1.6 1.6 0 0 0 .3-1.8 1.6 1.6 0 0 0-1.5-1H3v-4h.1A1.6 1.6 0 0 0 4.6 9a1.6 1.6 0 0 0-.3-1.8l-.1-.1 2.9-2.9.1.1A1.6 1.6 0 0 0 9 4.6a1.6 1.6 0 0 0 1-1.5V3h4v.1A1.6 1.6 0 0 0 15 4.6a1.6 1.6 0 0 0 1.8-.3l.1-.1 2.9 2.9-.1.1a1.6 1.6 0 0 0-.3 1.8 1.6 1.6 0 0 0 1.5 1h.1v4h-.1a1.6 1.6 0 0 0-1.5 1Z" />
       </>
     ),
 
@@ -336,14 +326,6 @@ function Icon({
           cy="12"
           r="2.5"
         />
-      </>
-    ),
-
-    upload: (
-      <>
-        <path d="M12 16V4" />
-        <path d="m7 9 5-5 5 5" />
-        <path d="M5 20h14" />
       </>
     ),
 
@@ -359,14 +341,69 @@ function Icon({
       <path d="M12 5v14M5 12h14" />
     ),
 
-    phone: (
-      <path d="M6 3h4l2 5-2.5 1.5a15 15 0 0 0 5 5L16 12l5 2v4a3 3 0 0 1-3 3C9.7 20.3 3.7 14.3 3 6a3 3 0 0 1 3-3Z" />
-    ),
-
     close: (
       <>
         <path d="m6 6 12 12" />
         <path d="m18 6-12 12" />
+      </>
+    ),
+
+    image: (
+      <>
+        <rect
+          x="3"
+          y="4"
+          width="18"
+          height="16"
+          rx="2"
+        />
+
+        <circle
+          cx="8.5"
+          cy="9"
+          r="1.5"
+        />
+
+        <path d="m5 18 5-5 3 3 2-2 4 4" />
+      </>
+    ),
+
+    phone: (
+      <path d="M6 3h4l2 5-2.5 1.5a15 15 0 0 0 5 5L16 12l5 2v4a3 3 0 0 1-3 3C9.7 20.3 3.7 14.3 3 6a3 3 0 0 1 3-3Z" />
+    ),
+
+    layout: (
+      <>
+        <rect
+          x="3"
+          y="4"
+          width="8"
+          height="7"
+          rx="1"
+        />
+
+        <rect
+          x="13"
+          y="4"
+          width="8"
+          height="7"
+          rx="1"
+        />
+
+        <rect
+          x="3"
+          y="13"
+          width="18"
+          height="7"
+          rx="1"
+        />
+      </>
+    ),
+
+    wallet: (
+      <>
+        <path d="M4 6h14a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h12" />
+        <path d="M15 11h7v4h-7a2 2 0 1 1 0-4Z" />
       </>
     ),
   };
@@ -386,47 +423,22 @@ function Icon({
 }
 
 
-function Field({
-  label,
-  hint,
-  children,
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs font-black text-slate-700">
-        {label}
-      </span>
-
-      {hint && (
-        <span className="ml-1 text-[10px] font-semibold text-slate-400">
-          {hint}
-        </span>
-      )}
-
-      <span className="mt-2 block">
-        {children}
-      </span>
-    </label>
-  );
-}
-
-
 function Toggle({
   checked,
   onChange,
-  title,
+  label,
   description,
 }) {
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-2xl bg-slate-50 p-4">
+    <label className="flex cursor-pointer items-center justify-between gap-4 rounded-xl border border-slate-100 bg-slate-50 p-3.5">
 
       <div>
         <strong className="block text-xs font-black text-slate-700">
-          {title}
+          {label}
         </strong>
 
         {description && (
-          <span className="mt-1 block text-[10px] leading-4 text-slate-400">
+          <span className="mt-0.5 block text-[9px] leading-4 text-slate-400">
             {description}
           </span>
         )}
@@ -439,6 +451,7 @@ function Toggle({
             : 'bg-slate-300'
         }`}
       >
+
         <input
           type="checkbox"
           checked={
@@ -457,13 +470,32 @@ function Toggle({
           className="sr-only"
         />
 
-        <i
+        <span
           className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition ${
             checked
               ? 'left-6'
               : 'left-1'
           }`}
         />
+      </span>
+    </label>
+  );
+}
+
+
+function Field({
+  label,
+  children,
+}) {
+  return (
+    <label className="block">
+
+      <span className="text-[10px] font-black uppercase tracking-wide text-slate-500">
+        {label}
+      </span>
+
+      <span className="mt-1.5 block">
+        {children}
       </span>
     </label>
   );
@@ -513,7 +545,7 @@ async function compressBackground(
           () =>
             reject(
               new Error(
-                'Could not read the background image.'
+                'Could not read image.'
               )
             );
 
@@ -542,7 +574,7 @@ async function compressBackground(
           () =>
             reject(
               new Error(
-                'Could not process the background image.'
+                'Could not process image.'
               )
             );
 
@@ -551,18 +583,18 @@ async function compressBackground(
       }
     );
 
-  const maxWidth =
+  const maximumWidth =
     1400;
 
-  const maxHeight =
+  const maximumHeight =
     900;
 
   const scale =
     Math.min(
       1,
-      maxWidth /
+      maximumWidth /
         image.width,
-      maxHeight /
+      maximumHeight /
         image.height
     );
 
@@ -609,7 +641,7 @@ async function compressBackground(
   );
 
   let quality =
-    0.76;
+    0.78;
 
   let result =
     canvas.toDataURL(
@@ -638,7 +670,7 @@ async function compressBackground(
     950000
   ) {
     throw new Error(
-      'The image is still too large after optimization. Use a smaller image.'
+      'Image remains too large after compression.'
     );
   }
 
@@ -646,47 +678,40 @@ async function compressBackground(
 }
 
 
-function PackageModal({
-  form,
-  setForm,
-  routers,
-  saving,
+function ModalShell({
+  title,
+  eyebrow,
   close,
-  submit,
+  children,
+  width =
+    'max-w-3xl',
 }) {
   return (
-    <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/60 p-3 backdrop-blur-sm sm:items-center">
+    <div className="fixed inset-0 z-[10020] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-5">
 
       <button
         type="button"
-        aria-label="Close package form"
+        aria-label={`Close ${title}`}
         onClick={
           close
         }
         className="absolute inset-0"
       />
 
-      <form
-        onSubmit={
-          submit
-        }
-        className="relative z-10 max-h-[94vh] w-full max-w-lg overflow-y-auto rounded-[28px] bg-white p-5 shadow-2xl sm:p-7"
+      <div
+        className={`relative z-10 max-h-[94vh] w-full ${width} overflow-y-auto rounded-t-[28px] bg-[#f7f8fb] shadow-2xl sm:rounded-[28px]`}
       >
 
-        <div className="flex items-start justify-between gap-4">
+        <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
 
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[.18em] text-violet-600">
-              Hotspot package
+            <p className="text-[9px] font-black uppercase tracking-[.18em] text-violet-500">
+              {eyebrow}
             </p>
 
-            <h3 className="mt-1 text-xl font-black">
-              Add package
+            <h3 className="mt-0.5 text-lg font-black text-slate-950">
+              {title}
             </h3>
-
-            <p className="mt-1 text-xs leading-5 text-slate-400">
-              Create the internet package customers will see on the captive portal.
-            </p>
           </div>
 
           <button
@@ -694,226 +719,17 @@ function PackageModal({
             onClick={
               close
             }
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+            className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
           >
             <Icon
               name="close"
               className="h-4 w-4"
             />
           </button>
-        </div>
+        </header>
 
-
-        <div className="mt-6 space-y-4">
-
-          <Field label="Package name">
-            <input
-              required
-              value={
-                form.name
-              }
-              onChange={
-                event =>
-                  setForm({
-                    ...form,
-                    name:
-                      event
-                        .target
-                        .value,
-                  })
-              }
-              placeholder="Example: 6 Hours"
-              className={
-                inputClass
-              }
-            />
-          </Field>
-
-
-          <div className="grid grid-cols-2 gap-3">
-
-            <Field label="Price">
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">
-                  KES
-                </span>
-
-                <input
-                  required
-                  type="number"
-                  min="0"
-                  step="1"
-                  value={
-                    form.price
-                  }
-                  onChange={
-                    event =>
-                      setForm({
-                        ...form,
-                        price:
-                          event
-                            .target
-                            .value,
-                      })
-                  }
-                  className={`${inputClass} pl-12`}
-                />
-              </div>
-            </Field>
-
-
-            <Field label="Duration">
-              <div className="relative">
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  value={
-                    form.duration_minutes
-                  }
-                  onChange={
-                    event =>
-                      setForm({
-                        ...form,
-                        duration_minutes:
-                          event
-                            .target
-                            .value,
-                      })
-                  }
-                  className={`${inputClass} pr-12`}
-                />
-
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">
-                  MIN
-                </span>
-              </div>
-            </Field>
-          </div>
-
-
-          <div className="grid grid-cols-2 gap-3">
-
-            <Field
-              label="Speed"
-              hint="same upload/download"
-            >
-              <div className="relative">
-                <input
-                  type="number"
-                  min="0.25"
-                  step="0.25"
-                  value={
-                    form.speed_mbps
-                  }
-                  onChange={
-                    event =>
-                      setForm({
-                        ...form,
-                        speed_mbps:
-                          event
-                            .target
-                            .value,
-                      })
-                  }
-                  className={`${inputClass} pr-14`}
-                />
-
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">
-                  Mbps
-                </span>
-              </div>
-            </Field>
-
-
-            <Field
-              label="Data limit"
-              hint="optional"
-            >
-              <div className="relative">
-                <input
-                  type="number"
-                  min="1"
-                  value={
-                    form.data_limit_mb
-                  }
-                  onChange={
-                    event =>
-                      setForm({
-                        ...form,
-                        data_limit_mb:
-                          event
-                            .target
-                            .value,
-                      })
-                  }
-                  className={`${inputClass} pr-10`}
-                />
-
-                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[9px] font-black text-slate-400">
-                  MB
-                </span>
-              </div>
-            </Field>
-          </div>
-
-
-          <Field
-            label="MikroTik router"
-            hint="optional"
-          >
-            <select
-              value={
-                form.router_id
-              }
-              onChange={
-                event =>
-                  setForm({
-                    ...form,
-                    router_id:
-                      event
-                        .target
-                        .value,
-                  })
-              }
-              className={
-                inputClass
-              }
-            >
-              <option value="">
-                Available on all Hotspot routers
-              </option>
-
-              {routers.map(
-                router => (
-                  <option
-                    key={
-                      router.id
-                    }
-                    value={
-                      router.id
-                    }
-                  >
-                    {router.name}
-                  </option>
-                )
-              )}
-            </select>
-          </Field>
-        </div>
-
-
-        <button
-          disabled={
-            saving
-          }
-          className="mt-6 h-12 w-full rounded-2xl bg-violet-600 text-sm font-black text-white disabled:opacity-50"
-        >
-          {saving
-            ? 'Creating...'
-            : 'Create Hotspot package'}
-        </button>
-      </form>
+        {children}
+      </div>
     </div>
   );
 }
@@ -959,6 +775,27 @@ export default function HotspotControlCenter({
   );
 
   const [
+    packageOpen,
+    setPackageOpen,
+  ] = useState(
+    false
+  );
+
+  const [
+    flashOpen,
+    setFlashOpen,
+  ] = useState(
+    false
+  );
+
+  const [
+    settingsOpen,
+    setSettingsOpen,
+  ] = useState(
+    false
+  );
+
+  const [
     notice,
     setNotice,
   ] = useState('');
@@ -967,13 +804,6 @@ export default function HotspotControlCenter({
     error,
     setError,
   ] = useState('');
-
-  const [
-    packageOpen,
-    setPackageOpen,
-  ] = useState(
-    false
-  );
 
   const [
     packageForm,
@@ -987,90 +817,6 @@ export default function HotspotControlCenter({
     data_limit_mb: '',
     router_id: '',
   });
-
-
-  const update = (
-    key,
-    value
-  ) => {
-    setSettings(
-      current => ({
-        ...current,
-        [key]:
-          value,
-      })
-    );
-
-    setNotice('');
-    setError('');
-  };
-
-
-  const loadSettings =
-    async () => {
-      try {
-        setLoading(
-          true
-        );
-
-        const [
-          settingsResult,
-          portalResult,
-        ] =
-          await Promise.all([
-            api.get(
-              '/billing-workspace/hotspot/portal-settings'
-            ),
-
-            api
-              .get(
-                '/billing-workspace/hotspot/portal-config'
-              )
-              .catch(
-                () => ({
-                  data: {},
-                })
-              ),
-          ]);
-
-        setSettings({
-          ...DEFAULTS,
-          ...(
-            settingsResult.data ||
-            {}
-          ),
-        });
-
-        setPortalUrl(
-          portalResult
-            .data
-            ?.portal_url ||
-          ''
-        );
-      } catch (
-        requestError
-      ) {
-        setError(
-          requestError
-            .response
-            ?.data
-            ?.error ||
-          'Could not load Hotspot configuration.'
-        );
-      } finally {
-        setLoading(
-          false
-        );
-      }
-    };
-
-
-  useEffect(
-    () => {
-      void loadSettings();
-    },
-    []
-  );
 
 
   const activePlans =
@@ -1134,108 +880,206 @@ export default function HotspotControlCenter({
     THEMES.blue;
 
 
-  const backgroundStyle =
-    settings
-      .background_image_data
-      ? {
-          backgroundImage:
-            `linear-gradient(rgba(2,6,23,${
-              Number(
-                settings.background_overlay ||
-                0
-              ) /
-              100
-            }),rgba(2,6,23,${
-              Number(
-                settings.background_overlay ||
-                0
-              ) /
-              100
-            })),url("${settings.background_image_data}")`,
-
-          backgroundSize:
-            'cover',
-
-          backgroundPosition:
-            'center',
-        }
-      : {
-          background:
-            theme.background,
-        };
+  const layoutName =
+    LAYOUTS.find(
+      item =>
+        item.key ===
+        settings.package_layout
+    )?.name ||
+    'Featured';
 
 
-  const payload = (
-    source
-  ) => ({
-    ...source,
+  const update =
+    (
+      key,
+      value
+    ) => {
+      setSettings(
+        current => ({
+          ...current,
+          [key]:
+            value,
+        })
+      );
 
-    wallet_enabled:
-      Boolean(
-        source.wallet_enabled
-      ),
+      setError('');
+      setNotice('');
+    };
 
-    wallet_balance:
-      Number(
-        source.wallet_balance ||
-        0
-      ),
 
-    flash_enabled:
-      Boolean(
-        source.flash_enabled
-      ),
+  const loadSettings =
+    async () => {
+      try {
+        setLoading(
+          true
+        );
 
-    flash_plan_id:
-      source.flash_plan_id
-        ? Number(
-            source.flash_plan_id
-          )
-        : null,
+        const [
+          settingsResult,
+          portalResult,
+        ] =
+          await Promise.all([
+            api.get(
+              '/billing-workspace/hotspot/portal-settings'
+            ),
 
-    flash_discount_price:
-      source.flash_discount_price ===
-        '' ||
-      source.flash_discount_price ===
-        null
-        ? null
-        : Number(
-            source.flash_discount_price
+            api
+              .get(
+                '/billing-workspace/hotspot/portal-config'
+              )
+              .catch(
+                () => ({
+                  data: {},
+                })
+              ),
+          ]);
+
+        setSettings({
+          ...DEFAULTS,
+          ...(
+            settingsResult
+              .data ||
+            {}
           ),
+        });
 
-    popular_plan_id:
-      source.popular_plan_id
-        ? Number(
-            source.popular_plan_id
-          )
-        : null,
-
-    background_overlay:
-      Number(
-        source.background_overlay ||
-        0
-      ),
-
-    show_support:
-      Boolean(
-        source.show_support
-      ),
-
-    show_whatsapp:
-      Boolean(
-        source.show_whatsapp
-      ),
-
-    show_voucher_login:
-      Boolean(
-        source.show_voucher_login
-      ),
-  });
+        setPortalUrl(
+          portalResult
+            .data
+            ?.portal_url ||
+          ''
+        );
+      } catch (
+        requestError
+      ) {
+        setError(
+          requestError
+            .response
+            ?.data
+            ?.error ||
+          'Could not load Hotspot settings.'
+        );
+      } finally {
+        setLoading(
+          false
+        );
+      }
+    };
 
 
-  const persistSettings =
+  useEffect(
+    () => {
+      void loadSettings();
+    },
+    []
+  );
+
+
+  useEffect(
+    () => {
+      const modalOpen =
+        packageOpen ||
+        flashOpen ||
+        settingsOpen;
+
+      if (!modalOpen) {
+        return undefined;
+      }
+
+      const old =
+        document.body
+          .style
+          .overflow;
+
+      document.body
+        .style
+        .overflow =
+        'hidden';
+
+      return () => {
+        document.body
+          .style
+          .overflow =
+          old;
+      };
+    },
+    [
+      packageOpen,
+      flashOpen,
+      settingsOpen,
+    ]
+  );
+
+
+  const payload =
+    source => ({
+      ...source,
+
+      wallet_enabled:
+        Boolean(
+          source.wallet_enabled
+        ),
+
+      wallet_balance:
+        Number(
+          source.wallet_balance ||
+          0
+        ),
+
+      flash_enabled:
+        Boolean(
+          source.flash_enabled
+        ),
+
+      flash_plan_id:
+        source.flash_plan_id
+          ? Number(
+              source.flash_plan_id
+            )
+          : null,
+
+      flash_discount_price:
+        source.flash_discount_price ===
+          '' ||
+        source.flash_discount_price ===
+          null
+          ? null
+          : Number(
+              source.flash_discount_price
+            ),
+
+      popular_plan_id:
+        source.popular_plan_id
+          ? Number(
+              source.popular_plan_id
+            )
+          : null,
+
+      background_overlay:
+        Number(
+          source.background_overlay ||
+          0
+        ),
+
+      show_support:
+        Boolean(
+          source.show_support
+        ),
+
+      show_whatsapp:
+        Boolean(
+          source.show_whatsapp
+        ),
+
+      show_voucher_login:
+        Boolean(
+          source.show_voucher_login
+        ),
+    });
+
+
+  const saveSettings =
     async (
-      next,
       message
     ) => {
       try {
@@ -1243,14 +1087,13 @@ export default function HotspotControlCenter({
           true
         );
 
-        setNotice('');
         setError('');
 
         const result =
           await api.put(
             '/billing-workspace/hotspot/portal-settings',
             payload(
-              next
+              settings
             )
           );
 
@@ -1265,6 +1108,8 @@ export default function HotspotControlCenter({
         setNotice(
           message
         );
+
+        return true;
       } catch (
         requestError
       ) {
@@ -1280,43 +1125,13 @@ export default function HotspotControlCenter({
             ?.msg ||
           'Could not save Hotspot settings.'
         );
+
+        return false;
       } finally {
         setSaving(
           false
         );
       }
-    };
-
-
-  const toggleFlash =
-    checked => {
-      const now =
-        new Date();
-
-      const end =
-        new Date(
-          now.getTime() +
-          60 *
-          60 *
-          1000
-        );
-
-      setSettings(
-        current => ({
-          ...current,
-
-          flash_enabled:
-            checked,
-
-          flash_starts_at:
-            current.flash_starts_at ||
-            now.toISOString(),
-
-          flash_ends_at:
-            current.flash_ends_at ||
-            end.toISOString(),
-        })
-      );
     };
 
 
@@ -1430,7 +1245,7 @@ export default function HotspotControlCenter({
     };
 
 
-  const changePackageStatus =
+  const togglePackage =
     async plan => {
       try {
         setSaving(
@@ -1455,7 +1270,7 @@ export default function HotspotControlCenter({
             .response
             ?.data
             ?.error ||
-          'Could not update Hotspot package.'
+          'Could not update package.'
         );
       } finally {
         setSaving(
@@ -1487,7 +1302,7 @@ export default function HotspotControlCenter({
         await reload?.();
 
         setNotice(
-          'Hotspot package deleted.'
+          'Package deleted.'
         );
       } catch (
         requestError
@@ -1497,13 +1312,45 @@ export default function HotspotControlCenter({
             .response
             ?.data
             ?.error ||
-          'Could not delete Hotspot package.'
+          'Could not delete package.'
         );
       } finally {
         setSaving(
           false
         );
       }
+    };
+
+
+  const toggleFlash =
+    value => {
+      const now =
+        new Date();
+
+      const end =
+        new Date(
+          now.getTime() +
+          60 *
+          60 *
+          1000
+        );
+
+      setSettings(
+        current => ({
+          ...current,
+
+          flash_enabled:
+            value,
+
+          flash_starts_at:
+            current.flash_starts_at ||
+            now.toISOString(),
+
+          flash_ends_at:
+            current.flash_ends_at ||
+            end.toISOString(),
+        })
+      );
     };
 
 
@@ -1522,18 +1369,18 @@ export default function HotspotControlCenter({
           true
         );
 
-        const image =
+        const result =
           await compressBackground(
             file
           );
 
         update(
           'background_image_data',
-          image
+          result
         );
 
         setNotice(
-          'Background optimized. Save Landing Page Designer to apply it.'
+          'Background prepared. Save settings to apply it.'
         );
       } catch (
         uploadError
@@ -1559,7 +1406,6 @@ export default function HotspotControlCenter({
           true
         );
 
-        setNotice('');
         setError('');
 
         const result =
@@ -1583,8 +1429,8 @@ export default function HotspotControlCenter({
 
         setNotice(
           failed
-            ? `Published to ${published} router(s). ${failed} router(s) could not be reached.`
-            : `Hotspot portal published to ${published} MikroTik router(s).`
+            ? `${published} router(s) updated, ${failed} failed.`
+            : `Hotspot portal published to ${published} router(s).`
         );
       } catch (
         requestError
@@ -1594,7 +1440,7 @@ export default function HotspotControlCenter({
             .response
             ?.data
             ?.error ||
-          'Could not publish the Hotspot portal to MikroTik.'
+          'Could not publish Hotspot portal.'
         );
       } finally {
         setPublishing(
@@ -1604,38 +1450,90 @@ export default function HotspotControlCenter({
     };
 
 
+  const previewStyle =
+    settings
+      .background_image_data
+      ? {
+          backgroundImage:
+            `linear-gradient(rgba(2,6,23,${
+              Number(
+                settings.background_overlay ||
+                0
+              ) /
+              100
+            }),rgba(2,6,23,${
+              Number(
+                settings.background_overlay ||
+                0
+              ) /
+              100
+            })),url("${settings.background_image_data}")`,
+
+          backgroundSize:
+            'cover',
+
+          backgroundPosition:
+            'center',
+        }
+      : {
+          background:
+            theme.background,
+        };
+
+
   if (loading) {
     return (
-      <div className="-mx-3 -mt-3 min-h-screen bg-[#f7f8fb] px-5 py-20 text-center text-sm text-slate-400 sm:-mx-8 sm:-mt-8">
-        Loading Hotspot control center...
+      <div className="-mx-3 -mt-3 min-h-[70vh] bg-[#f7f8fb] px-6 py-24 text-center text-sm font-bold text-slate-400 sm:-mx-8 sm:-mt-8">
+        Loading Hotspot...
       </div>
     );
   }
 
 
   return (
-    <div className="-mx-3 -mt-3 min-h-screen overflow-x-hidden bg-[#f7f8fb] pb-24 sm:-mx-8 sm:-mt-8">
+    <div className="-mx-3 -mt-3 min-h-screen bg-[#f7f8fb] pb-20 sm:-mx-8 sm:-mt-8">
 
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-16 pt-7 text-white sm:px-9">
+      {/* CLEAN HEADER */}
 
-        <div className="relative z-10 flex flex-wrap items-start justify-between gap-5">
+      <section className="relative overflow-hidden bg-gradient-to-r from-[#6228e6] via-[#4b21b9] to-[#30168a] px-5 pb-14 pt-6 text-white sm:px-8">
 
-          <div>
-            <p className="text-[10px] font-black uppercase tracking-[.2em] text-violet-200">
+        <div className="relative z-10 flex items-start justify-between gap-4">
+
+          <div className="min-w-0">
+
+            <p className="text-[9px] font-black uppercase tracking-[.2em] text-violet-200">
               Services / Hotspot
             </p>
 
-            <h2 className="mt-2 text-3xl font-black tracking-tight">
-              Hotspot Control Center
+            <h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">
+              Hotspot
             </h2>
 
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-violet-100">
-              Build packages, run timed Flash offers and design the public captive landing page from one workspace.
+            <p className="mt-1.5 max-w-xl text-xs leading-5 text-violet-100 sm:text-sm">
+              Packages, promotions and captive portal management.
             </p>
           </div>
 
 
-          <div className="flex flex-wrap gap-2">
+          <div className="flex shrink-0 gap-2">
+
+            <button
+              type="button"
+              onClick={() =>
+                setSettingsOpen(
+                  true
+                )
+              }
+              title="Hotspot settings"
+              aria-label="Hotspot settings"
+              className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition hover:bg-white/20"
+            >
+              <Icon
+                name="settings"
+                className="h-5 w-5"
+              />
+            </button>
+
 
             {portalUrl && (
               <a
@@ -1644,26 +1542,27 @@ export default function HotspotControlCenter({
                 }
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-4 py-2.5 text-[10px] font-black text-white"
+                title="Preview portal"
+                className="hidden h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition hover:bg-white/20 sm:flex"
               >
                 <Icon
                   name="eye"
-                  className="h-4 w-4"
+                  className="h-5 w-5"
                 />
-
-                Preview portal
               </a>
             )}
 
+
             <button
               type="button"
-              disabled={
-                publishing
-              }
               onClick={
                 publish
               }
-              className="inline-flex items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-[10px] font-black text-emerald-950 disabled:opacity-50"
+              disabled={
+                publishing
+              }
+              title="Publish to MikroTik"
+              className="hidden h-10 items-center gap-2 rounded-xl bg-emerald-400 px-3 text-[9px] font-black text-emerald-950 disabled:opacity-50 sm:flex"
             >
               <Icon
                 name="publish"
@@ -1671,14 +1570,14 @@ export default function HotspotControlCenter({
               />
 
               {publishing
-                ? 'Publishing...'
-                : 'Publish to MikroTik'}
+                ? 'Publishing'
+                : 'Publish'}
             </button>
           </div>
         </div>
 
 
-        <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-12">
+        <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9">
 
           <svg
             viewBox="0 0 1200 180"
@@ -1686,7 +1585,7 @@ export default function HotspotControlCenter({
             className="h-full w-full"
           >
             <path
-              d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z"
+              d="M0 100 C210 30 330 178 520 112 C735 36 850 170 1040 70 C1110 34 1165 55 1200 32 L1200 180 L0 180 Z"
               fill="#f7f8fb"
             />
           </svg>
@@ -1694,108 +1593,129 @@ export default function HotspotControlCenter({
       </section>
 
 
-      <div className="space-y-5 px-3 sm:px-8">
+      <div className="space-y-4 px-3 sm:px-8">
 
         {error && (
-          <div className="rounded-2xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
+          <div className="rounded-xl border border-rose-100 bg-rose-50 px-4 py-3 text-xs font-bold text-rose-700">
             {error}
           </div>
         )}
 
         {notice && (
-          <div className="rounded-2xl border border-emerald-100 bg-white px-4 py-3 text-xs font-bold text-emerald-700 shadow-sm">
+          <div className="rounded-xl border border-emerald-100 bg-white px-4 py-3 text-xs font-bold text-emerald-700 shadow-sm">
             {notice}
           </div>
         )}
 
 
-        <section className="grid grid-cols-2 gap-2 xl:grid-cols-4">
+        {/* QUICK OVERVIEW */}
 
-          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <small className="text-[9px] font-black uppercase tracking-wide text-violet-500">
-              Active packages
-            </small>
+        <section className="grid grid-cols-3 gap-2">
 
-            <strong className="mt-2 block text-2xl font-black">
+          <article className="rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
+
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+              <Icon
+                name="package"
+                className="h-4 w-4"
+              />
+            </div>
+
+            <strong className="mt-3 block text-xl font-black text-slate-950 sm:text-2xl">
               {
                 activePlans.length
               }
             </strong>
-          </div>
+
+            <span className="mt-0.5 block truncate text-[9px] font-black uppercase text-slate-400">
+              Packages
+            </span>
+          </article>
 
 
-          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <small className="text-[9px] font-black uppercase tracking-wide text-emerald-500">
-              Starting price
-            </small>
+          <article
+            role="button"
+            tabIndex={0}
+            onClick={() =>
+              setFlashOpen(
+                true
+              )
+            }
+            className="cursor-pointer rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-pink-200 sm:p-4"
+          >
 
-            <strong className="mt-2 block text-xl font-black">
-              {money(
-                lowestPrice
-              )}
-            </strong>
-          </div>
+            <div className={`flex h-8 w-8 items-center justify-center rounded-xl ${
+              settings.flash_enabled
+                ? 'bg-pink-50 text-pink-600'
+                : 'bg-slate-100 text-slate-400'
+            }`}>
+              <Icon
+                name="bolt"
+                className="h-4 w-4"
+              />
+            </div>
 
-
-          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <small className="text-[9px] font-black uppercase tracking-wide text-pink-500">
-              Flash offer
-            </small>
-
-            <strong className="mt-2 block text-lg font-black">
+            <strong className="mt-3 block truncate text-sm font-black text-slate-950 sm:text-lg">
               {settings.flash_enabled
-                ? 'Enabled'
+                ? 'Active'
                 : 'Off'}
             </strong>
-          </div>
+
+            <span className="mt-0.5 block truncate text-[9px] font-black uppercase text-slate-400">
+              Flash Offer
+            </span>
+          </article>
 
 
-          <div className="rounded-2xl border border-slate-100 bg-white p-4 shadow-sm">
-            <small className="text-[9px] font-black uppercase tracking-wide text-sky-500">
-              Package layout
-            </small>
+          <article
+            role="button"
+            tabIndex={0}
+            onClick={() =>
+              setSettingsOpen(
+                true
+              )
+            }
+            className="cursor-pointer rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-sky-200 sm:p-4"
+          >
 
-            <strong className="mt-2 block truncate text-lg font-black">
-              {LAYOUTS.find(
-                item =>
-                  item.key ===
-                  settings.package_layout
-              )?.name ||
-               'Featured'}
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+              <Icon
+                name="layout"
+                className="h-4 w-4"
+              />
+            </div>
+
+            <strong className="mt-3 block truncate text-sm font-black text-slate-950 sm:text-lg">
+              {layoutName}
             </strong>
-          </div>
+
+            <span className="mt-0.5 block truncate text-[9px] font-black uppercase text-slate-400">
+              Portal
+            </span>
+          </article>
         </section>
 
 
-        {/* PACKAGE CONTAINER */}
+        {/* PACKAGES */}
 
-        <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
+        <section className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
 
-          <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-100 p-5 sm:p-6">
+          <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
 
-            <div className="flex items-start gap-3">
+            <div>
 
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-violet-50 text-violet-600">
-                <Icon
-                  name="package"
-                />
-              </span>
+              <h3 className="text-sm font-black text-slate-950 sm:text-base">
+                Hotspot Packages
+              </h3>
 
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[.18em] text-violet-600">
-                  Packages
-                </div>
-
-                <h3 className="mt-1 text-xl font-black">
-                  Hotspot packages
-                </h3>
-
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  These are the packages customers can purchase from the captive portal.
-                </p>
-              </div>
+              <p className="mt-0.5 text-[9px] text-slate-400 sm:text-[10px]">
+                Starting from {
+                  money(
+                    lowestPrice
+                  )
+                }
+              </p>
             </div>
-
 
             <button
               type="button"
@@ -1804,19 +1724,19 @@ export default function HotspotControlCenter({
                   true
                 )
               }
-              className="inline-flex h-11 items-center gap-2 rounded-xl bg-violet-600 px-4 text-[10px] font-black text-white"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-violet-600 px-3 text-[9px] font-black text-white"
             >
               <Icon
                 name="plus"
-                className="h-4 w-4"
+                className="h-3.5 w-3.5"
               />
 
-              Add package
+              Add Package
             </button>
-          </div>
+          </header>
 
 
-          <div className="grid gap-3 p-4 sm:grid-cols-2 sm:p-6 xl:grid-cols-3">
+          <div className="divide-y divide-slate-100">
 
             {plans.map(
               plan => (
@@ -1824,79 +1744,68 @@ export default function HotspotControlCenter({
                   key={
                     plan.id
                   }
-                  className={`rounded-2xl border p-4 ${
+                  className={`flex items-center gap-3 px-4 py-3.5 sm:px-5 ${
                     plan.is_active ===
                     false
-                      ? 'border-slate-200 bg-slate-50 opacity-60'
-                      : 'border-violet-100 bg-violet-50/30'
+                      ? 'bg-slate-50 opacity-60'
+                      : 'bg-white'
                   }`}
                 >
 
-                  <div className="flex items-start justify-between gap-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                    <Icon
+                      name="package"
+                      className="h-4 w-4"
+                    />
+                  </span>
 
-                    <div className="min-w-0">
 
-                      <strong className="block truncate text-sm font-black">
+                  <div className="min-w-0 flex-1">
+
+                    <div className="flex items-center gap-2">
+
+                      <strong className="truncate text-xs font-black text-slate-900 sm:text-sm">
                         {
                           plan.name
                         }
                       </strong>
 
-                      <span className="mt-1 block text-[10px] text-slate-400">
-                        {durationText(
-                          plan.duration_minutes
-                        )}
+                      <span
+                        className={`hidden rounded-full px-2 py-0.5 text-[7px] font-black uppercase sm:inline ${
+                          plan.is_active ===
+                          false
+                            ? 'bg-slate-100 text-slate-500'
+                            : 'bg-emerald-50 text-emerald-700'
+                        }`}
+                      >
+                        {plan.is_active ===
+                        false
+                          ? 'Inactive'
+                          : 'Active'}
                       </span>
                     </div>
 
+                    <p className="mt-1 truncate text-[9px] text-slate-400">
+                      {durationText(
+                        plan.duration_minutes
+                      )}
 
-                    <span
-                      className={`rounded-full px-2.5 py-1 text-[8px] font-black ${
-                        plan.is_active ===
-                        false
-                          ? 'bg-slate-200 text-slate-500'
-                          : 'bg-emerald-50 text-emerald-700'
-                      }`}
-                    >
-                      {plan.is_active ===
-                      false
-                        ? 'INACTIVE'
-                        : 'ACTIVE'}
-                    </span>
+                      {' · '}
+
+                      {plan.mikrotik_rate_limit ||
+                       'Unlimited speed'}
+                    </p>
                   </div>
 
 
-                  <div className="mt-4 grid grid-cols-2 gap-2">
-
-                    <div className="rounded-xl bg-white p-3">
-
-                      <small className="text-[8px] font-black uppercase text-slate-400">
-                        Price
-                      </small>
-
-                      <b className="mt-1 block text-sm">
-                        {money(
-                          plan.price
-                        )}
-                      </b>
-                    </div>
+                  <strong className="shrink-0 text-xs font-black text-slate-900 sm:text-sm">
+                    {money(
+                      plan.price
+                    )}
+                  </strong>
 
 
-                    <div className="rounded-xl bg-white p-3">
-
-                      <small className="text-[8px] font-black uppercase text-slate-400">
-                        Speed
-                      </small>
-
-                      <b className="mt-1 block truncate text-sm">
-                        {plan.mikrotik_rate_limit ||
-                         'Unlimited'}
-                      </b>
-                    </div>
-                  </div>
-
-
-                  <div className="mt-3 grid grid-cols-2 gap-2">
+                  <div className="flex shrink-0 gap-1">
 
                     <button
                       type="button"
@@ -1904,11 +1813,11 @@ export default function HotspotControlCenter({
                         saving
                       }
                       onClick={() =>
-                        changePackageStatus(
+                        togglePackage(
                           plan
                         )
                       }
-                      className="rounded-xl bg-white py-2.5 text-[9px] font-black text-violet-700"
+                      className="rounded-lg bg-slate-100 px-2 py-1.5 text-[8px] font-black text-slate-600"
                     >
                       {plan.is_active ===
                       false
@@ -1926,7 +1835,7 @@ export default function HotspotControlCenter({
                           plan
                         )
                       }
-                      className="rounded-xl bg-rose-50 py-2.5 text-[9px] font-black text-rose-600"
+                      className="hidden rounded-lg bg-rose-50 px-2 py-1.5 text-[8px] font-black text-rose-600 sm:block"
                     >
                       Delete
                     </button>
@@ -1937,14 +1846,14 @@ export default function HotspotControlCenter({
 
 
             {!plans.length && (
-              <div className="col-span-full rounded-2xl border border-dashed border-slate-200 px-5 py-14 text-center">
+              <div className="px-6 py-12 text-center">
 
                 <strong className="text-sm text-slate-700">
-                  No Hotspot packages yet
+                  No Hotspot packages
                 </strong>
 
-                <p className="mt-2 text-xs text-slate-400">
-                  Click Add package to create the first customer package.
+                <p className="mt-1 text-xs text-slate-400">
+                  Create the first package to start selling Hotspot access.
                 </p>
               </div>
             )}
@@ -1952,35 +1861,375 @@ export default function HotspotControlCenter({
         </section>
 
 
-        {/* FLASH PACKAGE */}
+        {/* FLASH SUMMARY */}
 
-        <section className="rounded-[26px] border border-pink-100 bg-white p-5 shadow-sm sm:p-6">
+        <section className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
 
-          <div className="flex flex-wrap items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
 
-            <div className="flex items-start gap-3">
+            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
+              settings.flash_enabled
+                ? 'bg-pink-50 text-pink-600'
+                : 'bg-slate-100 text-slate-400'
+            }`}>
+              <Icon
+                name="bolt"
+              />
+            </span>
 
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-pink-50 text-pink-600">
-                <Icon
-                  name="bolt"
-                />
-              </span>
 
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[.18em] text-pink-500">
+            <div className="min-w-0 flex-1">
+
+              <div className="flex items-center gap-2">
+
+                <h3 className="text-sm font-black text-slate-900">
                   Flash Package
-                </div>
-
-                <h3 className="mt-1 text-xl font-black">
-                  Timed promotion
                 </h3>
 
-                <p className="mt-1 text-xs leading-5 text-slate-400">
-                  Choose one existing package, discount it and show a live countdown on the landing page.
-                </p>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[7px] font-black uppercase ${
+                    settings.flash_enabled
+                      ? 'bg-pink-50 text-pink-600'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {settings.flash_enabled
+                    ? 'Active'
+                    : 'Off'}
+                </span>
               </div>
+
+
+              {settings.flash_enabled &&
+              flashPlan ? (
+                <p className="mt-1 truncate text-[10px] text-slate-500">
+
+                  {flashPlan.name}
+
+                  {' · '}
+
+                  <span className="line-through">
+                    {money(
+                      flashPlan.price
+                    )}
+                  </span>
+
+                  {' → '}
+
+                  <b className="text-pink-600">
+                    {money(
+                      settings.flash_discount_price
+                    )}
+                  </b>
+                </p>
+              ) : (
+                <p className="mt-1 text-[10px] text-slate-400">
+                  Create a temporary discounted package with a countdown.
+                </p>
+              )}
             </div>
 
+
+            <button
+              type="button"
+              onClick={() =>
+                setFlashOpen(
+                  true
+                )
+              }
+              className="shrink-0 rounded-xl bg-pink-50 px-3 py-2 text-[9px] font-black text-pink-600"
+            >
+              Configure
+            </button>
+          </div>
+        </section>
+
+
+        {/* MOBILE ACTIONS */}
+
+        <div className="grid grid-cols-2 gap-2 sm:hidden">
+
+          {portalUrl && (
+            <a
+              href={
+                portalUrl
+              }
+              target="_blank"
+              rel="noreferrer"
+              className="flex h-11 items-center justify-center gap-2 rounded-xl bg-white text-[9px] font-black text-slate-600 shadow-sm"
+            >
+              <Icon
+                name="eye"
+                className="h-4 w-4"
+              />
+
+              Preview Portal
+            </a>
+          )}
+
+
+          <button
+            type="button"
+            disabled={
+              publishing
+            }
+            onClick={
+              publish
+            }
+            className="flex h-11 items-center justify-center gap-2 rounded-xl bg-emerald-400 text-[9px] font-black text-emerald-950"
+          >
+            <Icon
+              name="publish"
+              className="h-4 w-4"
+            />
+
+            Publish
+          </button>
+        </div>
+      </div>
+
+
+      {/* ADD PACKAGE MODAL */}
+
+      {packageOpen && (
+        <ModalShell
+          title="Add Hotspot Package"
+          eyebrow="Packages"
+          close={() =>
+            setPackageOpen(
+              false
+            )
+          }
+          width="max-w-lg"
+        >
+
+          <form
+            onSubmit={
+              createPackage
+            }
+            className="space-y-4 p-4 sm:p-6"
+          >
+
+            <Field label="Package name">
+
+              <input
+                required
+                value={
+                  packageForm.name
+                }
+                onChange={
+                  event =>
+                    setPackageForm({
+                      ...packageForm,
+
+                      name:
+                        event
+                          .target
+                          .value,
+                    })
+                }
+                placeholder="Example: 6 Hours"
+                className={
+                  inputClass
+                }
+              />
+            </Field>
+
+
+            <div className="grid grid-cols-2 gap-3">
+
+              <Field label="Price">
+
+                <input
+                  required
+                  type="number"
+                  min="0"
+                  step="1"
+                  value={
+                    packageForm.price
+                  }
+                  onChange={
+                    event =>
+                      setPackageForm({
+                        ...packageForm,
+
+                        price:
+                          event
+                            .target
+                            .value,
+                      })
+                  }
+                  placeholder="20"
+                  className={
+                    inputClass
+                  }
+                />
+              </Field>
+
+
+              <Field label="Duration (minutes)">
+
+                <input
+                  required
+                  type="number"
+                  min="1"
+                  value={
+                    packageForm
+                      .duration_minutes
+                  }
+                  onChange={
+                    event =>
+                      setPackageForm({
+                        ...packageForm,
+
+                        duration_minutes:
+                          event
+                            .target
+                            .value,
+                      })
+                  }
+                  className={
+                    inputClass
+                  }
+                />
+              </Field>
+            </div>
+
+
+            <div className="grid grid-cols-2 gap-3">
+
+              <Field label="Speed Mbps">
+
+                <input
+                  type="number"
+                  min="0.25"
+                  step="0.25"
+                  value={
+                    packageForm
+                      .speed_mbps
+                  }
+                  onChange={
+                    event =>
+                      setPackageForm({
+                        ...packageForm,
+
+                        speed_mbps:
+                          event
+                            .target
+                            .value,
+                      })
+                  }
+                  placeholder="2"
+                  className={
+                    inputClass
+                  }
+                />
+              </Field>
+
+
+              <Field label="Data limit MB">
+
+                <input
+                  type="number"
+                  min="1"
+                  value={
+                    packageForm
+                      .data_limit_mb
+                  }
+                  onChange={
+                    event =>
+                      setPackageForm({
+                        ...packageForm,
+
+                        data_limit_mb:
+                          event
+                            .target
+                            .value,
+                      })
+                  }
+                  placeholder="Optional"
+                  className={
+                    inputClass
+                  }
+                />
+              </Field>
+            </div>
+
+
+            <Field label="MikroTik router">
+
+              <select
+                value={
+                  packageForm
+                    .router_id
+                }
+                onChange={
+                  event =>
+                    setPackageForm({
+                      ...packageForm,
+
+                      router_id:
+                        event
+                          .target
+                          .value,
+                    })
+                }
+                className={
+                  inputClass
+                }
+              >
+                <option value="">
+                  All Hotspot routers
+                </option>
+
+                {routers.map(
+                  router => (
+                    <option
+                      key={
+                        router.id
+                      }
+                      value={
+                        router.id
+                      }
+                    >
+                      {router.name}
+                    </option>
+                  )
+                )}
+              </select>
+            </Field>
+
+
+            <button
+              disabled={
+                saving
+              }
+              className="h-11 w-full rounded-xl bg-violet-600 text-xs font-black text-white disabled:opacity-50"
+            >
+              {saving
+                ? 'Creating...'
+                : 'Create Package'}
+            </button>
+          </form>
+        </ModalShell>
+      )}
+
+
+      {/* FLASH MODAL */}
+
+      {flashOpen && (
+        <ModalShell
+          title="Flash Package"
+          eyebrow="Promotion"
+          close={() =>
+            setFlashOpen(
+              false
+            )
+          }
+          width="max-w-2xl"
+        >
+
+          <div className="space-y-4 p-4 sm:p-6">
 
             <Toggle
               checked={
@@ -1989,65 +2238,56 @@ export default function HotspotControlCenter({
               onChange={
                 toggleFlash
               }
-              title={
-                settings.flash_enabled
-                  ? 'Enabled'
-                  : 'Disabled'
-              }
+              label="Enable Flash Package"
+              description="Show a temporary discounted package with a countdown."
             />
-          </div>
 
 
-          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <div className="grid gap-3 sm:grid-cols-2">
 
-            <Field label="Flash package">
+              <Field label="Package">
 
-              <select
-                value={
-                  settings.flash_plan_id ||
-                  ''
-                }
-                onChange={
-                  event =>
-                    update(
-                      'flash_plan_id',
-                      event
-                        .target
-                        .value
+                <select
+                  value={
+                    settings.flash_plan_id ||
+                    ''
+                  }
+                  onChange={
+                    event =>
+                      update(
+                        'flash_plan_id',
+                        event
+                          .target
+                          .value
+                      )
+                  }
+                  className={
+                    inputClass
+                  }
+                >
+                  <option value="">
+                    Select package
+                  </option>
+
+                  {activePlans.map(
+                    plan => (
+                      <option
+                        key={
+                          plan.id
+                        }
+                        value={
+                          plan.id
+                        }
+                      >
+                        {plan.name} · {money(plan.price)}
+                      </option>
                     )
-                }
-                className={
-                  inputClass
-                }
-              >
-                <option value="">
-                  Select package
-                </option>
-
-                {activePlans.map(
-                  plan => (
-                    <option
-                      key={
-                        plan.id
-                      }
-                      value={
-                        plan.id
-                      }
-                    >
-                      {plan.name} · {money(plan.price)}
-                    </option>
-                  )
-                )}
-              </select>
-            </Field>
+                  )}
+                </select>
+              </Field>
 
 
-            <Field label="Flash price">
-
-              <div className="relative">
-                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-[10px] font-black text-slate-400">
-                  KES
-                </span>
+              <Field label="Flash price">
 
                 <input
                   type="number"
@@ -2066,373 +2306,253 @@ export default function HotspotControlCenter({
                           .value
                       )
                   }
-                  className={`${inputClass} pl-12`}
+                  placeholder="15"
+                  className={
+                    inputClass
+                  }
                 />
-              </div>
-            </Field>
+              </Field>
 
 
-            <Field label="Starts">
+              <Field label="Starts">
 
-              <input
-                type="datetime-local"
-                value={
-                  toInputDateTime(
-                    settings.flash_starts_at
-                  )
-                }
-                onChange={
-                  event =>
-                    update(
-                      'flash_starts_at',
-                      fromInputDateTime(
-                        event
-                          .target
-                          .value
-                      )
+                <input
+                  type="datetime-local"
+                  value={
+                    localDateTime(
+                      settings.flash_starts_at
                     )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-
-
-            <Field label="Ends">
-
-              <input
-                type="datetime-local"
-                value={
-                  toInputDateTime(
-                    settings.flash_ends_at
-                  )
-                }
-                onChange={
-                  event =>
-                    update(
-                      'flash_ends_at',
-                      fromInputDateTime(
-                        event
-                          .target
-                          .value
+                  }
+                  onChange={
+                    event =>
+                      update(
+                        'flash_starts_at',
+                        isoDateTime(
+                          event
+                            .target
+                            .value
+                        )
                       )
+                  }
+                  className={
+                    inputClass
+                  }
+                />
+              </Field>
+
+
+              <Field label="Ends">
+
+                <input
+                  type="datetime-local"
+                  value={
+                    localDateTime(
+                      settings.flash_ends_at
                     )
-                }
-                className={
-                  inputClass
-                }
-              />
-            </Field>
-          </div>
-
-
-          {flashPlan && (
-            <div className="mt-4 rounded-2xl bg-pink-50 p-4">
-
-              <small className="text-[9px] font-black uppercase text-pink-500">
-                Promotion preview
-              </small>
-
-              <strong className="mt-2 block text-sm">
-                {flashPlan.name}
-                {' · '}
-                {money(
-                  flashPlan.price
-                )}
-                {' → '}
-                {money(
-                  settings.flash_discount_price
-                )}
-              </strong>
+                  }
+                  onChange={
+                    event =>
+                      update(
+                        'flash_ends_at',
+                        isoDateTime(
+                          event
+                            .target
+                            .value
+                        )
+                      )
+                  }
+                  className={
+                    inputClass
+                  }
+                />
+              </Field>
             </div>
-          )}
 
+
+            {flashPlan && (
+              <div className="rounded-xl bg-pink-50 p-4">
+
+                <span className="text-[9px] font-black uppercase text-pink-500">
+                  Preview
+                </span>
+
+                <strong className="mt-1.5 block text-sm text-slate-900">
+
+                  {flashPlan.name}
+
+                  {' · '}
+
+                  {money(
+                    flashPlan.price
+                  )}
+
+                  {' → '}
+
+                  <span className="text-pink-600">
+                    {money(
+                      settings.flash_discount_price
+                    )}
+                  </span>
+                </strong>
+              </div>
+            )}
+
+
+            <button
+              type="button"
+              disabled={
+                saving
+              }
+              onClick={
+                async () => {
+                  const saved =
+                    await saveSettings(
+                      'Flash Package updated.'
+                    );
+
+                  if (saved) {
+                    setFlashOpen(
+                      false
+                    );
+                  }
+                }
+              }
+              className="h-11 w-full rounded-xl bg-pink-600 text-xs font-black text-white disabled:opacity-50"
+            >
+              {saving
+                ? 'Saving...'
+                : 'Save Flash Package'}
+            </button>
+          </div>
+        </ModalShell>
+      )}
+
+
+      {/* SETTINGS DRAWER */}
+
+      {settingsOpen && (
+        <div className="fixed inset-0 z-[10030] flex justify-end bg-slate-950/50 backdrop-blur-sm">
 
           <button
             type="button"
-            disabled={
-              saving
-            }
+            aria-label="Close Hotspot settings"
             onClick={() =>
-              persistSettings(
-                settings,
-                'Flash Package saved.'
+              setSettingsOpen(
+                false
               )
             }
-            className="mt-5 h-12 rounded-2xl bg-pink-600 px-6 text-xs font-black text-white disabled:opacity-50"
-          >
-            Save Flash Package
-          </button>
-        </section>
+            className="absolute inset-0"
+          />
 
 
-        {/* LANDING PAGE DESIGNER */}
+          <section className="relative z-10 h-full w-full overflow-y-auto bg-[#f7f8fb] shadow-2xl lg:max-w-[1080px]">
 
-        <section className="overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-sm">
+            <header className="sticky top-0 z-30 flex items-center justify-between border-b border-slate-200 bg-white/95 px-4 py-4 backdrop-blur sm:px-6">
 
-          <div className="border-b border-slate-100 p-5 sm:p-6">
+              <div className="flex items-center gap-3">
 
-            <div className="flex items-start gap-3">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                  <Icon
+                    name="settings"
+                    className="h-5 w-5"
+                  />
+                </span>
 
-              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-sky-50 text-sky-600">
+                <div>
+
+                  <p className="text-[8px] font-black uppercase tracking-[.18em] text-violet-500">
+                    Hotspot Settings
+                  </p>
+
+                  <h3 className="text-base font-black text-slate-950 sm:text-lg">
+                    Landing Page Customization
+                  </h3>
+                </div>
+              </div>
+
+
+              <button
+                type="button"
+                onClick={() =>
+                  setSettingsOpen(
+                    false
+                  )
+                }
+                className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+              >
                 <Icon
-                  name="design"
+                  name="close"
+                  className="h-4 w-4"
                 />
-              </span>
-
-              <div>
-                <div className="text-[10px] font-black uppercase tracking-[.18em] text-sky-600">
-                  Landing Page Designer
-                </div>
-
-                <h3 className="mt-1 text-xl font-black">
-                  Captive portal appearance
-                </h3>
-
-                <p className="mt-1 max-w-2xl text-xs leading-5 text-slate-400">
-                  Customize the background, colors, package layout, contact details and optional portal sections.
-                </p>
-              </div>
-            </div>
-          </div>
+              </button>
+            </header>
 
 
-          <div className="grid gap-6 p-4 sm:p-6 xl:grid-cols-[minmax(0,1fr)_390px]">
+            <div className="grid gap-4 p-3 sm:p-5 xl:grid-cols-[minmax(0,1fr)_340px]">
 
-            <div className="space-y-7">
+              <div className="space-y-4">
 
+                {/* BRAND */}
 
-              <div>
+                <section className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
 
-                <h4 className="text-sm font-black">
-                  Brand & contact
-                </h4>
+                  <div className="mb-4 flex items-center gap-3">
 
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600">
+                      <Icon
+                        name="phone"
+                        className="h-4 w-4"
+                      />
+                    </span>
 
-                  <Field label="Hotspot brand name">
-                    <input
-                      value={
-                        settings.brand_name
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'brand_name',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      placeholder="My Network"
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
+                    <div>
+
+                      <h4 className="text-sm font-black">
+                        Brand & Contact
+                      </h4>
+
+                      <p className="text-[9px] text-slate-400">
+                        Information customers see on the portal.
+                      </p>
+                    </div>
+                  </div>
 
 
-                  <Field label="Main heading">
-                    <input
-                      value={
-                        settings.hero_heading
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'hero_heading',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      placeholder="Fast Internet. Everywhere."
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
+                  <div className="grid gap-3 sm:grid-cols-2">
 
-
-                  <Field label="Tagline">
-                    <input
-                      value={
-                        settings.tagline
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'tagline',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      placeholder="Connect instantly"
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-
-
-                  <Field label="Contact number displayed">
-                    <input
-                      value={
-                        settings.support_phone
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'support_phone',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      placeholder="0722 000 000"
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-
-
-                  <Field label="WhatsApp number">
-                    <input
-                      value={
-                        settings.whatsapp_phone
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'whatsapp_phone',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      placeholder="254722000000"
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-
-
-                  <Field label="Support message">
-                    <input
-                      value={
-                        settings.support_text
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'support_text',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      className={
-                        inputClass
-                      }
-                    />
-                  </Field>
-                </div>
-              </div>
-
-
-              <div>
-
-                <h4 className="text-sm font-black">
-                  Theme
-                </h4>
-
-                <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
-
-                  {Object.entries(
-                    THEMES
-                  ).map(
-                    ([
-                      key,
-                      item,
-                    ]) => (
-                      <button
-                        type="button"
-                        key={
-                          key
-                        }
-                        onClick={() => {
-                          update(
-                            'theme_preset',
-                            key
-                          );
-
-                          update(
-                            'accent_color',
-                            item.accent
-                          );
-                        }}
-                        className={`rounded-2xl border p-3 text-left transition ${
-                          settings.theme_preset ===
-                          key
-                            ? 'border-violet-500 ring-2 ring-violet-100'
-                            : 'border-slate-200'
-                        }`}
-                      >
-                        <span
-                          className="block h-12 rounded-xl"
-                          style={{
-                            background:
-                              item.background,
-                          }}
-                        />
-
-                        <b className="mt-2 block text-[10px]">
-                          {
-                            item.name
-                          }
-                        </b>
-                      </button>
-                    )
-                  )}
-                </div>
-
-
-                <div className="mt-4 max-w-xs">
-
-                  <Field label="Accent color">
-
-                    <div className="flex gap-2">
+                    <Field label="Brand name">
 
                       <input
-                        type="color"
                         value={
-                          settings.accent_color ||
-                          '#0878f9'
+                          settings.brand_name
                         }
                         onChange={
                           event =>
                             update(
-                              'accent_color',
+                              'brand_name',
                               event
                                 .target
                                 .value
                             )
                         }
-                        className="h-12 w-16 rounded-xl border border-slate-200 bg-white p-1"
+                        placeholder="My Hotspot"
+                        className={
+                          inputClass
+                        }
                       />
+                    </Field>
+
+
+                    <Field label="Main heading">
 
                       <input
                         value={
-                          settings.accent_color
+                          settings.hero_heading
                         }
                         onChange={
                           event =>
                             update(
-                              'accent_color',
+                              'hero_heading',
                               event
                                 .target
                                 .value
@@ -2442,28 +2562,263 @@ export default function HotspotControlCenter({
                           inputClass
                         }
                       />
-                    </div>
-                  </Field>
-                </div>
-              </div>
+                    </Field>
 
 
-              <div>
+                    <Field label="Tagline">
 
-                <h4 className="text-sm font-black">
-                  Background image
-                </h4>
+                      <input
+                        value={
+                          settings.tagline
+                        }
+                        onChange={
+                          event =>
+                            update(
+                              'tagline',
+                              event
+                                .target
+                                .value
+                            )
+                        }
+                        placeholder="Connect instantly"
+                        className={
+                          inputClass
+                        }
+                      />
+                    </Field>
 
-                <div className="mt-4 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4">
 
-                  <div className="flex flex-wrap items-center gap-3">
+                    <Field label="Contact number">
 
-                    <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-4 py-2.5 text-[10px] font-black text-white">
+                      <input
+                        value={
+                          settings.support_phone
+                        }
+                        onChange={
+                          event =>
+                            update(
+                              'support_phone',
+                              event
+                                .target
+                                .value
+                            )
+                        }
+                        placeholder="0722 000 000"
+                        className={
+                          inputClass
+                        }
+                      />
+                    </Field>
 
+
+                    <Field label="WhatsApp number">
+
+                      <input
+                        value={
+                          settings.whatsapp_phone
+                        }
+                        onChange={
+                          event =>
+                            update(
+                              'whatsapp_phone',
+                              event
+                                .target
+                                .value
+                            )
+                        }
+                        placeholder="254722000000"
+                        className={
+                          inputClass
+                        }
+                      />
+                    </Field>
+
+
+                    <Field label="Support message">
+
+                      <input
+                        value={
+                          settings.support_text
+                        }
+                        onChange={
+                          event =>
+                            update(
+                              'support_text',
+                              event
+                                .target
+                                .value
+                            )
+                        }
+                        className={
+                          inputClass
+                        }
+                      />
+                    </Field>
+                  </div>
+                </section>
+
+
+                {/* THEME */}
+
+                <section className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+
+                  <div className="mb-4 flex items-center gap-3">
+
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
                       <Icon
-                        name="upload"
+                        name="image"
                         className="h-4 w-4"
                       />
+                    </span>
+
+                    <div>
+
+                      <h4 className="text-sm font-black">
+                        Theme & Background
+                      </h4>
+
+                      <p className="text-[9px] text-slate-400">
+                        Control the visual style of the landing page.
+                      </p>
+                    </div>
+                  </div>
+
+
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+
+                    {Object.entries(
+                      THEMES
+                    ).map(
+                      ([
+                        key,
+                        item,
+                      ]) => (
+                        <button
+                          type="button"
+                          key={
+                            key
+                          }
+                          onClick={() =>
+                            setSettings(
+                              current => ({
+                                ...current,
+
+                                theme_preset:
+                                  key,
+
+                                accent_color:
+                                  item.accent,
+                              })
+                            )
+                          }
+                          className={`rounded-xl border p-2 text-left ${
+                            settings.theme_preset ===
+                            key
+                              ? 'border-violet-500 ring-2 ring-violet-100'
+                              : 'border-slate-200'
+                          }`}
+                        >
+
+                          <span
+                            className="block h-10 rounded-lg"
+                            style={{
+                              background:
+                                item.background,
+                            }}
+                          />
+
+                          <b className="mt-1.5 block text-[8px]">
+                            {
+                              item.name
+                            }
+                          </b>
+                        </button>
+                      )
+                    )}
+                  </div>
+
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+
+                    <Field label="Accent color">
+
+                      <div className="flex gap-2">
+
+                        <input
+                          type="color"
+                          value={
+                            settings.accent_color ||
+                            '#0878f9'
+                          }
+                          onChange={
+                            event =>
+                              update(
+                                'accent_color',
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          className="h-11 w-14 rounded-xl border border-slate-200 bg-white p-1"
+                        />
+
+                        <input
+                          value={
+                            settings.accent_color
+                          }
+                          onChange={
+                            event =>
+                              update(
+                                'accent_color',
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          className={
+                            inputClass
+                          }
+                        />
+                      </div>
+                    </Field>
+
+
+                    <Field label="Background darkness">
+
+                      <div className="flex h-11 items-center gap-3 rounded-xl bg-slate-50 px-3">
+
+                        <input
+                          type="range"
+                          min="0"
+                          max="85"
+                          value={
+                            settings.background_overlay
+                          }
+                          onChange={
+                            event =>
+                              update(
+                                'background_overlay',
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          className="min-w-0 flex-1 accent-violet-600"
+                        />
+
+                        <b className="text-[9px]">
+                          {
+                            settings.background_overlay
+                          }%
+                        </b>
+                      </div>
+                    </Field>
+                  </div>
+
+
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+
+                    <label className="cursor-pointer rounded-xl bg-slate-950 px-4 py-2.5 text-[9px] font-black text-white">
 
                       Upload background
 
@@ -2487,494 +2842,409 @@ export default function HotspotControlCenter({
                             ''
                           )
                         }
-                        className="rounded-xl bg-rose-50 px-4 py-2.5 text-[10px] font-black text-rose-600"
+                        className="rounded-xl bg-rose-50 px-4 py-2.5 text-[9px] font-black text-rose-600"
                       >
                         Remove image
                       </button>
                     )}
-
-                    <span className="text-[10px] text-slate-400">
-                      Images are compressed automatically for fast captive-portal loading.
-                    </span>
                   </div>
+                </section>
 
 
-                  <label className="mt-5 block">
+                {/* LAYOUT */}
 
-                    <span className="flex items-center justify-between text-xs font-black text-slate-600">
+                <section className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
 
-                      <span>
-                        Dark overlay
-                      </span>
+                  <h4 className="text-sm font-black">
+                    Package Layout
+                  </h4>
 
-                      <span>
-                        {Number(
-                          settings.background_overlay ||
-                          0
-                        )}%
-                      </span>
-                    </span>
-
-                    <input
-                      type="range"
-                      min="0"
-                      max="85"
-                      value={
-                        settings.background_overlay
-                      }
-                      onChange={
-                        event =>
-                          update(
-                            'background_overlay',
-                            event
-                              .target
-                              .value
-                          )
-                      }
-                      className="mt-3 w-full accent-violet-600"
-                    />
-                  </label>
-                </div>
-              </div>
+                  <p className="mt-0.5 text-[9px] text-slate-400">
+                    Choose how packages appear to customers.
+                  </p>
 
 
-              <div>
+                  <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
 
-                <h4 className="text-sm font-black">
-                  Package layout
-                </h4>
-
-                <div className="mt-4 grid grid-cols-2 gap-2 md:grid-cols-5">
-
-                  {LAYOUTS.map(
-                    layout => (
-                      <button
-                        type="button"
-                        key={
-                          layout.key
-                        }
-                        onClick={() =>
-                          update(
-                            'package_layout',
+                    {LAYOUTS.map(
+                      layout => (
+                        <button
+                          type="button"
+                          key={
                             layout.key
-                          )
-                        }
-                        className={`rounded-2xl border p-3 text-left transition ${
-                          settings.package_layout ===
-                          layout.key
-                            ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-100'
-                            : 'border-slate-200 bg-white'
-                        }`}
-                      >
-
-                        <div
-                          className={`grid h-14 gap-1 ${
-                            layout.key ===
-                            'list'
-                              ? 'grid-cols-1'
-                              : layout.key ===
-                                'compact'
-                                ? 'grid-cols-3'
-                                : 'grid-cols-2'
+                          }
+                          onClick={() =>
+                            update(
+                              'package_layout',
+                              layout.key
+                            )
+                          }
+                          className={`rounded-xl border p-3 ${
+                            settings.package_layout ===
+                            layout.key
+                              ? 'border-violet-500 bg-violet-50 text-violet-700 ring-2 ring-violet-100'
+                              : 'border-slate-200 bg-white text-slate-600'
                           }`}
                         >
 
-                          {[0,1,2,3].map(
-                            index => (
-                              <span
-                                key={
-                                  index
-                                }
-                                className={`bg-violet-300 ${
-                                  layout.key ===
-                                  'circles'
-                                    ? 'rounded-full'
-                                    : 'rounded'
-                                }`}
-                              />
-                            )
-                          )}
-                        </div>
+                          <Icon
+                            name="layout"
+                            className="mx-auto h-5 w-5"
+                          />
 
-                        <b className="mt-2 block text-[10px]">
-                          {
-                            layout.name
-                          }
-                        </b>
-
-                        <small className="mt-1 block text-[8px] leading-3 text-slate-400">
-                          {
-                            layout.description
-                          }
-                        </small>
-                      </button>
-                    )
-                  )}
-                </div>
-              </div>
-
-
-              <div>
-
-                <h4 className="text-sm font-black">
-                  Portal features
-                </h4>
-
-                <div className="mt-4 grid gap-3 md:grid-cols-2">
-
-                  <Toggle
-                    checked={
-                      settings.wallet_enabled
-                    }
-                    onChange={
-                      value =>
-                        update(
-                          'wallet_enabled',
-                          value
-                        )
-                    }
-                    title="Wallet card"
-                    description="Show or hide the wallet card on the Hotspot landing page."
-                  />
-
-                  <Toggle
-                    checked={
-                      settings.show_voucher_login
-                    }
-                    onChange={
-                      value =>
-                        update(
-                          'show_voucher_login',
-                          value
-                        )
-                    }
-                    title="Voucher login"
-                    description="Allow customers with voucher codes to reconnect."
-                  />
-
-                  <Toggle
-                    checked={
-                      settings.show_support
-                    }
-                    onChange={
-                      value =>
-                        update(
-                          'show_support',
-                          value
-                        )
-                    }
-                    title="Phone support"
-                    description="Display the support telephone number."
-                  />
-
-                  <Toggle
-                    checked={
-                      settings.show_whatsapp
-                    }
-                    onChange={
-                      value =>
-                        update(
-                          'show_whatsapp',
-                          value
-                        )
-                    }
-                    title="WhatsApp"
-                    description="Display the WhatsApp contact action."
-                  />
-                </div>
-
-
-                {settings.wallet_enabled && (
-                  <div className="mt-4 grid gap-4 md:grid-cols-2">
-
-                    <Field label="Wallet label">
-                      <input
-                        value={
-                          settings.wallet_label
-                        }
-                        onChange={
-                          event =>
-                            update(
-                              'wallet_label',
-                              event
-                                .target
-                                .value
-                            )
-                        }
-                        className={
-                          inputClass
-                        }
-                      />
-                    </Field>
-
-
-                    <Field
-                      label="Displayed wallet balance"
-                      hint="visual display"
-                    >
-                      <input
-                        type="number"
-                        min="0"
-                        step="0.01"
-                        value={
-                          settings.wallet_balance
-                        }
-                        onChange={
-                          event =>
-                            update(
-                              'wallet_balance',
-                              event
-                                .target
-                                .value
-                            )
-                        }
-                        className={
-                          inputClass
-                        }
-                      />
-                    </Field>
+                          <b className="mt-2 block text-[8px]">
+                            {
+                              layout.name
+                            }
+                          </b>
+                        </button>
+                      )
+                    )}
                   </div>
-                )}
+                </section>
 
 
-                <div className="mt-4 max-w-md">
+                {/* FEATURES */}
 
-                  <Field label="Popular package badge">
+                <section className="rounded-[18px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
 
-                    <select
-                      value={
-                        settings.popular_plan_id ||
-                        ''
+                  <h4 className="text-sm font-black">
+                    Portal Features
+                  </h4>
+
+                  <div className="mt-4 grid gap-2 sm:grid-cols-2">
+
+                    <Toggle
+                      checked={
+                        settings.wallet_enabled
                       }
                       onChange={
-                        event =>
+                        value =>
                           update(
-                            'popular_plan_id',
-                            event
-                              .target
-                              .value
+                            'wallet_enabled',
+                            value
                           )
                       }
-                      className={
-                        inputClass
+                      label="Wallet"
+                      description="Show the wallet card."
+                    />
+
+                    <Toggle
+                      checked={
+                        settings.show_voucher_login
                       }
-                    >
-                      <option value="">
-                        Automatic
-                      </option>
+                      onChange={
+                        value =>
+                          update(
+                            'show_voucher_login',
+                            value
+                          )
+                      }
+                      label="Voucher Login"
+                      description="Allow voucher-code login."
+                    />
 
-                      {activePlans.map(
-                        plan => (
-                          <option
-                            key={
-                              plan.id
-                            }
-                            value={
-                              plan.id
-                            }
-                          >
-                            {plan.name}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </Field>
-                </div>
-              </div>
+                    <Toggle
+                      checked={
+                        settings.show_support
+                      }
+                      onChange={
+                        value =>
+                          update(
+                            'show_support',
+                            value
+                          )
+                      }
+                      label="Phone Support"
+                      description="Display support number."
+                    />
 
-
-              <button
-                type="button"
-                disabled={
-                  saving
-                }
-                onClick={() =>
-                  persistSettings(
-                    settings,
-                    'Hotspot landing page design saved.'
-                  )
-                }
-                className="h-12 w-full rounded-2xl bg-gradient-to-r from-violet-600 to-fuchsia-600 text-sm font-black text-white shadow-lg shadow-violet-200 disabled:opacity-50 sm:w-auto sm:px-8"
-              >
-                {saving
-                  ? 'Saving...'
-                  : 'Save Landing Page Designer'}
-              </button>
-            </div>
+                    <Toggle
+                      checked={
+                        settings.show_whatsapp
+                      }
+                      onChange={
+                        value =>
+                          update(
+                            'show_whatsapp',
+                            value
+                          )
+                      }
+                      label="WhatsApp"
+                      description="Display WhatsApp support."
+                    />
+                  </div>
 
 
-            {/* LIVE DESIGN PREVIEW */}
+                  {settings.wallet_enabled && (
+                    <div className="mt-3 grid gap-3 sm:grid-cols-2">
 
-            <aside className="xl:sticky xl:top-5 xl:self-start">
+                      <Field label="Wallet label">
 
-              <div className="text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
-                Live design preview
-              </div>
+                        <input
+                          value={
+                            settings.wallet_label
+                          }
+                          onChange={
+                            event =>
+                              update(
+                                'wallet_label',
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          className={
+                            inputClass
+                          }
+                        />
+                      </Field>
 
-              <div className="mt-3 overflow-hidden rounded-[30px] border-[7px] border-slate-950 bg-slate-950 shadow-2xl">
 
-                <div
-                  className="relative min-h-[560px] overflow-hidden bg-slate-100"
-                  style={
-                    backgroundStyle
+                      <Field label="Displayed balance">
+
+                        <input
+                          type="number"
+                          min="0"
+                          step="0.01"
+                          value={
+                            settings.wallet_balance
+                          }
+                          onChange={
+                            event =>
+                              update(
+                                'wallet_balance',
+                                event
+                                  .target
+                                  .value
+                              )
+                          }
+                          className={
+                            inputClass
+                          }
+                        />
+                      </Field>
+                    </div>
+                  )}
+
+
+                  <div className="mt-3">
+
+                    <Field label="Popular package">
+
+                      <select
+                        value={
+                          settings.popular_plan_id ||
+                          ''
+                        }
+                        onChange={
+                          event =>
+                            update(
+                              'popular_plan_id',
+                              event
+                                .target
+                                .value
+                            )
+                        }
+                        className={
+                          inputClass
+                        }
+                      >
+                        <option value="">
+                          Automatic
+                        </option>
+
+                        {activePlans.map(
+                          plan => (
+                            <option
+                              key={
+                                plan.id
+                              }
+                              value={
+                                plan.id
+                              }
+                            >
+                              {
+                                plan.name
+                              }
+                            </option>
+                          )
+                        )}
+                      </select>
+                    </Field>
+                  </div>
+                </section>
+
+
+                <button
+                  type="button"
+                  disabled={
+                    saving
                   }
+                  onClick={
+                    async () => {
+                      const saved =
+                        await saveSettings(
+                          'Hotspot customization saved.'
+                        );
+
+                      if (saved) {
+                        setSettingsOpen(
+                          false
+                        );
+                      }
+                    }
+                  }
+                  className="h-11 w-full rounded-xl bg-violet-600 text-xs font-black text-white shadow-lg shadow-violet-200 disabled:opacity-50"
                 >
+                  {saving
+                    ? 'Saving...'
+                    : 'Save Customization'}
+                </button>
+              </div>
 
-                  <div className="p-5 text-white">
 
-                    <div className="flex items-center justify-between">
+              {/* LIVE PREVIEW */}
 
-                      <strong className="max-w-[190px] truncate text-lg font-black uppercase">
+              <aside className="xl:sticky xl:top-20 xl:self-start">
+
+                <p className="mb-2 text-[8px] font-black uppercase tracking-[.18em] text-slate-400">
+                  Live Preview
+                </p>
+
+                <div className="overflow-hidden rounded-[26px] border-[6px] border-slate-950 bg-white shadow-xl">
+
+                  <div
+                    className="relative min-h-[520px] overflow-hidden"
+                    style={
+                      previewStyle
+                    }
+                  >
+
+                    <div className="p-5 text-white">
+
+                      <strong className="block truncate text-base font-black uppercase">
                         {settings.brand_name ||
                          'Your Hotspot'}
                       </strong>
 
-                      <span className="text-lg">
-                        Wi-Fi
-                      </span>
-                    </div>
+                      <h4 className="mt-12 text-3xl font-black leading-tight">
+                        {settings.hero_heading ||
+                         'Fast Internet. Everywhere.'}
+                      </h4>
+
+                      <p className="mt-2 text-[10px] text-white/75">
+                        {settings.tagline ||
+                         'Connect instantly'}
+                      </p>
 
 
-                    <h4 className="mt-10 max-w-[260px] text-3xl font-black leading-tight">
-                      {settings.hero_heading ||
-                       'Fast Internet. Everywhere.'}
-                    </h4>
+                      {settings.wallet_enabled && (
+                        <div className="mt-6 rounded-2xl bg-white p-4 text-slate-950">
 
-                    <p className="mt-3 text-xs text-white/80">
-                      {settings.tagline ||
-                       'Connect instantly'}
-                    </p>
+                          <small className="text-[8px] font-black uppercase text-slate-400">
+                            {
+                              settings.wallet_label
+                            }
+                          </small>
 
-
-                    {settings.wallet_enabled && (
-                      <div className="mt-6 rounded-2xl bg-white p-4 text-slate-900 shadow-xl">
-
-                        <small className="font-black uppercase text-slate-400">
-                          {settings.wallet_label}
-                        </small>
-
-                        <strong
-                          className="mt-2 block text-xl"
-                          style={{
-                            color:
-                              settings.accent_color,
-                          }}
-                        >
-                          {money(
-                            settings.wallet_balance
-                          )}
-                        </strong>
-                      </div>
-                    )}
-                  </div>
-
-
-                  <div className="absolute inset-x-0 bottom-0 rounded-t-[28px] bg-white p-4">
-
-                    <small className="font-black uppercase tracking-wide text-slate-400">
-                      Packages
-                    </small>
-
-
-                    <div
-                      className={`mt-3 grid gap-2 ${
-                        settings.package_layout ===
-                        'compact'
-                          ? 'grid-cols-3'
-                          : settings.package_layout ===
-                            'list'
-                            ? 'grid-cols-1'
-                            : 'grid-cols-2'
-                      }`}
-                    >
-
-                      {activePlans
-                        .slice(
-                          0,
-                          6
-                        )
-                        .map(
-                          plan => (
-                            <div
-                              key={
-                                plan.id
-                              }
-                              className={`flex min-h-16 flex-col justify-center p-2 text-center ${
-                                settings.package_layout ===
-                                'circles'
-                                  ? 'aspect-square rounded-full'
-                                  : 'rounded-xl'
-                              }`}
-                              style={{
-                                background:
-                                  settings.accent_color ||
-                                  '#0878f9',
-
-                                color:
-                                  '#fff',
-                              }}
-                            >
-                              <b className="truncate text-[9px]">
-                                {plan.name}
-                              </b>
-
-                              <span className="mt-1 text-[8px] font-bold">
-                                {money(
-                                  plan.price
-                                )}
-                              </span>
-                            </div>
-                          )
-                        )}
-                    </div>
-
-
-                    {settings.show_support &&
-                      settings.support_phone && (
-                        <div className="mt-4 flex items-center gap-2 text-[9px] font-bold text-slate-500">
-
-                          <Icon
-                            name="phone"
-                            className="h-3 w-3"
-                          />
-
-                          {
-                            settings.support_phone
-                          }
+                          <strong
+                            className="mt-1 block text-lg"
+                            style={{
+                              color:
+                                settings.accent_color,
+                            }}
+                          >
+                            {money(
+                              settings.wallet_balance
+                            )}
+                          </strong>
                         </div>
                       )}
+                    </div>
+
+
+                    <div className="absolute inset-x-0 bottom-0 rounded-t-[24px] bg-white p-4">
+
+                      <small className="text-[8px] font-black uppercase text-slate-400">
+                        Packages
+                      </small>
+
+
+                      <div
+                        className={`mt-3 grid gap-2 ${
+                          settings.package_layout ===
+                          'list'
+                            ? 'grid-cols-1'
+                            : settings.package_layout ===
+                              'compact'
+                              ? 'grid-cols-3'
+                              : 'grid-cols-2'
+                        }`}
+                      >
+
+                        {activePlans
+                          .slice(
+                            0,
+                            6
+                          )
+                          .map(
+                            plan => (
+                              <div
+                                key={
+                                  plan.id
+                                }
+                                className={`flex min-h-14 flex-col items-center justify-center p-2 text-center text-white ${
+                                  settings.package_layout ===
+                                  'circles'
+                                    ? 'aspect-square rounded-full'
+                                    : 'rounded-xl'
+                                }`}
+                                style={{
+                                  background:
+                                    settings.accent_color ||
+                                    '#0878f9',
+                                }}
+                              >
+
+                                <b className="max-w-full truncate text-[8px]">
+                                  {
+                                    plan.name
+                                  }
+                                </b>
+
+                                <span className="mt-0.5 text-[7px]">
+                                  {money(
+                                    plan.price
+                                  )}
+                                </span>
+                              </div>
+                            )
+                          )}
+                      </div>
+
+
+                      {settings.show_support &&
+                        settings.support_phone && (
+                          <div className="mt-3 flex items-center gap-1.5 text-[8px] font-bold text-slate-500">
+
+                            <Icon
+                              name="phone"
+                              className="h-3 w-3"
+                            />
+
+                            {
+                              settings.support_phone
+                            }
+                          </div>
+                        )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            </aside>
-          </div>
-        </section>
-      </div>
-
-
-      {packageOpen && (
-        <PackageModal
-          form={
-            packageForm
-          }
-          setForm={
-            setPackageForm
-          }
-          routers={
-            routers
-          }
-          saving={
-            saving
-          }
-          close={() =>
-            setPackageOpen(
-              false
-            )
-          }
-          submit={
-            createPackage
-          }
-        />
+              </aside>
+            </div>
+          </section>
+        </div>
       )}
     </div>
   );

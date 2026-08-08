@@ -112,6 +112,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
           client.username,
           client.account_number,
           client.mac_address,
+          client.phone,
         ]
           .map(compactIdentity)
           .filter(Boolean);
@@ -123,6 +124,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
               subscriber.radius_username,
               subscriber.account_number,
               subscriber.static_mac,
+              subscriber.phone,
             ]
               .map(compactIdentity)
               .filter(Boolean)
@@ -923,10 +925,36 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
             <tbody className="divide-y divide-slate-100">
               {items.map(
                 subscriber => {
+                  const managedSubscriberId =
+                    subscriber.billing_id ||
+                    (
+                      subscriber.id &&
+                      !String(
+                        subscriber.id
+                      ).startsWith(
+                        'mikrotik-'
+                      )
+                        ? subscriber.id
+                        : null
+                    );
+
                   const canManage =
                     Boolean(
-                      subscriber.billing_id
+                      managedSubscriberId
                     );
+
+                  const actionSubscriber =
+                    canManage
+                      ? {
+                          ...subscriber,
+
+                          id:
+                            managedSubscriberId,
+
+                          billing_id:
+                            managedSubscriberId,
+                        }
+                      : subscriber;
 
                   const initials =
                     subscriber
@@ -964,7 +992,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                       onClick={() => {
                         if (canManage) {
                           setSelectedSubscriber(
-                            subscriber
+                            actionSubscriber
                           );
                         }
                       }}
@@ -1040,6 +1068,11 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                         <button
                           type="button"
                           aria-label={`Actions for ${subscriber.full_name}`}
+                          title={
+                            canManage
+                              ? 'Subscriber actions'
+                              : 'This MikroTik entry is not linked to a billing subscriber'
+                          }
                           onClick={event => {
                             event.stopPropagation();
 
@@ -1074,7 +1107,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               }
                               onClick={() => {
                                 suspend(
-                                  subscriber
+                                  actionSubscriber
                                 );
 
                                 setMenuId(
@@ -1100,7 +1133,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               }
                               onClick={() => {
                                 setExtending({
-                                  ...subscriber,
+                                  ...actionSubscriber,
 
                                   days:
                                     '7',
@@ -1130,7 +1163,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               }
                               onClick={() => {
                                 sync(
-                                  subscriber
+                                  actionSubscriber
                                 );
 
                                 setMenuId(
@@ -1159,7 +1192,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               }
                               onClick={() => {
                                 remove(
-                                  subscriber
+                                  actionSubscriber
                                 );
 
                                 setMenuId(
@@ -1185,7 +1218,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               }
                               onClick={() => {
                                 setSelectedSubscriber(
-                                  subscriber
+                                  actionSubscriber
                                 );
 
                                 setMenuId(

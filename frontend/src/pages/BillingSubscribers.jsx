@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../utils/api';
-import PppoePortalAccessModal from '../components/PppoePortalAccessModal';
+import PppoeSubscriberDetail from '../components/PppoeSubscriberDetail';
 
 const field = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10';
 
@@ -28,7 +28,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   const [menuId, setMenuId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [recharging, setRecharging] = useState(null);
-  const [portalSubscriber, setPortalSubscriber] = useState(null);
+  const [extending, setExtending] = useState(null);
   const [selectedSubscriber, setSelectedSubscriber] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [networkFilter, setNetworkFilter] = useState('all');
@@ -495,11 +495,82 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
     }
   };
 
+  const suspend = (subscriber) => {
+    if (
+      subscriber.service_status ===
+      'suspended'
+    ) {
+      return;
+    }
+
+    if (
+      !window.confirm(
+        `Suspend ${subscriber.full_name}? Their internet access will be disabled.`
+      )
+    ) {
+      return;
+    }
+
+    void run(
+      subscriber,
+      () =>
+        api.patch(
+          `/billing-workspace/subscribers/${subscriber.id}`,
+          {
+            service_status:
+              'suspended',
+          }
+        )
+    );
+  };
+
   const sync = (subscriber) => run(subscriber, () => api.post(`/billing-workspace/subscribers/${subscriber.id}/radius/sync`));
   const remove = (subscriber) => {
     if (!window.confirm(`Delete ${subscriber.full_name}? Their RADIUS access will be disabled first.`)) return;
     void run(subscriber, () => api.delete(`/billing-workspace/subscribers/${subscriber.id}`));
   };
+  const extendSubscription = async (event) => {
+    event.preventDefault();
+
+    if (!extending) {
+      return;
+    }
+
+    try {
+      setBusyId(
+        `extend-${extending.id}`
+      );
+
+      setError('');
+
+      await api.post(
+        `/billing-workspace/subscribers/${extending.id}/extend`,
+        {
+          days:
+            Number(
+              extending.days
+            ),
+        }
+      );
+
+      setExtending(
+        null
+      );
+
+      await reload();
+    } catch (error) {
+      setError(
+        error.response?.data?.error ||
+        error.response?.data?.errors?.[0]?.msg ||
+        'Could not extend subscription.'
+      );
+    } finally {
+      setBusyId(
+        null
+      );
+    }
+  };
+
   const recharge = async (event) => {
     event.preventDefault();
     try {
@@ -570,7 +641,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   };
   if (createOpen && !typeChosen) return <ClientTypeChooser choose={(access_mode) => { setCreating({ ...emptySubscriber, access_mode }); setTypeChosen(true); }} close={() => { setCreating(emptySubscriber); setCreateOpen(false); }} />;
   if (createOpen && creating.access_mode === 'hotspot') return <HotspotClientForm value={hotspotForm} setValue={setHotspotForm} plans={hotspotPlans} busy={busyId === 'hotspot-create'} close={() => { setHotspotForm(emptyHotspot); setCreateOpen(false); }} submit={saveHotspot} />;
-  if (selectedSubscriber) return <SubscriberDetail subscriber={selectedSubscriber} back={() => setSelectedSubscriber(null)} setError={setError} />;
+  if (selectedSubscriber) return <PppoeSubscriberDetail subscriber={selectedSubscriber} back={() => setSelectedSubscriber(null)} setError={setError} />;
   if (createOpen && ['pppoe_static', 'dhcp_static'].includes(creating.access_mode)) return <StaticClientForm value={creating} setValue={setCreating} plans={plans} routers={routers} busy={busyId === 'create'} close={() => { setCreating(emptySubscriber); setCreateOpen(false); }} submit={saveCreate} />;
   return <div data-subscriber-theme={darkMode ? 'dark' : 'light'} className={`-mx-5 -mt-5 min-h-screen space-y-4 pb-8 sm:-mx-8 sm:-mt-8 ${darkMode ? 'bg-[#0b1020] text-slate-100' : 'bg-[#fbfbff] text-slate-900'}`}><section className="relative isolate overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-24 pt-8 text-white sm:px-8"><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="mt-3 text-3xl font-black tracking-tight sm:text-4xl">Subscribers</h2><p className="mt-2 text-sm text-violet-100 sm:text-base">View and manage all your subscribers</p></div><button type="button" onClick={() => setCreateOpen(true)} className="relative z-10 mt-6 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:absolute sm:right-8 sm:top-8 sm:mt-0">+ Add a client</button><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill={darkMode ? '#0b1020' : '#fbfbff'} /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
     <style>{`.client-status-card{min-height:102px}section > .grid.grid-cols-2.border-b{display:none}@media(max-width:639px){.client-status-meta{display:none}.client-status-card{min-height:92px;padding:10px!important}.client-status-card .text-xs{font-size:10px}.client-status-card .text-2xl{font-size:1.5rem;line-height:2rem}}@media(max-width:639px){table.min-w-\\[700px\\]{min-width:100%!important;table-layout:fixed}table.min-w-\\[700px\\] th,table.min-w-\\[700px\\] td{padding:8px 4px!important;font-size:9px!important;line-height:1.25;overflow-wrap:anywhere}table.min-w-\\[700px\\] th:first-child,table.min-w-\\[700px\\] td:first-child{width:29%;padding-left:8px!important}table.min-w-\\[700px\\] th:nth-child(2),table.min-w-\\[700px\\] td:nth-child(2){width:19%}table.min-w-\\[700px\\] th:nth-child(3),table.min-w-\\[700px\\] td:nth-child(3){width:18%}table.min-w-\\[700px\\] th:nth-child(4),table.min-w-\\[700px\\] td:nth-child(4){width:18%}table.min-w-\\[700px\\] th:last-child,table.min-w-\\[700px\\] td:last-child{width:16%;padding-right:8px!important}.overflow-x-auto:has(table.min-w-\\[700px\\]){overflow-x:visible!important}}`}</style>
@@ -844,7 +915,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                 </th>
 
                 <th className="px-4 py-3 text-right">
-                  Source
+                  Actions
                 </th>
               </tr>
             </thead>
@@ -965,131 +1036,173 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                       </td>
 
                       <td className="relative px-4 py-4 text-right">
-                        {canManage ? (
-                          <>
+
+                        <button
+                          type="button"
+                          aria-label={`Actions for ${subscriber.full_name}`}
+                          onClick={event => {
+                            event.stopPropagation();
+
+                            setMenuId(
+                              menuId ===
+                                subscriber.id
+                                ? null
+                                : subscriber.id
+                            );
+                          }}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-xl font-black text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                        >
+                          ⋮
+                        </button>
+
+
+                        {menuId ===
+                          subscriber.id && (
+                          <div
+                            className="absolute right-3 top-12 z-50 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1.5 text-left shadow-2xl shadow-slate-300/50"
+                            onClick={event =>
+                              event.stopPropagation()
+                            }
+                          >
+
                             <button
                               type="button"
-                              aria-label={`Actions for ${subscriber.full_name}`}
-                              onClick={event => {
-                                event.stopPropagation();
+                              disabled={
+                                !canManage ||
+                                subscriber.service_status ===
+                                  'suspended'
+                              }
+                              onClick={() => {
+                                suspend(
+                                  subscriber
+                                );
 
                                 setMenuId(
-                                  menuId ===
-                                    subscriber.id
-                                    ? null
-                                    : subscriber.id
+                                  null
                                 );
                               }}
-                              className="rounded-lg px-3 py-2 text-xl text-slate-500 hover:bg-slate-100"
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-35"
                             >
-                              ⋮
+                              <span>
+                                Suspend
+                              </span>
+
+                              <span>
+                                Ⅱ
+                              </span>
                             </button>
 
-                            {menuId ===
-                              subscriber.id && (
-                              <div
-                                className="absolute right-4 top-12 z-30 w-44 rounded-xl border border-slate-200 bg-white py-1 text-left shadow-xl"
-                                onClick={event =>
-                                  event.stopPropagation()
-                                }
-                              >
-                                <button
-                                  disabled={
-                                    !subscriber.radius_username ||
-                                    busyId ===
-                                      subscriber.id
-                                  }
-                                  onClick={() =>
-                                    sync(
-                                      subscriber
-                                    )
-                                  }
-                                  className="block w-full px-3 py-2 text-xs font-bold disabled:opacity-40"
-                                >
-                                  Sync
-                                </button>
 
-                                {isExpired(
+                            <button
+                              type="button"
+                              disabled={
+                                !canManage
+                              }
+                              onClick={() => {
+                                setExtending({
+                                  ...subscriber,
+
+                                  days:
+                                    '7',
+                                });
+
+                                setMenuId(
+                                  null
+                                );
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-emerald-700 transition hover:bg-emerald-50 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <span>
+                                Extend
+                              </span>
+
+                              <span>
+                                +
+                              </span>
+                            </button>
+
+
+                            <button
+                              type="button"
+                              disabled={
+                                !canManage ||
+                                !subscriber.radius_username
+                              }
+                              onClick={() => {
+                                sync(
                                   subscriber
-                                ) && (
-                                  <button
-                                    onClick={() => {
-                                      setRecharging({
-                                        ...subscriber,
-                                        plan_id:
-                                          subscriber.plan_id ||
-                                          '',
-                                        method:
-                                          'Recharge',
-                                        reference:
-                                          '',
-                                      });
+                                );
 
-                                      setMenuId(
-                                        null
-                                      );
-                                    }}
-                                    className="block w-full px-3 py-2 text-xs font-bold text-emerald-700"
-                                  >
-                                    Recharge
-                                  </button>
-                                )}
+                                setMenuId(
+                                  null
+                                );
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-blue-700 transition hover:bg-blue-50 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <span>
+                                Sync
+                              </span>
 
-                                <button
-                                  onClick={() => {
-                                    setEditing({
-                                      ...subscriber,
-                                    });
+                              <span>
+                                ↻
+                              </span>
+                            </button>
 
-                                    setMenuId(
-                                      null
-                                    );
-                                  }}
-                                  className="block w-full px-3 py-2 text-xs font-bold"
-                                >
-                                  Edit
-                                </button>
 
-                                {subscriberType ===
-                                  'pppoe' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setPortalSubscriber(
-                                        subscriber
-                                      );
+                            <div className="my-1 border-t border-slate-100" />
 
-                                      setMenuId(
-                                        null
-                                      );
-                                    }}
-                                    className="block w-full px-3 py-2 text-xs font-bold text-violet-700"
-                                  >
-                                    Portal Login
-                                  </button>
-                                )}
 
-                                <button
-                                  disabled={
-                                    busyId ===
-                                    subscriber.id
-                                  }
-                                  onClick={() =>
-                                    remove(
-                                      subscriber
-                                    )
-                                  }
-                                  className="block w-full px-3 py-2 text-xs font-bold text-rose-600 disabled:opacity-40"
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            )}
-                          </>
-                        ) : (
-                          <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[10px] font-extrabold uppercase text-sky-700">
-                            MikroTik live
-                          </span>
+                            <button
+                              type="button"
+                              disabled={
+                                !canManage
+                              }
+                              onClick={() => {
+                                remove(
+                                  subscriber
+                                );
+
+                                setMenuId(
+                                  null
+                                );
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-rose-600 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <span>
+                                Delete
+                              </span>
+
+                              <span>
+                                ×
+                              </span>
+                            </button>
+
+
+                            <button
+                              type="button"
+                              disabled={
+                                !canManage
+                              }
+                              onClick={() => {
+                                setSelectedSubscriber(
+                                  subscriber
+                                );
+
+                                setMenuId(
+                                  null
+                                );
+                              }}
+                              className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-violet-700 transition hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-35"
+                            >
+                              <span>
+                                More details
+                              </span>
+
+                              <span>
+                                →
+                              </span>
+                            </button>
+                          </div>
                         )}
                       </td>
                     </tr>
@@ -1108,15 +1221,155 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
       {filteredItems.length > 0 && <div className="flex items-center justify-between border-t border-slate-100 p-4 text-xs text-slate-500"><span>Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, filteredItems.length)} of {filteredItems.length} subscriber{filteredItems.length === 1 ? '' : 's'}</span><div className="flex items-center gap-2"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded-lg border border-slate-200 px-3 py-2 disabled:opacity-40">‹</button><span className="rounded-lg bg-violet-600 px-3 py-2 font-black text-white">{currentPage}</span><button disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className="rounded-lg border border-slate-200 px-3 py-2 disabled:opacity-40">›</button></div></div>}
     </section>
     </div>
-    {portalSubscriber && (
-      <PppoePortalAccessModal
-        subscriber={portalSubscriber}
-        close={() =>
-          setPortalSubscriber(
-            null
-          )
-        }
-      />
+    {extending && (
+      <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/55 backdrop-blur-sm sm:items-center sm:p-5">
+
+        <button
+          type="button"
+          onClick={() =>
+            setExtending(
+              null
+            )
+          }
+          className="absolute inset-0"
+        />
+
+        <form
+          onSubmit={
+            extendSubscription
+          }
+          className="relative z-10 w-full max-w-md rounded-t-[28px] bg-white p-5 shadow-2xl sm:rounded-[28px] sm:p-6"
+        >
+
+          <div className="flex items-start justify-between gap-4">
+
+            <div>
+
+              <p className="text-[8px] font-black uppercase tracking-[.18em] text-emerald-500">
+                Subscription
+              </p>
+
+              <h3 className="mt-1 text-xl font-black text-slate-950">
+                Extend subscription
+              </h3>
+
+              <p className="mt-1 text-xs text-slate-400">
+                {extending.full_name}
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() =>
+                setExtending(
+                  null
+                )
+              }
+              className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500"
+            >
+              ×
+            </button>
+          </div>
+
+
+          <div className="mt-5 rounded-2xl bg-emerald-50 p-4">
+
+            <span className="text-[8px] font-black uppercase text-emerald-600">
+              Current expiry
+            </span>
+
+            <strong className="mt-1 block text-sm text-emerald-900">
+              {extending.expires_at
+                ? new Date(
+                    extending.expires_at
+                  ).toLocaleString()
+                : 'No expiry set'}
+            </strong>
+          </div>
+
+
+          <div className="mt-5 grid grid-cols-4 gap-2">
+
+            {[1, 7, 14, 30].map(
+              days => (
+                <button
+                  type="button"
+                  key={days}
+                  onClick={() =>
+                    setExtending({
+                      ...extending,
+
+                      days:
+                        String(
+                          days
+                        ),
+                    })
+                  }
+                  className={`rounded-xl border px-2 py-3 text-[10px] font-black ${
+                    Number(
+                      extending.days
+                    ) === days
+                      ? 'border-emerald-400 bg-emerald-50 text-emerald-700'
+                      : 'border-slate-200 text-slate-500'
+                  }`}
+                >
+                  {days}d
+                </button>
+              )
+            )}
+          </div>
+
+
+          <label className="mt-5 block">
+
+            <span className="text-xs font-black text-slate-600">
+              Number of days
+            </span>
+
+            <input
+              required
+              type="number"
+              min="1"
+              max="365"
+              value={
+                extending.days ||
+                ''
+              }
+              onChange={
+                event =>
+                  setExtending({
+                    ...extending,
+
+                    days:
+                      event
+                        .target
+                        .value,
+                  })
+              }
+              className={`${field} mt-2`}
+            />
+          </label>
+
+
+          <p className="mt-3 text-[9px] leading-5 text-slate-400">
+            Days are added to the current expiry. Expired or suspended customers are reactivated and synchronized with RADIUS.
+          </p>
+
+
+          <button
+            disabled={
+              busyId ===
+              `extend-${extending.id}`
+            }
+            className="mt-5 w-full rounded-xl bg-emerald-500 py-3 text-xs font-black text-emerald-950 disabled:opacity-50"
+          >
+            {busyId ===
+            `extend-${extending.id}`
+              ? 'Extending...'
+              : 'Extend subscription'}
+          </button>
+        </form>
+      </div>
     )}
 
     {recharging && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={recharge} className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><div><h3 className="text-lg font-black">Recharge client</h3><p className="mt-1 text-xs text-slate-500">Choose the package to reactivate {recharging.full_name}.</p></div><button type="button" onClick={() => setRecharging(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><select required className={field} value={recharging.plan_id || ''} onChange={(event) => setRecharging({ ...recharging, plan_id: event.target.value })}><option value="">Select package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.price}</option>)}</select><input className={field} value={recharging.method || ''} onChange={(event) => setRecharging({ ...recharging, method: event.target.value })} placeholder="Payment method" /><input className={field} value={recharging.reference || ''} onChange={(event) => setRecharging({ ...recharging, reference: event.target.value })} placeholder="Payment reference (optional)" /><p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">The selected package will be paid, assigned, and the client reactivated.</p><button disabled={busyId === `recharge-${recharging.id}`} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busyId === `recharge-${recharging.id}` ? 'Recharging…' : 'Recharge client'}</button></div></form></div>}    {editing && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={saveEdit} className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><h3 className="text-lg font-black">Edit subscriber</h3><button type="button" onClick={() => setEditing(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><input required className={field} value={editing.full_name} onChange={(event) => setEditing({ ...editing, full_name: event.target.value })} placeholder="Full name" /><input className={field} value={editing.phone || ''} onChange={(event) => setEditing({ ...editing, phone: event.target.value })} placeholder="Phone" /><input type="email" className={field} value={editing.email || ''} onChange={(event) => setEditing({ ...editing, email: event.target.value })} placeholder="Email" /><select className={field} value={editing.plan_id || ''} onChange={(event) => setEditing({ ...editing, plan_id: event.target.value })}><option value="">No package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><select className={field} value={editing.router_id || ''} onChange={(event) => setEditing({ ...editing, router_id: event.target.value })}><option value="">No router assigned</option>{routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.last_status ? ` — ${router.last_status}` : ''}</option>)}</select><label className="block text-xs font-bold text-slate-600">VLAN ID (optional)<input type="number" min="1" max="4094" className={field + ' mt-1.5'} value={editing.vlan_id || ''} onChange={(event) => setEditing({ ...editing, vlan_id: event.target.value })} placeholder="Leave blank for no VLAN" /></label><div className="grid grid-cols-3 gap-3"><input type="number" min="0" max="90" className={field} value={editing.grace_period_days || 0} onChange={(event) => setEditing({ ...editing, grace_period_days: event.target.value })} aria-label="Grace period days" /><select className={field} value={editing.service_status} onChange={(event) => setEditing({ ...editing, service_status: event.target.value })}><option value="active">Active</option><option value="suspended">Suspended</option><option value="expired">Expired</option><option value="pending">Pending</option></select></div><button disabled={busyId === editing.id} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">Save changes</button></div></form></div>}

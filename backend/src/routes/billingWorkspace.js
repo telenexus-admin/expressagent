@@ -782,6 +782,379 @@ router.post('/subscribers/:id/recharge', [
     client.release();
   }
 });
+
+router.post('/subscribers/:id/extend', [
+  body('days').isInt({ min: 1, max: 365 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+
+  if (!errors.isEmpty()) {
+    return res.status(400).json({
+      errors: errors.array(),
+    });
+  }
+
+  const client = await db.connect();
+
+  try {
+    await ensureEventSchema();
+
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `SELECT *
+       FROM billing_subscribers
+       WHERE id = $1
+         AND client_id = $2
+       FOR UPDATE`,
+      [
+        req.params.id,
+        req.scope.clientId,
+      ]
+    );
+
+    const subscriber = result.rows[0];
+
+    if (!subscriber) {
+      await client.query('ROLLBACK');
+
+      return res.status(404).json({
+        error: 'Subscriber not found',
+      });
+    }
+
+    const days = Number(req.body.days);
+
+    const currentExpiry =
+      subscriber.expires_at
+        ? new Date(subscriber.expires_at)
+        : null;
+
+    const now = new Date();
+
+    const base =
+      currentExpiry &&
+      !Number.isNaN(
+        currentExpiry.getTime()
+      ) &&
+      currentExpiry > now
+        ? currentExpiry
+        : now;
+
+    const expiresAt =
+      new Date(
+        base.getTime() +
+        days * 86400000
+      );
+
+    const updated = await client.query(
+      `UPDATE billing_subscribers
+       SET
+         expires_at = $1,
+         service_status = 'active',
+         radius_status = 'active',
+         updated_at = NOW()
+       WHERE id = $2
+         AND client_id = $3
+       RETURNING *`,
+      [
+        expiresAt,
+        subscriber.id,
+        req.scope.clientId,
+      ]
+    );
+
+    if (
+      subscriber.radius_username ||
+      subscriber.access_mode ===
+        'dhcp_static'
+    ) {
+      await enqueueRadiusSyncJob(
+        client,
+        req.scope.clientId,
+        subscriber.id,
+        'admin_subscription_extended'
+      );
+    }
+
+    await appendRequestEvent(
+      client,
+      req,
+      {
+        eventType:
+          'subscriber.extended',
+
+        category:
+          'subscriber',
+
+        source:
+          'billing_workspace',
+
+        entityType:
+          'subscriber',
+
+        entityId:
+          subscriber.id,
+
+        title:
+          'Subscriber subscription extended',
+
+        description:
+          `${subscriber.full_name} was extended by ${days} day${days === 1 ? '' : 's'}`,
+
+        previousState: {
+          expires_at:
+            subscriber.expires_at,
+
+          service_status:
+            subscriber.service_status,
+        },
+
+        newState: {
+          expires_at:
+            expiresAt,
+
+          service_status:
+            'active',
+        },
+
+        payload: {
+          days,
+          account_number:
+            subscriber.account_number,
+        },
+
+        deduplicationKey:
+          `subscriber:${subscriber.id}:extend:${Date.now()}`,
+
+        sensitivity:
+          'confidential',
+      }
+    );
+
+    await client.query('COMMIT');
+
+    if (
+      subscriber.radius_username ||
+      subscriber.access_mode ===
+        'dhcp_static'
+    ) {
+      processRadiusSyncJobs()
+        .catch(
+          error =>
+            console.error(
+              'Unable to start extended subscriber RADIUS sync:',
+              error.message
+            )
+        );
+    }
+
+    return res.json({
+      success: true,
+
+      subscriber:
+        updated.rows[0],
+
+      days,
+
+      expires_at:
+        expiresAt,
+    });
+  } catch (error) {
+    await client
+      .query('ROLLBACK')
+      .catch(() => {});
+
+    console.error(
+      'Extend subscriber error:',
+      error.message
+    );
+
+    return res.status(500).json({
+      error:
+        'Failed to extend subscriber',
+    });
+  } finally {
+    client.release();
+  }
+});
+
+
+router.get('/subscribers/:id/details', async (req, res) => {
+  try {
+    const subscriberResult =
+      await db.query(
+        `SELECT
+           subscriber.*,
+
+           plan.name
+             AS plan_name,
+
+           plan.price
+             AS plan_price,
+
+           plan.download_speed_mbps,
+
+           plan.upload_speed_mbps,
+
+           plan.validity_days
+
+         FROM billing_subscribers
+           subscriber
+
+         LEFT JOIN billing_plans
+           plan
+
+           ON plan.id =
+              subscriber.plan_id
+
+          AND plan.client_id =
+              subscriber.client_id
+
+         WHERE subscriber.id = $1
+           AND subscriber.client_id = $2
+
+         LIMIT 1`,
+        [
+          req.params.id,
+          req.scope.clientId,
+        ]
+      );
+
+    const subscriber =
+      subscriberResult.rows[0];
+
+    if (!subscriber) {
+      return res
+        .status(404)
+        .json({
+          error:
+            'Subscriber not found',
+        });
+    }
+
+    const [
+      invoices,
+      payments,
+      tickets,
+    ] =
+      await Promise.all([
+        db.query(
+          `SELECT
+             invoice_number,
+             amount,
+             status,
+             due_date,
+             paid_at,
+             created_at
+
+           FROM billing_invoices
+
+           WHERE client_id = $1
+             AND subscriber_id = $2
+
+           ORDER BY
+             created_at DESC
+
+           LIMIT 30`,
+          [
+            req.scope.clientId,
+            subscriber.id,
+          ]
+        ),
+
+        db.query(
+          `SELECT
+             amount,
+             method,
+             reference,
+             status,
+             paid_at,
+             created_at
+
+           FROM billing_payments
+
+           WHERE client_id = $1
+             AND subscriber_id = $2
+
+           ORDER BY
+             created_at DESC
+
+           LIMIT 30`,
+          [
+            req.scope.clientId,
+            subscriber.id,
+          ]
+        ),
+
+        subscriber.phone
+          ? db.query(
+              `SELECT
+                 id,
+                 title,
+                 category,
+                 priority,
+                 status,
+                 updated_at
+
+               FROM tickets
+
+               WHERE client_id = $1
+
+                 AND regexp_replace(
+                       customer_phone,
+                       '\\D',
+                       '',
+                       'g'
+                     ) =
+                     regexp_replace(
+                       $2,
+                       '\\D',
+                       '',
+                       'g'
+                     )
+
+               ORDER BY
+                 updated_at DESC
+
+               LIMIT 30`,
+              [
+                req.scope.clientId,
+                subscriber.phone,
+              ]
+            )
+          : Promise.resolve({
+              rows: [],
+            }),
+      ]);
+
+    return res.json({
+      subscriber,
+
+      invoices:
+        invoices.rows,
+
+      payments:
+        payments.rows,
+
+      tickets:
+        tickets.rows,
+    });
+  } catch (error) {
+    console.error(
+      'Subscriber details error:',
+      error.message
+    );
+
+    return res
+      .status(500)
+      .json({
+        error:
+          'Failed to load subscriber details',
+      });
+  }
+});
+
 router.get('/subscribers/:id/usage', async (req, res) => {
   try {
     const subscriber = await loadSubscriber(req.params.id, req.scope.clientId);

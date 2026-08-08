@@ -22,6 +22,7 @@ const billingRoutes = require('./routes/billing');
 const billingWorkspaceRoutes = require('./routes/billingWorkspace');
 const billingAgentRoutes = require('./routes/billingAgents');
 const billingAgentPortalExtensions = require('./routes/billingAgentPortalExtensions');
+const pppoePortalRoutes = require('./routes/pppoePortal');
 const hotspotPortalRoutes = require('./routes/hotspotPortal');
 const mediaLibraryRoutes = require('./routes/mediaLibrary');
 const websiteKnowledgeRoutes = require('./routes/websiteKnowledge');
@@ -143,6 +144,7 @@ app.use('/api/public/site-chat', siteChatRoutes);
 app.use('/api/public/noc', publicNocRoutes);
 app.use('/api/public/mikrotik', mikrotikOnboardingPublicRoutes);
 app.use('/api/public/hotspot', hotspotPortalRoutes);
+app.use('/api/pppoe-portal', pppoePortalRoutes.portalRouter);
 app.get('/api/public/invoices/:token', invoiceRoutes.publicInvoiceHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
@@ -164,6 +166,7 @@ app.use('/api/inventory', inventoryRoutes);
 app.use('/api/tickets', ticketRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/billing-workspace', billingWorkspaceRoutes);
+app.use('/api/billing-workspace/pppoe-portal', pppoePortalRoutes.adminRouter);
 app.use('/api/billing-agents', billingAgentRoutes.adminRouter);
 app.use('/api/agent-portal/extensions', billingAgentPortalExtensions);
 app.use('/api/agent-portal', billingAgentRoutes.portalRouter);
@@ -199,6 +202,10 @@ app.listen(PORT, () => {
   billingAgentPortalExtensions.ensureSchema()
     .then(() => console.log('Agent portal extension schema ready.'))
     .catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
+  pppoePortalRoutes.ensureSchema()
+    .then(() => console.log('PPPoE customer portal schema ready.'))
+    .catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
+  pppoePortalRoutes.startPppoePortalScheduler();
   ensureEventSchema()
     .then(() => console.log('Billing event schema ready.'))
     .catch((error) => console.error('Billing event schema initialization failed:', error.message));

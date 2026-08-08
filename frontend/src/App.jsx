@@ -49,6 +49,7 @@ const Communication = lazy(() => import('./pages/Communication'));
 const Documentation = lazy(() => import('./pages/Documentation'));
 const BillingWorkspace = lazy(() => import('./pages/BillingWorkspace'));
 const AgentPortal = lazy(() => import('./pages/AgentPortal'));
+const PppoePortal = lazy(() => import('./pages/PppoePortal'));
 
 const ALL_PERMISSIONS = [
   'statistics',
@@ -214,6 +215,7 @@ export default function App() {
           <Route path="/client-access" element={<ClientAccess />} />
           <Route path="/hotspot" element={<HotspotPortal />} />
           <Route path="/agent" element={<AgentPortal />} />
+          <Route path="/pppoe" element={<PppoePortal />} />
           <Route path="/login" element={<Login />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />

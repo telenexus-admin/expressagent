@@ -8,6 +8,9 @@ const {
 const {
   fulfillAgentWalletPayment,
 } = require('./billingAgents');
+const {
+  fulfillPppoePortalPayment,
+} = require('./pppoePortal');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendClientText } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
@@ -431,6 +434,19 @@ router.post('/callback/:clientId', async (req, res) => {
       }
     }
 
+    if (callback.successful) {
+      try {
+        await fulfillPppoePortalPayment(
+          payment
+        );
+      } catch (pppoeError) {
+        console.error(
+          'PPPoE portal payment fulfillment failed:',
+          pppoeError.message
+        );
+      }
+    }
+
     const message = callback.successful
       ? (
           `Payment received successfully. ` +
@@ -571,6 +587,19 @@ router.post('/daraja-callback/:clientId', async (req, res) => {
         console.error(
           'Agent wallet fulfillment failed:',
           walletError.message
+        );
+      }
+    }
+
+    if (successful) {
+      try {
+        await fulfillPppoePortalPayment(
+          payment
+        );
+      } catch (pppoeError) {
+        console.error(
+          'PPPoE portal Daraja fulfillment failed:',
+          pppoeError.message
         );
       }
     }

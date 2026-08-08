@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import api from '../utils/api';
+import PppoePortalAccessModal from '../components/PppoePortalAccessModal';
 
 const field = 'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10';
 
@@ -27,6 +28,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   const [menuId, setMenuId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [recharging, setRecharging] = useState(null);
+  const [portalSubscriber, setPortalSubscriber] = useState(null);
   const [selectedSubscriber, setSelectedSubscriber] = useState(null);
   const [busyId, setBusyId] = useState(null);
   const [networkFilter, setNetworkFilter] = useState('all');
@@ -986,7 +988,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                             {menuId ===
                               subscriber.id && (
                               <div
-                                className="absolute right-4 top-12 z-30 w-36 rounded-xl border border-slate-200 bg-white py-1 text-left shadow-xl"
+                                className="absolute right-4 top-12 z-30 w-44 rounded-xl border border-slate-200 bg-white py-1 text-left shadow-xl"
                                 onClick={event =>
                                   event.stopPropagation()
                                 }
@@ -1048,6 +1050,25 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                   Edit
                                 </button>
 
+                                {subscriberType ===
+                                  'pppoe' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setPortalSubscriber(
+                                        subscriber
+                                      );
+
+                                      setMenuId(
+                                        null
+                                      );
+                                    }}
+                                    className="block w-full px-3 py-2 text-xs font-bold text-violet-700"
+                                  >
+                                    Portal Login
+                                  </button>
+                                )}
+
                                 <button
                                   disabled={
                                     busyId ===
@@ -1087,6 +1108,17 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
       {filteredItems.length > 0 && <div className="flex items-center justify-between border-t border-slate-100 p-4 text-xs text-slate-500"><span>Showing {(currentPage - 1) * pageSize + 1} to {Math.min(currentPage * pageSize, filteredItems.length)} of {filteredItems.length} subscriber{filteredItems.length === 1 ? '' : 's'}</span><div className="flex items-center gap-2"><button disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)} className="rounded-lg border border-slate-200 px-3 py-2 disabled:opacity-40">‹</button><span className="rounded-lg bg-violet-600 px-3 py-2 font-black text-white">{currentPage}</span><button disabled={currentPage === pageCount} onClick={() => setPage(currentPage + 1)} className="rounded-lg border border-slate-200 px-3 py-2 disabled:opacity-40">›</button></div></div>}
     </section>
     </div>
+    {portalSubscriber && (
+      <PppoePortalAccessModal
+        subscriber={portalSubscriber}
+        close={() =>
+          setPortalSubscriber(
+            null
+          )
+        }
+      />
+    )}
+
     {recharging && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={recharge} className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><div><h3 className="text-lg font-black">Recharge client</h3><p className="mt-1 text-xs text-slate-500">Choose the package to reactivate {recharging.full_name}.</p></div><button type="button" onClick={() => setRecharging(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><select required className={field} value={recharging.plan_id || ''} onChange={(event) => setRecharging({ ...recharging, plan_id: event.target.value })}><option value="">Select package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.price}</option>)}</select><input className={field} value={recharging.method || ''} onChange={(event) => setRecharging({ ...recharging, method: event.target.value })} placeholder="Payment method" /><input className={field} value={recharging.reference || ''} onChange={(event) => setRecharging({ ...recharging, reference: event.target.value })} placeholder="Payment reference (optional)" /><p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">The selected package will be paid, assigned, and the client reactivated.</p><button disabled={busyId === `recharge-${recharging.id}`} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busyId === `recharge-${recharging.id}` ? 'Recharging…' : 'Recharge client'}</button></div></form></div>}    {editing && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={saveEdit} className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><h3 className="text-lg font-black">Edit subscriber</h3><button type="button" onClick={() => setEditing(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><input required className={field} value={editing.full_name} onChange={(event) => setEditing({ ...editing, full_name: event.target.value })} placeholder="Full name" /><input className={field} value={editing.phone || ''} onChange={(event) => setEditing({ ...editing, phone: event.target.value })} placeholder="Phone" /><input type="email" className={field} value={editing.email || ''} onChange={(event) => setEditing({ ...editing, email: event.target.value })} placeholder="Email" /><select className={field} value={editing.plan_id || ''} onChange={(event) => setEditing({ ...editing, plan_id: event.target.value })}><option value="">No package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><select className={field} value={editing.router_id || ''} onChange={(event) => setEditing({ ...editing, router_id: event.target.value })}><option value="">No router assigned</option>{routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.last_status ? ` — ${router.last_status}` : ''}</option>)}</select><label className="block text-xs font-bold text-slate-600">VLAN ID (optional)<input type="number" min="1" max="4094" className={field + ' mt-1.5'} value={editing.vlan_id || ''} onChange={(event) => setEditing({ ...editing, vlan_id: event.target.value })} placeholder="Leave blank for no VLAN" /></label><div className="grid grid-cols-3 gap-3"><input type="number" min="0" max="90" className={field} value={editing.grace_period_days || 0} onChange={(event) => setEditing({ ...editing, grace_period_days: event.target.value })} aria-label="Grace period days" /><select className={field} value={editing.service_status} onChange={(event) => setEditing({ ...editing, service_status: event.target.value })}><option value="active">Active</option><option value="suspended">Suspended</option><option value="expired">Expired</option><option value="pending">Pending</option></select></div><button disabled={busyId === editing.id} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">Save changes</button></div></form></div>}
     {createOpen && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={saveCreate} className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><div><h3 className="text-lg font-black">Add subscriber</h3><p className="mt-1 text-xs text-slate-500">Assign this customer to the MikroTik that serves their connection.</p></div><button type="button" onClick={() => setCreateOpen(false)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><input required className={field} value={creating.full_name} onChange={(event) => setCreating({ ...creating, full_name: event.target.value })} placeholder="Full name" /><input required className={field} value={creating.account_number} onChange={(event) => setCreating({ ...creating, account_number: event.target.value })} placeholder="Client identifier / account number" /><div className="grid grid-cols-3 gap-3"><input className={field} value={creating.phone} onChange={(event) => setCreating({ ...creating, phone: event.target.value })} placeholder="Phone" /><input type="email" className={field} value={creating.email} onChange={(event) => setCreating({ ...creating, email: event.target.value })} placeholder="Email" /></div><select className={field} value={creating.plan_id} onChange={(event) => setCreating({ ...creating, plan_id: event.target.value })}><option value="">Select package later</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><select className={field} value={creating.router_id} onChange={(event) => setCreating({ ...creating, router_id: event.target.value })}><option value="">Select router later</option>{routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.last_status ? ` — ${router.last_status}` : ''}</option>)}</select><label className="block text-xs font-bold text-slate-600">VLAN ID (optional)<input type="number" min="1" max="4094" className={field + ' mt-1.5'} value={creating.vlan_id} onChange={(event) => setCreating({ ...creating, vlan_id: event.target.value })} placeholder="Leave blank for no VLAN" /></label>{!routers.length && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">No MikroTik has been added to this billing account yet.</p>}<label className="block text-xs font-bold text-slate-600">Grace period days<input type="number" min="0" max="90" className={`${field} mt-1.5`} value={creating.grace_period_days} onChange={(event) => setCreating({ ...creating, grace_period_days: event.target.value })} /></label><button disabled={busyId === 'create'} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busyId === 'create' ? 'Adding…' : 'Add subscriber'}</button></div></form></div>}
   </div>;

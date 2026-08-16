@@ -239,15 +239,29 @@ function WalletArt() {
 
 function durationParts(minutesValue) {
   const minutes = Number(minutesValue || 0);
-  if (minutes >= 1440 && minutes % 1440 === 0) {
-    const days = minutes / 1440;
-    return { value: days, unit: days === 1 ? 'DAY' : 'DAYS', icon: 'calendar' };
+  const units = [
+    { minutes: 43200, one: 'MONTH', many: 'MONTHS', icon: 'calendar' },
+    { minutes: 10080, one: 'WEEK', many: 'WEEKS', icon: 'calendar' },
+    { minutes: 1440, one: 'DAY', many: 'DAYS', icon: 'calendar' },
+    { minutes: 60, one: 'HOUR', many: 'HOURS', icon: 'clock' },
+  ];
+
+  for (const unit of units) {
+    if (minutes >= unit.minutes && minutes % unit.minutes === 0) {
+      const value = minutes / unit.minutes;
+      return {
+        value,
+        unit: value === 1 ? unit.one : unit.many,
+        icon: unit.icon,
+      };
+    }
   }
-  if (minutes >= 60 && minutes % 60 === 0) {
-    const hours = minutes / 60;
-    return { value: hours, unit: hours === 1 ? 'HOUR' : 'HOURS', icon: 'clock' };
-  }
-  return { value: minutes, unit: minutes === 1 ? 'MIN' : 'MINS', icon: 'clock' };
+
+  return {
+    value: minutes,
+    unit: minutes === 1 ? 'MIN' : 'MINS',
+    icon: 'clock',
+  };
 }
 
 function planHeadline(plan) {
@@ -260,9 +274,15 @@ function planHeadline(plan) {
 }
 
 function planDescription(plan, index) {
-  if (plan?.data_limit_mb) return `${Number(plan.data_limit_mb).toLocaleString()} MB included`;
+  const devices = Math.max(1, Number(plan?.max_devices || 1));
+  const deviceText = `${devices} device${devices === 1 ? '' : 's'}`;
+
+  if (plan?.data_limit_mb) {
+    return `${deviceText} · ${Number(plan.data_limit_mb).toLocaleString()} MB included`;
+  }
+
   const descriptions = ['High speed internet', 'Ideal for browsing', 'Great for streaming', 'Perfect for all usage'];
-  return descriptions[index % descriptions.length];
+  return `${deviceText} · ${descriptions[index % descriptions.length]}`;
 }
 
 function useServerClock(
@@ -934,7 +954,9 @@ useEffect(() => {
             data.authentication === 'mac'
           ) {
             setPaymentError(
-              'Payment confirmed. Internet access is active.',
+              Number(data.additional_device_count || 0) > 0
+                ? `Payment confirmed. Internet access is active. ${Number(data.additional_device_count)} extra device voucher${Number(data.additional_device_count) === 1 ? '' : 's'} ${data.voucher_sms_status === 'sent' ? 'sent by SMS.' : 'created for this package.'}`
+                : 'Payment confirmed. Internet access is active.',
             );
 
             window.setTimeout(() => {
@@ -1290,6 +1312,11 @@ useEffect(() => {
                       selectedCheckoutPrice
                     )}
                   </p>
+                  {Number(selectedPlan.max_devices || 1) > 1 && (
+                    <p className="mt-3 max-w-xs text-xs font-bold leading-5 text-violet-700">
+                      Covers {Number(selectedPlan.max_devices)} devices. After payment, this device connects automatically and voucher codes for the other {Number(selectedPlan.max_devices) - 1} device{Number(selectedPlan.max_devices) - 1 === 1 ? '' : 's'} are sent to this phone by SMS.
+                    </p>
+                  )}
                 </div>
 
                 <button

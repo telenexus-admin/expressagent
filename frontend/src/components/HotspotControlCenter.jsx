@@ -208,45 +208,37 @@ function money(
 function durationText(
   minutes
 ) {
-  const value =
-    Number(
-      minutes ||
-      0
-    );
+  const value = Number(minutes || 0);
 
-  if (
-    value >= 1440 &&
-    value % 1440 ===
-      0
-  ) {
-    const days =
-      value /
-      1440;
+  const units = [
+    { minutes: 43200, one: 'month', many: 'months' },
+    { minutes: 10080, one: 'week', many: 'weeks' },
+    { minutes: 1440, one: 'day', many: 'days' },
+    { minutes: 60, one: 'hour', many: 'hours' },
+  ];
 
-    return `${days} day${
-      days === 1
-        ? ''
-        : 's'
-    }`;
-  }
-
-  if (
-    value >= 60 &&
-    value % 60 ===
-      0
-  ) {
-    const hours =
-      value /
-      60;
-
-    return `${hours} hour${
-      hours === 1
-        ? ''
-        : 's'
-    }`;
+  for (const unit of units) {
+    if (value >= unit.minutes && value % unit.minutes === 0) {
+      const amount = value / unit.minutes;
+      return `${amount} ${amount === 1 ? unit.one : unit.many}`;
+    }
   }
 
   return `${value} min`;
+}
+
+function durationToMinutes(value, unit) {
+  const amount = Number(value || 0);
+  const multipliers = {
+    minutes: 1,
+    hours: 60,
+    days: 1440,
+    weeks: 10080,
+    months: 43200,
+  };
+
+  const multiplier = multipliers[unit] || 1;
+  return Math.round(amount * multiplier);
 }
 
 
@@ -847,8 +839,9 @@ export default function HotspotControlCenter({
   ] = useState({
     name: '',
     price: '',
-    duration_minutes:
-      '60',
+    duration_value: '1',
+    duration_unit: 'hours',
+    max_devices: '1',
     speed_mbps: '',
     data_limit_mb: '',
     router_id: '',
@@ -1259,6 +1252,16 @@ export default function HotspotControlCenter({
             0
           );
 
+        const durationMinutes =
+          durationToMinutes(
+            packageForm.duration_value,
+            packageForm.duration_unit
+          );
+
+        if (!Number.isInteger(durationMinutes) || durationMinutes < 1) {
+          throw new Error('Enter a valid package duration.');
+        }
+
         await api.post(
           '/billing-workspace/hotspot/plans',
           {
@@ -1271,9 +1274,11 @@ export default function HotspotControlCenter({
               ),
 
             duration_minutes:
+              durationMinutes,
+
+            max_devices:
               Number(
-                packageForm
-                  .duration_minutes
+                packageForm.max_devices || 1
               ),
 
             data_limit_mb:
@@ -1307,8 +1312,9 @@ export default function HotspotControlCenter({
         setPackageForm({
           name: '',
           price: '',
-          duration_minutes:
-            '60',
+          duration_value: '1',
+          duration_unit: 'hours',
+          max_devices: '1',
           speed_mbps: '',
           data_limit_mb: '',
           router_id: '',
@@ -1933,6 +1939,10 @@ export default function HotspotControlCenter({
 
                       {plan.mikrotik_rate_limit ||
                        'Unlimited speed'}
+
+                      {' · '}
+
+                      {Number(plan.max_devices || 1)} device{Number(plan.max_devices || 1) === 1 ? '' : 's'}
                     </p>
                   </div>
 
@@ -2377,33 +2387,67 @@ export default function HotspotControlCenter({
               </Field>
 
 
-              <Field label="Duration (minutes)">
-
-                <input
-                  required
-                  type="number"
-                  min="1"
-                  value={
-                    packageForm
-                      .duration_minutes
-                  }
-                  onChange={
-                    event =>
+              <Field label="Duration">
+                <div className="grid grid-cols-[minmax(0,1fr)_118px] gap-2">
+                  <input
+                    required
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={packageForm.duration_value}
+                    onChange={event =>
                       setPackageForm({
                         ...packageForm,
-
-                        duration_minutes:
-                          event
-                            .target
-                            .value,
+                        duration_value: event.target.value,
                       })
-                  }
-                  className={
-                    inputClass
-                  }
-                />
+                    }
+                    className={inputClass}
+                  />
+
+                  <select
+                    value={packageForm.duration_unit}
+                    onChange={event =>
+                      setPackageForm({
+                        ...packageForm,
+                        duration_unit: event.target.value,
+                      })
+                    }
+                    className={inputClass}
+                  >
+                    <option value="minutes">Minutes</option>
+                    <option value="hours">Hours</option>
+                    <option value="days">Days</option>
+                    <option value="weeks">Weeks</option>
+                    <option value="months">Months</option>
+                  </select>
+                </div>
+                <span className="mt-1.5 block text-[9px] font-semibold text-slate-400">
+                  Months are stored as 30-day access periods.
+                </span>
               </Field>
             </div>
+
+
+            <Field label="Users / devices">
+              <input
+                required
+                type="number"
+                min="1"
+                max="20"
+                step="1"
+                value={packageForm.max_devices}
+                onChange={event =>
+                  setPackageForm({
+                    ...packageForm,
+                    max_devices: event.target.value,
+                  })
+                }
+                className={inputClass}
+              />
+              <span className="mt-1.5 block text-[9px] font-semibold leading-4 text-slate-400">
+                1 connects only the paying device. For 2 or more, the buyer receives voucher codes by SMS for the additional devices.
+              </span>
+            </Field>
 
 
             <div className="grid grid-cols-2 gap-3">

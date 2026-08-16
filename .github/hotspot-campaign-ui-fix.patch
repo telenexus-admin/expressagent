@@ -1,0 +1,125 @@
+diff --git a/frontend/src/components/HotspotControlCenter.jsx b/frontend/src/components/HotspotControlCenter.jsx
+--- a/frontend/src/components/HotspotControlCenter.jsx
++++ b/frontend/src/components/HotspotControlCenter.jsx
+@@ -797,6 +797,13 @@ export default function HotspotControlCenter({
+     false
+   );
+ 
++  const [
++    savingAction,
++    setSavingAction,
++  ] = useState(
++    ''
++  );
++
+   const [
+     publishing,
+     setPublishing,
+@@ -1166,10 +1173,14 @@ export default function HotspotControlCenter({
+   const saveSettings =
+     async (
+-      message
++      message,
++      source = settings,
++      action = 'settings'
+     ) => {
+       try {
++        setSavingAction(
++          action
++        );
++
+         setSaving(
+           true
+         );
+@@ -1181,7 +1192,7 @@ export default function HotspotControlCenter({
+             '/billing-workspace/hotspot/portal-settings',
+             payload(
+-              settings
++              source
+             )
+           );
+@@ -1224,6 +1235,10 @@ export default function HotspotControlCenter({
+         setSaving(
+           false
+         );
++
++        setSavingAction(
++          ''
++        );
+       }
+     };
+@@ -2092,8 +2107,8 @@ export default function HotspotControlCenter({
+               + Add promo poster
+               <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadPromoSlide} disabled={saving || (settings.promo_slides || []).length >= 5} className="hidden" />
+             </label>
+-            <button type="button" disabled={saving || !(settings.promo_slides || []).length} onClick={() => saveSettings('Promo slides saved. They are now available in the preview and live hotspot landing page.')} className="rounded-xl bg-emerald-400 px-3 py-2.5 text-[9px] font-black text-emerald-950 disabled:cursor-not-allowed disabled:opacity-45">
+-              {saving ? 'Saving…' : 'Save slides'}
++            <button type="button" disabled={saving || !(settings.promo_slides || []).length} onClick={() => saveSettings('Promo slides saved. They are now available in the preview and live hotspot landing page.', settings, 'slides')} className="rounded-xl bg-emerald-400 px-3 py-2.5 text-[9px] font-black text-emerald-950 disabled:cursor-not-allowed disabled:opacity-45">
++              {saving && savingAction === 'slides' ? 'Saving…' : 'Save slides'}
+             </button>
+           </div>
+@@ -2193,28 +2208,30 @@ export default function HotspotControlCenter({
+                 const message = String(settings.campaign_message || '')
+                   .replace(/\s+/g, ' ')
+                   .trim();
+ 
+-                if (settings.campaign_enabled && !message) {
+-                  setError('Enter a notification sentence before turning the campaign on.');
++                if (!message) {
++                  setError('Enter a notification sentence before saving the campaign.');
+                   return;
+                 }
+ 
+-                if (message !== settings.campaign_message) {
+-                  setSettings(current => ({
+-                    ...current,
+-                    campaign_message: message,
+-                  }));
+-                }
++                const nextSettings = {
++                  ...settings,
++                  campaign_enabled: true,
++                  campaign_message: message,
++                };
++
++                setSettings(
++                  nextSettings
++                );
+ 
+                 await saveSettings(
+-                  settings.campaign_enabled
+-                    ? 'Campaign notification saved. It is now available on the hotspot landing page.'
+-                    : 'Campaign notification saved and kept off.'
++                  'Campaign notification saved and activated on the hotspot landing page.',
++                  nextSettings,
++                  'campaign'
+                 );
+               }}
+               className="rounded-xl bg-violet-600 px-4 py-2.5 text-[9px] font-black text-white shadow-sm shadow-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+             >
+-              {saving ? 'Saving…' : 'Save campaign'}
++              {saving && savingAction === 'campaign' ? 'Saving campaign…' : 'Save campaign'}
+             </button>
+ 
+             <button
+@@ -2232,6 +2249,10 @@ export default function HotspotControlCenter({
+             >
+               Clear
+             </button>
++
++            <span className="text-[9px] font-semibold text-slate-400">
++              Saving a campaign automatically turns it on. Use “Show notification” to pause it later.
++            </span>
+           </div>
+         </section>
+diff --git a/frontend/src/pages/HotspotPortal.jsx b/frontend/src/pages/HotspotPortal.jsx
+--- a/frontend/src/pages/HotspotPortal.jsx
++++ b/frontend/src/pages/HotspotPortal.jsx
+@@ -500,7 +500,7 @@ useEffect(() => {
+         method: 'GET',
+         credentials: 'omit',
+-        cache: 'default',
++        cache: 'no-store',
+         headers: {
+           Accept:
+             'application/json',

@@ -1,0 +1,44 @@
+name: Validate hotspot light-green UI
+
+on:
+  push:
+    branches:
+      - agent/hotspot-light-green-ui
+    paths:
+      - .github/apply-hotspot-light-green.py
+      - .github/workflows/apply-hotspot-light-green.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-light-green-ui
+          fetch-depth: 0
+
+      - name: Apply exact hotspot UI changes
+        run: python3 .github/apply-hotspot-light-green.py
+
+      - name: Check diff formatting
+        run: git diff --check
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit verified hotspot component
+        run: |
+          git config user.name "Telenexus Admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/components/HotspotControlCenter.jsx
+          if ! git diff --cached --quiet; then
+            git commit -m "Refine hotspot flash heading and green accents"
+            git push origin HEAD:agent/hotspot-light-green-ui
+          fi

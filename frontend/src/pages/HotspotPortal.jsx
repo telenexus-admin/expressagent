@@ -491,7 +491,7 @@ useEffect(() => {
       {
         method: 'GET',
         credentials: 'omit',
-        cache: 'default',
+        cache: 'no-store',
         headers: {
           Accept:
             'application/json',

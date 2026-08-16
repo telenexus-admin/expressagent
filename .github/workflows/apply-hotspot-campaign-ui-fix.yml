@@ -20,10 +20,188 @@ jobs:
           ref: agent/hotspot-campaign-ui-fix
           fetch-depth: 0
 
-      - name: Apply patch
+      - name: Apply exact source changes
         run: |
-          git apply --check .github/hotspot-campaign-ui-fix.patch
-          git apply .github/hotspot-campaign-ui-fix.patch
+          python3 - <<'PY'
+          from pathlib import Path
+
+          control = Path('frontend/src/components/HotspotControlCenter.jsx')
+          source = control.read_text()
+
+          def replace_once(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 match, found {count}')
+              return text.replace(old, new, 1)
+
+          source = replace_once(source, """  const [
+            saving,
+            setSaving,
+          ] = useState(
+            false
+          );
+
+          const [
+            publishing,
+""", """  const [
+            saving,
+            setSaving,
+          ] = useState(
+            false
+          );
+
+          const [
+            savingAction,
+            setSavingAction,
+          ] = useState(
+            ''
+          );
+
+          const [
+            publishing,
+""", 'savingAction state')
+
+          source = replace_once(source, """  const saveSettings =
+            async (
+              message
+            ) => {
+              try {
+                setSaving(
+                  true
+                );
+
+                setError('');
+""", """  const saveSettings =
+            async (
+              message,
+              sourceSettings = settings,
+              action = 'settings'
+            ) => {
+              try {
+                setSavingAction(
+                  action
+                );
+
+                setSaving(
+                  true
+                );
+
+                setError('');
+""", 'saveSettings signature')
+
+          source = replace_once(source, """          await api.put(
+                    '/billing-workspace/hotspot/portal-settings',
+                    payload(
+                      settings
+                    )
+                  );
+""", """          await api.put(
+                    '/billing-workspace/hotspot/portal-settings',
+                    payload(
+                      sourceSettings
+                    )
+                  );
+""", 'saveSettings payload')
+
+          source = replace_once(source, """              } finally {
+                setSaving(
+                  false
+                );
+              }
+            };
+
+
+          const createPackage =
+""", """              } finally {
+                setSaving(
+                  false
+                );
+
+                setSavingAction(
+                  ''
+                );
+              }
+            };
+
+
+          const createPackage =
+""", 'saveSettings finally')
+
+          source = replace_once(source, """            <button type=\"button\" disabled={saving || !(settings.promo_slides || []).length} onClick={() => saveSettings('Promo slides saved. They are now available in the preview and live hotspot landing page.')} className=\"rounded-xl bg-emerald-400 px-3 py-2.5 text-[9px] font-black text-emerald-950 disabled:cursor-not-allowed disabled:opacity-45\">
+              {saving ? 'Saving…' : 'Save slides'}
+""", """            <button type=\"button\" disabled={saving || !(settings.promo_slides || []).length} onClick={() => saveSettings('Promo slides saved. They are now available in the preview and live hotspot landing page.', settings, 'slides')} className=\"rounded-xl bg-emerald-400 px-3 py-2.5 text-[9px] font-black text-emerald-950 disabled:cursor-not-allowed disabled:opacity-45\">
+              {saving && savingAction === 'slides' ? 'Saving…' : 'Save slides'}
+""", 'slides saving state')
+
+          source = replace_once(source, """              onClick={async () => {
+                const message = String(settings.campaign_message || '')
+                  .replace(/\\s+/g, ' ')
+                  .trim();
+
+                if (settings.campaign_enabled && !message) {
+                  setError('Enter a notification sentence before turning the campaign on.');
+                  return;
+                }
+
+                if (message !== settings.campaign_message) {
+                  setSettings(current => ({
+                    ...current,
+                    campaign_message: message,
+                  }));
+                }
+
+                await saveSettings(
+                  settings.campaign_enabled
+                    ? 'Campaign notification saved. It is now available on the hotspot landing page.'
+                    : 'Campaign notification saved and kept off.'
+                );
+              }}
+""", """              onClick={async () => {
+                const message = String(settings.campaign_message || '')
+                  .replace(/\\s+/g, ' ')
+                  .trim();
+
+                if (!message) {
+                  setError('Enter a notification sentence before saving the campaign.');
+                  return;
+                }
+
+                const nextSettings = {
+                  ...settings,
+                  campaign_enabled: true,
+                  campaign_message: message,
+                };
+
+                setSettings(
+                  nextSettings
+                );
+
+                await saveSettings(
+                  'Campaign notification saved and activated on the hotspot landing page.',
+                  nextSettings,
+                  'campaign'
+                );
+              }}
+""", 'campaign save behavior')
+
+          source = replace_once(source, """              {saving ? 'Saving…' : 'Save campaign'}
+""", """              {saving && savingAction === 'campaign'
+                ? 'Saving campaign…'
+                : 'Save campaign'}
+""", 'campaign saving label')
+
+          control.write_text(source)
+
+          portal = Path('frontend/src/pages/HotspotPortal.jsx')
+          portal_source = portal.read_text()
+          portal_source = replace_once(
+              portal_source,
+              "        cache: 'default',\n",
+              "        cache: 'no-store',\n",
+              'portal config cache mode',
+          )
+          portal.write_text(portal_source)
+          PY
 
       - name: Build frontend
         working-directory: frontend

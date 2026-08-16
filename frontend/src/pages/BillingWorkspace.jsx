@@ -685,7 +685,7 @@ export default function BillingWorkspace() {
   const actionText = tab === 'subscribers' ? 'Add a client' : tab === 'payments' ? 'Record payment' : '';
   return <div data-billing-tab={tab} style={{ fontFamily: "'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif" }} className={`min-h-screen overflow-x-hidden ${darkMode ? 'bg-[#101223] text-slate-100' : 'bg-[#f7f8f7] text-slate-950'}`}>
     <style>{`
-      /* Use the tab-title serif face for normal billing UI text while preserving headings. */
+      /* Use the tab-title serif face for normal billing UI text. Headings are intentionally excluded. */
       [data-billing-tab] p,
       [data-billing-tab] span,
       [data-billing-tab] small,
@@ -702,16 +702,6 @@ export default function BillingWorkspace() {
       [data-billing-tab] b,
       [data-billing-tab] a {
         font-family: Georgia, Times, "Times New Roman", serif;
-      }
-
-      /* Headings keep their existing typography. */
-      [data-billing-tab] h1,
-      [data-billing-tab] h2,
-      [data-billing-tab] h3,
-      [data-billing-tab] h4,
-      [data-billing-tab] h5,
-      [data-billing-tab] h6 {
-        font-family: inherit;
       }
 
       [data-billing-tab=\"agents\"] > div > header {

@@ -685,6 +685,35 @@ export default function BillingWorkspace() {
   const actionText = tab === 'subscribers' ? 'Add a client' : tab === 'payments' ? 'Record payment' : '';
   return <div data-billing-tab={tab} style={{ fontFamily: "'Plus Jakarta Sans', Inter, ui-sans-serif, system-ui, sans-serif" }} className={`min-h-screen overflow-x-hidden ${darkMode ? 'bg-[#101223] text-slate-100' : 'bg-[#f7f8f7] text-slate-950'}`}>
     <style>{`
+      /* Use the tab-title serif face for normal billing UI text while preserving headings. */
+      [data-billing-tab] p,
+      [data-billing-tab] span,
+      [data-billing-tab] small,
+      [data-billing-tab] label,
+      [data-billing-tab] button,
+      [data-billing-tab] input,
+      [data-billing-tab] textarea,
+      [data-billing-tab] select,
+      [data-billing-tab] option,
+      [data-billing-tab] table,
+      [data-billing-tab] td,
+      [data-billing-tab] th,
+      [data-billing-tab] strong,
+      [data-billing-tab] b,
+      [data-billing-tab] a {
+        font-family: Georgia, Times, "Times New Roman", serif;
+      }
+
+      /* Headings keep their existing typography. */
+      [data-billing-tab] h1,
+      [data-billing-tab] h2,
+      [data-billing-tab] h3,
+      [data-billing-tab] h4,
+      [data-billing-tab] h5,
+      [data-billing-tab] h6 {
+        font-family: inherit;
+      }
+
       [data-billing-tab=\"agents\"] > div > header {
         display: none !important;
       }
@@ -713,7 +742,6 @@ export default function BillingWorkspace() {
     `}</style>
     {open && <button aria-label="Close menu" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" />}
     <aside
-      style={{ fontFamily: '"Segoe UI Variable Display", "Avenir Next", "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif' }}
       className={`fixed inset-y-0 left-0 z-40 flex w-[218px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-r border-slate-100 bg-white px-2.5 py-3 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.035)] transition-transform duration-300 sm:w-[232px] sm:px-3 lg:w-[260px] lg:px-4 lg:py-7 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}
     >
       <div className="flex items-center gap-1.5 px-2 py-1 lg:gap-2 lg:px-4 lg:py-0">

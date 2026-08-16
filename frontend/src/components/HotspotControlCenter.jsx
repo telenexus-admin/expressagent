@@ -64,6 +64,12 @@ const DEFAULTS = {
   promo_slides:
     [],
 
+  campaign_enabled:
+    false,
+
+  campaign_message:
+    '',
+
   background_overlay:
     46,
 
@@ -1132,6 +1138,20 @@ export default function HotspotControlCenter({
           ? source.promo_slides.slice(0, 5)
           : [],
 
+      campaign_enabled:
+        Boolean(
+          source.campaign_enabled
+        ),
+
+      campaign_message:
+        String(
+          source.campaign_message ||
+          ''
+        )
+          .replace(/\s+/g, ' ')
+          .trim()
+          .slice(0, 180),
+
       show_support:
         Boolean(
           source.show_support
@@ -2075,6 +2095,140 @@ export default function HotspotControlCenter({
             </button>
           </div>
           <p className="mt-2 text-[9px] text-slate-400">Each upload is resized and converted to WebP locally. Save slides to update both the preview and the live hosted landing page.</p>
+        </section>
+
+
+        {/* CAMPAIGNS / NOTIFICATIONS */}
+
+        <section className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-black text-slate-900">
+                  Campaigns / Notifications
+                </h3>
+
+                <span
+                  className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${
+                    settings.campaign_enabled && String(settings.campaign_message || '').trim()
+                      ? 'bg-emerald-50 text-emerald-700'
+                      : 'bg-slate-100 text-slate-500'
+                  }`}
+                >
+                  {settings.campaign_enabled && String(settings.campaign_message || '').trim()
+                    ? 'Live'
+                    : 'Off'}
+                </span>
+              </div>
+
+              <p className="mt-1 max-w-xl text-[10px] leading-4 text-slate-400">
+                Broadcast one short sentence on the hotspot landing page. It scrolls continuously from one end to the other directly below the top image or promo slides.
+              </p>
+            </div>
+
+            <span className="hidden rounded-xl bg-violet-50 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-wide text-violet-600 sm:block">
+              Live ticker
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-[220px_1fr]">
+            <Toggle
+              checked={settings.campaign_enabled}
+              onChange={value => update('campaign_enabled', value)}
+              label="Show notification"
+              description="Turn the scrolling message on or off without deleting it."
+            />
+
+            <div>
+              <Field label="Notification sentence">
+                <textarea
+                  rows={3}
+                  maxLength={180}
+                  value={settings.campaign_message || ''}
+                  onChange={event =>
+                    update(
+                      'campaign_message',
+                      event.target.value
+                        .replace(/\s+/g, ' ')
+                        .slice(0, 180)
+                    )
+                  }
+                  placeholder="Example: Weekend offer — enjoy 20 Mbps for KSh 50 until midnight!"
+                  className={`${inputClass} min-h-[84px] resize-none py-3 leading-5`}
+                />
+              </Field>
+
+              <div className="mt-1.5 flex items-center justify-between gap-3 text-[9px] text-slate-400">
+                <span>One sentence · plain text · maximum 180 characters</span>
+                <span className="font-black text-slate-500">
+                  {String(settings.campaign_message || '').length}/180
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {String(settings.campaign_message || '').trim() && (
+            <div className="mt-4 overflow-hidden rounded-2xl border border-violet-100 bg-[#f8f7ff] p-2">
+              <div className="flex items-center overflow-hidden rounded-xl bg-white shadow-sm">
+                <span className="shrink-0 bg-violet-600 px-3 py-2 text-[8px] font-black uppercase tracking-[.14em] text-white">
+                  Notice
+                </span>
+                <div className="hotspot-campaign-track py-2">
+                  <span
+                    className="hotspot-campaign-message text-[10px] font-bold text-slate-700"
+                    style={{ '--hotspot-campaign-duration': '15s' }}
+                  >
+                    {String(settings.campaign_message || '').trim()}
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="mt-4 flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                const message = String(settings.campaign_message || '')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+
+                if (settings.campaign_enabled && !message) {
+                  setError('Enter a notification sentence before turning the campaign on.');
+                  return;
+                }
+
+                if (message !== settings.campaign_message) {
+                  setSettings(current => ({
+                    ...current,
+                    campaign_message: message,
+                  }));
+                }
+
+                await saveSettings(
+                  settings.campaign_enabled
+                    ? 'Campaign notification saved. It is now available on the hotspot landing page.'
+                    : 'Campaign notification saved and kept off.'
+                );
+              }}
+              className="rounded-xl bg-violet-600 px-4 py-2.5 text-[9px] font-black text-white shadow-sm shadow-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {saving ? 'Saving…' : 'Save campaign'}
+            </button>
+
+            <button
+              type="button"
+              disabled={saving || (!settings.campaign_message && !settings.campaign_enabled)}
+              onClick={() => {
+                update('campaign_enabled', false);
+                update('campaign_message', '');
+              }}
+              className="rounded-xl bg-slate-100 px-3 py-2.5 text-[9px] font-black text-slate-600 disabled:opacity-40"
+            >
+              Clear
+            </button>
+          </div>
         </section>
 
         {/* MOBILE ACTIONS */}

@@ -1006,3 +1006,32 @@ body {
 
 /* Unified billing hero treatment: mirrors the Subscribers forest-network header. */
 .billing-network-hero{background-color:#0a2417!important;background-image:linear-gradient(115deg,rgba(3,22,13,.64),rgba(9,42,27,.58)),url('./assets/polyizon-login-network.jpg')!important;background-size:cover!important;background-position:center!important}.billing-network-hero :is(h1,h2,h3){font-family:Georgia,Times,"Times New Roman",serif!important;font-weight:600!important;letter-spacing:-.03em}.billing-network-hero .text-violet-100{color:rgba(236,255,246,.88)!important}.billing-network-hero .text-violet-200{color:rgba(192,245,216,.82)!important}
+
+
+/* Hotspot campaign ticker: one admin-authored sentence glides beneath the hero/promo area. */
+@keyframes hotspot-campaign-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-100%); }
+}
+.hotspot-campaign-track {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
+  mask-image: linear-gradient(to right, transparent 0, #000 5%, #000 95%, transparent 100%);
+}
+.hotspot-campaign-message {
+  display: inline-block;
+  min-width: max-content;
+  padding-left: 100%;
+  white-space: nowrap;
+  animation: hotspot-campaign-scroll var(--hotspot-campaign-duration, 16s) linear infinite;
+  will-change: transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .hotspot-campaign-message {
+    padding-left: 0;
+    white-space: normal;
+    animation: none;
+  }
+}

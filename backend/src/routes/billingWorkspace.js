@@ -1899,6 +1899,13 @@ function hotspotText(value, maxLength = 160) {
   return String(value || '').trim().slice(0, maxLength);
 }
 
+function hotspotSentence(value, maxLength = 180) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, maxLength);
+}
+
 function hotspotPortalResponse(
   config = {}
 ) {
@@ -2087,6 +2094,14 @@ function hotspotPortalResponse(
 
     promo_slides: Array.isArray(config.promo_slides) ? config.promo_slides.slice(0, 5).map((slide) => ({ id: String(slide?.id || ''), image_data: String(slide?.image_data || ''), updated_at: String(slide?.updated_at || '') })).filter((slide) => slide.id && /^data:image\/(?:webp|jpeg|jpg|png);base64,/i.test(slide.image_data)) : [],
 
+    campaign_enabled:
+      config.campaign_enabled === undefined
+        ? false
+        : hotspotBoolean(config.campaign_enabled),
+
+    campaign_message:
+      hotspotSentence(config.campaign_message, 180),
+
 
     background_overlay:
       Number.isFinite(
@@ -2199,6 +2214,27 @@ router.put(
         ...previous,
         ...(req.body || {}),
       };
+
+      const campaignMessage =
+        hotspotSentence(
+          raw.campaign_message,
+          180
+        );
+
+      const campaignEnabled =
+        raw.campaign_enabled === undefined
+          ? Boolean(campaignMessage)
+          : hotspotBoolean(raw.campaign_enabled);
+
+      if (
+        campaignEnabled &&
+        !campaignMessage
+      ) {
+        return res.status(400).json({
+          error:
+            'Enter a notification sentence before enabling the campaign',
+        });
+      }
 
       let flashEnabled =
         hotspotBoolean(
@@ -2691,6 +2727,12 @@ router.put(
 
         promo_slides:
           normalizedPromoSlides,
+
+        campaign_enabled:
+          campaignEnabled,
+
+        campaign_message:
+          campaignMessage,
 
         show_support:
           raw.show_support ===

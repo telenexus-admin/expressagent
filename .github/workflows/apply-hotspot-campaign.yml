@@ -1,0 +1,47 @@
+name: Apply hotspot campaign patch
+
+on:
+  push:
+    branches:
+      - agent/hotspot-campaign-notifications
+
+permissions:
+  contents: write
+
+jobs:
+  apply-campaign-patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref_name }}
+          fetch-depth: 0
+
+      - name: Apply verified campaign patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PATCH=.github/hotspot-campaign.patch
+          if [ ! -f "$PATCH" ]; then
+            echo "Patch has not been added yet."
+            exit 0
+          fi
+          if ! git apply --check "$PATCH"; then
+            echo "Patch is already applied or no longer matches the source."
+            exit 0
+          fi
+          git apply "$PATCH"
+          node --check backend/src/routes/billingWorkspace.js
+          node --check backend/src/routes/hotspotPortal.js
+          git diff --check
+          git config user.name "Telenexus Admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add backend/src/routes/billingWorkspace.js \
+                  backend/src/routes/hotspotPortal.js \
+                  frontend/src/components/HotspotControlCenter.jsx \
+                  frontend/src/pages/HotspotPortal.jsx \
+                  frontend/src/index.css
+          git commit -m "Add hotspot campaign notifications"
+          git push origin "HEAD:${GITHUB_REF_NAME}"

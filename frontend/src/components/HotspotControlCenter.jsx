@@ -452,7 +452,7 @@ function Toggle({
       <span
         className={`relative h-7 w-12 shrink-0 rounded-full transition ${
           checked
-            ? 'bg-emerald-600'
+            ? 'bg-emerald-400'
             : 'bg-slate-300'
         }`}
       >
@@ -1869,7 +1869,7 @@ export default function HotspotControlCenter({
                   true
                 )
               }
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-[9px] font-black text-white"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-400 px-3 text-[9px] font-black text-emerald-950"
             >
               <Icon
                 name="plus"
@@ -2189,7 +2189,7 @@ export default function HotspotControlCenter({
           {String(settings.campaign_message || '').trim() && (
             <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-100 bg-emerald-50/50 p-2">
               <div className="flex items-center overflow-hidden rounded-xl bg-white shadow-sm">
-                <span className="shrink-0 bg-emerald-600 px-3 py-2 text-[8px] font-black uppercase tracking-[.14em] text-white">
+                <span className="shrink-0 bg-emerald-400 px-3 py-2 text-[8px] font-black uppercase tracking-[.14em] text-emerald-950">
                   Notice
                 </span>
                 <div className="hotspot-campaign-track py-2">
@@ -2234,7 +2234,7 @@ export default function HotspotControlCenter({
                   'campaign'
                 );
               }}
-              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-[9px] font-black text-white shadow-sm shadow-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl bg-emerald-400 px-4 py-2.5 text-[9px] font-black text-emerald-950 shadow-sm shadow-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving && savingAction === 'campaign' ? 'Saving campaign…' : 'Save campaign'}
             </button>
@@ -2550,7 +2550,7 @@ export default function HotspotControlCenter({
               disabled={
                 saving
               }
-              className="h-11 w-full rounded-xl bg-emerald-600 text-xs font-black text-white disabled:opacity-50"
+              className="h-11 w-full rounded-xl bg-emerald-400 text-xs font-black text-white disabled:opacity-50"
             >
               {saving
                 ? 'Creating...'
@@ -3457,7 +3457,7 @@ export default function HotspotControlCenter({
                       }
                     }
                   }
-                  className="h-11 w-full rounded-xl bg-emerald-600 text-xs font-black text-white shadow-lg shadow-emerald-200 disabled:opacity-50"
+                  className="h-11 w-full rounded-xl bg-emerald-400 text-xs font-black text-white shadow-lg shadow-emerald-200 disabled:opacity-50"
                 >
                   {saving
                     ? 'Saving...'

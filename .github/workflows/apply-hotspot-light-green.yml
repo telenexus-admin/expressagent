@@ -42,3 +42,5 @@ jobs:
             git commit -m "Refine hotspot flash heading and green accents"
             git push origin HEAD:agent/hotspot-light-green-ui
           fi
+
+# validation rerun: light-green buttons use emerald-400

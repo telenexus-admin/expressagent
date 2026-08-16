@@ -720,7 +720,7 @@ export default function BillingWorkspace() {
         <div className={`text-[11px] font-extrabold uppercase tracking-[.08em] lg:text-sm lg:font-black lg:tracking-[.1em] ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>POLYIZON</div>
         <div className={`border-l pl-1.5 text-[7px] font-bold uppercase tracking-[.12em] lg:pl-2 lg:text-[10px] lg:font-extrabold lg:tracking-[.16em] ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-300 text-slate-500'}`}>BILLING</div>
       </div>
-      <div className="mt-3 space-y-1 pb-2 lg:mt-8 lg:space-y-5 lg:pb-5">
+      <div className="mt-2 space-y-1.5 pb-1 lg:mt-8 lg:space-y-5 lg:pb-5">
 
         {navGroups.map(
           group => (
@@ -730,14 +730,14 @@ export default function BillingWorkspace() {
               }
             >
 
-              <div className="hidden px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400 lg:block">
+              <div className="px-2 pt-1 text-[7px] font-extrabold uppercase tracking-[.16em] text-slate-400 lg:px-4 lg:pt-0 lg:text-[10px] lg:font-black lg:tracking-[.18em]">
                 {
                   group.label
                 }
               </div>
 
 
-              <nav className="mt-1 grid grid-cols-2 gap-1 lg:mt-2 lg:block lg:space-y-1">
+              <nav className="mt-0.5 space-y-0.5 lg:mt-2 lg:space-y-1">
 
                 {group.items.map(
                   ([
@@ -755,14 +755,14 @@ export default function BillingWorkspace() {
                           key
                         )
                       }
-                      className={`flex min-w-0 w-full items-center gap-1.5 rounded-xl px-1.5 py-1.5 text-left text-[9.5px] font-semibold tracking-[-.015em] transition sm:gap-2 sm:px-2 sm:py-2 sm:text-[10px] lg:gap-3 lg:rounded-r-xl lg:px-4 lg:py-2.5 lg:text-sm lg:font-bold ${
+                      className={`flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[9.5px] font-semibold tracking-[-.015em] transition sm:px-2.5 sm:py-1.5 sm:text-[10px] lg:gap-3 lg:rounded-r-xl lg:px-4 lg:py-2.5 lg:text-sm lg:font-bold ${
                         tab === key
                           ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100 lg:border-l-[3px] lg:border-emerald-500 lg:ring-0'
                           : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 lg:border-l-[3px] lg:border-transparent'
                       }`}
                     >
 
-                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition sm:h-7 sm:w-7 lg:h-6 lg:w-6 lg:rounded-none lg:bg-transparent ${
+                      <span className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition sm:h-6 sm:w-6 lg:h-6 lg:w-6 lg:rounded-none lg:bg-transparent ${
                         tab === key
                           ? 'bg-emerald-100 text-emerald-700'
                           : 'bg-slate-50 text-slate-500'
@@ -797,15 +797,15 @@ export default function BillingWorkspace() {
         )}
       </div>
 
-      <div className="mt-auto border-t border-slate-100 px-1 pt-2 lg:px-3 lg:pt-5">
+      <div className="mt-auto border-t border-slate-100 px-1 pt-1.5 lg:px-3 lg:pt-5">
         <div className="flex items-center gap-2">
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-[9px] font-black text-emerald-700 lg:h-9 lg:w-9 lg:rounded-full lg:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</div>
+          <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-[8px] font-black text-emerald-700 lg:h-9 lg:w-9 lg:rounded-full lg:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</div>
           <div className="min-w-0 flex-1">
-            <div className="truncate text-[10px] font-semibold text-slate-800 lg:text-xs lg:font-bold">{admin.name || 'Billing admin'}</div>
+            <div className="truncate text-[9px] font-semibold text-slate-800 lg:text-xs lg:font-bold">{admin.name || 'Billing admin'}</div>
             <div className="hidden truncate text-[11px] text-slate-400 lg:block">{admin.client_business_name || admin.client_name}</div>
           </div>
         </div>
-        <button type="button" onClick={logout} className="mt-2 flex h-7 items-center gap-1.5 rounded-lg px-1.5 text-[9px] font-semibold text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 lg:mt-4 lg:h-auto lg:px-0 lg:text-xs lg:font-bold">
+        <button type="button" onClick={logout} className="mt-1 flex h-6 items-center gap-1.5 rounded-lg px-1.5 text-[8.5px] font-semibold text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 lg:mt-4 lg:h-auto lg:px-0 lg:text-xs lg:font-bold">
           <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current lg:h-4 lg:w-4" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" /></svg>
           <span>Sign out</span>
         </button>

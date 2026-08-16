@@ -1,6 +1,7 @@
 import React, {
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from 'react';
 
@@ -51,11 +52,17 @@ const DEFAULTS = {
   theme_preset:
     'blue',
 
+  design_template:
+    'classic',
+
   accent_color:
     '#0878f9',
 
   background_image_data:
     '',
+
+  promo_slides:
+    [],
 
   background_overlay:
     46,
@@ -503,7 +510,8 @@ function Field({
 
 
 async function compressBackground(
-  file
+  file,
+  options = {}
 ) {
   if (
     !file ||
@@ -583,11 +591,9 @@ async function compressBackground(
       }
     );
 
-  const maximumWidth =
-    1400;
+  const maximumWidth = Number(options.maximumWidth || 1400);
 
-  const maximumHeight =
-    900;
+  const maximumHeight = Number(options.maximumHeight || 900);
 
   const scale =
     Math.min(
@@ -640,34 +646,37 @@ async function compressBackground(
     height
   );
 
-  let quality =
-    0.78;
+  let quality = Number(options.quality || 0.78);
+
+  const mimeType = options.mimeType || 'image/jpeg';
+  const outputLimit = Number(options.outputLimit || 850000);
+  const hardLimit = Number(options.hardLimit || 950000);
 
   let result =
     canvas.toDataURL(
-      'image/jpeg',
+      mimeType,
       quality
     );
 
   while (
     result.length >
-      850000 &&
+      outputLimit &&
     quality >
-      0.42
+      Number(options.minimumQuality || 0.42)
   ) {
     quality -=
       0.08;
 
     result =
       canvas.toDataURL(
-        'image/jpeg',
+        mimeType,
         quality
       );
   }
 
   if (
     result.length >
-    950000
+    hardLimit
   ) {
     throw new Error(
       'Image remains too large after compression.'
@@ -677,6 +686,18 @@ async function compressBackground(
   return result;
 }
 
+
+async function compressPromoSlide(file) {
+  return compressBackground(file, {
+    maximumWidth: 1080,
+    maximumHeight: 1350,
+    mimeType: 'image/webp',
+    quality: 0.72,
+    minimumQuality: 0.44,
+    outputLimit: 285000,
+    hardLimit: 340000,
+  });
+}
 
 function ModalShell({
   title,
@@ -752,6 +773,8 @@ export default function HotspotControlCenter({
     portalUrl,
     setPortalUrl,
   ] = useState('');
+
+  const previewFrame = useRef(null);
 
   const [
     loading,
@@ -907,6 +930,36 @@ export default function HotspotControlCenter({
     };
 
 
+  const openFlashPackage = () => {
+    const now = Date.now();
+    const savedEnd = new Date(settings.flash_ends_at || '').getTime();
+
+    if (!Number.isFinite(savedEnd) || savedEnd <= now) {
+      const startsAt = new Date(now + 5 * 60 * 1000).toISOString();
+      const endsAt = new Date(now + 6 * 60 * 60 * 1000).toISOString();
+
+      setSettings(current => ({
+        ...current,
+        flash_starts_at: startsAt,
+        flash_ends_at: endsAt,
+      }));
+    }
+
+    setError('');
+    setNotice('');
+    setFlashOpen(true);
+  };
+
+
+  const sendDraftPreview = () => {
+    previewFrame.current?.contentWindow?.postMessage({ type: 'polyizon-hotspot-preview', settings }, window.location.origin);
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(sendDraftPreview, 40);
+    return () => window.clearTimeout(timer);
+  }, [settings, portalUrl]);
+
   const loadSettings =
     async () => {
       try {
@@ -943,11 +996,24 @@ export default function HotspotControlCenter({
           ),
         });
 
-        setPortalUrl(
+        const issuedPortalUrl =
           portalResult
             .data
             ?.portal_url ||
-          ''
+          '';
+        const issuedPortalToken =
+          portalResult
+            .data
+            ?.portal_token ||
+          '';
+        const secureOrigin =
+          window.location.protocol === 'https:'
+            ? window.location.origin
+            : String(issuedPortalUrl || '').replace(/^(https:\/\/[^/]+).*$/, '$1');
+        setPortalUrl(
+          issuedPortalToken && secureOrigin
+            ? `${secureOrigin}/hotspot?portalToken=${encodeURIComponent(issuedPortalToken)}`
+            : String(issuedPortalUrl || '').replace(/^http:\/\//, 'https://')
         );
       } catch (
         requestError
@@ -1060,6 +1126,11 @@ export default function HotspotControlCenter({
           source.background_overlay ||
           0
         ),
+
+      promo_slides:
+        Array.isArray(source.promo_slides)
+          ? source.promo_slides.slice(0, 5)
+          : [],
 
       show_support:
         Boolean(
@@ -1354,6 +1425,41 @@ export default function HotspotControlCenter({
     };
 
 
+  const uploadPromoSlide =
+    async event => {
+      const file = event.target.files?.[0];
+      if (!file) return;
+      if ((settings.promo_slides || []).length >= 5) {
+        setError('You can add up to five promo posters.');
+        event.target.value = '';
+        return;
+      }
+      try {
+        setSaving(true);
+        setError('');
+        const image_data = await compressPromoSlide(file);
+        setSettings(current => ({
+          ...current,
+          promo_slides: [
+            ...(current.promo_slides || []),
+            { id: 'promo-' + Date.now() + '-' + Math.random().toString(36).slice(2, 8), image_data, updated_at: new Date().toISOString() },
+          ],
+        }));
+        setNotice('Promo poster prepared as a lightweight WebP. Save settings to publish it.');
+      } catch (uploadError) {
+        setError(uploadError.message || 'Could not prepare promo poster.');
+      } finally {
+        event.target.value = '';
+        setSaving(false);
+      }
+    };
+
+  const removePromoSlide =
+    id => setSettings(current => ({
+      ...current,
+      promo_slides: (current.promo_slides || []).filter(slide => slide.id !== id),
+    }));
+
   const uploadBackground =
     async event => {
       const file =
@@ -1495,7 +1601,7 @@ export default function HotspotControlCenter({
 
       {/* CLEAN HEADER */}
 
-      <section className="relative overflow-hidden bg-gradient-to-r from-[#6228e6] via-[#4b21b9] to-[#30168a] px-5 pb-14 pt-6 text-white sm:px-8">
+      <section className="relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:px-8">
 
         <div className="relative z-10 flex items-start justify-between gap-4">
 
@@ -1636,11 +1742,7 @@ export default function HotspotControlCenter({
           <article
             role="button"
             tabIndex={0}
-            onClick={() =>
-              setFlashOpen(
-                true
-              )
-            }
+            onClick={openFlashPackage}
             className="cursor-pointer rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm transition hover:border-pink-200 sm:p-4"
           >
 
@@ -1932,11 +2034,7 @@ export default function HotspotControlCenter({
 
             <button
               type="button"
-              onClick={() =>
-                setFlashOpen(
-                  true
-                )
-              }
+              onClick={openFlashPackage}
               className="shrink-0 rounded-xl bg-pink-50 px-3 py-2 text-[9px] font-black text-pink-600"
             >
               Configure
@@ -1944,6 +2042,40 @@ export default function HotspotControlCenter({
           </div>
         </section>
 
+
+        {/* PROMO SLIDES */}
+        <section className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900">Slides / Promo</h3>
+              <p className="mt-1 text-[10px] text-slate-400">Optional posters appear after the main hotspot image. Up to five lightweight WebP slides.</p>
+            </div>
+            <span className="rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-black text-emerald-700">{(settings.promo_slides || []).length}/5</span>
+          </div>
+          {(settings.promo_slides || []).length > 0 && (
+            <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-5">
+              {settings.promo_slides.map((slide, index) => (
+                <div key={slide.id} className="group relative aspect-[4/5] overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                  <img src={slide.image_data} alt={'Promo slide ' + (index + 1)} className="h-full w-full object-cover" />
+                  <button type="button" onClick={() => removePromoSlide(slide.id)} className="absolute right-1 top-1 rounded-lg bg-black/65 px-1.5 py-1 text-[8px] font-black text-white opacity-100 sm:opacity-0 sm:group-hover:opacity-100">Remove</button>
+                  <span className="absolute bottom-1 left-1 rounded bg-black/65 px-1.5 py-0.5 text-[8px] font-black text-white">{index + 1}</span>
+                </div>
+              ))}
+            </div>
+          )}
+          {error && <p role="alert" className="mt-3 rounded-lg bg-rose-50 px-3 py-2 text-[10px] font-bold text-rose-700">{error}</p>}
+
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-xl bg-slate-950 px-3 py-2.5 text-[9px] font-black text-white">
+              + Add promo poster
+              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadPromoSlide} disabled={saving || (settings.promo_slides || []).length >= 5} className="hidden" />
+            </label>
+            <button type="button" disabled={saving || !(settings.promo_slides || []).length} onClick={() => saveSettings('Promo slides saved. They are now available in the preview and live hotspot landing page.')} className="rounded-xl bg-emerald-400 px-3 py-2.5 text-[9px] font-black text-emerald-950 disabled:cursor-not-allowed disabled:opacity-45">
+              {saving ? 'Saving…' : 'Save slides'}
+            </button>
+          </div>
+          <p className="mt-2 text-[9px] text-slate-400">Each upload is resized and converted to WebP locally. Save slides to update both the preview and the live hosted landing page.</p>
+        </section>
 
         {/* MOBILE ACTIONS */}
 
@@ -2231,6 +2363,12 @@ export default function HotspotControlCenter({
 
           <div className="space-y-4 p-4 sm:p-6">
 
+            {error && (
+              <div role="alert" className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs font-bold text-rose-700">
+                {error}
+              </div>
+            )}
+
             <Toggle
               checked={
                 settings.flash_enabled
@@ -2253,13 +2391,18 @@ export default function HotspotControlCenter({
                     ''
                   }
                   onChange={
-                    event =>
+                    event => {
                       update(
                         'flash_plan_id',
                         event
                           .target
                           .value
-                      )
+                      );
+                      update(
+                        'flash_enabled',
+                        Boolean(event.target.value)
+                      );
+                    }
                   }
                   className={
                     inputClass
@@ -2684,6 +2827,11 @@ export default function HotspotControlCenter({
                   </div>
 
 
+                  <div className="mb-4 grid gap-2 sm:grid-cols-2">
+                    <button type="button" onClick={() => setSettings(current => ({ ...current, design_template: 'classic' }))} className={`rounded-xl border p-3 text-left ${settings.design_template !== 'green_portrait' ? 'border-violet-500 ring-2 ring-violet-100' : 'border-slate-200'}`}><span className="block h-12 rounded-lg bg-gradient-to-br from-slate-950 to-blue-800" /><b className="mt-2 block text-xs">Classic portal</b><small className="text-[10px] text-slate-400">Current portal layout</small></button>
+                    <button type="button" onClick={() => setSettings(current => ({ ...current, design_template: 'green_portrait', theme_preset: 'green', accent_color: '#00A651' }))} className={`rounded-xl border p-3 text-left ${settings.design_template === 'green_portrait' ? 'border-violet-500 ring-2 ring-violet-100' : 'border-slate-200'}`}><span className="block h-12 rounded-lg bg-cover bg-center" style={{ backgroundImage: "url('/hotspot-templates/green-portrait-hotspot.png')" }} /><b className="mt-2 block text-xs">Green Portrait</b><small className="text-[10px] text-slate-400">Live ISP name in Bebas Neue</small></button>
+                  </div>
+
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
 
                     {Object.entries(
@@ -3104,143 +3252,33 @@ export default function HotspotControlCenter({
               </div>
 
 
-              {/* LIVE PREVIEW */}
+              {/* EXACT PUBLIC PORTAL PREVIEW */}
 
               <aside className="xl:sticky xl:top-20 xl:self-start">
 
                 <p className="mb-2 text-[8px] font-black uppercase tracking-[.18em] text-slate-400">
-                  Live Preview
+                  Portal preview
                 </p>
 
                 <div className="overflow-hidden rounded-[26px] border-[6px] border-slate-950 bg-white shadow-xl">
-
-                  <div
-                    className="relative min-h-[520px] overflow-hidden"
-                    style={
-                      previewStyle
-                    }
-                  >
-
-                    <div className="p-5 text-white">
-
-                      <strong className="block truncate text-base font-black uppercase">
-                        {settings.brand_name ||
-                         'Your Hotspot'}
-                      </strong>
-
-                      <h4 className="mt-12 text-3xl font-black leading-tight">
-                        {settings.hero_heading ||
-                         'Fast Internet. Everywhere.'}
-                      </h4>
-
-                      <p className="mt-2 text-[10px] text-white/75">
-                        {settings.tagline ||
-                         'Connect instantly'}
-                      </p>
-
-
-                      {settings.wallet_enabled && (
-                        <div className="mt-6 rounded-2xl bg-white p-4 text-slate-950">
-
-                          <small className="text-[8px] font-black uppercase text-slate-400">
-                            {
-                              settings.wallet_label
-                            }
-                          </small>
-
-                          <strong
-                            className="mt-1 block text-lg"
-                            style={{
-                              color:
-                                settings.accent_color,
-                            }}
-                          >
-                            {money(
-                              settings.wallet_balance
-                            )}
-                          </strong>
-                        </div>
-                      )}
+                  {portalUrl ? (
+                    <iframe
+                      title="Exact hotspot portal preview"
+                      ref={previewFrame}
+                      src={`${portalUrl}${portalUrl.includes('?') ? '&' : '?'}preview=1`}
+                      onLoad={sendDraftPreview}
+                      className="block h-[560px] w-full border-0 bg-white"
+                    />
+                  ) : (
+                    <div className="flex h-[560px] items-center justify-center p-6 text-center text-xs font-semibold text-slate-500">
+                      Save the portal customization to generate its secure public preview.
                     </div>
-
-
-                    <div className="absolute inset-x-0 bottom-0 rounded-t-[24px] bg-white p-4">
-
-                      <small className="text-[8px] font-black uppercase text-slate-400">
-                        Packages
-                      </small>
-
-
-                      <div
-                        className={`mt-3 grid gap-2 ${
-                          settings.package_layout ===
-                          'list'
-                            ? 'grid-cols-1'
-                            : settings.package_layout ===
-                              'compact'
-                              ? 'grid-cols-3'
-                              : 'grid-cols-2'
-                        }`}
-                      >
-
-                        {activePlans
-                          .slice(
-                            0,
-                            6
-                          )
-                          .map(
-                            plan => (
-                              <div
-                                key={
-                                  plan.id
-                                }
-                                className={`flex min-h-14 flex-col items-center justify-center p-2 text-center text-white ${
-                                  settings.package_layout ===
-                                  'circles'
-                                    ? 'aspect-square rounded-full'
-                                    : 'rounded-xl'
-                                }`}
-                                style={{
-                                  background:
-                                    settings.accent_color ||
-                                    '#0878f9',
-                                }}
-                              >
-
-                                <b className="max-w-full truncate text-[8px]">
-                                  {
-                                    plan.name
-                                  }
-                                </b>
-
-                                <span className="mt-0.5 text-[7px]">
-                                  {money(
-                                    plan.price
-                                  )}
-                                </span>
-                              </div>
-                            )
-                          )}
-                      </div>
-
-
-                      {settings.show_support &&
-                        settings.support_phone && (
-                          <div className="mt-3 flex items-center gap-1.5 text-[8px] font-bold text-slate-500">
-
-                            <Icon
-                              name="phone"
-                              className="h-3 w-3"
-                            />
-
-                            {
-                              settings.support_phone
-                            }
-                          </div>
-                        )}
-                    </div>
-                  </div>
+                  )}
                 </div>
+
+                <p className="mt-2 text-[10px] leading-4 text-slate-500">
+                  Draft changes appear here immediately. The public hotspot portal changes only after you save and publish.
+                </p>
               </aside>
             </div>
           </section>

@@ -170,6 +170,27 @@ async function cleanupLegacyRuntime() {
   }
 }
 
+function preloadHotspotHero() {
+  if (document.querySelector('link[data-hotspot-hero-preload]')) return;
+
+  const preload = document.createElement('link');
+  preload.rel = 'preload';
+  preload.as = 'image';
+  preload.href = '/hotspot-templates/green-portrait-hotspot.webp?v=green-portrait-v1';
+  preload.type = 'image/webp';
+  preload.fetchPriority = 'high';
+  preload.dataset.hotspotHeroPreload = 'true';
+  document.head.appendChild(preload);
+}
+
+function showHotspotLoader() {
+  rootElement.innerHTML = `
+    <main style="min-height:100vh;display:grid;place-items:center;background:#06140e;color:#d8f7e4;font:600 15px system-ui,sans-serif">
+      Opening hotspot portal…
+    </main>
+  `;
+}
+
 async function mountDashboard() {
   showDashboardLoader();
 
@@ -202,6 +223,7 @@ async function mountDashboard() {
 
 try {
   if (hotspotPath) {
+    preloadHotspotHero();
     ReactDOM
       .createRoot(rootElement)
       .render(

@@ -65,6 +65,19 @@
     <meta name="mobile-web-app-capable" content="yes" />
 
     <title>Nexa</title>
+  <script>
+    // Start the captive portal artwork before the React bundle executes.
+    if (/^\/hotspot\/?$/.test(window.location.pathname)) {
+      const link = document.createElement('link');
+      link.rel = 'preload';
+      link.as = 'image';
+      link.href = '/hotspot-templates/green-portrait-hotspot.webp?v=green-portrait-v1';
+      link.type = 'image/webp';
+      link.fetchPriority = 'high';
+      document.head.appendChild(link);
+    }
+  </script>
+
   </head>
   <body>
     <div id="root"></div>

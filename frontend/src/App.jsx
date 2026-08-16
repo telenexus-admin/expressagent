@@ -2,6 +2,8 @@ import React, { Component, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './pages/Login';
+const ForgotPassword = lazy(() => import('./pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('./pages/ResetPassword'));
 const ExpressnetLogin = lazy(() => import('./pages/ExpressnetLogin'));
 const SelfOnboarding = lazy(() => import('./pages/SelfOnboarding'));
 const CustomerIntake = lazy(() => import('./pages/CustomerIntake'));
@@ -11,6 +13,7 @@ const ClientAccess = lazy(() => import('./pages/ClientAccess'));
 const HotspotPortal = lazy(() => import('./pages/HotspotPortal'));
 const OnboardingLogin = lazy(() => import('./pages/OnboardingLogin'));
 const OnboardingLayout = lazy(() => import('./pages/onboarding/Layout'));
+const BillingAdminPanel = lazy(() => import('./pages/onboarding/BillingAdminPanel'));
 const OnboardingOverview = lazy(() => import('./pages/onboarding/Overview'));
 const OnboardingClients = lazy(() => import('./pages/onboarding/Clients'));
 const OnboardingClientDetail = lazy(() => import('./pages/onboarding/ClientDetail'));
@@ -217,18 +220,14 @@ export default function App() {
           <Route path="/agent" element={<AgentPortal />} />
           <Route path="/pppoe" element={<PppoePortal />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/login/expressnet" element={<ExpressnetLogin />} />
           <Route path="/onboarding/login" element={<OnboardingLogin />} />
           <Route path="/billing" element={<BillingRoute><BillingWorkspace /></BillingRoute>} />
-          <Route path="/onboarding" element={<SuperadminRoute><OnboardingLayout /></SuperadminRoute>}>
-            <Route index element={<OnboardingOverview />} />
-            <Route path="clients" element={<OnboardingClients />} />
-            <Route path="clients/:id" element={<OnboardingClientDetail />} />
-            <Route path="client-access" element={<OnboardingClientAccess />} />
-            <Route path="evo-clients" element={<EvoClients />} />
-            <Route path="nexa-whatsapp" element={<NexaWhatsApp />} />
-            <Route path="update-contacts" element={<UpdateContacts />} />
-          </Route>
+          <Route path="/admin" element={<SuperadminRoute><BillingAdminPanel /></SuperadminRoute>} />
+          <Route path="/onboarding" element={<SuperadminRoute><Navigate to="/admin?app_route=dashboard" replace /></SuperadminRoute>} />
+          <Route path="/onboarding/*" element={<SuperadminRoute><Navigate to="/admin?app_route=dashboard" replace /></SuperadminRoute>} />
           <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>}>
             <Route index element={<DashboardIndexRedirect />} />
             <Route path="conversations" element={<PermissionRoute permission="conversations"><Conversations /></PermissionRoute>}>

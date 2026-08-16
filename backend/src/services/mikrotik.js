@@ -2519,14 +2519,29 @@ class RouterOsApi {
 }
 
 async function connectRouter(config) {
-  const client = new RouterOsApi({
-    host: config.host,
-    port: config.port,
-    secure: config.connection_type === 'api-ssl',
-  });
-  await client.connect();
-  await client.login(config.username, config.password);
-  return client;
+  // A new WireGuard peer can need a few seconds before the kernel route and
+  // RouterOS API are ready. Retry only transient transport failures; invalid
+  // credentials and RouterOS errors still fail immediately.
+  const transientCodes = new Set(['EHOSTUNREACH', 'ENETUNREACH', 'ECONNREFUSED', 'ETIMEDOUT', 'ECONNRESET']);
+  let lastError;
+  for (let attempt = 1; attempt <= 5; attempt += 1) {
+    const client = new RouterOsApi({
+      host: config.host,
+      port: config.port,
+      secure: config.connection_type === 'api-ssl',
+    });
+    try {
+      await client.connect();
+      await client.login(config.username, config.password);
+      return client;
+    } catch (err) {
+      client.close();
+      lastError = err;
+      if (!transientCodes.has(err?.code) || attempt === 5) throw err;
+      await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
+    }
+  }
+  throw lastError;
 }
 
 async function probeRouter(config) {

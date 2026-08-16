@@ -12,7 +12,7 @@ export default function OnboardingLogin() {
   const [loading, setLoading] = useState(false);
 
   if (admin) {
-    return <Navigate to={admin.role === 'superadmin' ? '/onboarding' : '/dashboard'} replace />;
+    return <Navigate to={admin.role === 'superadmin' ? '/admin?app_route=dashboard' : '/dashboard'} replace />;
   }
 
   const handleSubmit = async (e) => {
@@ -26,7 +26,7 @@ export default function OnboardingLogin() {
         return;
       }
       login(data.token, data.admin);
-      navigate('/onboarding');
+      navigate('/admin?app_route=dashboard');
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed. Please try again.');
     } finally {
@@ -52,8 +52,8 @@ export default function OnboardingLogin() {
               />
             </svg>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Onboarding</h1>
-          <p className="text-gray-500 text-sm mt-1">System operator sign-in</p>
+          <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Billing operator</h1>
+          <p className="text-gray-500 text-sm mt-1">Billing system operator sign-in</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">

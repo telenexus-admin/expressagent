@@ -259,7 +259,7 @@ function WhatsappPanel() {
 export default function BillingCommunication() {
   const [section, setSection] = useState('sms');
   return <div data-billing-communication className="-mx-5 -mt-5 space-y-5 sm:-mx-8 sm:-mt-8">
-    <section className="relative isolate overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-20 pt-7 text-white sm:px-8">
+    <section className="relative isolate overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-20 pt-7 text-white sm:px-8">
       <div className="relative z-10"><p className="text-[10px] font-black uppercase tracking-[.2em] text-violet-200">Customer engagement</p><h2 className="mt-2 text-3xl font-black tracking-tight">Communication</h2><p className="mt-2 max-w-xl text-sm leading-6 text-violet-100">Configure the channels this billing account uses to reach subscribers.</p></div>
       <div className="pointer-events-none absolute right-[-8%] top-3 h-36 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" /></svg></div>
       <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-16"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#f7f8f7" /></svg></div>

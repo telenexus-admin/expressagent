@@ -1,4 +1,5 @@
 const express = require('express');
+const net = require('net');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { radiusEnabled, syncHotspotVoucherRadius } = require('../services/radiusSync');
@@ -11,7 +12,7 @@ const {
   ensureHotspotPaymentSchema,
   getHotspotPaymentStatus,
 } = require('../services/hotspotPayments');
-const { verifyHotspotPortalToken } = require('../services/hotspotPortalToken');
+const { verifyHotspotPortalToken, verifyHotspotPortalBootstrapToken, createHotspotPortalToken } = require('../services/hotspotPortalToken');
 
 const router = express.Router();
 
@@ -49,7 +50,8 @@ router.use((req, res, next) => {
 function getPortalClientId(req, res) {
   const token = req.query.portalToken || req.body?.portal_token;
   const decoded = verifyHotspotPortalToken(token);
-  if (!decoded) { res.status(403).json({ error: 'This hotspot portal link is invalid or not configured' }); return null; }
+  if (!decoded) { res.status(403).json({ error: 'This hotspot portal link is invalid, expired, or not configured' }); return null; }
+  req.hotspotPortalClaims = decoded;
   return decoded.client_id;
 }
 
@@ -60,13 +62,50 @@ async function resolveClientId(req, res) {
   if (result.rows[0]?.account_type !== 'billing') { res.status(404).json({ error: 'Hotspot account not found' }); return null; }
   return { id: clientId, ...result.rows[0] };
 }
+function privateIpv4(value) {
+  const parts = String(value || '').split('.').map(Number);
+  return parts.length === 4 && parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255) && (parts[0] === 10 || (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) || (parts[0] === 192 && parts[1] === 168));
+}
+
+function samePrivateSubnet(a, b) {
+  const left = String(a || '').split('.'); const right = String(b || '').split('.');
+  return left.length === 4 && right.length === 4 && left.slice(0, 3).join('.') === right.slice(0, 3).join('.');
+}
+
+function safeRouterLoginUrl(value, clientIp) {
+  if (!value) return null;
+  try {
+    const url = new URL(String(value));
+    if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash || url.pathname !== '/login') return null;
+    if (net.isIP(url.hostname) !== 4 || !privateIpv4(url.hostname) || !privateIpv4(clientIp) || !samePrivateSubnet(url.hostname, clientIp)) return null;
+    return url.toString();
+  } catch (_) { return null; }
+}
+
+function portalOrigin(req) {
+  return String(process.env.FRONTEND_URL || (req.protocol + '://' + req.get('host'))).replace(/\/$/, '');
+}
+
+router.get('/bootstrap', (req, res) => {
+  const bootstrap = verifyHotspotPortalBootstrapToken(req.query.bootstrapToken);
+  const mac = String(req.query.mac || '').trim().toLowerCase();
+  const ip = String(req.query.ip || '').trim();
+  if (!bootstrap || !mac || mac.length > 80 || net.isIP(ip) !== 4) return res.status(403).send('This hotspot portal link is invalid or expired.');
+  const portalToken = createHotspotPortalToken(bootstrap.client_id, { routerId: bootstrap.router_id, mac, ip, ttlSeconds: 600 });
+  const target = new URL('/hotspot', portalOrigin(req));
+  target.searchParams.set('portalToken', portalToken);
+  target.searchParams.set('mac', mac); target.searchParams.set('ip', ip);
+  ['link-login-only', 'link-orig'].forEach((key) => { if (req.query[key]) target.searchParams.set(key, String(req.query[key])); });
+  res.set({ 'Cache-Control': 'private, no-store, max-age=0', 'Referrer-Policy': 'no-referrer' });
+  return res.redirect(303, target.toString());
+});
 let hotspotPortalSchemaPromise = null;
 
 const hotspotConfigCache =
   new Map();
 
 const HOTSPOT_CONFIG_CACHE_TTL_MS =
-  30 * 1000;
+  5 * 1000;
 
 async function ensureHotspotPortalConfigColumn() {
   if (!hotspotPortalSchemaPromise) {
@@ -94,7 +133,7 @@ function setHotspotConfigHeaders(
 ) {
   res.set({
     'Cache-Control':
-      'private, max-age=30, stale-while-revalidate=300',
+      'private, no-store, max-age=0',
 
     'X-Hotspot-Config-Cache':
       cacheStatus,
@@ -344,6 +383,29 @@ router.get(
 );
 
 
+router.get('/promo-slide', async (req, res) => {
+  try {
+    const clientId = getPortalClientId(req, res);
+    if (!clientId) return;
+    const index = Number.parseInt(String(req.query.index || ''), 10);
+    if (!Number.isInteger(index) || index < 0 || index > 4) return res.status(404).end();
+    await ensureHotspotPortalConfigColumn();
+    const result = await db.query("SELECT hotspot_portal_config FROM clients WHERE id = $1 AND account_type = 'billing' LIMIT 1", [clientId]);
+    const slide = result.rows[0]?.hotspot_portal_config?.promo_slides?.[index];
+    const source = String(slide?.image_data || '');
+    const match = source.match(/^data:image\/(webp|jpeg|jpg|png);base64,([A-Za-z0-9+/=]+)$/i);
+    if (!match) return res.status(404).end();
+    const type = match[1].toLowerCase() === 'jpg' ? 'jpeg' : match[1].toLowerCase();
+    const data = Buffer.from(match[2], 'base64');
+    if (!data.length || data.length > 270000) return res.status(404).end();
+    res.set({ 'Content-Type': `image/${type}`, 'Content-Length': String(data.length), 'Cache-Control': 'private, max-age=300, stale-while-revalidate=3600', Vary: 'Accept-Encoding' });
+    return res.send(data);
+  } catch (error) {
+    console.error('Hotspot promo slide error:', error.message);
+    return res.status(500).end();
+  }
+});
+
 router.get('/config', async (req, res) => {
   try {
     const clientId =
@@ -584,6 +646,11 @@ router.get('/config', async (req, res) => {
               )
             : 'blue',
 
+        design_template:
+          String(saved.design_template || '') === 'green_portrait'
+            ? 'green_portrait'
+            : 'classic',
+
         accent_color:
           /^#[0-9A-Fa-f]{6}$/
             .test(
@@ -606,6 +673,8 @@ router.get('/config', async (req, res) => {
           saved.background_image_updated_at ||
           saved.updated_at ||
           '',
+
+        promo_slides: Array.isArray(saved.promo_slides) ? saved.promo_slides.slice(0, 5).map((slide, index) => ({ index, id: String(slide?.id || ''), version: String(slide?.updated_at || saved.updated_at || '') })).filter((slide) => slide.id) : [],
 
         background_overlay:
           Number.isFinite(
@@ -954,13 +1023,15 @@ router.post('/login', [
   body('code').trim().notEmpty().isLength({ min: 3, max: 80 }),
   body('mac').optional({ checkFalsy: true }).isLength({ max: 80 }),
   body('ip').optional({ checkFalsy: true }).isIP(),
-  body('link_login_only').optional({ checkFalsy: true }).isURL({ protocols: ['http', 'https'], require_protocol: true }),
-  body('link_orig').optional({ checkFalsy: true }).isURL({ protocols: ['http', 'https'], require_protocol: true }),
+  body('link_login_only').optional({ checkFalsy: true }).isString().isLength({ max: 512 }),
+  body('link_orig').optional({ checkFalsy: true }).isString().isLength({ max: 1024 }),
 ], async (req, res) => {
   const errors = validationResult(req);
   if (!errors.isEmpty()) return res.status(400).json({ error: 'Enter a valid voucher code', details: errors.array() });
   const account = await resolveClientId(req, res);
   if (!account) return;
+  const loginTarget = safeRouterLoginUrl(req.body.link_login_only, req.body.ip);
+  if (req.body.link_login_only && !loginTarget) return res.status(400).json({ error: 'The router login target must be this hotspot gateway\'s local /login address.' });
   const client = await db.connect();
   try {    await client.query('BEGIN');
     const voucherResult = await client.query(`
@@ -1014,7 +1085,11 @@ router.post('/login', [
     ]);
     const voucher = voucherResult.rows[0];
     if (!voucher) { await client.query('ROLLBACK'); return res.status(401).json({ error: 'Voucher code not found' }); }
-    if (voucher.status === 'active' && voucher.expires_at && new Date(voucher.expires_at) > new Date()) { await client.query('COMMIT'); return res.json({ success: true, already_active: true, voucher: { code: voucher.code, plan_name: voucher.plan_name, expires_at: voucher.expires_at, duration_minutes: voucher.duration_minutes }, login: { username: voucher.code, password: voucher.code, url: req.body.link_login_only || null, destination: req.body.link_orig || null } }); }
+    const claims = req.hotspotPortalClaims || {};
+    if (claims.router_id && voucher.router_id && Number(claims.router_id) !== Number(voucher.router_id)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This voucher belongs to a different router.' }); }
+    if (claims.mac && req.body.mac && String(claims.mac).toLowerCase() !== String(req.body.mac).toLowerCase()) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This portal link is bound to a different device.' }); }
+    if (claims.ip && req.body.ip && String(claims.ip) !== String(req.body.ip)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This portal link is bound to a different device.' }); }
+    if (voucher.status === 'active' && voucher.expires_at && new Date(voucher.expires_at) > new Date()) { await client.query('COMMIT'); return res.json({ success: true, already_active: true, voucher: { code: voucher.code, plan_name: voucher.plan_name, expires_at: voucher.expires_at, duration_minutes: voucher.duration_minutes }, login: { username: voucher.code, password: voucher.code, url: loginTarget || null, destination: req.body.link_orig || null } }); }
     if (voucher.status !== 'available') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'This voucher is no longer available' }); }
     const usedBy = [req.body.mac && `mac:${req.body.mac}`, req.body.ip && `ip:${req.body.ip}`].filter(Boolean).join(' ') || 'Hotspot portal user';
     const updated = await client.query(`UPDATE billing_hotspot_vouchers SET status = 'active', used_by = $1, activated_at = NOW(), expires_at = NOW() + ($2::text || ' minutes')::interval WHERE id = $3 RETURNING *`, [usedBy, voucher.duration_minutes, voucher.id]);
@@ -1029,7 +1104,7 @@ router.post('/login', [
       fup_download_speed_mbps: voucher.fup_download_speed_mbps,
       fup_upload_speed_mbps: voucher.fup_upload_speed_mbps,
     });
-    res.json({ success: true, voucher: { code: updated.rows[0].code, plan_name: voucher.plan_name, price: voucher.price, expires_at: updated.rows[0].expires_at, duration_minutes: voucher.duration_minutes, data_limit_mb: voucher.data_limit_mb }, login: { username: updated.rows[0].code, password: updated.rows[0].code, url: req.body.link_login_only || null, destination: req.body.link_orig || null }, radius_sync: radiusSync });
+    res.json({ success: true, voucher: { code: updated.rows[0].code, plan_name: voucher.plan_name, price: voucher.price, expires_at: updated.rows[0].expires_at, duration_minutes: voucher.duration_minutes, data_limit_mb: voucher.data_limit_mb }, login: { username: updated.rows[0].code, password: updated.rows[0].code, url: loginTarget || null, destination: req.body.link_orig || null }, radius_sync: radiusSync });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) { /* transaction may already be closed */ }
     console.error('Public hotspot login error:', err.message);

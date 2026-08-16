@@ -711,6 +711,10 @@ const schema = `
   );
   ALTER TABLE billing_hotspot_vouchers ADD COLUMN IF NOT EXISTS used_by VARCHAR(255);
 
+  -- The static-IP uniqueness index below depends on router_id. Keep this
+  -- additive migration ahead of index creation for fresh databases.
+  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS router_id INTEGER;
+
   CREATE INDEX IF NOT EXISTS idx_billing_plans_client ON billing_plans(client_id, is_active);
   CREATE INDEX IF NOT EXISTS idx_billing_plans_router ON billing_plans(client_id, router_id, is_active);
   CREATE INDEX IF NOT EXISTS idx_billing_subscribers_client ON billing_subscribers(client_id, service_status);
@@ -748,7 +752,6 @@ const schema = `
   ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS radius_last_synced_at TIMESTAMP WITH TIME ZONE;
   ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS radius_sync_error TEXT;
   ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS grace_period_days INTEGER NOT NULL DEFAULT 0;
-  ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS router_id INTEGER;
   ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS access_mode VARCHAR(30) NOT NULL DEFAULT 'pppoe';
   ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS vlan_id INTEGER;
   ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS static_pool_id INTEGER;

@@ -7,10 +7,10 @@ const { createEnrollment, ensureNetworkEnrollmentSchema, markBootstrapConnected,
 
 const WG_SERVER_IP = process.env.MIKROTIK_WG_SERVER_IP || process.env.WIREGUARD_SERVER_IP || '10.77.0.1';
 const WG_PREFIX = process.env.MIKROTIK_WG_SUBNET_PREFIX || process.env.WIREGUARD_SUBNET_PREFIX || '10.77.0';
-const WG_PUBLIC_KEY = process.env.MIKROTIK_WG_PUBLIC_KEY || process.env.WIREGUARD_SERVER_PUBLIC_KEY || 'zCy0rX2el4g0TLBDG8xSZCY2PqxgtyjJDsKqmBgVE08=';
-const WG_ENDPOINT = process.env.MIKROTIK_WG_ENDPOINT || process.env.WIREGUARD_ENDPOINT || '64.227.156.219';
+const WG_PUBLIC_KEY = process.env.MIKROTIK_WG_PUBLIC_KEY || process.env.WIREGUARD_SERVER_PUBLIC_KEY || 'wjbIYzfU+mbsBOp7WeX0UNdMeh89lLZHtCs+J/hZM0Y=';
+const WG_ENDPOINT = process.env.MIKROTIK_WG_ENDPOINT || process.env.WIREGUARD_ENDPOINT || '169.58.177.113';
 const WG_PORT = Number(process.env.MIKROTIK_WG_ENDPOINT_PORT || process.env.WIREGUARD_ENDPOINT_PORT || 51820);
-const CALLBACK_BASE = String(process.env.PUBLIC_API_URL || 'https://nexa.telenexustechnologies.com').replace(/\/$/, '');
+const CALLBACK_BASE = String(process.env.PUBLIC_API_URL || 'https://billing.polyizon.tech').replace(/\/$/, '');
 
 async function ensureTokens() {
   await ensureMikrotikTables();

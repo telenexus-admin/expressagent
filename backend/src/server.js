@@ -1,6 +1,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const db = require('./db');
 
 const authRoutes = require('./routes/auth');
 const conversationRoutes = require('./routes/conversations');
@@ -10,6 +11,7 @@ const smsSettingsRoutes = require('./routes/smsSettings');
 const escalationsRoutes = require('./routes/escalations');
 const analyticsRoutes = require('./routes/analytics');
 const clientRoutes = require('./routes/clients');
+const billingOperatorRoutes = require('./routes/billingOperator');
 const operatorAccessRoutes = require('./routes/operatorAccess');
 const employeeRoutes = require('./routes/employees');
 const workflowRoutes = require('./routes/workflows');
@@ -81,30 +83,46 @@ const {
 
 const app = express();
 
-function isAllowedCorsOrigin(origin) {
+const tenantCorsCache = new Map();
+const TENANT_CORS_CACHE_MS = 60 * 1000;
+
+async function isAllowedCorsOrigin(origin) {
   if (!origin) return true;
   const allowed = [
-        process.env.FRONTEND_URL || 'http://localhost:5173',
-        'https://neemainternet.co.ke',
-        'https://www.neemainternet.co.ke',
-        'https://neemainternetsolution.co.ke',
-        'https://www.neemainternetsolution.co.ke',
+    process.env.FRONTEND_URL || 'http://localhost:5173',
+    'https://neemainternet.co.ke',
+    'https://www.neemainternet.co.ke',
+    'https://neemainternetsolution.co.ke',
+    'https://www.neemainternetsolution.co.ke',
+    'https://billing.polyizon.tech',
     ...String(process.env.SITE_CHAT_ALLOWED_ORIGINS || '')
       .split(',')
       .map((item) => item.trim())
       .filter(Boolean),
   ];
   if (allowed.includes(origin)) return true;
+
   try {
     const url = new URL(origin);
-      const host = url.hostname.toLowerCase();
-      return (
-        host === 'localhost' ||
-        host === 'neemainternet.co.ke' ||
-        host.endsWith('.neemainternet.co.ke') ||
-        host.endsWith('.neemainternetsolution.co.ke') ||
-        ((host.includes('neema') || host.includes('nis')) && host.endsWith('.ondigitalocean.app'))
-      );
+    const host = url.hostname.toLowerCase();
+    if (
+      host === 'localhost' ||
+      host === 'neemainternet.co.ke' ||
+      host.endsWith('.neemainternet.co.ke') ||
+      host.endsWith('.neemainternetsolution.co.ke') ||
+      ((host.includes('neema') || host.includes('nis')) && host.endsWith('.ondigitalocean.app'))
+    ) return true;
+
+    if (url.protocol !== 'https:' || !host.endsWith('.polyizon.tech')) return false;
+    const cached = tenantCorsCache.get(host);
+    if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+    const result = await db.query(
+      `SELECT 1 FROM client_domains WHERE LOWER(domain) = $1 AND status = 'active' LIMIT 1`,
+      [host]
+    );
+    const tenantAllowed = Boolean(result.rows[0]);
+    tenantCorsCache.set(host, { allowed: tenantAllowed, expiresAt: Date.now() + TENANT_CORS_CACHE_MS });
+    return tenantAllowed;
   } catch {
     return false;
   }
@@ -112,25 +130,19 @@ function isAllowedCorsOrigin(origin) {
 
 app.use((req, res, next) => {
   const isPublicApi =
-    req.path.startsWith(
-      '/api/public/site-chat'
-    ) ||
-    req.path.startsWith(
-      '/api/public/noc'
-    ) ||
-    req.path.startsWith(
-      '/api/public/hotspot'
-    );
+    req.path.startsWith('/api/public/site-chat') ||
+    req.path.startsWith('/api/public/noc') ||
+    req.path.startsWith('/api/public/hotspot');
   return cors({
     origin(origin, callback) {
       if (isPublicApi) return callback(null, true);
-      if (isAllowedCorsOrigin(origin)) return callback(null, true);
-      return callback(new Error('Not allowed by CORS'));
+      isAllowedCorsOrigin(origin)
+        .then((allowed) => callback(null, allowed))
+        .catch((error) => callback(error));
     },
     credentials: !isPublicApi,
   })(req, res, next);
 });
-
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);
 
@@ -154,6 +166,7 @@ app.use('/api/sms-settings', smsSettingsRoutes);
 app.use('/api/escalations', escalationsRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/clients', clientRoutes);
+app.use('/api/billing-operator', billingOperatorRoutes);
 app.use('/api/operator-access', operatorAccessRoutes);
 app.use('/api/evo-clients', evoClientRoutes);
 app.use('/api/evo-routing', evoRoutingRoutes);

@@ -432,7 +432,7 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
           onClick={
             openBubble
           }
-          className="group fixed bottom-[84px] right-4 z-[10010] flex h-14 select-none items-center gap-2 rounded-full bg-gradient-to-br from-[#5b21d4] to-[#9333ea] px-4 text-white shadow-[0_14px_36px_rgba(91,33,212,.4)] transition hover:-translate-y-1 lg:bottom-6 lg:right-6"
+          className="group fixed bottom-[84px] right-4 z-[10010] flex h-14 select-none items-center gap-2 rounded-full bg-gradient-to-br from-[#0b3923] to-[#0f7048] px-4 text-white shadow-[0_14px_36px_rgba(11,57,35,.34)] transition hover:-translate-y-1 lg:bottom-6 lg:right-6"
         >
 
           <span className="relative flex h-8 w-8 items-center justify-center rounded-full bg-white/15">
@@ -441,7 +441,7 @@ export default function NexaAgentChat({ admin, currentTab = 'overview', darkMode
               name="sparkle"
             />
 
-            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-violet-600 bg-emerald-400" />
+            <span className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full border-2 border-emerald-700 bg-emerald-300" />
           </span>
 
 

@@ -1277,7 +1277,7 @@ export default function BillingAgents() {
   return (
     <div className="-mx-3 -mt-3 min-h-screen overflow-x-hidden bg-[#f7f8fb] pb-24 sm:-mx-8 sm:-mt-8">
 
-      <section className="relative overflow-hidden bg-gradient-to-br from-[#702cff] via-[#4d22c5] to-[#24158e] px-5 pb-16 pt-7 text-white sm:px-9 sm:pt-8">
+      <section className="relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-16 pt-7 text-white sm:px-9 sm:pt-8">
 
         <div className="relative z-10 flex items-start justify-between gap-3">
           <div>

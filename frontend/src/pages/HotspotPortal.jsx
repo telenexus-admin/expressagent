@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 
 const apiBase = '/api/public/hotspot';
 const params = new URLSearchParams(window.location.search);
+const previewMode = params.get('preview') === '1';
 const money = (value) => `KSh ${Number(value || 0).toLocaleString()}`;
 const normalizeMpesaPhone = (value) => {
   let phone = String(value || '').replace(/\D/g, '');
@@ -373,9 +374,16 @@ function CountdownRing({ offer, now }) {
 function MikroTikLogin({ login }) {
   useEffect(() => {
     if (!login?.url) return undefined;
+    let target;
+    try {
+      target = new URL(login.url);
+      const currentIp = new URLSearchParams(window.location.search).get('ip') || '';
+      const privateIp = (value) => /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(value);
+      if (!['http:', 'https:'].includes(target.protocol) || target.pathname !== '/login' || !privateIp(target.hostname) || !privateIp(currentIp) || target.hostname.split('.').slice(0, 3).join('.') !== currentIp.split('.').slice(0, 3).join('.')) throw new Error('unsafe login target');
+    } catch (_) { return undefined; }
     const form = document.createElement('form');
     form.method = 'post';
-    form.action = login.url;
+    form.action = target.toString();
 
     [
       ['username', login.username],
@@ -412,6 +420,7 @@ export default function HotspotPortal() {
         portalToken
       )
   );
+  const [draftPortal, setDraftPortal] = useState(null);
   const [voucherUser, setVoucherUser] = useState('');
   const [voucherPassword, setVoucherPassword] = useState('');
   const [passwordTouched, setPasswordTouched] = useState(false);
@@ -431,6 +440,7 @@ export default function HotspotPortal() {
         : null
   );
   const [menuOpen, setMenuOpen] = useState(false);
+  const [activeHeroSlide, setActiveHeroSlide] = useState(0);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentPhone, setPaymentPhone] = useState(
     () => window.localStorage.getItem(
@@ -572,6 +582,18 @@ useEffect(() => {
   ]);
 
 
+  useEffect(() => {
+    if (!previewMode) return undefined;
+    const receiveDraft = (event) => {
+      if (event.origin !== window.location.origin || event.data?.type !== 'polyizon-hotspot-preview') return;
+      setDraftPortal(event.data.settings || null);
+    };
+    window.addEventListener('message', receiveDraft);
+    return () => window.removeEventListener('message', receiveDraft);
+  }, []);
+
+  const portal = draftPortal ? { ...(config?.portal || {}), ...draftPortal } : (config?.portal || {});
+
   const plans = useMemo(() => config?.plans || [], [config]);
   const flashOffer = useMemo(() => {
     const offer = config?.flash_offer;
@@ -585,13 +607,13 @@ useEffect(() => {
     [plans, selectedPlanId],
   );
 
-  const popularPlanId = Number(config?.portal?.popular_plan_id || 0);
-  const brandName = config?.portal?.brand_name || config?.client?.name || 'Nexa';
-  const tagline = config?.portal?.tagline || `Stay connected with ${brandName} Hotspot`;
+  const popularPlanId = Number(portal?.popular_plan_id || 0);
+  const brandName = portal?.brand_name || config?.client?.name || 'Nexa';
+  const tagline = portal?.tagline || `Stay connected with ${brandName} Hotspot`;
   const supportPhone = config?.support?.phone || '';
   const whatsappPhone = config?.support?.whatsapp || supportPhone;
-  const walletBalance = Number(config?.portal?.wallet_balance || 0);
-  const walletLabel = config?.portal?.wallet_label || 'MY WALLET';
+  const walletBalance = Number(portal?.wallet_balance || 0);
+  const walletLabel = portal?.wallet_label || 'MY WALLET';
   const paymentEnabled = Boolean(
     config?.payments?.enabled &&
     Number(config?.payments?.channel_id) === 9010
@@ -606,20 +628,20 @@ useEffect(() => {
       'circles',
     ].includes(
       String(
-        config?.portal
+        portal
           ?.package_layout ||
         ''
       )
     )
       ? String(
-          config.portal
+          portal
             .package_layout
         )
       : 'featured';
 
   const themePreset =
     String(
-      config?.portal
+      portal
         ?.theme_preset ||
       'blue'
     );
@@ -634,41 +656,54 @@ useEffect(() => {
     /^#[0-9A-Fa-f]{6}$/
       .test(
         String(
-          config?.portal
+          portal
             ?.accent_color ||
           ''
         )
       )
       ? String(
-          config.portal
+          portal
             .accent_color
         )
       : theme.accent;
 
   const walletEnabled =
-    config?.portal
+    portal
       ?.wallet_enabled !==
     false;
 
   const showSupport =
-    config?.portal
+    portal
       ?.show_support !==
     false;
 
   const showWhatsApp =
-    config?.portal
+    portal
       ?.show_whatsapp !==
     false;
 
   const showVoucherLogin =
-    config?.portal
+    portal
       ?.show_voucher_login !==
     false;
 
   const heroHeading =
-    config?.portal
+    portal
       ?.hero_heading ||
     'Fast Internet. Everywhere.';
+
+  const promoSlides = Array.isArray(portal?.promo_slides) ? portal.promo_slides.slice(0, 5).filter((slide) => slide?.id !== undefined) : [];
+  const heroSlideCount = 1 + promoSlides.length;
+  const visiblePromoSlide = activeHeroSlide > 0 ? promoSlides[activeHeroSlide - 1] : null;
+  const visiblePromoSource = visiblePromoSlide?.image_data || (visiblePromoSlide ? `${apiBase}/promo-slide?portalToken=${encodeURIComponent(portalToken)}&index=${activeHeroSlide - 1}&v=${encodeURIComponent(visiblePromoSlide.version || '')}` : '');
+
+  useEffect(() => {
+    setActiveHeroSlide((current) => Math.min(current, Math.max(0, heroSlideCount - 1)));
+    if (heroSlideCount < 2) return undefined;
+    const timer = window.setInterval(() => setActiveHeroSlide((current) => (current + 1) % heroSlideCount), 5500);
+    return () => window.clearInterval(timer);
+  }, [heroSlideCount]);
+  const designTemplate = portal?.design_template === 'green_portrait' ? 'green_portrait' : 'classic';
 
   const backgroundOverlay =
     Math.max(
@@ -676,7 +711,7 @@ useEffect(() => {
       Math.min(
         85,
         Number(
-          config?.portal
+          portal
             ?.background_overlay ||
           46
         )
@@ -684,7 +719,7 @@ useEffect(() => {
     );
 
   const backgroundImageUrl =
-    config?.portal
+    portal
       ?.background_image_enabled &&
     portalToken
       ? `${apiBase}/theme-background?portalToken=${
@@ -693,7 +728,7 @@ useEffect(() => {
           )
         }&v=${
           encodeURIComponent(
-            config?.portal
+            portal
               ?.background_image_version ||
             ''
           )
@@ -1039,9 +1074,13 @@ useEffect(() => {
       }}
     >
       <style>{`
+        @font-face { font-family: 'Bebas Neue'; src: url('/fonts/bebas-neue.woff2') format('woff2'); font-display: swap; }
         .hotspot-page {
           font-family: Inter, "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
         }
+        .hotspot-green-portrait-name { font-family: 'Bebas Neue', 'Arial Narrow', sans-serif; font-weight: 700; letter-spacing: 2px; color: #00A651; text-shadow: 0 1px 0 rgba(255,255,255,.18); }
+        .hotspot-green-template { background: #06180d !important; padding: 12px !important; }
+        .hotspot-green-template > header, .hotspot-green-template > .relative.z-10 { display: none; }
         .hotspot-blue-grid {
           background:
             radial-gradient(circle at 88% 18%, rgba(0, 136, 255, .55), transparent 31%),
@@ -1329,11 +1368,13 @@ useEffect(() => {
         )}
 
         <section
-          className="hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8"
-          style={
-            heroStyle
-          }
+          className={designTemplate === 'green_portrait' ? 'hotspot-green-template relative overflow-hidden text-white' : 'hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8'}
+          style={designTemplate === 'green_portrait' ? undefined : heroStyle}
         >
+          {designTemplate === 'green_portrait' && <div className="relative mx-auto w-[70%] max-w-[434px] overflow-hidden rounded-[22px]">
+            {activeHeroSlide === 0 ? <div className="relative"><img src="/hotspot-templates/green-portrait-hotspot.webp?v=green-portrait-v1" alt="Green Portrait hotspot" width="689" height="821" fetchPriority="high" decoding="async" className="block w-full" /><div className="hotspot-green-portrait-name absolute left-[34.8%] top-[15.2%] flex h-[6.5%] w-[30.1%] items-center justify-center overflow-hidden px-1 text-center text-[clamp(13px,5.3vw,35px)] leading-none">{brandName}</div></div> : <img src={visiblePromoSource} alt={`Promotion ${activeHeroSlide}`} width="1080" height="1350" decoding="async" className="block aspect-[4/5] w-full object-cover" />}
+            {heroSlideCount > 1 && <div className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 gap-1.5 rounded-full bg-black/35 px-2 py-1.5 backdrop-blur"><button type="button" aria-label="Show first hotspot image" onClick={() => setActiveHeroSlide(0)} className={`h-1.5 rounded-full transition-all ${activeHeroSlide === 0 ? 'w-5 bg-white' : 'w-1.5 bg-white/55'}`} />{promoSlides.map((slide, index) => <button type="button" key={slide.id || index} aria-label={`Show promotion ${index + 1}`} onClick={() => setActiveHeroSlide(index + 1)} className={`h-1.5 rounded-full transition-all ${activeHeroSlide === index + 1 ? 'w-5 bg-white' : 'w-1.5 bg-white/55'}`} />)}</div>}
+          </div>}
           <header className="relative z-20 flex items-start justify-between">
             <div className="flex items-center gap-3">
               <Icon name="wifi" className="h-12 w-12 sm:h-14 sm:w-14" />
@@ -1411,53 +1452,39 @@ useEffect(() => {
             )}
           </div>
         </section>
+        {designTemplate !== 'green_portrait' && promoSlides.length > 0 && (
+          <section className="relative mx-auto w-[70%] max-w-[434px] overflow-hidden rounded-[22px] px-5 pt-6 sm:px-9">
+            <img src={visiblePromoSource || promoSlides[0]?.image_data || `/api/public/hotspot/promo-slide?portalToken=${encodeURIComponent(portalToken)}&index=0&v=${encodeURIComponent(promoSlides[0]?.version || '')}`} alt="Promotion" width="1080" height="1350" decoding="async" className="block aspect-[4/5] w-full rounded-[22px] object-cover shadow-xl" />
+            <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-1.5 rounded-full bg-black/35 px-2 py-1.5 backdrop-blur">
+              {promoSlides.map((slide, index) => <button type="button" key={slide.id || index} aria-label={`Show promotion ${index + 1}`} onClick={() => setActiveHeroSlide(index + 1)} className={`h-1.5 rounded-full transition-all ${activeHeroSlide === index + 1 ? 'w-5 bg-white' : 'w-1.5 bg-white/55'}`} />)}
+            </div>
+          </section>
+        )}
 
         {flashOffer && (
-          <section className="relative z-20 -mt-[68px] px-5 sm:-mt-20 sm:px-9">
+          <section className="relative z-20 -mt-5 px-5 sm:-mt-7 sm:px-9">
             <button
               type="button"
               onClick={() => choosePlan(flashOffer)}
-              className="hotspot-card-shadow relative w-full rounded-[22px] border border-slate-200 bg-white p-5 text-left transition hover:-translate-y-0.5 sm:p-7"
+              className="hotspot-card-shadow mx-auto flex w-full max-w-[270px] items-center gap-3 rounded-2xl border border-pink-100 bg-white p-2.5 text-left transition hover:-translate-y-0.5"
             >
-              <span className="absolute -left-1 -top-4 inline-flex items-center gap-2 rounded-tl-2xl rounded-br-2xl bg-[#ff1464] px-5 py-2 text-xs font-black uppercase tracking-wide text-white shadow-lg shadow-pink-500/25">
-                <Icon name="bolt" className="h-4 w-4 fill-white stroke-white" />
-                Flash package
+              <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-[#ff0b61] text-[11px] font-black leading-3 text-white shadow-sm shadow-pink-500/25">
+                -{flashDiscount}%
+                <span className="text-[8px] tracking-wide">OFF</span>
               </span>
 
-              <span className="hotspot-flash-badge absolute -right-1 -top-2 flex h-[76px] w-[78px] flex-col items-center justify-center bg-[#ff0b61] text-center text-lg font-black leading-5 text-white shadow-lg shadow-pink-500/25">
-                {flashDiscount}%
-                <span>OFF</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[8px] font-black uppercase tracking-[.18em] text-pink-500">Flash offer</span>
+                <span className="mt-0.5 block truncate text-sm font-black text-[#111a38]">
+                  {planHeadline(flashOffer)} · {durationParts(flashOffer.duration_minutes).value}{durationParts(flashOffer.duration_minutes).unit}
+                </span>
+                <span className="mt-0.5 flex items-baseline gap-1.5">
+                  <span className="text-[10px] font-bold text-slate-400 line-through">{money(flashOffer.original_price)}</span>
+                  <span className="text-base font-black text-[#ff0b61]">{money(flashOffer.discount_price)}</span>
+                </span>
               </span>
 
-              <div className="grid gap-5 pt-7 min-[480px]:grid-cols-[1fr_150px] min-[480px]:items-center">
-                <div className="min-w-0 pr-14 min-[480px]:border-r min-[480px]:border-slate-200 min-[480px]:pr-6">
-                  <h2 className="text-[25px] font-black tracking-tight text-[#111a38]">
-                    {planHeadline(flashOffer)} - {durationParts(flashOffer.duration_minutes).value} {durationParts(flashOffer.duration_minutes).unit}
-                  </h2>
-
-                  <div className="mt-6 grid grid-cols-2 divide-x divide-slate-200">
-                    <div className="pr-5">
-                      <p className="text-xs font-bold text-slate-600">Original Price</p>
-                      <p className="mt-2 text-xl font-bold text-slate-800 line-through decoration-2">
-                        {money(flashOffer.original_price)}
-                      </p>
-                    </div>
-                    <div className="pl-5">
-                      <p className="text-xs font-bold text-slate-600">Discounted Price</p>
-                      <p className="mt-1 text-[30px] font-black tracking-tight text-[#ff0b61]">
-                        {money(flashOffer.discount_price)}
-                      </p>
-                    </div>
-                  </div>
-
-                  <p className="mt-7 flex items-center gap-2 text-sm font-semibold text-slate-700">
-                    <Icon name="bolt" className="h-5 w-5 fill-[#ff0b61] stroke-[#ff0b61]" />
-                    Hurry up! This offer expires soon.
-                  </p>
-                </div>
-
-                <CountdownRing offer={flashOffer} now={now} />
-              </div>
+              <Icon name="chevron" className="h-4 w-4 shrink-0 text-pink-500" />
             </button>
           </section>
         )}

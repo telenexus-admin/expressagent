@@ -1,5 +1,6 @@
 const axios = require('axios');
 const db = require('../db');
+const { encryptSecret, decryptSecret } = require('./mikrotik');
 
 const CLOUDFLARE_API = 'https://api.cloudflare.com/client/v4';
 
@@ -16,6 +17,10 @@ function normalizeSlug(value) {
     .slice(0, 63);
 }
 
+function storedToken(value) {
+  return decryptSecret(value);
+}
+
 function maskSecret(value) {
   const text = clean(value, 500);
   if (!text) return '';
@@ -26,7 +31,7 @@ function maskSecret(value) {
 function publicDomainSettings(row) {
   return {
     cloudflare_zone_id: row.cloudflare_zone_id || '',
-    cloudflare_api_token_masked: maskSecret(row.cloudflare_api_token),
+    cloudflare_api_token_masked: maskSecret(storedToken(row.cloudflare_api_token)),
     root_domain: row.root_domain || '',
     target_domain: row.target_domain || '',
     proxied: row.proxied !== false,
@@ -79,7 +84,7 @@ async function getDomainSettings({ includeSecret = false } = {}) {
   await ensureClientDomainSchema();
   const result = await db.query(`SELECT * FROM operator_domain_settings WHERE id = 1 LIMIT 1`);
   const row = result.rows[0] || {};
-  return includeSecret ? row : publicDomainSettings(row);
+  return includeSecret ? { ...row, cloudflare_api_token: storedToken(row.cloudflare_api_token) } : publicDomainSettings(row);
 }
 
 async function saveDomainSettings(payload = {}) {
@@ -100,7 +105,7 @@ async function saveDomainSettings(payload = {}) {
          updated_at = NOW()
      WHERE id = 1
      RETURNING *`,
-    [zoneId, apiToken, rootDomain, targetDomain, proxied]
+    [zoneId, apiToken ? encryptSecret(apiToken) : null, rootDomain, targetDomain, proxied]
   );
   return publicDomainSettings(updated.rows[0]);
 }
@@ -151,7 +156,33 @@ async function upsertCloudflareRecord(settings, fqdn) {
   return response.data.result;
 }
 
-async function createClientSubdomain(client, preferredSlug = '') {
+async function verifyDomainAutomation() {
+  const settings = await getDomainSettings({ includeSecret: true });
+  requireConfigured(settings);
+  try {
+    const cf = cloudflareClient(settings);
+    const response = await cf.get('/dns_records', { params: { per_page: 1 } });
+    if (!response.data?.success) throw new Error(response.data?.errors?.[0]?.message || 'Cloudflare DNS verification failed');
+  } catch (error) {
+    const status = error.response?.status;
+    if (status === 401) {
+      throw new Error('Cloudflare rejected the API token. Create a scoped API Token (not a Global API Key), make sure it has not expired, and confirm its Client IP filter includes 169.58.177.113.');
+    }
+    if (status === 403) {
+      throw new Error('Cloudflare accepted the API token but it cannot access polyizon.tech. Confirm Zone DNS: Edit, Zone: Read, and that the token is scoped to the polyizon.tech zone.');
+    }
+    if (status === 404) {
+      throw new Error('Cloudflare could not find this zone. Confirm that the Zone ID belongs to polyizon.tech.');
+    }
+    throw error;
+  }
+  return {
+    configured: true,
+    root_domain: settings.root_domain,
+    target_domain: settings.target_domain,
+    proxied: settings.proxied !== false,
+  };
+}async function createClientSubdomain(client, preferredSlug = '') {
   await ensureClientDomainSchema();
   const settings = await getDomainSettings({ includeSecret: true });
   requireConfigured(settings);
@@ -246,6 +277,7 @@ module.exports = {
   getDomainSettings,
   saveDomainSettings,
   createClientSubdomain,
+  verifyDomainAutomation,
   verifyClientDomain,
   normalizeSlug,
 };

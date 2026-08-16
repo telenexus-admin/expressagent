@@ -40,7 +40,7 @@ api.interceptors.response.use(
       }
       localStorage.removeItem('operator_token');
       localStorage.removeItem('operator_admin');
-      const onOnboarding = window.location.pathname.startsWith('/onboarding');
+      const onOnboarding = window.location.pathname.startsWith('/onboarding') || window.location.pathname.startsWith('/admin');
       window.location.href = onOnboarding ? '/onboarding/login' : '/login';
     }
     return Promise.reject(error);

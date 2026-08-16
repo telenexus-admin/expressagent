@@ -12,6 +12,7 @@ const {
 } = require('./networkEnrollment');
 const {
   ensureNetworkExecutorSchema,
+  testRouterExecutorCredential,
 } = require('./networkExecutor');
 const {
   createHotspotPortalToken,
@@ -151,6 +152,11 @@ async function discover(client) {
     '/interface/pppoe-server/server/print'
   );
   const radius = await routerRows(client, '/radius/print');
+  // Legacy RouterOS WLAN radios are configured through /interface/wireless.
+  const legacyWireless = await routerRows(
+    client,
+    '/interface/wireless/print'
+  ).catch(() => []);
 
   const ethernetInterfaces = interfaces
     .filter((item) => {
@@ -179,10 +185,32 @@ async function discover(client) {
   const subscriberPorts = ethernetInterfaces.filter(
     (name) => name !== wanInterface
   );
+  const wirelessInterfaces = interfaces
+    .filter((item) => {
+      const type = String(item.type || '').toLowerCase();
+      const name = String(item.name || '');
+      return type === 'wlan' || /^wlan\d+$/i.test(name);
+    })
+    .map((item) => {
+      const radio = legacyWireless.find(
+        (candidate) => String(candidate.name || '') === String(item.name || '')
+      ) || {};
+      return {
+        name: String(item.name || ''),
+        type: String(item.type || 'wlan'),
+        disabled: bool(item.disabled),
+        running: bool(item.running),
+        mode: String(radio.mode || ''),
+        ssid: String(radio.ssid || ''),
+        security_profile: String(radio['security-profile'] || ''),
+        supported: Boolean(rowId(radio)),
+      };
+    });
 
   return {
     interfaces,
     ethernet_interfaces: ethernetInterfaces,
+    wireless_interfaces: wirelessInterfaces,
     bridges,
     bridge_ports: bridgePorts,
     addresses,
@@ -216,6 +244,8 @@ function normalizeConfig(input = {}, discovery = {}) {
       incomingPorts.length
         ? incomingPorts
         : discovery.subscriber_ports || [],
+    wireless_interface: String(input.wireless_interface || '').trim(),
+    wireless_ssid: String(input.wireless_ssid || '').trim(),
   };
 
   config.wan_interface = cleanName(
@@ -271,6 +301,9 @@ function normalizeConfig(input = {}, discovery = {}) {
   const availablePorts = new Set(
     discovery.ethernet_interfaces || []
   );
+  const availableWireless = new Map(
+    (discovery.wireless_interfaces || []).map((item) => [item.name, item])
+  );
   config.subscriber_ports = [...new Set(config.subscriber_ports)]
     .map((item) => cleanName(item, 'Subscriber port'))
     .filter(
@@ -282,6 +315,27 @@ function normalizeConfig(input = {}, discovery = {}) {
   if (!config.subscriber_ports.length) {
     throw new Error('Select at least one subscriber LAN port');
   }
+
+  if (config.wireless_interface || config.wireless_ssid) {
+    if (!config.wireless_interface || !config.wireless_ssid) {
+      throw new Error('Select a WLAN interface and enter its Wi-Fi network name');
+    }
+    config.wireless_interface = cleanName(config.wireless_interface, 'WLAN interface');
+    const wireless = availableWireless.get(config.wireless_interface);
+    if (!wireless || !wireless.supported) {
+      throw new Error('The selected WLAN interface is not available for safe RouterOS wireless setup');
+    }
+    if (Buffer.byteLength(config.wireless_ssid, 'utf8') > 32 || /[\r\n]/.test(config.wireless_ssid)) {
+      throw new Error('Wi-Fi network name must be 1 to 32 characters without line breaks');
+    }
+  } else {
+    config.wireless_interface = '';
+    config.wireless_ssid = '';
+  }
+  config.subscriber_interfaces = [...new Set([
+    ...config.subscriber_ports,
+    ...(config.wireless_interface ? [config.wireless_interface] : []),
+  ])];
 
   if (
     config.subscriber_ports.includes(config.wan_interface)
@@ -297,6 +351,7 @@ function buildStages(config) {
     ['backup', 'Create a RouterOS safety backup'],
     ['bridge', `Create ${config.subscriber_bridge}`],
     ['ports', 'Move selected LAN ports to the subscriber bridge'],
+    ...(config.wireless_interface ? [['wireless', 'Configure ' + config.wireless_interface + ' as Wi-Fi ' + config.wireless_ssid]] : []),
     ['hotspot-address', 'Install the Hotspot gateway address'],
     ['hotspot-dhcp', 'Create Hotspot DHCP pool, network and server'],
     ['hotspot', 'Create the Hotspot profile and server'],
@@ -493,12 +548,34 @@ async function getProvisioningRouter(
     [clientId, routerId]
   );
 
-  const credential = result.rows[0];
+  let credential = result.rows[0];
 
   if (!credential) {
     throw new Error(
       'The secure MikroTik provisioning executor is not configured'
     );
+  }
+
+  if (
+    credential.verification_status !== 'verified' ||
+    credential.enabled !== true
+  ) {
+    // The first login can race a new WireGuard handshake. Re-verify here
+    // when an administrator explicitly starts configuration; it only reads
+    // the RouterOS identity and does not change router configuration.
+    try {
+      await testRouterExecutorCredential(clientId, routerId);
+      const refreshed = await db.query(
+        'SELECT username, password_encrypted, enabled, verification_status, last_error FROM network_router_executor_credentials WHERE client_id = $1 AND router_id = $2 LIMIT 1',
+        [clientId, routerId]
+      );
+      credential = refreshed.rows[0] || credential;
+    } catch (error) {
+      throw new Error(
+        'Nexa cannot reach the router API over its private tunnel yet. Please retry in a few seconds. (' +
+        String(error.message || 'connection unavailable') + ')'
+      );
+    }
   }
 
   if (
@@ -665,7 +742,7 @@ async function ensureBridgePorts(client, config, record) {
     client,
     '/interface/bridge/port/print'
   );
-  for (const interfaceName of config.subscriber_ports) {
+  for (const interfaceName of config.subscriber_interfaces || config.subscriber_ports) {
     const existing = ports.find(
       (item) => String(item.interface || '') === interfaceName
     );
@@ -691,8 +768,24 @@ async function ensureBridgePorts(client, config, record) {
   await record(
     'ports',
     'completed',
-    `${config.subscriber_ports.length} subscriber ports assigned`
+    `${(config.subscriber_interfaces || config.subscriber_ports).length} subscriber interfaces assigned`
   );
+}
+
+async function configureLegacyWireless(client, config, record) {
+  if (!config.wireless_interface) return;
+  const radios = await routerRows(client, '/interface/wireless/print');
+  const radio = radios.find((item) => String(item.name || '') === config.wireless_interface);
+  if (!radio || !rowId(radio)) {
+    throw new Error('Selected WLAN ' + config.wireless_interface + ' is no longer available');
+  }
+  await client.command('/interface/wireless/set', {
+    '.id': rowId(radio),
+    mode: 'ap-bridge',
+    ssid: config.wireless_ssid,
+    disabled: 'no',
+  });
+  await record('wireless', 'completed', config.wireless_interface + ' enabled as access point: ' + config.wireless_ssid);
 }
 
 async function writePortalFile(
@@ -756,6 +849,7 @@ async function configureRouter({
   });
 
   await ensureBridgePorts(client, config, record);
+  await configureLegacyWireless(client, config, record);
 
   await ensureResource({
     client,
@@ -1050,8 +1144,16 @@ async function validateRouter(client, config) {
   const radius = await routerRows(client, '/radius/print');
   const files = await routerRows(client, '/file/print');
   const nat = await routerRows(client, '/ip/firewall/nat/print');
+  const wireless = config.wireless_interface
+    ? await routerRows(client, '/interface/wireless/print')
+    : [];
 
   const validation = {
+    wireless: !config.wireless_interface || wireless.some(
+      (item) => String(item.name || '') === config.wireless_interface &&
+        String(item.ssid || '') === config.wireless_ssid &&
+        String(item.mode || '') === 'ap-bridge' && !bool(item.disabled)
+    ),
     bridge: bridges.some(
       (item) => item.name === config.subscriber_bridge
     ),
@@ -1136,6 +1238,7 @@ async function previewProvisioning(clientId, routerId, input = {}) {
         wan_interface: discovery.wan_interface,
         subscriber_ports: discovery.subscriber_ports,
         ethernet_interfaces: discovery.ethernet_interfaces,
+        wireless_interfaces: discovery.wireless_interfaces,
         existing_bridge_names: discovery.bridges.map(
           (item) => item.name
         ),

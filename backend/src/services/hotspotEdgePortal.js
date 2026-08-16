@@ -11,11 +11,14 @@ const {
 
 const {
   createHotspotPortalToken,
+  createHotspotPortalBootstrapToken,
 } = require('./hotspotPortalToken');
 
 const API_ORIGIN =
   process.env.PUBLIC_BACKEND_URL ||
-  'https://nexa.telenexustechnologies.com';
+  process.env.PUBLIC_API_URL ||
+  process.env.FRONTEND_URL ||
+  'https://billing.polyizon.tech';
 
 const API_BASE =
   `${API_ORIGIN.replace(/\/$/, '')}/api/public/hotspot`;
@@ -375,6 +378,11 @@ async function loadHotspotEdgeConfig(
           'orange'
         ),
 
+      design_template:
+        String(saved.design_template || '') === 'green_portrait'
+          ? 'green_portrait'
+          : 'classic',
+
       accent_color:
         /^#[0-9A-Fa-f]{6}$/
           .test(
@@ -501,6 +509,9 @@ function buildHotspotEdgeHtml({
   const apiOrigin =
     safeJson(API_ORIGIN);
 
+  const portraitAsset =
+    safeJson(API_ORIGIN + '/hotspot-templates/green-portrait-hotspot.webp');
+
   return `<!doctype html>
 <html lang="en">
 <head>
@@ -510,7 +521,7 @@ function buildHotspotEdgeHtml({
 <meta http-equiv="Cache-Control" content="no-store">
 <meta
   http-equiv="Content-Security-Policy"
-  content="default-src 'self'; connect-src ${API_ORIGIN}; img-src 'self' data: ${API_ORIGIN}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self' http: https:;"
+  content="default-src 'self'; connect-src ${API_ORIGIN}; img-src 'self' data: ${API_ORIGIN}; font-src 'self' ${API_ORIGIN}; style-src 'unsafe-inline'; script-src 'unsafe-inline'; form-action 'self' http: https:;"
 >
 <title>Hotspot Packages</title>
 <style>
@@ -582,6 +593,33 @@ button{
     inset 0 0 60px #000,
     0 18px 45px #000;
 }
+
+ @font-face{
+  font-family:"Bebas Neue";
+  src:url("${API_ORIGIN}/fonts/bebas-neue.woff2") format("woff2");
+  font-display:swap;
+}
+
+.hero.green-portrait{
+  width:75%;
+  min-height:0;
+  aspect-ratio:1019/1367;
+  margin-left:auto;
+  margin-right:auto;
+  background:#f5f5f0;
+  box-shadow:0 18px 45px #0008;
+}
+
+.hero.green-portrait::before{display:none;}
+.hero.green-portrait .hero-person,
+.hero.green-portrait .brand,
+.hero.green-portrait .hero-copy{display:none;}
+
+.portrait-art{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:none;}
+.hero.green-portrait .portrait-art{display:block;}
+
+.portrait-isp-name{display:none;position:absolute;z-index:4;left:34.8%;top:15.2%;width:30.1%;height:6.5%;overflow:hidden;align-items:center;justify-content:center;text-align:center;color:#00A651;font-family:"Bebas Neue","Arial Narrow",Impact,sans-serif;font-size:clamp(16px,5vw,48px);font-weight:700;letter-spacing:2px;line-height:1;white-space:nowrap;text-transform:uppercase;}
+.hero.green-portrait .portrait-isp-name{display:flex;}
 
 .hero::before{
   content:"";
@@ -745,16 +783,16 @@ button{
   position:relative;
   display:flex;
   min-width:0;
-  min-height:190px;
+  min-height:96px;
   grid-column:span 2;
   flex-direction:column;
   align-items:center;
   justify-content:center;
   overflow:hidden;
   margin:0;
-  padding:16px 8px;
+  padding:8px 5px;
   border:0;
-  border-radius:19px;
+  border-radius:12px;
   background:var(--accent);
   color:var(--accent-text);
   text-align:center;
@@ -782,8 +820,8 @@ button{
 .plan::after{
   content:"";
   position:absolute;
-  width:92px;
-  height:50px;
+  width:46px;
+  height:25px;
   background:#fff;
 }
 
@@ -817,14 +855,14 @@ button{
 }
 
 .plan-duration b{
-  font-size:25px;
+  font-size:16px;
   font-weight:900;
 }
 
 .plan-duration small{
   margin-top:3px;
   color:#050505;
-  font-size:15px;
+  font-size:10px;
   font-weight:800;
 }
 
@@ -857,7 +895,7 @@ button{
   display:block;
   padding:4px 0 0;
   color:#050505;
-  font-size:20px;
+  font-size:13px;
   font-weight:900;
 }
 
@@ -904,10 +942,10 @@ button{
 }
 
 .plans.layout-list .plan{
-  min-height:105px;
+  min-height:56px;
   display:grid;
-  grid-template-columns:100px 1fr auto;
-  padding:10px 14px;
+  grid-template-columns:58px 1fr auto;
+  padding:6px 8px;
   text-align:left;
 }
 
@@ -946,7 +984,7 @@ button{
 }
 
 .plans.layout-compact .plan{
-  min-height:145px;
+  min-height:74px;
   grid-column:auto;
 }
 
@@ -957,8 +995,8 @@ button{
 
 .plans.layout-circles{
   grid-template-columns:
-    repeat(3,minmax(0,1fr));
-  gap:12px;
+    repeat(4,minmax(0,1fr));
+  gap:8px;
 }
 
 .plans.layout-circles .plan{
@@ -974,10 +1012,14 @@ button{
 }
 
 @media(max-width:430px){
-  .plans.layout-compact,
-  .plans.layout-circles{
+  .plans.layout-compact{
     grid-template-columns:
       repeat(2,minmax(0,1fr));
+  }
+
+  .plans.layout-circles{
+    grid-template-columns:
+      repeat(3,minmax(0,1fr));
   }
 
   .plans.layout-list .plan{
@@ -1206,6 +1248,8 @@ button{
 <main class="shell">
   <section id="hero" class="hero">
 
+    <img id="portrait-art" class="portrait-art" alt="" aria-hidden="true">
+    <div id="portrait-isp-name" class="portrait-isp-name"></div>
     <div class="hero-person"></div>
 
     <div class="brand">
@@ -1382,6 +1426,9 @@ var API_BASE =
 
 var API_ORIGIN =
   ${apiOrigin};
+
+var PORTRAIT_ASSET_URL =
+  ${portraitAsset};
 
 var MAC =
   document
@@ -1769,6 +1816,16 @@ function render(config){
     .textContent =
       brand;
 
+  var portraitArt = byId("portrait-art");
+  var portraitName = byId("portrait-isp-name");
+  if(hero && portal.design_template === "green_portrait"){
+    hero.classList.add("green-portrait");
+    if(portraitArt) portraitArt.src = PORTRAIT_ASSET_URL;
+    if(portraitName) portraitName.textContent = brand;
+  }else if(hero){
+    hero.classList.remove("green-portrait");
+  }
+
   byId("tagline")
     .textContent =
       currentConfig.portal &&
@@ -1839,6 +1896,12 @@ function render(config){
       ? "none"
       : "inline";
 
+  function escapeHtml(value){
+    return String(value == null ? '' : value).replace(/[&<>\"']/g,function(character){
+      return {'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[character];
+    });
+  }
+
   var container =
     byId("plans");
 
@@ -1895,9 +1958,9 @@ function render(config){
       var main =
         '<div class="plan-duration">' +
           '<div><b>' +
-            time.value +
+            escapeHtml(time.value) +
           '</b><small>' +
-            time.unit +
+            escapeHtml(time.unit) +
           '</small></div>' +
         '</div>' +
         '<div class="plan-main">' +
@@ -1907,7 +1970,7 @@ function render(config){
               : ''
           ) +
           '<b>' +
-            headline(plan) +
+            escapeHtml(headline(plan)) +
           '</b>' +
           '<small>' +
             (
@@ -1916,15 +1979,15 @@ function render(config){
                     plan.data_limit_mb
                   ).toLocaleString() +
                   " MB included"
-                : plan.name ||
-                  "High speed internet"
+                : escapeHtml(plan.name ||
+                  "High speed internet")
             ) +
           '</small>' +
         '</div>' +
         '<div class="price">' +
-          money(
+          escapeHtml(money(
             effectivePrice(plan)
-          ) +
+          )) +
         '</div>';
 
       button.innerHTML =
@@ -2714,9 +2777,49 @@ async function writeRouterFile({
   };
 }
 
+function buildHostedPortalBootstrap({
+  bootstrapToken,
+}) {
+  const hostedPortal =
+    `${API_BASE}/bootstrap?bootstrapToken=${encodeURIComponent(bootstrapToken || '')}`;
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="cache-control" content="no-store">
+  <title>Connecting…</title>
+  <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}.card{padding:24px;text-align:center}a{color:#78e7ad}</style>
+</head>
+<body>
+  <div class="card">Opening your hotspot portal…<noscript><p><a id="portal-link" href="#">Open portal</a></p></noscript></div>
+  <script>
+    (function(){
+      var target=${JSON.stringify(hostedPortal)};
+      var query={
+        mac:"$(mac)",
+        ip:"$(ip)",
+        "link-login-only":"$(link-login-only)",
+        "link-orig":"$(link-orig)"
+      };
+      Object.keys(query).forEach(function(key){
+        if(query[key]) target += "&"+encodeURIComponent(key)+"="+encodeURIComponent(query[key]);
+      });
+      var link=document.getElementById("portal-link");
+      if(link) link.href=target;
+      window.location.replace(target);
+    })();
+  </script>
+</body>
+</html>`;
+}
+
+
 async function replaceHotspotPortalFiles(
   client,
-  edgeHtml
+  edgeHtml,
+  bootstrapToken
 ) {
   /*
    * The complete portal must be returned as the first
@@ -2734,8 +2837,9 @@ async function replaceHotspotPortalFiles(
     htmlDirectory
   );
 
+  // The hosted portal is the authoritative visual renderer.
+  // Keep edge.html as a local fallback, but only replace the entry pages.
   const fullPortalNames = [
-    'edge.html',
     'login.html',
     'rlogin.html',
     'flogin.html',
@@ -2792,6 +2896,11 @@ async function replaceHotspotPortalFiles(
 
   const writtenFiles = [];
 
+  const hostedBootstrap =
+    buildHostedPortalBootstrap({
+      bootstrapToken,
+    });
+
   for (
     const fileName
     of fullPortalNames
@@ -2804,7 +2913,7 @@ async function replaceHotspotPortalFiles(
           `${htmlDirectory}/${fileName}`,
 
         contents:
-          edgeHtml,
+          hostedBootstrap,
       })
     );
   }
@@ -2945,22 +3054,28 @@ async function installHotspotEdgePortal({
 
   const [
     edgeConfig,
-    portalToken,
+    bootstrapToken,
+    fallbackPortalToken,
   ] = await Promise.all([
     loadHotspotEdgeConfig(
       clientId
     ),
 
     Promise.resolve(
-      createHotspotPortalToken(
-        clientId
+      createHotspotPortalBootstrapToken(
+        clientId,
+        Number(router.id)
       )
+    ),
+
+    Promise.resolve(
+      createHotspotPortalToken(clientId, { routerId: Number(router.id), ttlSeconds: 600 })
     ),
   ]);
 
   const edgeHtml =
     buildHotspotEdgeHtml({
-      portalToken,
+      portalToken: fallbackPortalToken,
       config:
         edgeConfig,
     });
@@ -2986,7 +3101,8 @@ async function installHotspotEdgePortal({
     const install =
       await replaceHotspotPortalFiles(
         client,
-        edgeHtml
+        edgeHtml,
+        bootstrapToken
       );
 
     const profiles =

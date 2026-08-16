@@ -2067,6 +2067,11 @@ function hotspotPortalResponse(
     theme_preset:
       themePreset,
 
+    design_template:
+      String(config.design_template || '') === 'green_portrait'
+        ? 'green_portrait'
+        : 'classic',
+
     accent_color:
       accentColor,
 
@@ -2079,6 +2084,9 @@ function hotspotPortalResponse(
     background_image_updated_at:
       config.background_image_updated_at ||
       '',
+
+    promo_slides: Array.isArray(config.promo_slides) ? config.promo_slides.slice(0, 5).map((slide) => ({ id: String(slide?.id || ''), image_data: String(slide?.image_data || ''), updated_at: String(slide?.updated_at || '') })).filter((slide) => slide.id && /^data:image\/(?:webp|jpeg|jpg|png);base64,/i.test(slide.image_data)) : [],
+
 
     background_overlay:
       Number.isFinite(
@@ -2125,6 +2133,7 @@ function hotspotPortalResponse(
 
 
 router.get('/hotspot/portal-settings', async (req, res) => {
+  res.set('Cache-Control', 'private, no-store, max-age=0');
   try {
     await ensureHotspotPortalConfigColumn();
     const result = await db.query(
@@ -2150,6 +2159,7 @@ router.put(
     req,
     res
   ) => {
+    res.set('Cache-Control', 'private, no-store, max-age=0');
     try {
       await ensureHotspotPortalConfigColumn();
 
@@ -2190,7 +2200,7 @@ router.put(
         ...(req.body || {}),
       };
 
-      const flashEnabled =
+      let flashEnabled =
         hotspotBoolean(
           raw.flash_enabled
         );
@@ -2367,6 +2377,20 @@ router.put(
       }
 
 
+      const promoSlides = Array.isArray(raw.promo_slides) ? raw.promo_slides.slice(0, 6) : [];
+      if (promoSlides.length > 5) return res.status(400).json({ error: 'You can add up to five promo slides' });
+      let promoBytes = 0;
+      const normalizedPromoSlides = promoSlides.map((slide, index) => {
+        const id = String(slide?.id || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 48);
+        const imageData = String(slide?.image_data || '');
+        if (!id || !/^data:image\/(?:webp|jpeg|jpg|png);base64,[A-Za-z0-9+/=]+$/i.test(imageData) || imageData.length > 360000) {
+          throw new Error('Each promo slide must be a valid lightweight image');
+        }
+        promoBytes += imageData.length;
+        return { id, image_data: imageData, updated_at: String(slide?.updated_at || new Date().toISOString()).slice(0, 40) };
+      });
+      if (promoBytes > 1300000) return res.status(400).json({ error: 'Promo slides are too large in total. Use lighter images.' });
+
       let flashPlan =
         null;
 
@@ -2500,6 +2524,11 @@ router.put(
           error:
             'Enter a valid flash-offer end time',
         });
+      }
+
+      // An expired promotion must never prevent an administrator from saving unrelated portal changes (such as promo slides).
+      if (flashEnabled && endDate && endDate <= new Date()) {
+        flashEnabled = false;
       }
 
 
@@ -2636,6 +2665,11 @@ router.put(
         theme_preset:
           themePreset,
 
+        design_template:
+          String(raw.design_template || '') === 'green_portrait'
+            ? 'green_portrait'
+            : 'classic',
+
         accent_color:
           accentColor,
 
@@ -2654,6 +2688,9 @@ router.put(
 
         background_overlay:
           backgroundOverlay,
+
+        promo_slides:
+          normalizedPromoSlides,
 
         show_support:
           raw.show_support ===
@@ -2730,6 +2767,9 @@ router.put(
     } catch (
       error
     ) {
+      if (error.message === 'Each promo slide must be a valid lightweight image') {
+        return res.status(400).json({ error: error.message });
+      }
       console.error(
         'Save hotspot portal settings error:',
         error.message

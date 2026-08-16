@@ -59,6 +59,10 @@ export default function RouterServiceWizard({
     () => preview?.discovery?.ethernet_interfaces || [],
     [preview]
   );
+  const availableWireless = useMemo(
+    () => preview?.discovery?.wireless_interfaces || [],
+    [preview]
+  );
 
   const update = (key, value) => {
     setForm((current) => ({ ...current, [key]: value }));
@@ -333,7 +337,46 @@ export default function RouterServiceWizard({
                 </div>
               </div>
 
-              <details className={`rounded-2xl border p-4 ${surface}`}>
+              {availableWireless.length > 0 && (
+                <div className="rounded-2xl border border-slate-200 bg-white p-4 dark:border-slate-700 dark:bg-slate-900">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <h4 className="text-sm font-black">Wi-Fi access point</h4>
+                      <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">
+                        Optionally add a detected WLAN to the Hotspot subscriber bridge.
+                      </p>
+                    </div>
+                    <span className="rounded-full bg-emerald-500/10 px-2 py-1 text-[10px] font-black text-emerald-700">WLAN detected</span>
+                  </div>
+                  <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-bold">Wireless interface</span>
+                      <select value={form.wireless_interface || ''} onChange={(event) => {
+                        const selected = availableWireless.find((item) => item.name === event.target.value);
+                        setForm((current) => ({ ...current, wireless_interface: event.target.value, wireless_ssid: event.target.value ? (current.wireless_ssid || selected?.ssid || '') : '' }));
+                      }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10">
+                        <option value="">Do not configure Wi-Fi</option>
+                        {availableWireless.map((radio) => (
+                          <option key={radio.name} value={radio.name} disabled={!radio.supported}>
+                            {radio.name} · {radio.mode || 'unknown mode'}{radio.disabled ? ' · disabled' : ''}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    {form.wireless_interface && (
+                      <label className="block">
+                        <span className="text-xs font-bold">Wi-Fi network name (SSID)</span>
+                        <input maxLength={32} placeholder="e.g. Polyizon Hotspot" value={form.wireless_ssid || ''} onChange={(event) => update('wireless_ssid', event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10" />
+                      </label>
+                    )}
+                  </div>
+                  {form.wireless_interface && (
+                    <p className="mt-3 text-[11px] leading-5 text-slate-500 dark:text-slate-400">Nexa will switch this radio to access-point mode, enable it, set the SSID and add it to the subscriber bridge. Its existing Wi-Fi security profile is preserved.</p>
+                  )}
+                </div>
+              )}
+
+              <details className={surface + ' rounded-2xl border p-4'}>
                 <summary className="cursor-pointer text-sm font-black">
                   Network addresses
                 </summary>

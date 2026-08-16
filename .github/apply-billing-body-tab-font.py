@@ -3,9 +3,15 @@ from pathlib import Path
 path = Path('frontend/src/pages/BillingWorkspace.jsx')
 source = path.read_text()
 
-marker = '''      [data-billing-tab=\"agents\"] > div > header {'''
-if marker not in source:
-    raise SystemExit('Billing workspace style marker not found')
+style_marker = '    <style>{`'
+style_start = source.find(style_marker)
+if style_start < 0:
+    raise SystemExit('Billing workspace style block not found')
+
+insert_at = source.find('\n', style_start)
+if insert_at < 0:
+    raise SystemExit('Billing workspace style block line ending not found')
+insert_at += 1
 
 font_rules = '''      /* Use the tab-title serif face for normal billing UI text while preserving headings. */
       [data-billing-tab] p,
@@ -23,9 +29,10 @@ font_rules = '''      /* Use the tab-title serif face for normal billing UI text
       [data-billing-tab] strong,
       [data-billing-tab] b,
       [data-billing-tab] a {
-        font-family: Georgia, Times, \"Times New Roman\", serif;
+        font-family: Georgia, Times, "Times New Roman", serif;
       }
 
+      /* Headings keep their existing typography. */
       [data-billing-tab] h1,
       [data-billing-tab] h2,
       [data-billing-tab] h3,
@@ -37,18 +44,18 @@ font_rules = '''      /* Use the tab-title serif face for normal billing UI text
 
 '''
 
-source = source.replace(marker, font_rules + marker, 1)
+source = source[:insert_at] + font_rules + source[insert_at:]
 
-# The sidebar previously forced a separate sans font. Remove only that override
-# so its normal labels inherit the billing text treatment; section headings are divs
-# and retain their existing typography/classes.
-aside_style = '''      style={{ fontFamily: '\"Segoe UI Variable Display\", \"Avenir Next\", \"Plus Jakarta Sans\", Inter, ui-sans-serif, system-ui, sans-serif' }}\n'''
+aside_style = '''      style={{ fontFamily: '"Segoe UI Variable Display", "Avenir Next", "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif' }}
+'''
 if aside_style not in source:
     raise SystemExit('Expected sidebar font override not found')
 source = source.replace(aside_style, '', 1)
 
-# Verify the tab title itself still explicitly uses Georgia.
 if 'font-[Georgia,Times,serif]' not in source:
     raise SystemExit('Tab title Georgia font marker is missing')
+
+if 'font-family: Georgia, Times, "Times New Roman", serif;' not in source:
+    raise SystemExit('Billing serif rule was not inserted')
 
 path.write_text(source)

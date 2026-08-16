@@ -21,19 +21,19 @@ const emptyPayment = { invoice_id: '', amount: '', method: 'M-Pesa', reference: 
 const emptyRadius = { subscriber_id: '', radius_username: '', radius_password: '', radius_status: 'active' };
 const input = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-indigo-500 focus:ring-4 focus:ring-indigo-500/10';
 const nav = [
-  ['overview', 'Overview', 'home'],
-  ['subscribers', 'Subscribers', 'clients'],
-  ['services', 'PPPoE', 'packages'],
+  ['overview', 'Overview', 'dashboard'],
+  ['subscribers', 'Subscribers', 'users'],
+  ['services', 'PPPoE', 'broadband'],
   ['hotspot', 'Hotspot', 'hotspot'],
-  ['agents', 'Agents', 'clients'],
-  ['invoices', 'Invoices', 'invoices'],
-  ['payments', 'Payments', 'payments'],
-  ['vouchers', 'Vouchers', 'vouchers'],
-  ['routers', 'Routers', 'network'],
+  ['agents', 'Agents', 'bot'],
+  ['invoices', 'Invoices', 'receipt'],
+  ['payments', 'Payments', 'wallet'],
+  ['vouchers', 'Vouchers', 'ticket'],
+  ['routers', 'Routers', 'router'],
   ['radius', 'RADIUS', 'radius'],
-  ['tr069', 'TR-069 & ONTs', 'network'],
-  ['communication', 'Communication', 'clients'],
-  ['reports', 'Reports', 'reports'],
+  ['tr069', 'TR-069 & ONTs', 'antenna'],
+  ['communication', 'Communication', 'chat'],
+  ['reports', 'Reports', 'chart'],
 ];
 
 const navGroups = [
@@ -712,9 +712,15 @@ export default function BillingWorkspace() {
       }
     `}</style>
     {open && <button aria-label="Close menu" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" />}
-    <aside className={`fixed inset-y-0 left-0 z-40 flex w-[260px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-r border-slate-100 bg-white px-4 py-7 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.025)] transition-transform duration-300 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}>
-      <div className="flex items-center gap-2 px-4"><div className={`text-sm font-black uppercase tracking-[.1em] ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>POLYIZON</div><div className={`border-l pl-2 text-[10px] font-extrabold uppercase tracking-[.16em] ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-300 text-slate-600'}`}>BILLING SYSTEM</div></div>
-      <div className="mt-8 space-y-5 pb-5">
+    <aside
+      style={{ fontFamily: '"Segoe UI Variable Display", "Avenir Next", "Plus Jakarta Sans", Inter, ui-sans-serif, system-ui, sans-serif' }}
+      className={`fixed inset-y-0 left-0 z-40 flex w-[218px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-r border-slate-100 bg-white px-2.5 py-3 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.035)] transition-transform duration-300 sm:w-[232px] sm:px-3 lg:w-[260px] lg:px-4 lg:py-7 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}
+    >
+      <div className="flex items-center gap-1.5 px-2 py-1 lg:gap-2 lg:px-4 lg:py-0">
+        <div className={`text-[11px] font-extrabold uppercase tracking-[.08em] lg:text-sm lg:font-black lg:tracking-[.1em] ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>POLYIZON</div>
+        <div className={`border-l pl-1.5 text-[7px] font-bold uppercase tracking-[.12em] lg:pl-2 lg:text-[10px] lg:font-extrabold lg:tracking-[.16em] ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-300 text-slate-500'}`}>BILLING</div>
+      </div>
+      <div className="mt-3 space-y-1 pb-2 lg:mt-8 lg:space-y-5 lg:pb-5">
 
         {navGroups.map(
           group => (
@@ -724,14 +730,14 @@ export default function BillingWorkspace() {
               }
             >
 
-              <div className="px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400">
+              <div className="hidden px-4 text-[10px] font-black uppercase tracking-[.18em] text-slate-400 lg:block">
                 {
                   group.label
                 }
               </div>
 
 
-              <nav className="mt-2 space-y-1">
+              <nav className="mt-1 grid grid-cols-2 gap-1 lg:mt-2 lg:block lg:space-y-1">
 
                 {group.items.map(
                   ([
@@ -749,14 +755,18 @@ export default function BillingWorkspace() {
                           key
                         )
                       }
-                      className={`flex w-full items-center gap-3 rounded-r-xl px-4 py-2.5 text-left text-sm font-bold transition ${
+                      className={`flex min-w-0 w-full items-center gap-1.5 rounded-xl px-1.5 py-1.5 text-left text-[9.5px] font-semibold tracking-[-.015em] transition sm:gap-2 sm:px-2 sm:py-2 sm:text-[10px] lg:gap-3 lg:rounded-r-xl lg:px-4 lg:py-2.5 lg:text-sm lg:font-bold ${
                         tab === key
-                          ? 'border-l-[3px] border-emerald-500 bg-emerald-50 text-emerald-600'
-                          : 'border-l-[3px] border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100 lg:border-l-[3px] lg:border-emerald-500 lg:ring-0'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 lg:border-l-[3px] lg:border-transparent'
                       }`}
                     >
 
-                      <span className="flex h-6 w-6 shrink-0 items-center justify-center text-slate-500">
+                      <span className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-lg transition sm:h-7 sm:w-7 lg:h-6 lg:w-6 lg:rounded-none lg:bg-transparent ${
+                        tab === key
+                          ? 'bg-emerald-100 text-emerald-700'
+                          : 'bg-slate-50 text-slate-500'
+                      }`}>
                         <NavIcon
                           kind={
                             icon
@@ -787,7 +797,19 @@ export default function BillingWorkspace() {
         )}
       </div>
 
-      <div className="mt-auto border-t border-slate-100 px-3 pt-5"><div className="flex items-center gap-2"><div className="flex h-9 w-9 items-center justify-center rounded-full bg-emerald-100 text-xs font-black text-emerald-700">{(admin.name || 'B').slice(0, 1).toUpperCase()}</div><div className="min-w-0"><div className="truncate text-xs font-bold text-slate-800">{admin.name || 'Billing admin'}</div><div className="truncate text-[11px] text-slate-400">{admin.client_business_name || admin.client_name}</div></div></div><button type="button" onClick={logout} className="mt-4 flex items-center gap-2 text-xs font-bold text-slate-400 hover:text-rose-600"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" /></svg><span>Sign out</span></button></div>
+      <div className="mt-auto border-t border-slate-100 px-1 pt-2 lg:px-3 lg:pt-5">
+        <div className="flex items-center gap-2">
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl bg-emerald-100 text-[9px] font-black text-emerald-700 lg:h-9 lg:w-9 lg:rounded-full lg:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</div>
+          <div className="min-w-0 flex-1">
+            <div className="truncate text-[10px] font-semibold text-slate-800 lg:text-xs lg:font-bold">{admin.name || 'Billing admin'}</div>
+            <div className="hidden truncate text-[11px] text-slate-400 lg:block">{admin.client_business_name || admin.client_name}</div>
+          </div>
+        </div>
+        <button type="button" onClick={logout} className="mt-2 flex h-7 items-center gap-1.5 rounded-lg px-1.5 text-[9px] font-semibold text-slate-400 transition hover:bg-rose-50 hover:text-rose-600 lg:mt-4 lg:h-auto lg:px-0 lg:text-xs lg:font-bold">
+          <svg viewBox="0 0 24 24" aria-hidden="true" className="h-3.5 w-3.5 fill-none stroke-current lg:h-4 lg:w-4" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round"><path d="M10 17l5-5-5-5M15 12H3M21 19V5a2 2 0 0 0-2-2h-6" /></svg>
+          <span>Sign out</span>
+        </button>
+      </div>
     </aside>
     <div className={`min-h-screen transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[260px]'}`}>{!['subscribers', 'routers', 'hotspot'].includes(tab) && <header className="billing-network-header sticky top-0 z-20 flex h-[64px] items-center justify-between overflow-hidden px-3 text-white shadow-sm sm:h-[76px] sm:px-10" style={{ backgroundImage: `linear-gradient(115deg, rgba(3,22,13,.70), rgba(9,42,27,.62)), url(${polyizonLoginNetwork})`, backgroundSize: 'cover', backgroundPosition: 'center' }}><div className="flex items-center gap-2 sm:gap-3"><button type="button" aria-label="Toggle navigation" onClick={() => window.innerWidth < 1024 ? setOpen(true) : setSidebarCollapsed((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-100 transition hover:bg-white/10"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div><div className="text-[10px] font-semibold text-emerald-100/75 sm:text-xs">{admin.client_business_name || admin.client_name || 'Billing workspace'}</div><h1 className="max-w-[230px] truncate font-[Georgia,Times,serif] text-[1.35rem] font-semibold tracking-[-.03em] sm:max-w-none sm:text-[1.7rem]">{tab === 'overview' ? `${greetingText}, ${adminFirstName}` : panelTitle}</h1></div></div><div className="flex items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Toggle dark mode" onClick={() => setDarkMode((value) => { const next = !value; saveTheme(next ? 'dark' : 'light'); return next; })} className={darkMode ? 'flex h-9 w-9 items-center justify-center rounded-xl text-amber-200 transition hover:bg-white/10' : 'flex h-9 w-9 items-center justify-center rounded-xl text-emerald-50 transition hover:bg-white/10'}><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{darkMode ? <path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z" /> : <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>}</svg></button><div className="relative"><button type="button" aria-label="Open account menu" onClick={() => setProfileOpen(!profileOpen)} className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-black text-white shadow-sm sm:h-9 sm:w-9 sm:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</button>{profileOpen && <div className={`absolute right-0 top-12 z-50 w-48 rounded-2xl border p-2 shadow-xl ${darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}><div className="px-3 py-2 text-xs"><div className="font-black">{admin.name || 'Billing admin'}</div><div className="mt-0.5 truncate text-slate-400">{admin.email}</div></div><button type="button" onClick={logout} className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50">Sign out</button></div>}</div><div className="hidden items-center gap-2 rounded-full bg-black/20 px-3 py-2 text-xs font-bold text-white/90 ring-1 ring-white/15 sm:flex"><span className={`h-2 w-2 rounded-full ${radiusStatus?.enabled ? 'bg-emerald-500' : 'bg-amber-400'}`} />RADIUS {radiusStatus?.enabled ? 'connected' : 'pending'}</div>{action && <button type="button" onClick={action} aria-label={actionText} className="rounded-xl bg-emerald-500 px-2.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-emerald-600 sm:px-3.5 sm:py-2.5 sm:text-xs">{tab === 'subscribers' ? actionText : <>+ <span className="hidden sm:inline">{actionText}</span></>}</button>}</div></header>}
       <main className="mx-auto max-w-[1500px] p-3 pb-24 sm:p-8 lg:pb-8">{error && <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold text-rose-700 sm:mb-5 sm:px-4 sm:py-3 sm:text-sm"><span>{error}</span><button type="button" aria-label="Dismiss error" onClick={() => setError('')} className="text-lg leading-none">&times;</button></div>}{loading ? <BillingWorkspaceSkeleton /> : <>
@@ -808,7 +830,48 @@ export default function BillingWorkspace() {
       </>}</main><NexaAgentChat admin={admin} currentTab={tab} darkMode={darkMode} /><MobileDock tab={tab} setTab={go} openMenu={() => setOpen(true)} darkMode={darkMode} /></div>
   </div>;
 }
-function NavIcon({ kind }) { const paths = { home: <><path d="m3 11 9-7 9 7" /><path d="M5 10v10h14V10M9 20v-6h6v6" /></>, clients: <><circle cx="12" cy="8" r="3" /><path d="M5 20a7 7 0 0 1 14 0" /><circle cx="18" cy="10" r="2" /><path d="M17 15a5 5 0 0 1 5 5" /></>, network: <><path d="M3 9.5a14 14 0 0 1 18 0" /><path d="M6.5 13a8.5 8.5 0 0 1 11 0" /><path d="M10 16.5a3.5 3.5 0 0 1 4 0" /><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none" /></>, more: <><circle cx="6" cy="6" r="1.5" /><circle cx="12" cy="6" r="1.5" /><circle cx="18" cy="6" r="1.5" /><circle cx="6" cy="12" r="1.5" /><circle cx="12" cy="12" r="1.5" /><circle cx="18" cy="12" r="1.5" /><circle cx="6" cy="18" r="1.5" /><circle cx="12" cy="18" r="1.5" /><circle cx="18" cy="18" r="1.5" /></>, add: <><path d="M12 5v14M5 12h14" /></>, invoices: <><rect x="5" y="3" width="14" height="18" rx="2" /><path d="M8 8h8M8 12h8M8 16h5" /></>, voucher: <><path d="M4 7h16v10H4z" /><path d="M8 7v10M16 7v10M6 11h2M16 11h2" /></>, packages: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5l8 4.5 8-4.5" /></>, payments: <><path d="M4 7h16v10H4z" /><path d="M4 11h16M8 15h3" /></>, radius: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l3 2" /></>, hotspot: <><path d="M3 9.5a14 14 0 0 1 18 0" /><path d="M6.5 13a8.5 8.5 0 0 1 11 0" /><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" /></> }; return <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[kind] || paths.more}</svg>; }function MobileDock({ tab, setTab, openMenu, darkMode }) { const items = [['overview', 'home', 'Home'], ['subscribers', 'clients', 'Clients'], ['routers', 'network', 'Network'], ['more', 'more', 'More']]; return <nav className={`fixed inset-x-0 bottom-0 z-30 flex h-[72px] items-center justify-around border-t px-3 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_28px_rgba(15,23,42,.07)] backdrop-blur lg:hidden ${darkMode ? 'border-slate-800 bg-[#161a2d]/95' : 'border-slate-100 bg-white/95'}`}>{items.map(([key, icon, label]) => <button key={key} onClick={() => key === 'more' ? openMenu() : setTab(key)} className={`relative flex min-w-[58px] flex-col items-center gap-1 text-[10px] font-bold ${tab === key ? 'text-emerald-600' : 'text-slate-400'}`}><span className={`flex h-9 w-9 items-center justify-center rounded-full ${tab === key ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-300' : ''}`}><NavIcon kind={icon} /></span>{label}</button>)}</nav>; }function MobileHome({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, onAddSubscriber, money, expanded, setExpanded, darkMode }) { const recent = summary?.recent_payments || payments.slice(0, 3); const panel = darkMode ? 'bg-[#1a1f35] text-white shadow-black/20' : 'bg-white text-slate-900 shadow-violet-950/10'; const muted = darkMode ? 'text-slate-400' : 'text-slate-400'; const amount = money(summary?.payments?.total); return <div className="space-y-5"><section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#26006b] via-[#5600c6] to-[#8d2cff] px-6 pb-16 pt-6 text-white shadow-xl shadow-violet-300/50"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-sm">N</div><button onClick={() => setTab('payments')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10">♢</button></div><div className="mt-8 text-center"><p className="text-xs font-bold text-violet-100">Collections today</p><p className="mt-2 text-3xl font-black tracking-tight">{amount}</p><p className="mt-2 text-xs font-semibold text-violet-100">{summary?.subscribers?.active ?? active} active subscribers</p></div><div className="pointer-events-none absolute -bottom-20 -right-16 h-52 w-52 rounded-full bg-fuchsia-300/20 blur-2xl" /></section><section className={`-mt-12 mx-2 rounded-2xl p-3 shadow-xl ${panel}`}><div className="grid grid-cols-4 gap-2"><MobileAction icon="+" label="Add" onClick={onAddSubscriber} /><MobileAction icon="▤" label="Invoices" onClick={() => setTab('invoices')} /><MobileAction icon="" label="Voucher" onClick={() => setTab('vouchers')} /><MobileAction icon="" label="Network" onClick={() => setTab('routers')} /></div>{expanded && <div className={`mt-3 grid grid-cols-3 gap-2 border-t pt-3 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><MobileAction icon="▦" label="Packages" onClick={() => setTab('plans')} /><MobileAction icon="" label="Payments" onClick={() => setTab('payments')} /><MobileAction icon="♙" label="Subscribers" onClick={() => setTab('subscribers')} /></div>}</section><BandwidthOverviewExact history={bandwidthHistory} tick={bandwidthTick} panel={panel} muted={muted} /><section className={`rounded-2xl p-5 shadow-sm ${panel}`}><div className="flex items-center justify-between"><h2 className="font-black">Recent payments</h2><span className="text-xs font-bold text-violet-500">Today</span></div>{recent.length ? <div className="mt-3 divide-y divide-slate-100/10">{recent.map((payment) => <div key={payment.id} className="flex items-center justify-between py-3"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">✓</div><div><p className="text-sm font-bold">{payment.reference || 'Payment received'}</p><p className={`text-[11px] ${muted}`}>{payment.method || 'Collection'}</p></div></div><p className="text-sm font-black">{money(payment.amount)}</p></div>)}</div> : <p className={`mt-4 text-sm ${muted}`}>No payments recorded yet.</p>}</section></div>; }
+function NavIcon({ kind }) {
+  const paths = {
+    home: <><path d="M4 10.5 12 4l8 6.5" /><path d="M6.5 9.5V20h11V9.5" /><path d="M10 20v-5h4v5" /></>,
+    dashboard: <><rect x="3.5" y="3.5" width="7" height="7" rx="2" /><rect x="13.5" y="3.5" width="7" height="4.5" rx="2" /><rect x="3.5" y="13.5" width="7" height="7" rx="2" /><rect x="13.5" y="10.5" width="7" height="10" rx="2" /></>,
+    clients: <><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17.5" cy="9.5" r="2.2" /><path d="M16 15.5a4.5 4.5 0 0 1 4.5 4.5" /></>,
+    users: <><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17.5" cy="9.5" r="2.2" /><path d="M16 15.5a4.5 4.5 0 0 1 4.5 4.5" /></>,
+    broadband: <><path d="M4 16a8 8 0 0 1 16 0" /><path d="M7 16a5 5 0 0 1 10 0" /><path d="m12 16 3-5" /><circle cx="12" cy="16" r="1.4" /></>,
+    hotspot: <><path d="M4 9a12 12 0 0 1 16 0" /><path d="M7.5 12.5a7 7 0 0 1 9 0" /><path d="M10.5 16a2.5 2.5 0 0 1 3 0" /><circle cx="12" cy="19" r="1" fill="currentColor" stroke="none" /></>,
+    bot: <><rect x="5" y="7" width="14" height="12" rx="3" /><path d="M12 3v4" /><circle cx="12" cy="3" r="1" /><path d="M9 12h.01M15 12h.01M9 16h6" /></>,
+    receipt: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
+    invoices: <><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Z" /><path d="M9 8h6M9 12h6M9 16h4" /></>,
+    wallet: <><path d="M4 7h14a2 2 0 0 1 2 2v9H6a2 2 0 0 1-2-2V7Z" /><path d="M4 8V6a2 2 0 0 1 2-2h11" /><path d="M15 12h6v4h-6a2 2 0 1 1 0-4Z" /></>,
+    payments: <><rect x="3" y="6" width="18" height="12" rx="3" /><path d="M3 10h18M7 15h4" /></>,
+    ticket: <><path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v2a2.5 2.5 0 0 0 0 5v3a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-3a2.5 2.5 0 0 0 0-5V7Z" /><path d="M12 8v8" /></>,
+    voucher: <><path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v2a2.5 2.5 0 0 0 0 5v3a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-3a2.5 2.5 0 0 0 0-5V7Z" /><path d="M12 8v8" /></>,
+    vouchers: <><path d="M4 7a2 2 0 0 0 2-2h12a2 2 0 0 0 2 2v2a2.5 2.5 0 0 0 0 5v3a2 2 0 0 0-2 2H6a2 2 0 0 0-2-2v-3a2.5 2.5 0 0 0 0-5V7Z" /><path d="M12 8v8" /></>,
+    router: <><rect x="3" y="9" width="18" height="9" rx="2.5" /><path d="M7 9 5 5M17 9l2-4" /><circle cx="7" cy="14" r="1" fill="currentColor" stroke="none" /><circle cx="11" cy="14" r="1" fill="currentColor" stroke="none" /><path d="M15 14h3" /></>,
+    network: <><rect x="3" y="9" width="18" height="9" rx="2.5" /><path d="M7 9 5 5M17 9l2-4" /><circle cx="7" cy="14" r="1" fill="currentColor" stroke="none" /><circle cx="11" cy="14" r="1" fill="currentColor" stroke="none" /><path d="M15 14h3" /></>,
+    radius: <><circle cx="12" cy="12" r="8" /><circle cx="12" cy="12" r="4" /><path d="M12 12 18 7" /><circle cx="12" cy="12" r="1" fill="currentColor" stroke="none" /></>,
+    antenna: <><path d="M12 6v15M8.5 21h7" /><path d="m9 12 3-6 3 6" /><path d="M6.5 9a7 7 0 0 1 11 0M4 6a11 11 0 0 1 16 0" /></>,
+    chat: <><path d="M5 5h14a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H10l-5 3v-3H5a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2Z" /><path d="M8 10h8M8 14h5" /></>,
+    chart: <><path d="M4 20V10M10 20V4M16 20v-7M22 20V7" /><path d="M2 20h22" /></>,
+    reports: <><path d="M4 20V10M10 20V4M16 20v-7M22 20V7" /><path d="M2 20h22" /></>,
+    more: <><circle cx="6" cy="6" r="1.3" /><circle cx="12" cy="6" r="1.3" /><circle cx="18" cy="6" r="1.3" /><circle cx="6" cy="12" r="1.3" /><circle cx="12" cy="12" r="1.3" /><circle cx="18" cy="12" r="1.3" /><circle cx="6" cy="18" r="1.3" /><circle cx="12" cy="18" r="1.3" /><circle cx="18" cy="18" r="1.3" /></>,
+    add: <path d="M12 5v14M5 12h14" />,
+    packages: <><path d="m12 3 8 4.5-8 4.5-8-4.5L12 3Z" /><path d="m4 12 8 4.5 8-4.5M4 16.5l8 4.5 8-4.5" /></>,
+  };
+
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      aria-hidden="true"
+      className="h-[18px] w-[18px] fill-none stroke-current lg:h-5 lg:w-5"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {paths[kind] || paths.more}
+    </svg>
+  );
+}
+function MobileDock({ tab, setTab, openMenu, darkMode }) { const items = [['overview', 'home', 'Home'], ['subscribers', 'clients', 'Clients'], ['routers', 'network', 'Network'], ['more', 'more', 'More']]; return <nav className={`fixed inset-x-0 bottom-0 z-30 flex h-[72px] items-center justify-around border-t px-3 pb-[env(safe-area-inset-bottom)] shadow-[0_-8px_28px_rgba(15,23,42,.07)] backdrop-blur lg:hidden ${darkMode ? 'border-slate-800 bg-[#161a2d]/95' : 'border-slate-100 bg-white/95'}`}>{items.map(([key, icon, label]) => <button key={key} onClick={() => key === 'more' ? openMenu() : setTab(key)} className={`relative flex min-w-[58px] flex-col items-center gap-1 text-[10px] font-bold ${tab === key ? 'text-emerald-600' : 'text-slate-400'}`}><span className={`flex h-9 w-9 items-center justify-center rounded-full ${tab === key ? 'bg-emerald-600 text-white shadow-lg shadow-emerald-300' : ''}`}><NavIcon kind={icon} /></span>{label}</button>)}</nav>; }function MobileHome({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, onAddSubscriber, money, expanded, setExpanded, darkMode }) { const recent = summary?.recent_payments || payments.slice(0, 3); const panel = darkMode ? 'bg-[#1a1f35] text-white shadow-black/20' : 'bg-white text-slate-900 shadow-violet-950/10'; const muted = darkMode ? 'text-slate-400' : 'text-slate-400'; const amount = money(summary?.payments?.total); return <div className="space-y-5"><section className="relative overflow-hidden rounded-[28px] bg-gradient-to-br from-[#26006b] via-[#5600c6] to-[#8d2cff] px-6 pb-16 pt-6 text-white shadow-xl shadow-violet-300/50"><div className="flex items-center justify-between"><div className="flex h-10 w-10 items-center justify-center rounded-full bg-white/20 text-sm">N</div><button onClick={() => setTab('payments')} className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10">♢</button></div><div className="mt-8 text-center"><p className="text-xs font-bold text-violet-100">Collections today</p><p className="mt-2 text-3xl font-black tracking-tight">{amount}</p><p className="mt-2 text-xs font-semibold text-violet-100">{summary?.subscribers?.active ?? active} active subscribers</p></div><div className="pointer-events-none absolute -bottom-20 -right-16 h-52 w-52 rounded-full bg-fuchsia-300/20 blur-2xl" /></section><section className={`-mt-12 mx-2 rounded-2xl p-3 shadow-xl ${panel}`}><div className="grid grid-cols-4 gap-2"><MobileAction icon="+" label="Add" onClick={onAddSubscriber} /><MobileAction icon="▤" label="Invoices" onClick={() => setTab('invoices')} /><MobileAction icon="" label="Voucher" onClick={() => setTab('vouchers')} /><MobileAction icon="" label="Network" onClick={() => setTab('routers')} /></div>{expanded && <div className={`mt-3 grid grid-cols-3 gap-2 border-t pt-3 ${darkMode ? 'border-slate-700' : 'border-slate-100'}`}><MobileAction icon="▦" label="Packages" onClick={() => setTab('plans')} /><MobileAction icon="" label="Payments" onClick={() => setTab('payments')} /><MobileAction icon="♙" label="Subscribers" onClick={() => setTab('subscribers')} /></div>}</section><BandwidthOverviewExact history={bandwidthHistory} tick={bandwidthTick} panel={panel} muted={muted} /><section className={`rounded-2xl p-5 shadow-sm ${panel}`}><div className="flex items-center justify-between"><h2 className="font-black">Recent payments</h2><span className="text-xs font-bold text-violet-500">Today</span></div>{recent.length ? <div className="mt-3 divide-y divide-slate-100/10">{recent.map((payment) => <div key={payment.id} className="flex items-center justify-between py-3"><div className="flex items-center gap-3"><div className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">✓</div><div><p className="text-sm font-bold">{payment.reference || 'Payment received'}</p><p className={`text-[11px] ${muted}`}>{payment.method || 'Collection'}</p></div></div><p className="text-sm font-black">{money(payment.amount)}</p></div>)}</div> : <p className={`mt-4 text-sm ${muted}`}>No payments recorded yet.</p>}</section></div>; }
 function CurrencyMobileHome({ summary, subscribers, invoices, payments, bandwidthHistory, bandwidthTick, active, setTab, onAddSubscriber, money, expanded, setExpanded, darkMode, onToggleTheme, admin, onLogout, greetingText, adminFirstName }) {
   const currencies = {
     KES: { label: 'Kenyan Shilling', locale: 'en-KE', fallback: 1, country: 'KE' },

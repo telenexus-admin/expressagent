@@ -1,0 +1,40 @@
+name: Apply hotspot campaign UI fix
+
+on:
+  push:
+    branches:
+      - agent/hotspot-campaign-ui-fix
+    paths:
+      - .github/workflows/apply-hotspot-campaign-ui-fix.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-campaign-ui-fix
+          fetch-depth: 0
+
+      - name: Apply patch
+        run: |
+          git apply --check .github/hotspot-campaign-ui-fix.patch
+          git apply .github/hotspot-campaign-ui-fix.patch
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit verified source changes
+        run: |
+          git config user.name "Telenexus Admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/components/HotspotControlCenter.jsx frontend/src/pages/HotspotPortal.jsx
+          git commit -m "Fix hotspot campaign save and preview"
+          git push origin HEAD:agent/hotspot-campaign-ui-fix

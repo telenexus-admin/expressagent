@@ -704,6 +704,15 @@ export default function BillingWorkspace() {
         font-family: Georgia, Times, "Times New Roman", serif;
       }
 
+      [data-billing-tab] h1 *,
+      [data-billing-tab] h2 *,
+      [data-billing-tab] h3 *,
+      [data-billing-tab] h4 *,
+      [data-billing-tab] h5 *,
+      [data-billing-tab] h6 * {
+        font-family: inherit;
+      }
+
       [data-billing-tab=\"agents\"] > div > header {
         display: none !important;
       }

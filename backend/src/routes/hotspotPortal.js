@@ -676,6 +676,17 @@ router.get('/config', async (req, res) => {
 
         promo_slides: Array.isArray(saved.promo_slides) ? saved.promo_slides.slice(0, 5).map((slide, index) => ({ index, id: String(slide?.id || ''), version: String(slide?.updated_at || saved.updated_at || '') })).filter((slide) => slide.id) : [],
 
+        campaign_enabled:
+          saved.campaign_enabled === undefined
+            ? false
+            : publicBoolean(saved.campaign_enabled),
+
+        campaign_message:
+          String(saved.campaign_message || '')
+            .replace(/\s+/g, ' ')
+            .trim()
+            .slice(0, 180),
+
         background_overlay:
           Number.isFinite(
             Number(

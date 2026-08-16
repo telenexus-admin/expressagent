@@ -693,6 +693,12 @@ useEffect(() => {
     'Fast Internet. Everywhere.';
 
   const promoSlides = Array.isArray(portal?.promo_slides) ? portal.promo_slides.slice(0, 5).filter((slide) => slide?.id !== undefined) : [];
+  const campaignEnabled = portal?.campaign_enabled === true;
+  const campaignMessage = String(portal?.campaign_message || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 180);
+  const campaignDuration = Math.min(28, Math.max(13, 11 + campaignMessage.length * 0.08));
   const heroSlideCount = 1 + promoSlides.length;
   const visiblePromoSlide = activeHeroSlide > 0 ? promoSlides[activeHeroSlide - 1] : null;
   const visiblePromoSource = visiblePromoSlide?.image_data || (visiblePromoSlide ? `${apiBase}/promo-slide?portalToken=${encodeURIComponent(portalToken)}&index=${activeHeroSlide - 1}&v=${encodeURIComponent(visiblePromoSlide.version || '')}` : '');
@@ -1461,8 +1467,39 @@ useEffect(() => {
           </section>
         )}
 
+        {campaignEnabled && campaignMessage && (
+          <section
+            className="relative z-20 px-5 pt-4 sm:px-9"
+            aria-label="Hotspot notification"
+          >
+            <div className="mx-auto flex w-full max-w-3xl items-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
+              <span
+                className="shrink-0 px-3 py-2.5 text-[8px] font-black uppercase tracking-[.16em] text-white sm:px-4 sm:text-[9px]"
+                style={{ backgroundColor: accentColor }}
+              >
+                Notice
+              </span>
+
+              <div className="hotspot-campaign-track py-2.5">
+                <span
+                  className="hotspot-campaign-message text-[11px] font-extrabold tracking-[.01em] text-slate-700 sm:text-xs"
+                  style={{ '--hotspot-campaign-duration': `${campaignDuration}s` }}
+                >
+                  {campaignMessage}
+                </span>
+              </div>
+            </div>
+          </section>
+        )}
+
         {flashOffer && (
-          <section className="relative z-20 -mt-5 px-5 sm:-mt-7 sm:px-9">
+          <section
+            className={`relative z-20 px-5 sm:px-9 ${
+              campaignEnabled && campaignMessage
+                ? 'mt-4'
+                : '-mt-5 sm:-mt-7'
+            }`}
+          >
             <button
               type="button"
               onClick={() => choosePlan(flashOffer)}

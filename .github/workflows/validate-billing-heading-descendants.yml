@@ -1,0 +1,35 @@
+name: Validate billing heading descendants
+
+on:
+  push:
+    branches:
+      - agent/billing-heading-descendants
+    paths:
+      - .github/apply-billing-heading-descendants.py
+      - .github/workflows/validate-billing-heading-descendants.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/billing-heading-descendants
+          fetch-depth: 0
+      - run: python3 .github/apply-billing-heading-descendants.py
+      - run: git diff --check
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - run: |
+          git config user.name "Telenexus Admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingWorkspace.jsx
+          if ! git diff --cached --quiet; then
+            git commit -m "Keep nested heading typography unchanged"
+            git push origin HEAD:agent/billing-heading-descendants
+          fi

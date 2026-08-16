@@ -1,0 +1,35 @@
+name: Validate billing body tab font
+
+on:
+  push:
+    branches:
+      - agent/billing-body-tab-font
+    paths:
+      - .github/apply-billing-body-tab-font.py
+      - .github/workflows/validate-billing-body-tab-font.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/billing-body-tab-font
+          fetch-depth: 0
+      - run: python3 .github/apply-billing-body-tab-font.py
+      - run: git diff --check
+      - working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - run: |
+          git config user.name "Telenexus Admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingWorkspace.jsx
+          if ! git diff --cached --quiet; then
+            git commit -m "Preserve headings with serif billing body text"
+            git push origin HEAD:agent/billing-body-tab-font
+          fi

@@ -7,6 +7,7 @@ source = path.read_text()
 # existing emerald/light-green family.
 source = source.replace('violet', 'emerald')
 source = source.replace('bg-[#f8f7ff]', 'bg-emerald-50/50')
+source = source.replace('bg-emerald-600', 'bg-emerald-400')
 
 # Light-green action buttons use dark emerald text for contrast, matching
 # the existing Publish and Save slides buttons.
@@ -106,6 +107,9 @@ source = source[:start] + flash_section + source[end:]
 
 if 'violet' in source:
     raise SystemExit('A violet hotspot accent still remains in HotspotControlCenter.jsx')
+
+if 'bg-emerald-600' in source:
+    raise SystemExit('A dark emerald action still remains in HotspotControlCenter.jsx')
 
 if 'Flash Package' not in source or 'Slides / Promo' not in source:
     raise SystemExit('Expected hotspot section headings were not found after transformation')

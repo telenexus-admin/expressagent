@@ -186,7 +186,7 @@ const LAYOUTS = [
 
 
 const inputClass =
-  'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-900 outline-none transition focus:border-violet-400 focus:bg-white focus:ring-4 focus:ring-violet-100';
+  'h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-sm text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100';
 
 
 function money(
@@ -452,7 +452,7 @@ function Toggle({
       <span
         className={`relative h-7 w-12 shrink-0 rounded-full transition ${
           checked
-            ? 'bg-violet-600'
+            ? 'bg-emerald-600'
             : 'bg-slate-300'
         }`}
       >
@@ -724,7 +724,7 @@ function ModalShell({
         <header className="sticky top-0 z-20 flex items-center justify-between border-b border-slate-200 bg-white/95 px-5 py-4 backdrop-blur">
 
           <div>
-            <p className="text-[9px] font-black uppercase tracking-[.18em] text-violet-500">
+            <p className="text-[9px] font-black uppercase tracking-[.18em] text-emerald-500">
               {eyebrow}
             </p>
 
@@ -1650,7 +1650,7 @@ export default function HotspotControlCenter({
 
           <div className="min-w-0">
 
-            <p className="text-[9px] font-black uppercase tracking-[.2em] text-violet-200">
+            <p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">
               Services / Hotspot
             </p>
 
@@ -1658,7 +1658,7 @@ export default function HotspotControlCenter({
               Hotspot
             </h2>
 
-            <p className="mt-1.5 max-w-xl text-xs leading-5 text-violet-100 sm:text-sm">
+            <p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">
               Packages, promotions and captive portal management.
             </p>
           </div>
@@ -1763,7 +1763,7 @@ export default function HotspotControlCenter({
 
           <article className="rounded-[18px] border border-slate-200 bg-white p-3 shadow-sm sm:p-4">
 
-            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+            <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
               <Icon
                 name="package"
                 className="h-4 w-4"
@@ -1869,7 +1869,7 @@ export default function HotspotControlCenter({
                   true
                 )
               }
-              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-violet-600 px-3 text-[9px] font-black text-white"
+              className="inline-flex h-9 items-center gap-1.5 rounded-xl bg-emerald-600 px-3 text-[9px] font-black text-white"
             >
               <Icon
                 name="plus"
@@ -1897,7 +1897,7 @@ export default function HotspotControlCenter({
                   }`}
                 >
 
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                     <Icon
                       name="package"
                       className="h-4 w-4"
@@ -2013,30 +2013,15 @@ export default function HotspotControlCenter({
         {/* FLASH SUMMARY */}
 
         <section className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
-
-          <div className="flex items-center gap-3">
-
-            <span className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${
-              settings.flash_enabled
-                ? 'bg-pink-50 text-pink-600'
-                : 'bg-slate-100 text-slate-400'
-            }`}>
-              <Icon
-                name="bolt"
-              />
-            </span>
-
-
-            <div className="min-w-0 flex-1">
-
-              <div className="flex items-center gap-2">
-
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-black text-slate-900">
                   Flash Package
                 </h3>
 
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[7px] font-black uppercase ${
+                  className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${
                     settings.flash_enabled
                       ? 'bg-pink-50 text-pink-600'
                       : 'bg-slate-100 text-slate-500'
@@ -2048,15 +2033,35 @@ export default function HotspotControlCenter({
                 </span>
               </div>
 
+              <p className="mt-1 text-[10px] text-slate-400">
+                Create a temporary discounted package with a countdown.
+              </p>
+            </div>
 
-              {settings.flash_enabled &&
-              flashPlan ? (
-                <p className="mt-1 truncate text-[10px] text-slate-500">
+            <button
+              type="button"
+              onClick={openFlashPackage}
+              className="shrink-0 rounded-xl bg-emerald-400 px-3 py-2.5 text-[9px] font-black text-emerald-950"
+            >
+              Configure
+            </button>
+          </div>
 
+          {settings.flash_enabled && flashPlan && (
+            <div className="mt-3 flex items-center gap-3 rounded-2xl border border-slate-100 bg-slate-50 p-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-pink-50 text-pink-600">
+                <Icon
+                  name="bolt"
+                  className="h-4 w-4"
+                />
+              </span>
+
+              <div className="min-w-0 flex-1">
+                <strong className="block truncate text-xs font-black text-slate-900 sm:text-sm">
                   {flashPlan.name}
+                </strong>
 
-                  {' · '}
-
+                <p className="mt-1 truncate text-[10px] text-slate-500">
                   <span className="line-through">
                     {money(
                       flashPlan.price
@@ -2065,28 +2070,15 @@ export default function HotspotControlCenter({
 
                   {' → '}
 
-                  <b className="text-pink-600">
+                  <b className="text-emerald-700">
                     {money(
                       settings.flash_discount_price
                     )}
                   </b>
                 </p>
-              ) : (
-                <p className="mt-1 text-[10px] text-slate-400">
-                  Create a temporary discounted package with a countdown.
-                </p>
-              )}
+              </div>
             </div>
-
-
-            <button
-              type="button"
-              onClick={openFlashPackage}
-              className="shrink-0 rounded-xl bg-pink-50 px-3 py-2 text-[9px] font-black text-pink-600"
-            >
-              Configure
-            </button>
-          </div>
+          )}
         </section>
 
 
@@ -2153,7 +2145,7 @@ export default function HotspotControlCenter({
               </p>
             </div>
 
-            <span className="hidden rounded-xl bg-violet-50 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-wide text-violet-600 sm:block">
+            <span className="hidden rounded-xl bg-emerald-50 px-2.5 py-1.5 text-[8px] font-black uppercase tracking-wide text-emerald-600 sm:block">
               Live ticker
             </span>
           </div>
@@ -2195,9 +2187,9 @@ export default function HotspotControlCenter({
           </div>
 
           {String(settings.campaign_message || '').trim() && (
-            <div className="mt-4 overflow-hidden rounded-2xl border border-violet-100 bg-[#f8f7ff] p-2">
+            <div className="mt-4 overflow-hidden rounded-2xl border border-emerald-100 bg-emerald-50/50 p-2">
               <div className="flex items-center overflow-hidden rounded-xl bg-white shadow-sm">
-                <span className="shrink-0 bg-violet-600 px-3 py-2 text-[8px] font-black uppercase tracking-[.14em] text-white">
+                <span className="shrink-0 bg-emerald-600 px-3 py-2 text-[8px] font-black uppercase tracking-[.14em] text-white">
                   Notice
                 </span>
                 <div className="hotspot-campaign-track py-2">
@@ -2242,7 +2234,7 @@ export default function HotspotControlCenter({
                   'campaign'
                 );
               }}
-              className="rounded-xl bg-violet-600 px-4 py-2.5 text-[9px] font-black text-white shadow-sm shadow-violet-200 disabled:cursor-not-allowed disabled:opacity-50"
+              className="rounded-xl bg-emerald-600 px-4 py-2.5 text-[9px] font-black text-white shadow-sm shadow-emerald-200 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {saving && savingAction === 'campaign' ? 'Saving campaign…' : 'Save campaign'}
             </button>
@@ -2558,7 +2550,7 @@ export default function HotspotControlCenter({
               disabled={
                 saving
               }
-              className="h-11 w-full rounded-xl bg-violet-600 text-xs font-black text-white disabled:opacity-50"
+              className="h-11 w-full rounded-xl bg-emerald-600 text-xs font-black text-white disabled:opacity-50"
             >
               {saving
                 ? 'Creating...'
@@ -2816,7 +2808,7 @@ export default function HotspotControlCenter({
 
               <div className="flex items-center gap-3">
 
-                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                   <Icon
                     name="settings"
                     className="h-5 w-5"
@@ -2825,7 +2817,7 @@ export default function HotspotControlCenter({
 
                 <div>
 
-                  <p className="text-[8px] font-black uppercase tracking-[.18em] text-violet-500">
+                  <p className="text-[8px] font-black uppercase tracking-[.18em] text-emerald-500">
                     Hotspot Settings
                   </p>
 
@@ -3029,7 +3021,7 @@ export default function HotspotControlCenter({
 
                   <div className="mb-4 flex items-center gap-3">
 
-                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-violet-50 text-violet-600">
+                    <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-600">
                       <Icon
                         name="image"
                         className="h-4 w-4"
@@ -3050,8 +3042,8 @@ export default function HotspotControlCenter({
 
 
                   <div className="mb-4 grid gap-2 sm:grid-cols-2">
-                    <button type="button" onClick={() => setSettings(current => ({ ...current, design_template: 'classic' }))} className={`rounded-xl border p-3 text-left ${settings.design_template !== 'green_portrait' ? 'border-violet-500 ring-2 ring-violet-100' : 'border-slate-200'}`}><span className="block h-12 rounded-lg bg-gradient-to-br from-slate-950 to-blue-800" /><b className="mt-2 block text-xs">Classic portal</b><small className="text-[10px] text-slate-400">Current portal layout</small></button>
-                    <button type="button" onClick={() => setSettings(current => ({ ...current, design_template: 'green_portrait', theme_preset: 'green', accent_color: '#00A651' }))} className={`rounded-xl border p-3 text-left ${settings.design_template === 'green_portrait' ? 'border-violet-500 ring-2 ring-violet-100' : 'border-slate-200'}`}><span className="block h-12 rounded-lg bg-cover bg-center" style={{ backgroundImage: "url('/hotspot-templates/green-portrait-hotspot.png')" }} /><b className="mt-2 block text-xs">Green Portrait</b><small className="text-[10px] text-slate-400">Live ISP name in Bebas Neue</small></button>
+                    <button type="button" onClick={() => setSettings(current => ({ ...current, design_template: 'classic' }))} className={`rounded-xl border p-3 text-left ${settings.design_template !== 'green_portrait' ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200'}`}><span className="block h-12 rounded-lg bg-gradient-to-br from-slate-950 to-blue-800" /><b className="mt-2 block text-xs">Classic portal</b><small className="text-[10px] text-slate-400">Current portal layout</small></button>
+                    <button type="button" onClick={() => setSettings(current => ({ ...current, design_template: 'green_portrait', theme_preset: 'green', accent_color: '#00A651' }))} className={`rounded-xl border p-3 text-left ${settings.design_template === 'green_portrait' ? 'border-emerald-500 ring-2 ring-emerald-100' : 'border-slate-200'}`}><span className="block h-12 rounded-lg bg-cover bg-center" style={{ backgroundImage: "url('/hotspot-templates/green-portrait-hotspot.png')" }} /><b className="mt-2 block text-xs">Green Portrait</b><small className="text-[10px] text-slate-400">Live ISP name in Bebas Neue</small></button>
                   </div>
 
                   <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
@@ -3084,7 +3076,7 @@ export default function HotspotControlCenter({
                           className={`rounded-xl border p-2 text-left ${
                             settings.theme_preset ===
                             key
-                              ? 'border-violet-500 ring-2 ring-violet-100'
+                              ? 'border-emerald-500 ring-2 ring-emerald-100'
                               : 'border-slate-200'
                           }`}
                         >
@@ -3173,7 +3165,7 @@ export default function HotspotControlCenter({
                                   .value
                               )
                           }
-                          className="min-w-0 flex-1 accent-violet-600"
+                          className="min-w-0 flex-1 accent-emerald-600"
                         />
 
                         <b className="text-[9px]">
@@ -3252,7 +3244,7 @@ export default function HotspotControlCenter({
                           className={`rounded-xl border p-3 ${
                             settings.package_layout ===
                             layout.key
-                              ? 'border-violet-500 bg-violet-50 text-violet-700 ring-2 ring-violet-100'
+                              ? 'border-emerald-500 bg-emerald-50 text-emerald-700 ring-2 ring-emerald-100'
                               : 'border-slate-200 bg-white text-slate-600'
                           }`}
                         >
@@ -3465,7 +3457,7 @@ export default function HotspotControlCenter({
                       }
                     }
                   }
-                  className="h-11 w-full rounded-xl bg-violet-600 text-xs font-black text-white shadow-lg shadow-violet-200 disabled:opacity-50"
+                  className="h-11 w-full rounded-xl bg-emerald-600 text-xs font-black text-white shadow-lg shadow-emerald-200 disabled:opacity-50"
                 >
                   {saving
                     ? 'Saving...'

@@ -13,6 +13,7 @@ const {
 } = require('../services/mikrotik');
 const { createHotspotPortalToken } = require('../services/hotspotPortalToken');
 const { installHotspotEdgePortal } = require('../services/hotspotEdgePortal');
+const { ensureHotspotPlanSchema, normalizeHotspotDeviceLimit } = require('../services/hotspotPlanSchema');
 const {
   appendBillingEvent,
   appendRequestEvent,
@@ -1654,6 +1655,7 @@ router.get('/hotspot/portal-config', async (req, res) => {
 });
 router.get('/hotspot/plans', async (req, res) => {
   try {
+    await ensureHotspotPlanSchema();
     const result = await db.query(
       `SELECT p.*, r.name AS router_name
        FROM billing_hotspot_plans p
@@ -1672,6 +1674,7 @@ router.post('/hotspot/plans', [
   body('name').trim().notEmpty().isLength({ max: 160 }),
   body('price').isFloat({ min: 0 }),
   body('duration_minutes').isInt({ min: 1 }),
+  body('max_devices').optional().isInt({ min: 1, max: 20 }),
   body('data_limit_mb').optional({ nullable: true }).isInt({ min: 1 }),
   body('mikrotik_rate_limit').optional({ nullable: true }).isLength({ max: 160 }),
   body('router_id').optional({ nullable: true, checkFalsy: true }).isInt({ min: 1 }),
@@ -1684,6 +1687,8 @@ router.post('/hotspot/plans', [
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   const client = await db.connect();
   try {
+    await ensureHotspotPlanSchema();
+    const maxDevices = normalizeHotspotDeviceLimit(req.body.max_devices);
     if (req.body.router_id) {
       const selectedRouter = await client.query(
         'SELECT id FROM mikrotik_routers WHERE id = $1 AND client_id = $2 AND is_active = TRUE LIMIT 1',
@@ -1698,10 +1703,10 @@ router.post('/hotspot/plans', [
     await client.query('BEGIN');
     const result = await client.query(
       `INSERT INTO billing_hotspot_plans
-       (client_id, name, price, duration_minutes, data_limit_mb, mikrotik_rate_limit, router_id,
+       (client_id, name, price, duration_minutes, max_devices, data_limit_mb, mikrotik_rate_limit, router_id,
         fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
-      [req.scope.clientId, req.body.name.trim(), req.body.price, req.body.duration_minutes, req.body.data_limit_mb || null,
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`,
+      [req.scope.clientId, req.body.name.trim(), req.body.price, req.body.duration_minutes, maxDevices, req.body.data_limit_mb || null,
         req.body.mikrotik_rate_limit?.trim() || null, req.body.router_id || null, Boolean(req.body.fup_enabled),
         req.body.fup_enabled ? req.body.fup_threshold_mb : null,
         req.body.fup_enabled ? req.body.fup_download_speed_mbps : null,
@@ -1720,6 +1725,7 @@ router.post('/hotspot/plans', [
         service_type: 'hotspot',
         price: plan.price,
         duration_minutes: plan.duration_minutes,
+        max_devices: plan.max_devices,
         data_limit_mb: plan.data_limit_mb,
         mikrotik_rate_limit: plan.mikrotik_rate_limit,
         fup_enabled: plan.fup_enabled,

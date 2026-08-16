@@ -12,6 +12,7 @@ const {
   ensureHotspotPaymentSchema,
   getHotspotPaymentStatus,
 } = require('../services/hotspotPayments');
+const { ensureHotspotPlanSchema } = require('../services/hotspotPlanSchema');
 const { verifyHotspotPortalToken, verifyHotspotPortalBootstrapToken, createHotspotPortalToken } = require('../services/hotspotPortalToken');
 
 const router = express.Router();
@@ -196,6 +197,7 @@ async function resolveCheckoutPlan(
   planId
 ) {
   await ensureHotspotPortalConfigColumn();
+  await ensureHotspotPlanSchema();
 
   const result = await db.query(
     `SELECT
@@ -439,6 +441,7 @@ router.get('/config', async (req, res) => {
     }
 
     await ensureHotspotPortalConfigColumn();
+    await ensureHotspotPlanSchema();
 
     const clientResult =
       await db.query(
@@ -472,7 +475,7 @@ router.get('/config', async (req, res) => {
 
     const [plans, settings, portalConfigResult] = await Promise.all([
       db.query(
-        `SELECT id, name, price, duration_minutes, data_limit_mb, mikrotik_rate_limit, router_id,
+        `SELECT id, name, price, duration_minutes, max_devices, data_limit_mb, mikrotik_rate_limit, router_id,
                 fup_enabled, fup_threshold_mb, fup_download_speed_mbps, fup_upload_speed_mbps
          FROM billing_hotspot_plans
          WHERE client_id = $1 AND is_active = TRUE
@@ -547,6 +550,7 @@ router.get('/config', async (req, res) => {
         starts_at: startsAt,
         ends_at: endsAt,
         duration_minutes: flashPlan.duration_minutes,
+        max_devices: flashPlan.max_devices,
         data_limit_mb: flashPlan.data_limit_mb,
         mikrotik_rate_limit: flashPlan.mikrotik_rate_limit,
       };
@@ -959,6 +963,8 @@ router.post('/checkout', [
         name: checkoutPlan.plan.name,
         duration_minutes:
           checkoutPlan.plan.duration_minutes,
+        max_devices:
+          checkoutPlan.plan.max_devices || 1,
       },
       message:
         `M-Pesa prompt sent to +${phone}`,

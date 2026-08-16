@@ -684,6 +684,7 @@ const schema = `
     name VARCHAR(160) NOT NULL,
     price NUMERIC(12,2) NOT NULL DEFAULT 0,
     duration_minutes INTEGER NOT NULL CHECK (duration_minutes > 0),
+    max_devices INTEGER NOT NULL DEFAULT 1 CHECK (max_devices BETWEEN 1 AND 20),
     data_limit_mb INTEGER,
     mikrotik_rate_limit VARCHAR(160),
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -692,6 +693,10 @@ const schema = `
     UNIQUE (client_id, name)
   );
   ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS router_id INTEGER;
+  ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS max_devices INTEGER NOT NULL DEFAULT 1;
+  UPDATE billing_hotspot_plans SET max_devices = 1 WHERE max_devices IS NULL OR max_devices < 1 OR max_devices > 20;
+  ALTER TABLE billing_hotspot_plans DROP CONSTRAINT IF EXISTS billing_hotspot_plans_max_devices_check;
+  ALTER TABLE billing_hotspot_plans ADD CONSTRAINT billing_hotspot_plans_max_devices_check CHECK (max_devices BETWEEN 1 AND 20);
   ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_enabled BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_threshold_mb BIGINT;
   ALTER TABLE billing_hotspot_plans ADD COLUMN IF NOT EXISTS fup_download_speed_mbps NUMERIC(10,2);

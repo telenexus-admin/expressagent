@@ -12,6 +12,8 @@ const {
   recordHotspotSubscriberAccess,
   resolveHotspotSubscriberBinding,
 } = require('./hotspotSubscriberAccess');
+const { sendSMS, hasSMSConfig } = require('./sms');
+const { ensureHotspotPlanSchema, normalizeHotspotDeviceLimit } = require('./hotspotPlanSchema');
 
 let schemaPromise;
 
@@ -63,6 +65,36 @@ async function ensureHotspotPaymentSchema() {
         ADD COLUMN IF NOT EXISTS
           device_activated_at
             TIMESTAMP WITH TIME ZONE
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          additional_voucher_ids JSONB NOT NULL DEFAULT '[]'::jsonb
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          voucher_sms_status VARCHAR(30) NOT NULL DEFAULT 'not_required'
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          voucher_sms_sent_at TIMESTAMP WITH TIME ZONE
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          voucher_sms_last_attempt_at TIMESTAMP WITH TIME ZONE
+      `);
+
+      await db.query(`
+        ALTER TABLE hotspot_payment_fulfillments
+        ADD COLUMN IF NOT EXISTS
+          voucher_sms_error TEXT
       `);
 
       await db.query(`
@@ -145,6 +177,275 @@ function voucherCode(paymentId) {
   ].join('-');
 }
 
+
+function normalizeVoucherIds(value) {
+  if (!Array.isArray(value)) return [];
+
+  return value
+    .map((item) => Number(item))
+    .filter((item) => Number.isInteger(item) && item > 0);
+}
+
+async function ensureAdditionalDeviceVouchers({
+  connection,
+  fulfillment,
+  payment,
+  plan,
+}) {
+  const maxDevices =
+    normalizeHotspotDeviceLimit(plan.max_devices);
+
+  const existingIds =
+    normalizeVoucherIds(
+      fulfillment.additional_voucher_ids
+    );
+
+  if (maxDevices <= 1) {
+    if (
+      existingIds.length ||
+      fulfillment.voucher_sms_status !== 'not_required'
+    ) {
+      const updated = await connection.query(
+        `UPDATE hotspot_payment_fulfillments
+         SET additional_voucher_ids = '[]'::jsonb,
+             voucher_sms_status = 'not_required',
+             voucher_sms_error = NULL,
+             updated_at = NOW()
+         WHERE payment_request_id = $1
+           AND client_id = $2
+         RETURNING *`,
+        [payment.id, payment.client_id]
+      );
+
+      return updated.rows[0] || fulfillment;
+    }
+
+    return fulfillment;
+  }
+
+  if (existingIds.length) {
+    return fulfillment;
+  }
+
+  const createdIds = [];
+
+  for (let index = 0; index < maxDevices - 1; index += 1) {
+    const code = voucherCode(payment.id);
+    const result = await connection.query(
+      `INSERT INTO billing_hotspot_vouchers
+         (client_id, plan_id, code, status)
+       VALUES ($1,$2,$3,'available')
+       RETURNING id`,
+      [payment.client_id, plan.id, code]
+    );
+
+    createdIds.push(result.rows[0].id);
+  }
+
+  const updated = await connection.query(
+    `UPDATE hotspot_payment_fulfillments
+     SET additional_voucher_ids = $1::jsonb,
+         voucher_sms_status = 'pending',
+         voucher_sms_error = NULL,
+         updated_at = NOW()
+     WHERE payment_request_id = $2
+       AND client_id = $3
+     RETURNING *`,
+    [
+      JSON.stringify(createdIds),
+      payment.id,
+      payment.client_id,
+    ]
+  );
+
+  return updated.rows[0] || fulfillment;
+}
+
+async function loadAdditionalDeviceVouchers(clientId, voucherIds) {
+  const ids = normalizeVoucherIds(voucherIds);
+  if (!ids.length) return [];
+
+  const result = await db.query(
+    `SELECT id, code
+     FROM billing_hotspot_vouchers
+     WHERE client_id = $1
+       AND id = ANY($2::int[])`,
+    [clientId, ids]
+  );
+
+  const byId = new Map(
+    result.rows.map((row) => [Number(row.id), row])
+  );
+
+  return ids
+    .map((id) => byId.get(id))
+    .filter(Boolean);
+}
+
+async function deliverAdditionalDeviceVouchers({ payment, plan }) {
+  const stateResult = await db.query(
+    `SELECT *
+     FROM hotspot_payment_fulfillments
+     WHERE payment_request_id = $1
+       AND client_id = $2
+     LIMIT 1`,
+    [payment.id, payment.client_id]
+  );
+
+  const state = stateResult.rows[0];
+  if (!state) return { status: 'not_required', vouchers: [] };
+
+  const voucherIds = normalizeVoucherIds(state.additional_voucher_ids);
+  const vouchers = await loadAdditionalDeviceVouchers(
+    payment.client_id,
+    voucherIds
+  );
+
+  if (!voucherIds.length) {
+    return { status: 'not_required', vouchers: [] };
+  }
+
+  if (state.voucher_sms_status === 'sent') {
+    return { status: 'sent', vouchers };
+  }
+
+  const claimResult = await db.query(
+    `UPDATE hotspot_payment_fulfillments
+     SET voucher_sms_status = 'sending',
+         voucher_sms_last_attempt_at = NOW(),
+         voucher_sms_error = NULL,
+         updated_at = NOW()
+     WHERE payment_request_id = $1
+       AND client_id = $2
+       AND (
+         voucher_sms_status = 'pending'
+         OR (
+           voucher_sms_status IN ('failed', 'not_configured')
+           AND (
+             voucher_sms_last_attempt_at IS NULL
+             OR voucher_sms_last_attempt_at < NOW() - INTERVAL '60 seconds'
+           )
+         )
+         OR (
+           voucher_sms_status = 'sending'
+           AND (
+             voucher_sms_last_attempt_at IS NULL
+             OR voucher_sms_last_attempt_at < NOW() - INTERVAL '2 minutes'
+           )
+         )
+       )
+     RETURNING *`,
+    [payment.id, payment.client_id]
+  );
+
+  if (!claimResult.rows[0]) {
+    return {
+      status: state.voucher_sms_status || 'pending',
+      vouchers,
+    };
+  }
+
+  const clientResult = await db.query(
+    `SELECT
+       id,
+       name,
+       sms_provider,
+       sms_api_key,
+       sms_sender_id,
+       sms_partner_id
+     FROM clients
+     WHERE id = $1
+     LIMIT 1`,
+    [payment.client_id]
+  );
+
+  const smsClient = clientResult.rows[0];
+  const smsConfig = smsClient ? { client: smsClient } : null;
+
+  if (!smsClient || !hasSMSConfig(smsConfig)) {
+    const error = 'SMS provider is not configured for this billing account';
+    await db.query(
+      `UPDATE hotspot_payment_fulfillments
+       SET voucher_sms_status = 'not_configured',
+           voucher_sms_error = $2,
+           updated_at = NOW()
+       WHERE payment_request_id = $1`,
+      [payment.id, error]
+    );
+
+    return { status: 'not_configured', vouchers, error };
+  }
+
+  if (!payment.customer_phone) {
+    const error = 'The hotspot payment has no customer phone number for voucher delivery';
+    await db.query(
+      `UPDATE hotspot_payment_fulfillments
+       SET voucher_sms_status = 'failed',
+           voucher_sms_error = $2,
+           updated_at = NOW()
+       WHERE payment_request_id = $1`,
+      [payment.id, error]
+    );
+
+    return { status: 'failed', vouchers, error };
+  }
+
+  if (!vouchers.length) {
+    const error = 'Additional hotspot vouchers could not be loaded';
+    await db.query(
+      `UPDATE hotspot_payment_fulfillments
+       SET voucher_sms_status = 'failed',
+           voucher_sms_error = $2,
+           updated_at = NOW()
+       WHERE payment_request_id = $1`,
+      [payment.id, error]
+    );
+
+    return { status: 'failed', vouchers, error };
+  }
+
+  const extraCount = vouchers.length;
+  const totalDevices = extraCount + 1;
+  const voucherCodes = vouchers
+    .map((voucher) => voucher.code)
+    .join(', ');
+  const message = `${smsClient.name || 'Hotspot'}: ${plan.name} is active for ${totalDevices} devices. Your first device is connected. Voucher${extraCount === 1 ? '' : 's'} for the other ${extraCount} device${extraCount === 1 ? '' : 's'}: ${voucherCodes}. On each extra device open the hotspot page and use one code as both username and password.`;
+
+  try {
+    await sendSMS(payment.customer_phone, message, smsConfig);
+
+    await db.query(
+      `UPDATE hotspot_payment_fulfillments
+       SET voucher_sms_status = 'sent',
+           voucher_sms_sent_at = NOW(),
+           voucher_sms_error = NULL,
+           updated_at = NOW()
+       WHERE payment_request_id = $1`,
+      [payment.id]
+    );
+
+    return { status: 'sent', vouchers };
+  } catch (error) {
+    await db.query(
+      `UPDATE hotspot_payment_fulfillments
+       SET voucher_sms_status = 'failed',
+           voucher_sms_error = $2,
+           updated_at = NOW()
+       WHERE payment_request_id = $1`,
+      [
+        payment.id,
+        String(error?.message || 'Could not send additional hotspot vouchers by SMS'),
+      ]
+    );
+
+    return {
+      status: 'failed',
+      vouchers,
+      error: String(error?.message || 'Could not send additional hotspot vouchers by SMS'),
+    };
+  }
+}
+
 async function saveFailure({
   clientId,
   paymentId,
@@ -216,6 +517,7 @@ async function fulfillHotspotPayment(
 
   await ensureHotspotPaymentSchema();
   await ensureHotspotSubscriberSchema();
+  await ensureHotspotPlanSchema();
 
   const connection = await db.connect();
   let payment;
@@ -454,6 +756,13 @@ async function fulfillHotspotPayment(
       voucher = voucherResult.rows[0] || null;
     }
 
+    fulfillment = await ensureAdditionalDeviceVouchers({
+      connection,
+      fulfillment,
+      payment,
+      plan,
+    });
+
     const needsDeviceActivation =
       Boolean(metadata.mac);
 
@@ -474,6 +783,15 @@ async function fulfillHotspotPayment(
     ) {
       await connection.query('COMMIT');
 
+      const voucherDelivery = await deliverAdditionalDeviceVouchers({
+        payment,
+        plan,
+      }).catch((error) => ({
+        status: 'failed',
+        vouchers: [],
+        error: error.message,
+      }));
+
       return {
         status: 'active',
         voucher,
@@ -487,6 +805,12 @@ async function fulfillHotspotPayment(
         device_activation_status:
           fulfillment.device_activation_status ||
           null,
+        max_devices:
+          normalizeHotspotDeviceLimit(plan.max_devices),
+        additional_vouchers:
+          voucherDelivery.vouchers || [],
+        voucher_sms_status:
+          voucherDelivery.status,
       };
     }
 
@@ -698,6 +1022,15 @@ async function fulfillHotspotPayment(
       );
     }
 
+    const voucherDelivery = await deliverAdditionalDeviceVouchers({
+      payment,
+      plan,
+    }).catch((deliveryError) => ({
+      status: 'failed',
+      vouchers: [],
+      error: deliveryError.message,
+    }));
+
     return {
       status: 'active',
       voucher,
@@ -726,6 +1059,15 @@ async function fulfillHotspotPayment(
         subscriberBinding
           ?.binding_reused ||
         false,
+
+      max_devices:
+        normalizeHotspotDeviceLimit(plan.max_devices),
+
+      additional_vouchers:
+        voucherDelivery.vouchers || [],
+
+      voucher_sms_status:
+        voucherDelivery.status,
     };
   } catch (error) {
     await db.query(
@@ -759,6 +1101,7 @@ async function getHotspotPaymentStatus({
   externalReference,
 }) {
   await ensureHotspotPaymentSchema();
+  await ensureHotspotPlanSchema();
 
   const paymentResult = await db.query(
     `SELECT *
@@ -791,7 +1134,8 @@ async function getHotspotPaymentStatus({
        v.code,
        v.expires_at,
        p.name AS plan_name,
-       p.duration_minutes
+       p.duration_minutes,
+       p.max_devices
      FROM hotspot_payment_fulfillments f
      LEFT JOIN billing_hotspot_vouchers v
        ON v.id = f.voucher_id
@@ -817,6 +1161,11 @@ async function getHotspotPaymentStatus({
   ) {
     const source =
       stored || fulfillment;
+
+    const additionalVouchers = await loadAdditionalDeviceVouchers(
+      clientId,
+      source.additional_voucher_ids || []
+    );
 
     return {
       status: 'active',
@@ -855,6 +1204,21 @@ async function getHotspotPaymentStatus({
           source.code ||
           fulfillment?.voucher?.code,
       },
+      max_devices:
+        normalizeHotspotDeviceLimit(
+          source.max_devices ||
+          fulfillment?.plan?.max_devices
+        ),
+      additional_device_count:
+        additionalVouchers.length,
+      additional_vouchers:
+        additionalVouchers.map((voucher) => ({
+          code: voucher.code,
+        })),
+      voucher_sms_status:
+        source.voucher_sms_status ||
+        fulfillment?.voucher_sms_status ||
+        (additionalVouchers.length ? 'pending' : 'not_required'),
     };
   }
 

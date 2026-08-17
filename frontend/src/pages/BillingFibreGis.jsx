@@ -253,10 +253,10 @@ export default function BillingFibreGis() {
     const loadTimeout = setTimeout(() => {
       if (mapReadyRef.current) return;
       setMapState('error');
-      setMapMessage(lastMapError || 'The street map is taking too long to load.');
-    }, 12000);
+      setMapMessage(lastMapError || 'The map style could not finish loading.');
+    }, 20000);
 
-    map.on('load', () => {
+    map.once('style.load', () => {
       mapReadyRef.current = true;
       clearTimeout(loadTimeout);
       setMapState('ready');
@@ -340,7 +340,7 @@ export default function BillingFibreGis() {
       map.getSource('gis-assets')?.setData({ type: 'FeatureCollection', features: assetFeatures });
       map.getSource('fibre-routes')?.setData({ type: 'FeatureCollection', features: routeFeatures });
     };
-    if (map.loaded() && map.getSource('gis-assets')) update(); else map.once('load', update);
+    if (map.getSource('gis-assets')) update(); else map.once('style.load', update);
   }, [data, selected, visibleAssets, visibleRoutes]);
 
   const zoomTo = useCallback((selection) => {

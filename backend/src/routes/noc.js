@@ -2,6 +2,10 @@ const express = require('express');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');
 const { getNetworkTopology, saveTopologyLocation } = require('../services/topology');
+const {
+  listFibreGis, createAsset, updateAsset, deleteAsset, createRoute,
+  updateRoute, deleteRoute, syncTopologySites,
+} = require('../services/fibreGis');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -40,6 +44,55 @@ router.patch('/topology/routers/:id/location', async (req, res) => {
     if (!saved) return res.status(404).json({ error: 'Router not found' });
     res.json(saved);
   } catch (err) { console.error('PATCH /noc/topology/routers/:id/location error:', err.message); res.status(400).json({ error: err.message || 'Failed to save topology location' }); }
+});
+
+router.get('/fibre-gis', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try { res.json(await listFibreGis(clientId)); }
+  catch (err) { console.error('GET /noc/fibre-gis error:', err.message); res.status(500).json({ error: err.message || 'Failed to load Fibre GIS' }); }
+});
+
+router.post('/fibre-gis/assets', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { res.status(201).json(await createAsset(clientId, req.body || {})); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to create infrastructure' }); }
+});
+
+router.put('/fibre-gis/assets/:id', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { const saved = await updateAsset(clientId, req.params.id, req.body || {}); if (!saved) return res.status(404).json({ error: 'Infrastructure not found' }); res.json(saved); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to update infrastructure' }); }
+});
+
+router.delete('/fibre-gis/assets/:id', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { const removed = await deleteAsset(clientId, req.params.id); if (!removed) return res.status(404).json({ error: 'Infrastructure not found' }); res.json({ success: true }); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to delete infrastructure' }); }
+});
+
+router.post('/fibre-gis/routes', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { res.status(201).json(await createRoute(clientId, req.body || {})); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to create fibre route' }); }
+});
+
+router.put('/fibre-gis/routes/:id', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { const saved = await updateRoute(clientId, req.params.id, req.body || {}); if (!saved) return res.status(404).json({ error: 'Fibre route not found' }); res.json(saved); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to update fibre route' }); }
+});
+
+router.delete('/fibre-gis/routes/:id', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { const removed = await deleteRoute(clientId, req.params.id); if (!removed) return res.status(404).json({ error: 'Fibre route not found' }); res.json({ success: true }); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to delete fibre route' }); }
+});
+
+router.post('/fibre-gis/sync-topology', async (req, res) => {
+  const clientId = resolveTargetClient(req, res); if (!clientId) return;
+  try { res.json(await syncTopologySites(clientId)); }
+  catch (err) { res.status(400).json({ error: err.message || 'Failed to sync topology sites' }); }
 });
 
 router.get('/overview', async (req, res) => {

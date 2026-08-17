@@ -1,6 +1,7 @@
 const express = require('express');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');
+const { getNetworkTopology, saveTopologyLocation } = require('../services/topology');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -22,6 +23,23 @@ router.get('/routers', async (req, res) => {
     console.error('GET /noc/routers error:', err.message);
     res.status(500).json({ error: 'Failed to load NOC routers' });
   }
+});
+
+router.get('/topology', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try { res.json(await getNetworkTopology(clientId)); }
+  catch (err) { console.error('GET /noc/topology error:', err.message); res.status(500).json({ error: err.message || 'Failed to load network topology' }); }
+});
+
+router.patch('/topology/routers/:id/location', async (req, res) => {
+  const clientId = resolveTargetClient(req, res);
+  if (!clientId) return;
+  try {
+    const saved = await saveTopologyLocation(clientId, req.params.id, req.body || {});
+    if (!saved) return res.status(404).json({ error: 'Router not found' });
+    res.json(saved);
+  } catch (err) { console.error('PATCH /noc/topology/routers/:id/location error:', err.message); res.status(400).json({ error: err.message || 'Failed to save topology location' }); }
 });
 
 router.get('/overview', async (req, res) => {

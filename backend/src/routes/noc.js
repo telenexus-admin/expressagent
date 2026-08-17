@@ -1,5 +1,5 @@
 const express = require('express');
-const { Readable } = require('stream');
+const https = require('https');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');
 const { getNetworkTopology, saveTopologyLocation } = require('../services/topology');
@@ -35,7 +35,7 @@ function rewriteOpenFreeMapJson(value) {
     .replaceAll('http://tiles.openfreemap.org', MAP_PROXY_PREFIX);
 }
 
-async function proxyOpenFreeMap(req, res) {
+function proxyOpenFreeMap(req, res) {
   const path = safeMapProxyPath(req.params[0]);
   if (!path) return res.status(400).json({ error: 'Invalid map resource path' });
 
@@ -45,60 +45,93 @@ async function proxyOpenFreeMap(req, res) {
     values.forEach((value) => target.searchParams.append(key, String(value ?? '')));
   }
 
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const upstreamRequest = https.request({
+    protocol: 'https:',
+    hostname: target.hostname,
+    port: 443,
+    method: 'GET',
+    path: `${target.pathname}${target.search}`,
+    family: 4,
+    headers: {
+      Accept: req.get('accept') || '*/*',
+      'Accept-Encoding': 'identity',
+      'User-Agent': 'Polyizon-FibreGIS/1.0',
+    },
+  }, (upstream) => {
+    const status = Number(upstream.statusCode || 502);
+    const contentType = String(upstream.headers['content-type'] || 'application/octet-stream');
+    const contentLength = Number(upstream.headers['content-length'] || 0);
 
-  try {
-    const upstream = await fetch(target, {
-      signal: controller.signal,
-      headers: {
-        Accept: req.get('accept') || '*/*',
-        'User-Agent': 'Polyizon-FibreGIS/1.0',
-      },
-    });
-
-    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
-    const contentLength = Number(upstream.headers.get('content-length') || 0);
     if (contentLength > MAP_PROXY_MAX_BYTES) {
+      upstream.resume();
       return res.status(413).json({ error: 'Map resource is too large' });
     }
 
-    res.status(upstream.status);
+    res.status(status);
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', upstream.headers.get('cache-control') || 'public, max-age=86400');
-    const etag = upstream.headers.get('etag');
+    res.setHeader('Cache-Control', upstream.headers['cache-control'] || 'public, max-age=86400');
+    const etag = upstream.headers.etag;
     if (etag) res.setHeader('ETag', etag);
-    const lastModified = upstream.headers.get('last-modified');
+    const lastModified = upstream.headers['last-modified'];
     if (lastModified) res.setHeader('Last-Modified', lastModified);
 
-    if (!upstream.ok) {
-      const message = await upstream.text().catch(() => '');
-      return res.send(message || `Map provider returned ${upstream.status}`);
+    const needsRewrite = contentType.includes('json') || path.startsWith('styles/');
+    if (needsRewrite || status < 200 || status >= 300) {
+      const chunks = [];
+      let total = 0;
+      upstream.on('data', (chunk) => {
+        total += chunk.length;
+        if (total > MAP_PROXY_MAX_BYTES) {
+          upstream.destroy(new Error('Map resource is too large'));
+          return;
+        }
+        chunks.push(chunk);
+      });
+      upstream.on('end', () => {
+        if (res.writableEnded) return;
+        const body = Buffer.concat(chunks).toString('utf8');
+        if (status < 200 || status >= 300) {
+          return res.send(body || `Map provider returned ${status}`);
+        }
+        return res.send(rewriteOpenFreeMapJson(body));
+      });
+      upstream.on('error', (error) => {
+        console.error('Fibre GIS map proxy upstream error:', error.message);
+        if (!res.headersSent) res.status(502).json({ error: 'Map provider stream failed' });
+        else if (!res.writableEnded) res.destroy(error);
+      });
+      return;
     }
 
-    if (contentType.includes('json') || path.startsWith('styles/')) {
-      const body = await upstream.text();
-      if (Buffer.byteLength(body) > MAP_PROXY_MAX_BYTES) {
-        return res.status(413).json({ error: 'Map resource is too large' });
-      }
-      return res.send(rewriteOpenFreeMapJson(body));
-    }
-
-    if (!upstream.body) return res.end();
-    Readable.fromWeb(upstream.body).on('error', (error) => {
+    let streamed = 0;
+    upstream.on('data', (chunk) => {
+      streamed += chunk.length;
+      if (streamed > MAP_PROXY_MAX_BYTES) upstream.destroy(new Error('Map resource is too large'));
+    });
+    upstream.on('error', (error) => {
       console.error('Fibre GIS map proxy stream error:', error.message);
       if (!res.headersSent) res.status(502).end();
-      else res.destroy(error);
-    }).pipe(res);
-  } catch (error) {
-    const timedOut = error?.name === 'AbortError';
+      else if (!res.writableEnded) res.destroy(error);
+    });
+    upstream.pipe(res);
+  });
+
+  upstreamRequest.setTimeout(15000, () => {
+    const error = new Error('Map provider timed out');
+    error.code = 'MAP_TIMEOUT';
+    upstreamRequest.destroy(error);
+  });
+
+  upstreamRequest.on('error', (error) => {
     console.error('Fibre GIS map proxy error:', error.message);
     if (!res.headersSent) {
-      res.status(timedOut ? 504 : 502).json({ error: timedOut ? 'Map provider timed out' : 'Map provider unavailable' });
+      res.status(error.code === 'MAP_TIMEOUT' ? 504 : 502).json({
+        error: error.code === 'MAP_TIMEOUT' ? 'Map provider timed out' : 'Map provider unavailable',
+      });
     }
-  } finally {
-    clearTimeout(timeout);
-  }
+  });
+
+  upstreamRequest.end();
 }
 
 router.get('/routers', async (req, res) => {

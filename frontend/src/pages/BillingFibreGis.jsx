@@ -3,7 +3,14 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import api from '../utils/api';
 
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty';
+const MAP_PROXY_PATH = '/api/noc/fibre-gis/map/';
+
+function transformMapRequest(url) {
+  if (!String(url || '').includes(MAP_PROXY_PATH)) return { url };
+  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+  return token ? { url, headers: { Authorization: `Bearer ${token}` } } : { url };
+}
 
 const ASSET_TYPES = [
   ['pop', 'POP', '#064e3b'],
@@ -222,6 +229,7 @@ export default function BillingFibreGis() {
         pitch: 44,
         bearing: -8,
         attributionControl: true,
+        transformRequest: transformMapRequest,
       });
     } catch (error) {
       setMapState('error');

@@ -12,6 +12,7 @@ const InvoiceManagement = lazy(() => import('./InvoiceManagement'));
 const BillingCommunication = lazy(() => import('./BillingCommunication'));
 const BillingTr069 = lazy(() => import('./BillingTr069'));
 const BillingAgents = lazy(() => import('./BillingAgents'));
+const BillingNoc = lazy(() => import('./BillingNoc'));
 
 const emptyPlan = { name: '', price: '', validity_days: '30', download_speed_mbps: '', upload_speed_mbps: '', radius_profile: '', router_id: '', fup_enabled: false, fup_threshold_mb: '', fup_download_speed_mbps: '', fup_upload_speed_mbps: '' };
 const emptyHotspotPlan = { name: '', price: '', duration_minutes: '60', data_limit_mb: '', mikrotik_rate_limit: '', router_id: '', fup_enabled: false, fup_threshold_mb: '', fup_download_speed_mbps: '', fup_upload_speed_mbps: '' };
@@ -29,6 +30,7 @@ const nav = [
   ['invoices', 'Invoices', 'receipt'],
   ['payments', 'Payments', 'wallet'],
   ['vouchers', 'Vouchers', 'ticket'],
+  ['noc', 'NOC', 'pulse'],
   ['routers', 'Routers', 'router'],
   ['radius', 'RADIUS', 'radius'],
   ['tr069', 'TR-069 & ONTs', 'antenna'],
@@ -83,6 +85,7 @@ const navGroups = [
       'NETWORK',
 
     keys: [
+      'noc',
       'routers',
       'radius',
       'tr069',
@@ -842,6 +845,7 @@ export default function BillingWorkspace() {
         {tab === 'payments' && <Payments payments={payments} invoices={invoices} form={paymentForm} setForm={setPaymentForm} save={savePayment} saving={saving} />}
         {tab === 'hotspot' && <HotspotControlCenter plans={hotspotPlans} routers={routers} reload={loadDetails} setWorkspaceError={setError} />}
         {tab === 'vouchers' && <Vouchers plans={hotspotPlans} vouchers={vouchers} form={voucherForm} setForm={setVoucherForm} generate={generateVouchers} simulate={simulateVoucher} saving={saving} reload={load} setError={setError} />}
+        {tab === 'noc' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingNoc onOpenRouters={() => go('routers')} /></Suspense>}
         {tab === 'routers' && <Routers routers={routers} form={routerForm} setForm={setRouterForm} plan={routerPlan} setPlan={setRouterPlan} prepare={prepareRouter} reload={loadDetails} test={testRouter} provision={previewRouterProvision} notice={routerNotice} saving={saving} darkMode={darkMode} />}
         {tab === 'radius' && <Radius subscribers={subscribers} status={radiusStatus} form={radiusForm} setForm={setRadiusForm} save={saveRadius} resync={resync} saving={saving} />}
         {tab === 'reports' && <Reports invoices={invoices} payments={payments} subscribers={subscribers} routers={routers} bandwidthHistory={bandwidthHistory} employees={employees} tickets={reportTickets} money={money} />}
@@ -854,6 +858,7 @@ function NavIcon({ kind }) {
   const paths = {
     home: <><path d="M4 10.5 12 4l8 6.5" /><path d="M6.5 9.5V20h11V9.5" /><path d="M10 20v-5h4v5" /></>,
     dashboard: <><rect x="3.5" y="3.5" width="7" height="7" rx="2" /><rect x="13.5" y="3.5" width="7" height="4.5" rx="2" /><rect x="3.5" y="13.5" width="7" height="7" rx="2" /><rect x="13.5" y="10.5" width="7" height="10" rx="2" /></>,
+    pulse: <><path d="M3 12h4l2.2-5 4.1 10 2.3-5H21" /><circle cx="7" cy="12" r="1" /><circle cx="17" cy="12" r="1" /></>,
     clients: <><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17.5" cy="9.5" r="2.2" /><path d="M16 15.5a4.5 4.5 0 0 1 4.5 4.5" /></>,
     users: <><circle cx="9" cy="8" r="3" /><path d="M3.5 20a5.5 5.5 0 0 1 11 0" /><circle cx="17.5" cy="9.5" r="2.2" /><path d="M16 15.5a4.5 4.5 0 0 1 4.5 4.5" /></>,
     broadband: <><path d="M4 16a8 8 0 0 1 16 0" /><path d="M7 16a5 5 0 0 1 10 0" /><path d="m12 16 3-5" /><circle cx="12" cy="16" r="1.4" /></>,

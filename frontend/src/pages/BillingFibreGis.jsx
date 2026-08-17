@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import * as maplibregl from 'maplibre-gl';
+import maplibregl from '../utils/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import api from '../utils/api';
 

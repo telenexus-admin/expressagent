@@ -3,7 +3,7 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import api from '../utils/api';
 
-const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty';
+const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty?polyizon_map_v=20260818-1';
 const MAP_PROXY_PATH = '/api/noc/fibre-gis/map/';
 
 function transformMapRequest(url) {

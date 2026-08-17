@@ -120,15 +120,16 @@ function proxyOpenFreeMap(req, res) {
       return res.status(413).json({ error: 'Map resource is too large' });
     }
 
+    const needsRewrite = contentType.includes('json') || path.startsWith('styles/');
+
     res.status(status);
     res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', upstream.headers['cache-control'] || 'public, max-age=86400');
+    res.setHeader('Cache-Control', needsRewrite ? 'no-store, max-age=0' : (upstream.headers['cache-control'] || 'public, max-age=86400'));
     const etag = upstream.headers.etag;
     if (etag) res.setHeader('ETag', etag);
     const lastModified = upstream.headers['last-modified'];
     if (lastModified) res.setHeader('Last-Modified', lastModified);
 
-    const needsRewrite = contentType.includes('json') || path.startsWith('styles/');
     if (needsRewrite || status < 200 || status >= 300) {
       const chunks = [];
       let total = 0;

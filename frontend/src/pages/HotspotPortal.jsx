@@ -788,6 +788,22 @@ useEffect(() => {
             })`,
         };
 
+  const pageStyle = backgroundImageUrl
+    ? {
+        ...heroStyle,
+        backgroundRepeat: 'no-repeat',
+        backgroundAttachment: 'scroll',
+      }
+    : {
+        backgroundColor: theme.page,
+      };
+
+  const heroSectionStyle = backgroundImageUrl
+    ? {
+        background: 'transparent',
+      }
+    : heroStyle;
+
   const selectedCheckoutPrice = (() => {
     if (!selectedPlan) return 0;
 
@@ -1141,6 +1157,93 @@ useEffect(() => {
             minmax(0, 1fr);
         }
 
+        .hotspot-layout-list
+        .hotspot-package-card {
+          width: 60%;
+          justify-self: center;
+          grid-template-columns:
+            72px minmax(0, 1fr) auto !important;
+          border-radius: 14px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:first-child {
+          min-height: 62px !important;
+          gap: 6px !important;
+          padding-left: 8px !important;
+          padding-right: 8px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:first-child
+        svg {
+          width: 20px !important;
+          height: 20px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:first-child
+        > div
+        > div:first-child {
+          font-size: 18px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:first-child
+        > div
+        > div:last-child {
+          margin-top: 4px !important;
+          font-size: 8px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:nth-child(2) {
+          padding: 9px 10px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:nth-child(2)
+        > div {
+          font-size: 12px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:nth-child(2)
+        p {
+          margin-top: 2px !important;
+          font-size: 9px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:last-child {
+          gap: 4px !important;
+          padding-left: 7px !important;
+          padding-right: 7px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:last-child
+        span {
+          font-size: 12px !important;
+        }
+
+        .hotspot-layout-list
+        .hotspot-package-card
+        > div:last-child
+        svg {
+          width: 15px !important;
+          height: 15px !important;
+        }
+
         .hotspot-layout-featured {
           grid-template-columns:
             repeat(6, minmax(0, 1fr));
@@ -1286,8 +1389,10 @@ useEffect(() => {
       `}</style>
 
       <div
-        className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden bg-[#fbfcff] shadow-2xl shadow-slate-900/10"
+        className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden shadow-2xl shadow-slate-900/10"
         style={{
+          ...pageStyle,
+
           '--hs-accent':
             accentColor,
 
@@ -1402,7 +1507,7 @@ useEffect(() => {
 
         <section
           className={designTemplate === 'green_portrait' ? 'hotspot-green-template relative overflow-hidden text-white' : 'hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8'}
-          style={designTemplate === 'green_portrait' ? undefined : heroStyle}
+          style={designTemplate === 'green_portrait' ? undefined : heroSectionStyle}
         >
           {designTemplate === 'green_portrait' && <div className="relative mx-auto w-[70%] max-w-[434px] overflow-hidden rounded-[22px]">
             {activeHeroSlide === 0 ? <div className="relative"><img src="/hotspot-templates/green-portrait-hotspot.webp?v=green-portrait-v1" alt="Green Portrait hotspot" width="689" height="821" fetchPriority="high" decoding="async" className="block w-full" /><div className="hotspot-green-portrait-name absolute left-[34.8%] top-[15.2%] flex h-[6.5%] w-[30.1%] items-center justify-center overflow-hidden px-1 text-center text-[clamp(13px,5.3vw,35px)] leading-none">{brandName}</div></div> : <img src={visiblePromoSource} alt={`Promotion ${activeHeroSlide}`} width="1080" height="1350" decoding="async" className="block aspect-[4/5] w-full object-cover" />}

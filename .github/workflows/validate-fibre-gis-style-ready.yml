@@ -1,0 +1,56 @@
+name: Validate Fibre GIS style-ready lifecycle
+
+on:
+  push:
+    branches:
+      - agent/fibre-gis-style-ready
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fibre-gis-style-ready
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+      - name: Apply lifecycle fix
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/BillingFibreGis.jsx')
+          s = p.read_text()
+          old = """    const loadTimeout = setTimeout(() => {\n      if (mapReadyRef.current) return;\n      setMapState('error');\n      setMapMessage(lastMapError || 'The street map is taking too long to load.');\n    }, 12000);\n\n    map.on('load', () => {"""
+          new = """    const loadTimeout = setTimeout(() => {\n      if (mapReadyRef.current) return;\n      setMapState('error');\n      setMapMessage(lastMapError || 'The map style could not finish loading.');\n    }, 20000);\n\n    map.once('style.load', () => {"""
+          if old not in s:
+              raise SystemExit('map readiness block not found')
+          s = s.replace(old, new, 1)
+          old2 = "if (map.loaded() && map.getSource('gis-assets')) update(); else map.once('load', update);"
+          new2 = "if (map.getSource('gis-assets')) update(); else map.once('style.load', update);"
+          if old2 not in s:
+              raise SystemExit('GIS source update gate not found')
+          s = s.replace(old2, new2, 1)
+          p.write_text(s)
+          PY
+      - name: Verify source
+        run: |
+          grep -q "map.once('style.load'" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "map.getSource('gis-assets')) update(); else map.once('style.load', update);" frontend/src/pages/BillingFibreGis.jsx
+          ! grep -q "The street map is taking too long to load" frontend/src/pages/BillingFibreGis.jsx
+          git diff --check
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Commit validated frontend
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingFibreGis.jsx
+          git commit -m "Use Fibre GIS style readiness" || exit 0
+          git push origin HEAD:agent/fibre-gis-style-ready

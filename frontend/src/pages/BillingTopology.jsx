@@ -124,7 +124,7 @@ function MapCanvas({ topology, selectedId, onSelect }) {
   const elementRef = useRef(null);
   const mapRef = useRef(null);
   const markersRef = useRef([]);
-  const routerNodes = useMemo(() => (topology?.nodes || []).filter((node) => node.kind === 'router' && Number.isFinite(Number(node.latitude)) && Number.isFinite(Number(node.longitude))), [topology]);
+  const routerNodes = useMemo(() => (topology?.nodes || []).filter((node) => node.kind === 'router' && node.latitude !== null && node.latitude !== undefined && node.latitude !== '' && node.longitude !== null && node.longitude !== undefined && node.longitude !== '' && Number.isFinite(Number(node.latitude)) && Number.isFinite(Number(node.longitude))), [topology]);
 
   useEffect(() => {
     if (!elementRef.current || mapRef.current) return undefined;
@@ -143,7 +143,7 @@ function MapCanvas({ topology, selectedId, onSelect }) {
       const features = (topology?.edges || []).map((edge) => {
         const source = byId.get(edge.source); const target = byId.get(edge.target);
         if (!source || !target || source.kind !== 'router' || target.kind !== 'router') return null;
-        if (![source.latitude, source.longitude, target.latitude, target.longitude].every((value) => Number.isFinite(Number(value)))) return null;
+        if ([source.latitude, source.longitude, target.latitude, target.longitude].some((value) => value === null || value === undefined || value === '' || !Number.isFinite(Number(value)))) return null;
         return { type: 'Feature', properties: { status: edge.status || 'up', traffic: Number(edge.traffic_mbps || 0) }, geometry: { type: 'LineString', coordinates: [[Number(source.longitude), Number(source.latitude)], [Number(target.longitude), Number(target.latitude)]] } };
       }).filter(Boolean);
       const collection = { type: 'FeatureCollection', features };
@@ -160,7 +160,15 @@ function MapCanvas({ topology, selectedId, onSelect }) {
         el.style.cssText = `width:${selectedId === node.id ? 46 : 38}px;height:${selectedId === node.id ? 46 : 38}px;border-radius:14px;border:3px solid white;background:${node.status === 'online' ? '#0b3b29' : '#7f1d1d'};box-shadow:0 8px 22px rgba(2,6,23,.28);display:flex;align-items:center;justify-content:center;color:white;cursor:pointer;transition:.2s;`;
         el.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="7" width="18" height="10" rx="3"/><path d="M7 12h.01M11 12h.01M15 12h2M8 7V4m8 3V4"/></svg>';
         el.addEventListener('click', () => onSelect(node.id));
-        const popup = new maplibregl.Popup({ offset: 24, closeButton: false }).setHTML(`<div style="font-family:system-ui;padding:2px 0"><b>${node.label}</b><div style="font-size:11px;color:#64748b;margin-top:3px">${node.site_label || 'Network site'} · CPU ${node.cpu_load ?? '—'}% · ${fmt(node.wan_traffic_mbps)} Mbps</div></div>`);
+        const popupRoot = document.createElement('div');
+        popupRoot.style.cssText = 'font-family:system-ui;padding:2px 0';
+        const popupTitle = document.createElement('b');
+        popupTitle.textContent = String(node.label || 'Router');
+        const popupDetail = document.createElement('div');
+        popupDetail.style.cssText = 'font-size:11px;color:#64748b;margin-top:3px';
+        popupDetail.textContent = `${node.site_label || 'Network site'} · CPU ${node.cpu_load ?? '—'}% · ${fmt(node.wan_traffic_mbps)} Mbps`;
+        popupRoot.append(popupTitle, popupDetail);
+        const popup = new maplibregl.Popup({ offset: 24, closeButton: false }).setDOMContent(popupRoot);
         const marker = new maplibregl.Marker({ element: el }).setLngLat([Number(node.longitude), Number(node.latitude)]).setPopup(popup).addTo(map);
         markersRef.current.push(marker);
       });

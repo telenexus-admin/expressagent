@@ -19,3 +19,12 @@ replace_once(workspace, "    pulse: <><path d=\"M3 12h4l2.2-5 4.1 10 2.3-5H21\" 
 route = Path('backend/src/routes/noc.js')
 replace_once(route, "const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');\n", "const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');\nconst { getNetworkTopology, saveTopologyLocation } = require('../services/topology');\n", 'topology service import')
 replace_once(route, "router.get('/overview', async (req, res) => {\n", "router.get('/topology', async (req, res) => {\n  const clientId = resolveTargetClient(req, res);\n  if (!clientId) return;\n  try { res.json(await getNetworkTopology(clientId)); }\n  catch (err) { console.error('GET /noc/topology error:', err.message); res.status(500).json({ error: err.message || 'Failed to load network topology' }); }\n});\n\nrouter.patch('/topology/routers/:id/location', async (req, res) => {\n  const clientId = resolveTargetClient(req, res);\n  if (!clientId) return;\n  try {\n    const saved = await saveTopologyLocation(clientId, req.params.id, req.body || {});\n    if (!saved) return res.status(404).json({ error: 'Router not found' });\n    res.json(saved);\n  } catch (err) { console.error('PATCH /noc/topology/routers/:id/location error:', err.message); res.status(400).json({ error: err.message || 'Failed to save topology location' }); }\n});\n\nrouter.get('/overview', async (req, res) => {\n", 'topology routes')
+
+topology = Path('backend/src/services/topology.js')
+text = topology.read_text()
+needle = "      const link = linkState(snapshot, neighbor.local_interface);\n"
+first = text.find(needle)
+second = text.find(needle, first + len(needle)) if first >= 0 else -1
+if second >= 0:
+    text = text[:second] + text[second + len(needle):]
+topology.write_text(text)

@@ -1,4 +1,5 @@
 const express = require('express');
+const { Readable } = require('stream');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { nocAnalysis, nocHistory, nocOverview, nocRouters, nocStatus } = require('../services/noc');
 const { getNetworkTopology, saveTopologyLocation } = require('../services/topology');
@@ -16,6 +17,88 @@ function resolveTargetClient(req, res) {
     return null;
   }
   return req.scope.clientId;
+}
+
+const OPENFREEMAP_ORIGIN = 'https://tiles.openfreemap.org';
+const MAP_PROXY_PREFIX = '/api/noc/fibre-gis/map';
+const MAP_PROXY_MAX_BYTES = 10 * 1024 * 1024;
+
+function safeMapProxyPath(value) {
+  const path = String(value || '').replace(/^\/+/, '');
+  if (!path || path.includes('..') || path.includes('\\') || path.includes('://')) return '';
+  return path;
+}
+
+function rewriteOpenFreeMapJson(value) {
+  return String(value || '')
+    .replaceAll('https://tiles.openfreemap.org', MAP_PROXY_PREFIX)
+    .replaceAll('http://tiles.openfreemap.org', MAP_PROXY_PREFIX);
+}
+
+async function proxyOpenFreeMap(req, res) {
+  const path = safeMapProxyPath(req.params[0]);
+  if (!path) return res.status(400).json({ error: 'Invalid map resource path' });
+
+  const target = new URL(`${OPENFREEMAP_ORIGIN}/${path}`);
+  for (const [key, rawValue] of Object.entries(req.query || {})) {
+    const values = Array.isArray(rawValue) ? rawValue : [rawValue];
+    values.forEach((value) => target.searchParams.append(key, String(value ?? '')));
+  }
+
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+
+  try {
+    const upstream = await fetch(target, {
+      signal: controller.signal,
+      headers: {
+        Accept: req.get('accept') || '*/*',
+        'User-Agent': 'Polyizon-FibreGIS/1.0',
+      },
+    });
+
+    const contentType = upstream.headers.get('content-type') || 'application/octet-stream';
+    const contentLength = Number(upstream.headers.get('content-length') || 0);
+    if (contentLength > MAP_PROXY_MAX_BYTES) {
+      return res.status(413).json({ error: 'Map resource is too large' });
+    }
+
+    res.status(upstream.status);
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', upstream.headers.get('cache-control') || 'public, max-age=86400');
+    const etag = upstream.headers.get('etag');
+    if (etag) res.setHeader('ETag', etag);
+    const lastModified = upstream.headers.get('last-modified');
+    if (lastModified) res.setHeader('Last-Modified', lastModified);
+
+    if (!upstream.ok) {
+      const message = await upstream.text().catch(() => '');
+      return res.send(message || `Map provider returned ${upstream.status}`);
+    }
+
+    if (contentType.includes('json') || path.startsWith('styles/')) {
+      const body = await upstream.text();
+      if (Buffer.byteLength(body) > MAP_PROXY_MAX_BYTES) {
+        return res.status(413).json({ error: 'Map resource is too large' });
+      }
+      return res.send(rewriteOpenFreeMapJson(body));
+    }
+
+    if (!upstream.body) return res.end();
+    Readable.fromWeb(upstream.body).on('error', (error) => {
+      console.error('Fibre GIS map proxy stream error:', error.message);
+      if (!res.headersSent) res.status(502).end();
+      else res.destroy(error);
+    }).pipe(res);
+  } catch (error) {
+    const timedOut = error?.name === 'AbortError';
+    console.error('Fibre GIS map proxy error:', error.message);
+    if (!res.headersSent) {
+      res.status(timedOut ? 504 : 502).json({ error: timedOut ? 'Map provider timed out' : 'Map provider unavailable' });
+    }
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 router.get('/routers', async (req, res) => {
@@ -45,6 +128,8 @@ router.patch('/topology/routers/:id/location', async (req, res) => {
     res.json(saved);
   } catch (err) { console.error('PATCH /noc/topology/routers/:id/location error:', err.message); res.status(400).json({ error: err.message || 'Failed to save topology location' }); }
 });
+
+router.get('/fibre-gis/map/*', proxyOpenFreeMap);
 
 router.get('/fibre-gis', async (req, res) => {
   const clientId = resolveTargetClient(req, res);

@@ -441,9 +441,7 @@ export default function HotspotPortal() {
       )
   );
   const [draftPortal, setDraftPortal] = useState(null);
-  const [voucherUser, setVoucherUser] = useState('');
-  const [voucherPassword, setVoucherPassword] = useState('');
-  const [passwordTouched, setPasswordTouched] = useState(false);
+  const [voucherCode, setVoucherCode] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [login, setLogin] = useState(null);
@@ -1047,26 +1045,16 @@ useEffect(() => {
     origin,
   ]);
 
-  const updateVoucherUser = (value) => {
-    const next = value.toUpperCase();
-    setVoucherUser(next);
-    if (!passwordTouched) setVoucherPassword(next);
+  const updateVoucherCode = (value) => {
+    setVoucherCode(value.toUpperCase());
   };
 
   const submit = async (event) => {
     event.preventDefault();
     setError('');
 
-    if (!voucherUser.trim()) {
-      setError('Enter your voucher username.');
-      return;
-    }
-    if (!voucherPassword.trim()) {
-      setError('Enter your voucher password.');
-      return;
-    }
-    if (voucherPassword.trim().toUpperCase() !== voucherUser.trim().toUpperCase()) {
-      setError('For this hotspot, the voucher username and password must be the same code.');
+    if (!voucherCode.trim()) {
+      setError('Enter your voucher code.');
       return;
     }
 
@@ -1077,7 +1065,7 @@ useEffect(() => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           portal_token: portalToken,
-          code: voucherUser.trim(),
+          code: voucherCode.trim(),
           mac: params.get('mac') || '',
           ip: params.get('ip') || '',
           link_login_only: loginUrl,
@@ -1159,7 +1147,7 @@ useEffect(() => {
 
         .hotspot-layout-list
         .hotspot-package-card {
-          width: 60%;
+          width: 75%;
           justify-self: center;
           grid-template-columns:
             72px minmax(0, 1fr) auto !important;
@@ -1682,8 +1670,9 @@ useEffect(() => {
                     key={plan.id}
                     onClick={() => choosePlan(plan)}
                     className={`hotspot-package-card hotspot-card-shadow grid w-full grid-cols-[105px_minmax(0,1fr)_auto] overflow-hidden rounded-[18px] border bg-white text-left transition hover:-translate-y-0.5 sm:grid-cols-[145px_minmax(0,1fr)_auto] ${
-                      selected ? 'border-blue-500 ring-2 ring-blue-100' : 'border-slate-200'
+                      selected ? 'ring-2' : 'border-slate-200'
                     }`}
+                    style={selected ? { borderColor: accentColor, boxShadow: `0 0 0 2px ${accentColor}26, 0 12px 32px rgba(22,39,82,.13)` } : undefined}
                   >
                     <div className="flex min-h-[92px] items-center justify-center gap-3 bg-gradient-to-br from-[#0781ff] to-[#064ccf] px-3 text-white sm:min-h-[102px]">
                       <Icon name={duration.icon} className="h-8 w-8 shrink-0" />
@@ -1707,11 +1696,11 @@ useEffect(() => {
                       </p>
                     </div>
 
-                    <div className="flex items-center gap-2 px-3 text-[#0656d7] sm:gap-4 sm:px-6">
+                    <div className="flex items-center gap-2 px-3 sm:gap-4 sm:px-6" style={{ color: accentColor }}>
                       <span className="whitespace-nowrap text-base font-black sm:text-xl">
                         {money(plan.price)}
                       </span>
-                      <Icon name="chevron" className="h-5 w-5 text-slate-600" />
+                      <Icon name="chevron" className="h-5 w-5" />
                     </div>
                   </button>
                 );
@@ -1727,7 +1716,7 @@ useEffect(() => {
         {showVoucherLogin && (
         <section ref={voucherRef} className="px-5 pb-7 pt-7 sm:px-9">
           <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
-            <div className="flex items-center gap-3 text-[#064ebd]">
+            <div className="flex items-center gap-3" style={{ color: accentColor }}>
               <Icon name="ticket" className="h-7 w-7" />
               <h2 className="text-lg font-black uppercase tracking-wide">Voucher login</h2>
             </div>
@@ -1740,34 +1729,18 @@ useEffect(() => {
 
             <form onSubmit={submit} className="mt-5 space-y-4">
               <label className="relative block">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#3e6eca]">
-                  <Icon name="user" className="h-6 w-6" />
+                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2" style={{ color: accentColor }}>
+                  <Icon name="ticket" className="h-6 w-6" />
                 </span>
                 <input
                   required
-                  value={voucherUser}
-                  onChange={(event) => updateVoucherUser(event.target.value)}
-                  placeholder="Voucher Username"
-                  autoComplete="username"
-                  className="w-full rounded-xl border border-[#b9c9e7] bg-white py-4 pl-[52px] pr-4 font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
-                />
-              </label>
-
-              <label className="relative block">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 text-[#3e6eca]">
-                  <Icon name="lock" className="h-6 w-6" />
-                </span>
-                <input
-                  required
-                  type="password"
-                  value={voucherPassword}
-                  onChange={(event) => {
-                    setPasswordTouched(true);
-                    setVoucherPassword(event.target.value.toUpperCase());
-                  }}
-                  placeholder="Voucher Password"
-                  autoComplete="current-password"
-                  className="w-full rounded-xl border border-[#b9c9e7] bg-white py-4 pl-[52px] pr-4 font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/10"
+                  type="text"
+                  value={voucherCode}
+                  onChange={(event) => updateVoucherCode(event.target.value)}
+                  placeholder="Voucher Code"
+                  autoComplete="one-time-code"
+                  className="w-full rounded-xl border border-[#b9c9e7] bg-white py-4 pl-[52px] pr-4 font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400"
+                  style={{ caretColor: accentColor }}
                 />
               </label>
 
@@ -1789,7 +1762,7 @@ useEffect(() => {
 
               <button
                 disabled={busy || Boolean(login)}
-                className="w-full rounded-xl bg-gradient-to-r from-[#0876f9] to-[#073cc9] py-4 text-sm font-black uppercase tracking-wide text-white shadow-lg shadow-blue-700/20 disabled:opacity-60"
+                className="w-full rounded-xl py-4 text-sm font-black uppercase tracking-wide text-white shadow-lg disabled:opacity-60" style={{ backgroundColor: accentColor, boxShadow: `0 10px 24px ${accentColor}2b` }}
               >
                 {busy ? 'Checking voucher...' : login ? 'Connecting...' : 'Login'}
               </button>

@@ -1,0 +1,39 @@
+name: Validate topology map hardening
+on:
+  push:
+    branches: [agent/network-topology-v1]
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message != 'Harden topology geographic map'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/network-topology-v1
+          fetch-depth: 0
+      - name: Apply map hardening
+        run: python3 .github/patch-topology-map-hardening.py
+      - name: Verify source
+        run: |
+          grep -q "node.latitude !== null" frontend/src/pages/BillingTopology.jsx
+          grep -q "setDOMContent" frontend/src/pages/BillingTopology.jsx
+          ! grep -q "setHTML" frontend/src/pages/BillingTopology.jsx
+          git diff --check
+      - name: Verify backend syntax
+        run: |
+          node --check backend/src/services/topology.js
+          node --check backend/src/routes/noc.js
+      - name: Install and build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Commit hardened topology
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingTopology.jsx
+          git commit -m "Harden topology geographic map"
+          git push origin HEAD:agent/network-topology-v1

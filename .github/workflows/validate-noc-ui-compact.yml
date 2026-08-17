@@ -1,0 +1,43 @@
+name: Validate NOC compact UI
+
+on:
+  push:
+    branches:
+      - agent/noc-ui-compact
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/noc-ui-compact
+          fetch-depth: 0
+
+      - name: Apply NOC compact UI
+        run: python3 .github/apply-noc-compact-ui.py
+
+      - name: Verify NOC UI
+        run: |
+          grep -q 'Network / NOC' frontend/src/pages/BillingNoc.jsx
+          grep -q 'billing-network-hero bg\[#0a2417\]' frontend/src/pages/BillingNoc.jsx || grep -q 'billing-network-hero bg\[\#0a2417\]' frontend/src/pages/BillingNoc.jsx || grep -q 'billing-network-hero bg' frontend/src/pages/BillingNoc.jsx
+          grep -q 'h-\[132px\]' frontend/src/pages/BillingNoc.jsx
+          grep -q "'hotspot', 'noc'" frontend/src/pages/BillingWorkspace.jsx
+          git diff --check
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit validated UI
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingNoc.jsx frontend/src/pages/BillingWorkspace.jsx
+          git commit -m "Compact NOC interface and align hotspot header"
+          git push origin HEAD:agent/noc-ui-compact

@@ -1,0 +1,94 @@
+name: Validate MapLibre v6 worker
+
+on:
+  push:
+    branches:
+      - agent/maplibre-v6-worker
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+
+      - name: Configure MapLibre worker
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          cat > frontend/src/utils/maplibre.js <<'EOF'
+          import * as maplibregl from 'maplibre-gl';
+          import workerUrl from 'maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url';
+
+          maplibregl.setWorkerUrl(workerUrl);
+
+          export default maplibregl;
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          for raw in [
+              'frontend/src/pages/BillingFibreGis.jsx',
+              'frontend/src/pages/BillingTopology.jsx',
+          ]:
+              path = Path(raw)
+              text = path.read_text()
+              old = "import * as maplibregl from 'maplibre-gl';"
+              new = "import maplibregl from '../utils/maplibre';"
+              if old in text:
+                  text = text.replace(old, new, 1)
+                  path.write_text(text)
+              elif new not in text:
+                  raise SystemExit(f'expected MapLibre import not found in {raw}')
+          PY
+
+      - name: Verify source
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -Fq "maplibre-gl-worker.mjs?worker&url" frontend/src/utils/maplibre.js
+          grep -Fq "maplibregl.setWorkerUrl(workerUrl)" frontend/src/utils/maplibre.js
+          grep -Fq "import maplibregl from '../utils/maplibre';" frontend/src/pages/BillingFibreGis.jsx
+          grep -Fq "import maplibregl from '../utils/maplibre';" frontend/src/pages/BillingTopology.jsx
+          ! grep -Fq "import * as maplibregl from 'maplibre-gl';" frontend/src/pages/BillingFibreGis.jsx
+          ! grep -Fq "import * as maplibregl from 'maplibre-gl';" frontend/src/pages/BillingTopology.jsx
+          git diff --check
+
+      - name: Build frontend
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm ci
+          npm run build
+          test -f dist/index.html
+          echo "===== WORKER ASSETS ====="
+          find dist/assets -maxdepth 1 -type f | grep -Ei 'worker|maplibre' | sort
+          grep -R -l -F "maplibre-gl-worker" dist/assets >/tmp/maplibre-worker-refs || true
+          echo "===== WORKER REFERENCES ====="
+          cat /tmp/maplibre-worker-refs || true
+          test -n "$(find dist/assets -maxdepth 1 -type f | grep -Ei 'worker' | head -1)"
+
+      - name: Commit validated source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/utils/maplibre.js frontend/src/pages/BillingFibreGis.jsx frontend/src/pages/BillingTopology.jsx
+          if git diff --cached --quiet; then
+            echo "Validated source already committed."
+            exit 0
+          fi
+          git commit -m "Configure MapLibre v6 Vite worker"
+          git push origin HEAD:agent/maplibre-v6-worker

@@ -1,0 +1,31 @@
+name: Validate Fibre GIS absolute map URLs
+on:
+  push:
+    branches:
+      - agent/fibre-gis-absolute-map-urls
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.19.1'
+      - name: Apply fix
+        run: python3 .github/apply-fibre-gis-absolute-map-urls.py
+      - name: Verify backend
+        run: |
+          node --check backend/src/routes/noc.js
+          grep -q "function mapProxyAbsoluteBase(req)" backend/src/routes/noc.js
+          grep -q "rewriteOpenFreeMapJson(body, req)" backend/src/routes/noc.js
+          grep -q "parsed.origin" backend/src/routes/noc.js
+          git diff --check
+      - name: Commit validated backend
+        run: |
+          git config user.name telenexus-admin
+          git config user.email admin@telenexustechnologies.com
+          git add backend/src/routes/noc.js
+          git commit -m "Use absolute Fibre GIS map resource URLs"
+          git push origin HEAD:agent/fibre-gis-absolute-map-urls

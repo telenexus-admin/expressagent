@@ -1,0 +1,41 @@
+name: Validate Fibre GIS direct map v2
+on:
+  push:
+    branches:
+      - agent/fibre-gis-direct-map
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message == 'Run direct map validation'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fibre-gis-direct-map
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+      - name: Apply fix
+        run: python3 .github/apply-fibre-gis-direct-map.py
+      - name: Verify source
+        run: |
+          grep -q "MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'" frontend/src/pages/BillingFibreGis.jsx
+          if grep -Eq 'MAP_PROXY_PATH|transformMapRequest|transformRequest:' frontend/src/pages/BillingFibreGis.jsx; then exit 1; fi
+          grep -q "\[loading, mapRetryKey, updateDraftSource\]" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "Map could not load" frontend/src/pages/BillingFibreGis.jsx
+          git diff --check
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Commit validated fix
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingFibreGis.jsx
+          git commit -m "Use direct OpenFreeMap style"
+          git push origin HEAD:agent/fibre-gis-direct-map

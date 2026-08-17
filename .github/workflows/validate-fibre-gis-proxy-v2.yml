@@ -1,0 +1,41 @@
+name: Validate Fibre GIS proxy v2
+on:
+  push:
+    branches:
+      - agent/fibre-gis-proxy-v2
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.19.1'
+      - name: Apply proxy v2
+        run: python3 .github/apply-fibre-gis-proxy-v2.py
+      - name: Verify backend source
+        run: |
+          node --check backend/src/routes/noc.js
+          grep -q "const https = require('https')" backend/src/routes/noc.js
+          grep -q "family: 4" backend/src/routes/noc.js
+          ! grep -q "Readable.fromWeb" backend/src/routes/noc.js
+      - name: Verify frontend source
+        run: |
+          grep -q "const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty'" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "transformRequest: transformMapRequest" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "\[loading, mapRetryKey, updateDraftSource\]" frontend/src/pages/BillingFibreGis.jsx
+      - name: Install frontend
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Diff check
+        run: git diff --check
+      - name: Commit validated files
+        run: |
+          git config user.name telenexus-admin
+          git config user.email admin@telenexustechnologies.com
+          git add backend/src/routes/noc.js frontend/src/pages/BillingFibreGis.jsx
+          git commit -m "Fix Fibre GIS same-origin map proxy"
+          git push origin HEAD:agent/fibre-gis-proxy-v2

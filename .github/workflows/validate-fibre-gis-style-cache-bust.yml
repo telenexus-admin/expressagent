@@ -1,0 +1,44 @@
+name: Validate Fibre GIS style cache-bust
+
+on:
+  push:
+    branches:
+      - agent/fibre-gis-style-cache-bust
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+      - name: Apply cache fix
+        run: python3 .github/apply-fibre-gis-style-cache-bust.py
+      - name: Verify backend
+        run: |
+          node --check backend/src/routes/noc.js
+          grep -q "no-store, max-age=0" backend/src/routes/noc.js
+          grep -q "polyizon_map_v=20260818-1" frontend/src/pages/BillingFibreGis.jsx
+          git diff --check
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+      - name: Commit validated files
+        run: |
+          git config user.name telenexus-admin
+          git config user.email admin@telenexustechnologies.com
+          git add backend/src/routes/noc.js frontend/src/pages/BillingFibreGis.jsx
+          if git diff --cached --quiet; then
+            echo "No source changes to commit"
+          else
+            git commit -m "Bust Fibre GIS map style cache"
+            git push origin HEAD:agent/fibre-gis-style-cache-bust
+          fi

@@ -412,7 +412,6 @@ async function getNetworkTopology(clientId) {
           parent_router_id: snapshot.router.id,
         });
       }
-      const link = linkState(snapshot, neighbor.local_interface);
       const edgeKey = `${sourceId}|${discoveredId}`;
       if (!edgeKeys.has(edgeKey)) {
         edgeKeys.add(edgeKey);

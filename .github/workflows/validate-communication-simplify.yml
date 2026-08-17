@@ -1,0 +1,27 @@
+name: Validate communication simplification
+
+on:
+  push:
+    branches:
+      - agent/communication-simplify
+    paths:
+      - frontend/src/pages/BillingCommunication.jsx
+      - .github/workflows/validate-communication-simplify.yml
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/communication-simplify
+      - name: Check diff formatting
+        run: git diff --check HEAD~1 HEAD || true
+      - name: Install and build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build

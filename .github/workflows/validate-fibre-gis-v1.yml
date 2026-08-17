@@ -1,0 +1,45 @@
+name: Validate Fibre GIS v1
+on:
+  push:
+    branches: [agent/fibre-gis-v1]
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message != 'Wire Fibre GIS workspace'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fibre-gis-v1
+          fetch-depth: 0
+      - name: Apply Fibre GIS wiring
+        run: python3 .github/apply-fibre-gis-v1.py
+      - name: Verify backend syntax
+        run: |
+          node --check backend/src/services/fibreGis.js
+          node --check backend/src/routes/noc.js
+      - name: Verify Fibre GIS source
+        run: |
+          grep -q "CREATE TABLE IF NOT EXISTS network_gis_assets" backend/src/services/fibreGis.js
+          grep -q "CREATE TABLE IF NOT EXISTS network_gis_routes" backend/src/services/fibreGis.js
+          grep -q "router.get('/fibre-gis'" backend/src/routes/noc.js
+          grep -q "router.post('/fibre-gis/sync-topology'" backend/src/routes/noc.js
+          grep -q "BillingFibreGis" frontend/src/pages/BillingWorkspace.jsx
+          grep -q "\['fibre-gis', 'Fibre GIS', 'map'\]" frontend/src/pages/BillingWorkspace.jsx
+          grep -q "fibre-routes-main" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "Sync Topology" frontend/src/pages/BillingFibreGis.jsx
+          git diff --check
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Commit validated wiring
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add backend/src/routes/noc.js frontend/src/pages/BillingWorkspace.jsx
+          git commit -m "Wire Fibre GIS workspace"
+          git push origin HEAD:agent/fibre-gis-v1

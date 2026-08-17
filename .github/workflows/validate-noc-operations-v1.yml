@@ -1,0 +1,45 @@
+name: Validate NOC operations v1
+
+on:
+  push:
+    branches:
+      - agent/noc-operations-v1
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/noc-operations-v1
+          fetch-depth: 0
+
+      - name: Apply NOC workspace wiring
+        run: python3 .github/apply-noc-workspace.py
+
+      - name: Verify NOC source
+        run: |
+          grep -q "const BillingNoc = lazy" frontend/src/pages/BillingWorkspace.jsx
+          grep -q "\['noc', 'NOC', 'pulse'\]" frontend/src/pages/BillingWorkspace.jsx
+          grep -q "tab === 'noc'" frontend/src/pages/BillingWorkspace.jsx
+          grep -q "'/noc/overview'" frontend/src/pages/BillingNoc.jsx || grep -q 'noc/overview' frontend/src/pages/BillingNoc.jsx
+          grep -q 'Network Operations Center' frontend/src/pages/BillingNoc.jsx
+          grep -q 'router_health_percent' frontend/src/pages/BillingNoc.jsx
+          git diff --check
+
+      - name: Build frontend
+        working-directory: frontend
+        run: |
+          npm ci
+          npm run build
+
+      - name: Commit validated workspace wiring
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingWorkspace.jsx
+          git commit -m "Wire NOC operations dashboard into billing workspace"
+          git push origin HEAD:agent/noc-operations-v1

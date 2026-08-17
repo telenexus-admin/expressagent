@@ -29,10 +29,36 @@ function safeMapProxyPath(value) {
   return path;
 }
 
-function rewriteOpenFreeMapJson(value) {
+function mapProxyAbsoluteBase(req) {
+  const candidates = [req.get('origin'), req.get('referer')];
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    try {
+      const parsed = new URL(candidate);
+      if (parsed.protocol === 'https:' || parsed.protocol === 'http:') {
+        return `${parsed.origin}${MAP_PROXY_PREFIX}`;
+      }
+    } catch (_) {}
+  }
+
+  const forwardedProto = String(req.get('x-forwarded-proto') || '').split(',')[0].trim();
+  const forwardedHost = String(req.get('x-forwarded-host') || '').split(',')[0].trim();
+  const host = forwardedHost || String(req.get('host') || '').trim();
+  const protocol = forwardedProto === 'https' || forwardedProto === 'http'
+    ? forwardedProto
+    : (req.secure ? 'https' : 'http');
+
+  if (host && /^[a-z0-9.-]+(?::\d+)?$/i.test(host)) {
+    return `${protocol}://${host}${MAP_PROXY_PREFIX}`;
+  }
+  return MAP_PROXY_PREFIX;
+}
+
+function rewriteOpenFreeMapJson(value, req) {
+  const proxyBase = mapProxyAbsoluteBase(req);
   return String(value || '')
-    .replaceAll('https://tiles.openfreemap.org', MAP_PROXY_PREFIX)
-    .replaceAll('http://tiles.openfreemap.org', MAP_PROXY_PREFIX);
+    .replaceAll('https://tiles.openfreemap.org', proxyBase)
+    .replaceAll('http://tiles.openfreemap.org', proxyBase);
 }
 
 function proxyOpenFreeMap(req, res) {
@@ -93,7 +119,7 @@ function proxyOpenFreeMap(req, res) {
         if (status < 200 || status >= 300) {
           return res.send(body || `Map provider returned ${status}`);
         }
-        return res.send(rewriteOpenFreeMapJson(body));
+        return res.send(rewriteOpenFreeMapJson(body, req));
       });
       upstream.on('error', (error) => {
         console.error('Fibre GIS map proxy upstream error:', error.message);

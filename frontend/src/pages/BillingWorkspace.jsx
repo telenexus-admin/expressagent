@@ -784,7 +784,7 @@ export default function BillingWorkspace() {
                           key
                         )
                       }
-                      className={`flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[9.5px] font-semibold tracking-[-.015em] transition sm:px-2.5 sm:py-1.5 sm:text-[10px] lg:px-2 lg:py-1 lg:text-[9.5px] ${
+                      className={`flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12.35px] font-semibold tracking-[-.015em] transition sm:px-2.5 sm:py-1.5 sm:text-[13px] lg:px-2 lg:py-1 lg:text-[12.35px] ${
                         tab === key
                           ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100'
                           : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'

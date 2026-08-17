@@ -5,6 +5,7 @@ import api from '../utils/api';
 
 const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty?polyizon_map_v=20260818-1';
 const MAP_PROXY_PATH = '/api/noc/fibre-gis/map/';
+const MAP_FALLBACK_TILES = `${MAP_PROXY_PATH}natural_earth/ne2sr/{z}/{x}/{y}.png`;
 
 function transformMapRequest(url) {
   if (!String(url || '').includes(MAP_PROXY_PATH)) return { url };
@@ -262,6 +263,27 @@ export default function BillingFibreGis() {
       setMapState('ready');
       setMapMessage('');
       map.resize();
+
+      // Keep a visible geographic base even if the vector worker/source is delayed.
+      // These OpenFreeMap Natural Earth tiles already travel through the authenticated
+      // same-origin proxy, so Fibre GIS never falls back to a blank white canvas.
+      if (!map.getSource('fibre-map-fallback')) {
+        map.addSource('fibre-map-fallback', {
+          type: 'raster',
+          tiles: [MAP_FALLBACK_TILES],
+          tileSize: 256,
+          maxzoom: 6,
+          attribution: 'OpenFreeMap © OpenMapTiles Data from OpenStreetMap',
+        });
+        const firstNonBackgroundLayer = (map.getStyle()?.layers || []).find((layer) => layer.type !== 'background')?.id;
+        map.addLayer({
+          id: 'fibre-map-fallback',
+          type: 'raster',
+          source: 'fibre-map-fallback',
+          paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 },
+        }, firstNonBackgroundLayer);
+      }
+
       map.addSource('fibre-routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       map.addLayer({ id: 'fibre-routes-shadow', type: 'line', source: 'fibre-routes', paint: { 'line-color': '#020617', 'line-width': ['case', ['boolean', ['get', 'selected'], false], 10, 7], 'line-opacity': .12 } });
       map.addLayer({ id: 'fibre-routes-main', type: 'line', source: 'fibre-routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: {
@@ -434,10 +456,26 @@ export default function BillingFibreGis() {
   const toggleAssetLayer = (key) => setVisibleAssets((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
   const toggleRouteLayer = (key) => setVisibleRoutes((current) => { const next = new Set(current); if (next.has(key)) next.delete(key); else next.add(key); return next; });
 
-  if (loading) return <div className="space-y-3"><div className="h-24 animate-pulse rounded-[22px] bg-slate-200/70" /><div className="h-[620px] animate-pulse rounded-[22px] bg-slate-200/70" /></div>;
+  if (loading) return <div className="-mx-3 -mt-3 min-h-screen bg-[#f7f8fb] px-3 pt-6 sm:-mx-8 sm:-mt-8 sm:px-8"><div className="h-32 animate-pulse rounded-[22px] bg-slate-200/70" /><div className="mt-4 h-[620px] animate-pulse rounded-[22px] bg-slate-200/70" /></div>;
 
-  return <div className="space-y-3">
-    <section className="relative overflow-hidden rounded-[22px] bg-[#071d13] px-4 py-4 text-white shadow-lg shadow-emerald-950/10 sm:px-5"><div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between"><div><div className="flex items-center gap-2"><span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-400/12 px-2 py-1 text-[8px] font-black uppercase tracking-[.15em] text-emerald-200 ring-1 ring-emerald-300/15"><span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />Physical network</span><span className="text-[8px] font-semibold text-emerald-100/55">MapLibre · GeoJSON</span></div><h2 className="mt-2 text-[22px] font-black tracking-[-.035em] sm:text-[25px]">Fibre GIS</h2><p className="mt-0.5 max-w-2xl text-[10px] leading-4 text-emerald-100/70">Map the real outside plant: POPs, OLTs, fibre routes, FDTs, FATs, splitters, poles, closures and customer sites.</p></div><div className="flex flex-wrap items-center gap-1.5"><button type="button" onClick={syncTopology} disabled={refreshing} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/12 bg-white/8 px-2.5 text-[8px] font-black text-white hover:bg-white/12 disabled:opacity-50"><Icon name="sync" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />Sync Topology</button><button type="button" onClick={exportGeoJson} className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-white/12 bg-white/8 px-2.5 text-[8px] font-black text-white hover:bg-white/12"><Icon name="download" className="h-3.5 w-3.5" />GeoJSON</button><button type="button" onClick={() => load({ quiet: true })} disabled={refreshing} className="flex h-8 w-8 items-center justify-center rounded-lg border border-white/12 bg-white/8 text-white hover:bg-white/12"><Icon name="refresh" className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} /></button></div></div><div className="pointer-events-none absolute -right-16 -top-20 h-48 w-48 rounded-full bg-emerald-400/10 blur-3xl" /></section>
+  return <div className="-mx-3 -mt-3 min-h-screen bg-[#f7f8fb] pb-20 sm:-mx-8 sm:-mt-8">
+    <section className="relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:px-8">
+      <div className="relative z-10 flex items-start justify-between gap-4">
+        <div className="min-w-0">
+          <p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Network / Fibre GIS</p>
+          <h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Fibre GIS</h2>
+          <p className="mt-1.5 max-w-2xl text-xs leading-5 text-emerald-100 sm:text-sm">Map the real outside plant: POPs, OLTs, fibre routes, FDTs, FATs, splitters, poles, closures and customer sites.</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+          <button type="button" onClick={syncTopology} disabled={refreshing} className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-[9px] font-black text-white transition hover:bg-white/20 disabled:opacity-50"><Icon name="sync" className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} />Sync Topology</button>
+          <button type="button" onClick={exportGeoJson} className="inline-flex h-10 items-center gap-2 rounded-xl border border-white/20 bg-white/10 px-3 text-[9px] font-black text-white transition hover:bg-white/20"><Icon name="download" className="h-4 w-4" />GeoJSON</button>
+          <button type="button" onClick={() => load({ quiet: true })} disabled={refreshing} aria-label="Refresh Fibre GIS" className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/20 bg-white/10 text-white transition hover:bg-white/20 disabled:opacity-50"><Icon name="refresh" className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /></button>
+        </div>
+      </div>
+      <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C210 30 330 178 520 112 C735 36 850 170 1040 70 C1110 34 1165 55 1200 32 L1200 180 L0 180 Z" fill="#f7f8fb" /></svg></div>
+    </section>
+
+    <div className="space-y-3 px-3 sm:px-8">
 
     {(error || notice) && <div className={`flex items-center justify-between gap-3 rounded-xl border px-3 py-2 text-[9px] font-semibold ${error ? 'border-rose-200 bg-rose-50 text-rose-700' : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}><span>{error || notice}</span><button type="button" onClick={() => { setError(''); setNotice(''); }} className="text-base leading-none">×</button></div>}
 
@@ -458,5 +496,6 @@ export default function BillingFibreGis() {
 
     {assetModal && <AssetModal initial={assetModal} assets={data.assets} routers={data.routers} saving={saving} onClose={() => setAssetModal(null)} onSave={saveAsset} />}
     {routeModal && <RouteModal initial={routeModal} assets={data.assets} saving={saving} onClose={() => setRouteModal(null)} onSave={saveRoute} />}
+    </div>
   </div>;
 }

@@ -1,0 +1,47 @@
+name: Validate Fibre GIS lifecycle fix
+on:
+  push:
+    branches: [agent/fibre-gis-lifecycle-fix]
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message != 'Fix Fibre GIS map lifecycle'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fibre-gis-lifecycle-fix
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+      - name: Apply lifecycle repair
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('frontend/src/pages/BillingFibreGis.jsx')
+          s=p.read_text()
+          old="  }, [mapRetryKey, updateDraftSource]);"
+          new="  }, [loading, mapRetryKey, updateDraftSource]);"
+          if old not in s:
+              raise SystemExit('lifecycle dependency marker not found')
+          p.write_text(s.replace(old,new,1))
+          PY
+      - name: Verify source
+        run: |
+          grep -q "\[loading, mapRetryKey, updateDraftSource\]" frontend/src/pages/BillingFibreGis.jsx
+          git diff --check
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Commit validated fix
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingFibreGis.jsx
+          git commit -m "Fix Fibre GIS map lifecycle"
+          git push origin HEAD:agent/fibre-gis-lifecycle-fix

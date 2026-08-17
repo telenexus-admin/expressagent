@@ -1,0 +1,31 @@
+name: Validate Fibre GIS root-relative map URLs
+on:
+  push:
+    branches:
+      - agent/fibre-gis-root-relative-map-urls
+permissions:
+  contents: write
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '18.19.1'
+      - name: Apply fix
+        run: python3 .github/apply-fibre-gis-root-relative-map-urls.py
+      - name: Verify backend
+        run: |
+          node --check backend/src/routes/noc.js
+          grep -q "input.startsWith('/')" backend/src/routes/noc.js
+          grep -q 'JSON.parse(String(value' backend/src/routes/noc.js
+          grep -q 'JSON.stringify(walk(parsed))' backend/src/routes/noc.js
+          git diff --check
+      - name: Commit validated backend
+        run: |
+          git config user.name telenexus-admin
+          git config user.email admin@telenexustechnologies.com
+          git add backend/src/routes/noc.js
+          git commit -m "Rewrite root-relative Fibre GIS map URLs"
+          git push origin HEAD:agent/fibre-gis-root-relative-map-urls

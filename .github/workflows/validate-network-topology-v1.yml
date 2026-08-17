@@ -38,6 +38,6 @@ jobs:
         run: |
           git config user.name "telenexus-admin"
           git config user.email "admin@telenexustechnologies.com"
-          git add backend/src/routes/noc.js frontend/src/pages/BillingWorkspace.jsx frontend/package.json frontend/package-lock.json
+          git add backend/src/services/topology.js backend/src/routes/noc.js frontend/src/pages/BillingWorkspace.jsx frontend/package.json frontend/package-lock.json
           git commit -m "Wire live network topology workspace"
           git push origin HEAD:agent/network-topology-v1

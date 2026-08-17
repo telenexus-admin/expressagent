@@ -1,0 +1,63 @@
+name: Validate direct Fibre GIS map loading
+on:
+  push:
+    branches: [agent/fibre-gis-direct-map]
+permissions:
+  contents: write
+jobs:
+  build:
+    if: github.event.head_commit.message != 'Use direct OpenFreeMap style'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fibre-gis-direct-map
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+      - name: Apply direct map loading
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('frontend/src/pages/BillingFibreGis.jsx')
+          s = p.read_text()
+          old = """const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty';
+const MAP_PROXY_PATH = '/api/noc/fibre-gis/map/';
+
+function transformMapRequest(url) {
+  if (!String(url || '').includes(MAP_PROXY_PATH)) return { url };
+  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+  return token ? { url, headers: { Authorization: `Bearer ${token}` } } : { url };
+}
+"""
+          new = "const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';\n"
+          if old not in s:
+              raise SystemExit('map proxy config marker not found')
+          s = s.replace(old, new, 1)
+          marker = "        transformRequest: transformMapRequest,\n"
+          if marker not in s:
+              raise SystemExit('transformRequest marker not found')
+          s = s.replace(marker, '', 1)
+          p.write_text(s)
+          PY
+      - name: Verify source
+        run: |
+          grep -q "MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty'" frontend/src/pages/BillingFibreGis.jsx
+          ! grep -q "MAP_PROXY_PATH\|transformMapRequest\|transformRequest:" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "\[loading, mapRetryKey, updateDraftSource\]" frontend/src/pages/BillingFibreGis.jsx
+          grep -q "Map could not load" frontend/src/pages/BillingFibreGis.jsx
+          git diff --check
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+      - name: Commit validated fix
+        run: |
+          git config user.name "telenexus-admin"
+          git config user.email "admin@telenexustechnologies.com"
+          git add frontend/src/pages/BillingFibreGis.jsx
+          git commit -m "Use direct OpenFreeMap style"
+          git push origin HEAD:agent/fibre-gis-direct-map

@@ -3,7 +3,14 @@ import * as maplibregl from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import api from '../utils/api';
 
-const MAP_STYLE = 'https://tiles.openfreemap.org/styles/liberty';
+const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty';
+const MAP_PROXY_PATH = '/api/noc/fibre-gis/map/';
+
+function transformMapRequest(url) {
+  if (!String(url || '').includes(MAP_PROXY_PATH)) return { url };
+  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
+  return token ? { url, headers: { Authorization: `Bearer ${token}` } } : { url };
+}
 
 const ASSET_TYPES = [
   ['pop', 'POP', '#064e3b'],
@@ -155,11 +162,15 @@ function Inspector({ selected, assets, onEditAsset, onEditRoute, onDeleteAsset, 
 export default function BillingFibreGis() {
   const mapElement = useRef(null);
   const mapRef = useRef(null);
+  const mapReadyRef = useRef(false);
   const modeRef = useRef('browse');
   const placementTypeRef = useRef('fat');
   const draftRef = useRef([]);
   const dataRef = useRef({ assets: [], routes: [] });
   const [data, setData] = useState({ assets: [], routes: [], routers: [], stats: {} });
+  const [mapState, setMapState] = useState('loading');
+  const [mapMessage, setMapMessage] = useState('Loading street map…');
+  const [mapRetryKey, setMapRetryKey] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -203,11 +214,54 @@ export default function BillingFibreGis() {
 
   useEffect(() => {
     if (!mapElement.current || mapRef.current) return undefined;
-    const map = new maplibregl.Map({ container: mapElement.current, style: MAP_STYLE, center: [37.2, -0.3], zoom: 6.1, pitch: 44, bearing: -8, attributionControl: true });
+    mapReadyRef.current = false;
+    setMapState('loading');
+    setMapMessage('Loading street map…');
+    let lastMapError = '';
+    let map;
+
+    try {
+      map = new maplibregl.Map({
+        container: mapElement.current,
+        style: MAP_STYLE,
+        center: [37.2, -0.3],
+        zoom: 6.1,
+        pitch: 44,
+        bearing: -8,
+        attributionControl: true,
+        transformRequest: transformMapRequest,
+      });
+    } catch (error) {
+      setMapState('error');
+      setMapMessage(error?.message || 'The map could not start.');
+      return undefined;
+    }
+
     mapRef.current = map;
     map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), 'bottom-right');
     map.addControl(new maplibregl.ScaleControl({ unit: 'metric', maxWidth: 110 }), 'bottom-left');
+
+    const resizeObserver = typeof ResizeObserver !== 'undefined'
+      ? new ResizeObserver(() => map.resize())
+      : null;
+    resizeObserver?.observe(mapElement.current);
+
+    map.on('error', (event) => {
+      lastMapError = event?.error?.message || lastMapError || 'Map data could not be loaded.';
+    });
+
+    const loadTimeout = setTimeout(() => {
+      if (mapReadyRef.current) return;
+      setMapState('error');
+      setMapMessage(lastMapError || 'The street map is taking too long to load.');
+    }, 12000);
+
     map.on('load', () => {
+      mapReadyRef.current = true;
+      clearTimeout(loadTimeout);
+      setMapState('ready');
+      setMapMessage('');
+      map.resize();
       map.addSource('fibre-routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
       map.addLayer({ id: 'fibre-routes-shadow', type: 'line', source: 'fibre-routes', paint: { 'line-color': '#020617', 'line-width': ['case', ['boolean', ['get', 'selected'], false], 10, 7], 'line-opacity': .12 } });
       map.addLayer({ id: 'fibre-routes-main', type: 'line', source: 'fibre-routes', layout: { 'line-cap': 'round', 'line-join': 'round' }, paint: {
@@ -260,8 +314,14 @@ export default function BillingFibreGis() {
       map.on('mouseenter', layer, () => { map.getCanvas().style.cursor = 'pointer'; });
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = modeRef.current === 'browse' ? '' : 'crosshair'; });
     });
-    return () => { map.remove(); mapRef.current = null; };
-  }, [updateDraftSource]);
+    return () => {
+      clearTimeout(loadTimeout);
+      resizeObserver?.disconnect();
+      mapReadyRef.current = false;
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [mapRetryKey, updateDraftSource]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -384,11 +444,12 @@ export default function BillingFibreGis() {
     <div className="grid grid-cols-2 gap-2 sm:grid-cols-4"><Metric label="Infrastructure" value={formatNumber(data.stats?.assets)} note={`${formatNumber(data.stats?.active_assets)} active`} /><Metric label="Fibre plant" value={`${formatNumber(data.stats?.fibre_km, 2)} km`} note={`${formatNumber(data.stats?.routes)} routes`} /><Metric label="Fibre cores" value={formatNumber(data.stats?.total_cores)} note={`${formatNumber(data.stats?.used_cores)} currently used`} /><Metric label="Plant alarms" value={formatNumber(data.stats?.down_assets)} note="Infrastructure marked down" /></div>
 
     <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_285px]">
-      <section className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-2.5 py-2"><div className="relative min-w-[180px] flex-1 sm:max-w-[310px]"><Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search fibre, FAT, OLT, code..." className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-2 text-[9px] outline-none focus:border-emerald-400 focus:bg-white" />{searchResults.length > 0 && <div className="absolute left-0 right-0 top-9 z-30 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">{searchResults.map((result) => <button key={`${result.kind}-${result.item.id}`} type="button" onClick={() => { zoomTo(result); setSearch(''); }} className="flex w-full items-center gap-2 border-b border-slate-50 px-3 py-2 text-left hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50 text-[7px] font-black text-emerald-700">{result.kind === 'asset' ? shortType[result.item.asset_type] : 'F'}</span><span className="min-w-0"><b className="block truncate text-[9px] text-slate-800">{result.item.name}</b><span className="text-[7px] uppercase text-slate-400">{result.kind === 'asset' ? assetTypeMap[result.item.asset_type]?.label : routeTypeMap[result.item.route_type]?.label}</span></span></button>)}</div>}</div><button type="button" onClick={() => setLayersOpen((value) => !value)} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[8px] font-black ${layersOpen ? 'bg-slate-900 text-white' : 'border border-slate-200 text-slate-600'}`}><Icon name="layers" className="h-3.5 w-3.5" />Layers</button><select value={placementType} onChange={(e) => setPlacementType(e.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[8px] font-bold text-slate-600 outline-none">{ASSET_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button type="button" onClick={() => { setMode(mode === 'place-asset' ? 'browse' : 'place-asset'); setDraftCoordinates([]); updateDraftSource([]); }} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[8px] font-black ${mode === 'place-asset' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}><Icon name="plus" className="h-3.5 w-3.5" />Add</button><button type="button" onClick={() => { const next = mode === 'draw-route' ? 'browse' : 'draw-route'; setMode(next); setDraftCoordinates([]); updateDraftSource([]); }} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[8px] font-black ${mode === 'draw-route' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}><Icon name="route" className="h-3.5 w-3.5" />Draw fibre</button><button type="button" onClick={locateMe} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><Icon name="gps" className="h-3.5 w-3.5" /></button><button type="button" onClick={toggle3d} className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-[8px] font-black ${view3d ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}><Icon name="cube" className="h-3.5 w-3.5" />{view3d ? '3D' : '2D'}</button></div>
-        <div className="relative h-[590px] sm:h-[650px]"><div ref={mapElement} className="absolute inset-0" />
+      <section className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm"><div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 px-2.5 py-2"><div className="relative min-w-[180px] flex-1 sm:max-w-[310px]"><Icon name="search" className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-slate-400" /><input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search fibre, FAT, OLT, code..." className="h-8 w-full rounded-lg border border-slate-200 bg-slate-50 pl-8 pr-2 text-[9px] outline-none focus:border-emerald-400 focus:bg-white" />{searchResults.length > 0 && <div className="absolute left-0 right-0 top-9 z-30 overflow-hidden rounded-xl border border-slate-200 bg-white shadow-xl">{searchResults.map((result) => <button key={`${result.kind}-${result.item.id}`} type="button" onClick={() => { zoomTo(result); setSearch(''); }} className="flex w-full items-center gap-2 border-b border-slate-50 px-3 py-2 text-left hover:bg-slate-50"><span className="flex h-6 w-6 items-center justify-center rounded-lg bg-emerald-50 text-[7px] font-black text-emerald-700">{result.kind === 'asset' ? shortType[result.item.asset_type] : 'F'}</span><span className="min-w-0"><b className="block truncate text-[9px] text-slate-800">{result.item.name}</b><span className="text-[7px] uppercase text-slate-400">{result.kind === 'asset' ? assetTypeMap[result.item.asset_type]?.label : routeTypeMap[result.item.route_type]?.label}</span></span></button>)}</div>}</div><button type="button" onClick={() => setLayersOpen((value) => !value)} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[8px] font-black ${layersOpen ? 'bg-slate-900 text-white' : 'border border-slate-200 text-slate-600'}`}><Icon name="layers" className="h-3.5 w-3.5" />Layers</button><select value={placementType} onChange={(e) => setPlacementType(e.target.value)} className="h-8 rounded-lg border border-slate-200 bg-white px-2 text-[8px] font-bold text-slate-600 outline-none">{ASSET_TYPES.map(([key, label]) => <option key={key} value={key}>{label}</option>)}</select><button type="button" disabled={mapState !== 'ready'} onClick={() => { setMode(mode === 'place-asset' ? 'browse' : 'place-asset'); setDraftCoordinates([]); updateDraftSource([]); }} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[8px] font-black disabled:cursor-not-allowed disabled:opacity-40 ${mode === 'place-asset' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}><Icon name="plus" className="h-3.5 w-3.5" />Add</button><button type="button" disabled={mapState !== 'ready'} onClick={() => { const next = mode === 'draw-route' ? 'browse' : 'draw-route'; setMode(next); setDraftCoordinates([]); updateDraftSource([]); }} className={`inline-flex h-8 items-center gap-1.5 rounded-lg px-2.5 text-[8px] font-black disabled:cursor-not-allowed disabled:opacity-40 ${mode === 'draw-route' ? 'bg-emerald-600 text-white' : 'bg-emerald-50 text-emerald-700'}`}><Icon name="route" className="h-3.5 w-3.5" />Draw fibre</button><button type="button" onClick={locateMe} className="flex h-8 w-8 items-center justify-center rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50"><Icon name="gps" className="h-3.5 w-3.5" /></button><button type="button" onClick={toggle3d} className={`inline-flex h-8 items-center gap-1 rounded-lg border px-2 text-[8px] font-black ${view3d ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : 'border-slate-200 text-slate-500'}`}><Icon name="cube" className="h-3.5 w-3.5" />{view3d ? '3D' : '2D'}</button></div>
+        <div className="relative h-[590px] sm:h-[650px]"><div ref={mapElement} className="absolute inset-0 bg-[#eef2f1]" />
+          {mapState !== 'ready' && <div className="absolute inset-0 z-30 flex items-center justify-center bg-[#f4f7f6]"><div className="mx-4 w-full max-w-[340px] rounded-[18px] border border-slate-200 bg-white p-5 text-center shadow-xl"><div className={`mx-auto flex h-11 w-11 items-center justify-center rounded-2xl ${mapState === 'error' ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-600'}`}><Icon name={mapState === 'error' ? 'info' : 'map'} className={`h-5 w-5 ${mapState === 'loading' ? 'animate-pulse' : ''}`} /></div><h3 className="mt-3 text-base font-black text-slate-900">{mapState === 'error' ? 'Map could not load' : 'Loading Fibre GIS map'}</h3><p className="mx-auto mt-1 max-w-[280px] text-[9px] leading-4 text-slate-500">{mapMessage}</p>{mapState === 'error' && <button type="button" onClick={() => { setMapState('loading'); setMapMessage('Retrying street map…'); setMapRetryKey((value) => value + 1); }} className="mt-3 rounded-lg bg-emerald-600 px-3 py-2 text-[9px] font-black text-white hover:bg-emerald-700">Retry map</button>}</div></div>}
           {layersOpen && <div className="absolute left-2 top-2 z-20 max-h-[calc(100%-16px)] w-[190px] overflow-y-auto rounded-[16px] border border-white/80 bg-white/95 p-2.5 shadow-xl backdrop-blur"><div className="mb-2 flex items-center justify-between"><b className="text-[9px] text-slate-800">Network layers</b><button type="button" onClick={() => setLayersOpen(false)} className="text-slate-400"><Icon name="close" className="h-3 w-3" /></button></div><span className="text-[7px] font-black uppercase tracking-[.14em] text-slate-400">Infrastructure</span><div className="mt-1 space-y-0.5">{ASSET_TYPES.map(([key, label, color]) => { const count = data.assets.filter((item) => item.asset_type === key).length; return <button key={key} type="button" onClick={() => toggleAssetLayer(key)} className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-slate-50"><span className="flex h-4 w-4 items-center justify-center rounded-full border border-white text-[5px] font-black text-white shadow" style={{ backgroundColor: visibleAssets.has(key) ? color : '#cbd5e1' }}>{shortType[key]}</span><span className={`flex-1 text-[8px] font-semibold ${visibleAssets.has(key) ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span><span className="text-[7px] text-slate-400">{count}</span></button>; })}</div><div className="my-2 border-t border-slate-100" /><span className="text-[7px] font-black uppercase tracking-[.14em] text-slate-400">Fibre routes</span><div className="mt-1 space-y-0.5">{ROUTE_TYPES.map(([key, label, color]) => <button key={key} type="button" onClick={() => toggleRouteLayer(key)} className="flex w-full items-center gap-2 rounded-lg px-1.5 py-1 text-left hover:bg-slate-50"><span className="h-[3px] w-5 rounded-full" style={{ backgroundColor: visibleRoutes.has(key) ? color : '#cbd5e1' }} /><span className={`flex-1 text-[8px] font-semibold ${visibleRoutes.has(key) ? 'text-slate-700' : 'text-slate-400'}`}>{label}</span><span className="text-[7px] text-slate-400">{data.routes.filter((item) => item.route_type === key).length}</span></button>)}</div></div>}
-          {mode === 'place-asset' && <div className="absolute bottom-4 left-1/2 z-20 -translate-x-1/2 rounded-xl border border-emerald-200 bg-white/95 px-3 py-2 text-center shadow-xl backdrop-blur"><b className="block text-[9px] text-emerald-800">Place {assetTypeMap[placementType]?.label}</b><span className="text-[7px] text-slate-500">Click its real position on the map</span><button type="button" onClick={() => setMode('browse')} className="ml-3 text-[7px] font-black text-rose-500">CANCEL</button></div>}
-          {mode === 'draw-route' && <div className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-emerald-200 bg-white/95 p-1.5 shadow-xl backdrop-blur"><span className="px-2 text-[8px] font-bold text-slate-600">{draftCoordinates.length} points</span><button type="button" disabled={!draftCoordinates.length} onClick={() => { const next = draftCoordinates.slice(0, -1); setDraftCoordinates(next); updateDraftSource(next); }} className="flex h-7 items-center gap-1 rounded-lg bg-slate-100 px-2 text-[7px] font-black text-slate-600 disabled:opacity-40"><Icon name="undo" className="h-3 w-3" />Undo</button><button type="button" disabled={draftCoordinates.length < 2} onClick={finishRoute} className="flex h-7 items-center gap-1 rounded-lg bg-emerald-500 px-2 text-[7px] font-black text-white disabled:opacity-40"><Icon name="check" className="h-3 w-3" />Finish</button><button type="button" onClick={() => { setMode('browse'); setDraftCoordinates([]); updateDraftSource([]); }} className="h-7 rounded-lg px-2 text-[7px] font-black text-rose-500">Cancel</button></div>}
+          {mode === 'place-asset' && <div className="absolute left-1/2 top-3 z-20 -translate-x-1/2 rounded-xl border border-emerald-200 bg-white/95 px-3 py-2 text-center shadow-xl backdrop-blur"><b className="block text-[9px] text-emerald-800">Place {assetTypeMap[placementType]?.label}</b><span className="text-[7px] text-slate-500">Click its real position on the map</span><button type="button" onClick={() => setMode('browse')} className="ml-3 text-[7px] font-black text-rose-500">CANCEL</button></div>}
+          {mode === 'draw-route' && <div className="absolute left-1/2 top-3 z-20 flex -translate-x-1/2 items-center gap-1 rounded-xl border border-emerald-200 bg-white/95 p-1.5 shadow-xl backdrop-blur"><span className="px-2 text-[8px] font-bold text-slate-600">{draftCoordinates.length} points</span><button type="button" disabled={!draftCoordinates.length} onClick={() => { const next = draftCoordinates.slice(0, -1); setDraftCoordinates(next); updateDraftSource(next); }} className="flex h-7 items-center gap-1 rounded-lg bg-slate-100 px-2 text-[7px] font-black text-slate-600 disabled:opacity-40"><Icon name="undo" className="h-3 w-3" />Undo</button><button type="button" disabled={draftCoordinates.length < 2} onClick={finishRoute} className="flex h-7 items-center gap-1 rounded-lg bg-emerald-500 px-2 text-[7px] font-black text-white disabled:opacity-40"><Icon name="check" className="h-3 w-3" />Finish</button><button type="button" onClick={() => { setMode('browse'); setDraftCoordinates([]); updateDraftSource([]); }} className="h-7 rounded-lg px-2 text-[7px] font-black text-rose-500">Cancel</button></div>}
         </div></section>
       <Inspector selected={selected} assets={data.assets} onEditAsset={(item) => setAssetModal({ ...item })} onEditRoute={(item) => setRouteModal({ ...item })} onDeleteAsset={deleteAsset} onDeleteRoute={deleteRoute} />
     </div>

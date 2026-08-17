@@ -156,6 +156,7 @@ export default function BillingFibreGis() {
   const mapElement = useRef(null);
   const mapRef = useRef(null);
   const modeRef = useRef('browse');
+  const placementTypeRef = useRef('fat');
   const draftRef = useRef([]);
   const dataRef = useRef({ assets: [], routes: [] });
   const [data, setData] = useState({ assets: [], routes: [], routers: [], stats: {} });
@@ -190,6 +191,7 @@ export default function BillingFibreGis() {
   useEffect(() => { void load(); }, [load]);
   useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => { modeRef.current = mode; }, [mode]);
+  useEffect(() => { placementTypeRef.current = placementType; }, [placementType]);
   useEffect(() => { draftRef.current = draftCoordinates; }, [draftCoordinates]);
 
   const updateDraftSource = useCallback((coordinates) => {
@@ -230,7 +232,7 @@ export default function BillingFibreGis() {
     map.on('click', (event) => {
       const currentMode = modeRef.current;
       if (currentMode === 'place-asset') {
-        setAssetModal({ ...emptyAsset, asset_type: placementType, latitude: event.lngLat.lat.toFixed(7), longitude: event.lngLat.lng.toFixed(7) });
+        setAssetModal({ ...emptyAsset, asset_type: placementTypeRef.current, latitude: event.lngLat.lat.toFixed(7), longitude: event.lngLat.lng.toFixed(7) });
         setMode('browse');
         return;
       }
@@ -259,7 +261,7 @@ export default function BillingFibreGis() {
       map.on('mouseleave', layer, () => { map.getCanvas().style.cursor = modeRef.current === 'browse' ? '' : 'crosshair'; });
     });
     return () => { map.remove(); mapRef.current = null; };
-  }, [placementType, updateDraftSource]);
+  }, [updateDraftSource]);
 
   useEffect(() => {
     const map = mapRef.current;

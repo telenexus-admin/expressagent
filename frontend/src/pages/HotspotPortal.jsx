@@ -786,11 +786,21 @@ useEffect(() => {
             })`,
         };
 
-  const pageStyle = backgroundImageUrl
+  const mainStyle = backgroundImageUrl
     ? {
         ...heroStyle,
         backgroundRepeat: 'no-repeat',
-        backgroundAttachment: 'scroll',
+        backgroundSize: 'cover',
+        backgroundPosition: 'center center',
+        backgroundAttachment: 'fixed',
+      }
+    : {
+        backgroundColor: theme.page,
+      };
+
+  const pageStyle = backgroundImageUrl
+    ? {
+        background: 'transparent',
       }
     : {
         backgroundColor: theme.page,
@@ -1100,10 +1110,7 @@ useEffect(() => {
   return (
     <main
       className="min-h-screen text-[#101938]"
-      style={{
-        backgroundColor:
-          theme.page,
-      }}
+      style={mainStyle}
     >
       <style>{`
         @font-face { font-family: 'Bebas Neue'; src: url('/fonts/bebas-neue.woff2') format('woff2'); font-display: swap; }
@@ -1111,7 +1118,7 @@ useEffect(() => {
           font-family: Inter, "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
         }
         .hotspot-green-portrait-name { font-family: 'Bebas Neue', 'Arial Narrow', sans-serif; font-weight: 700; letter-spacing: 2px; color: #00A651; text-shadow: 0 1px 0 rgba(255,255,255,.18); }
-        .hotspot-green-template { background: #06180d !important; padding: 12px !important; }
+        .hotspot-green-template { background: ${backgroundImageUrl ? 'transparent' : '#06180d'} !important; padding: 8px !important; }
         .hotspot-green-template > header, .hotspot-green-template > .relative.z-10 { display: none; }
         .hotspot-blue-grid {
           background:
@@ -1268,7 +1275,87 @@ useEffect(() => {
             repeat(3, minmax(0, 1fr));
 
           gap:
-            10px;
+            6px;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card {
+          border-radius: 12px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:first-child {
+          min-height: 44px !important;
+          gap: 4px !important;
+          padding: 6px 7px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:first-child
+        svg {
+          width: 18px !important;
+          height: 18px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:first-child
+        > div
+        > div:first-child {
+          font-size: 16px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:first-child
+        > div
+        > div:last-child {
+          margin-top: 2px !important;
+          font-size: 7px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:nth-child(2) {
+          padding: 6px 8px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:nth-child(2)
+        > div {
+          font-size: 11px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:nth-child(2)
+        p {
+          display: none !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:last-child {
+          gap: 3px !important;
+          padding: 5px 8px 7px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:last-child
+        span {
+          font-size: 11px !important;
+        }
+
+        .hotspot-layout-compact
+        .hotspot-package-card
+        > div:last-child
+        svg {
+          width: 13px !important;
+          height: 13px !important;
         }
 
         .hotspot-layout-circles {
@@ -1494,8 +1581,8 @@ useEffect(() => {
         )}
 
         <section
-          className={designTemplate === 'green_portrait' ? 'hotspot-green-template relative overflow-hidden text-white' : 'hotspot-blue-grid relative overflow-hidden px-5 pb-28 pt-6 text-white sm:px-9 sm:pb-32 sm:pt-8'}
-          style={designTemplate === 'green_portrait' ? undefined : heroSectionStyle}
+          className={designTemplate === 'green_portrait' ? 'hotspot-green-template relative overflow-hidden text-white' : 'hotspot-blue-grid relative overflow-hidden px-4 pb-20 pt-4 text-white sm:px-7 sm:pb-24 sm:pt-6'}
+          style={backgroundImageUrl ? heroSectionStyle : (designTemplate === 'green_portrait' ? undefined : heroSectionStyle)}
         >
           {designTemplate === 'green_portrait' && <div className="relative mx-auto w-[70%] max-w-[434px] overflow-hidden rounded-[22px]">
             {activeHeroSlide === 0 ? <div className="relative"><img src="/hotspot-templates/green-portrait-hotspot.webp?v=green-portrait-v1" alt="Green Portrait hotspot" width="689" height="821" fetchPriority="high" decoding="async" className="block w-full" /><div className="hotspot-green-portrait-name absolute left-[34.8%] top-[15.2%] flex h-[6.5%] w-[30.1%] items-center justify-center overflow-hidden px-1 text-center text-[clamp(13px,5.3vw,35px)] leading-none">{brandName}</div></div> : <img src={visiblePromoSource} alt={`Promotion ${activeHeroSlide}`} width="1080" height="1350" decoding="async" className="block aspect-[4/5] w-full object-cover" />}
@@ -1589,7 +1676,7 @@ useEffect(() => {
 
         {campaignEnabled && campaignMessage && (
           <section
-            className="relative z-20 px-5 pt-4 sm:px-9"
+            className="relative z-20 px-3 pt-2 sm:px-6"
             aria-label="Hotspot notification"
           >
             <div className="mx-auto flex w-full max-w-3xl items-center overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-lg shadow-slate-900/5">
@@ -1614,7 +1701,7 @@ useEffect(() => {
 
         {flashOffer && (
           <section
-            className={`relative z-20 px-5 sm:px-9 ${
+            className={`relative z-20 px-3 sm:px-6 ${
               campaignEnabled && campaignMessage
                 ? 'mt-4'
                 : '-mt-5 sm:-mt-7'
@@ -1646,7 +1733,7 @@ useEffect(() => {
           </section>
         )}
 
-        <section ref={packagesRef} className={`${flashOffer ? 'pt-8' : 'pt-10'} px-5 sm:px-9`}>
+        <section ref={packagesRef} className={`${flashOffer ? 'pt-4' : 'pt-5'} px-3 sm:px-6`}>
           <div className="flex items-center justify-center gap-5">
             <span className="h-px w-16 bg-slate-300" />
             <h2 className="text-base font-black uppercase tracking-wide text-[#121b3b]">Packages</h2>
@@ -1655,7 +1742,7 @@ useEffect(() => {
 
           {plans.length ? (
             <div
-              className={`mt-5 hotspot-packages hotspot-layout-${packageLayout}`}
+              className={`mt-3 hotspot-packages hotspot-layout-${packageLayout}`}
             >
               {plans.map((plan, index) => {
                 const duration = durationParts(plan.duration_minutes);
@@ -1714,7 +1801,7 @@ useEffect(() => {
         </section>
 
         {showVoucherLogin && (
-        <section ref={voucherRef} className="px-5 pb-7 pt-7 sm:px-9">
+        <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
           <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
             <div className="flex items-center gap-3" style={{ color: accentColor }}>
               <Icon name="ticket" className="h-7 w-7" />
@@ -1780,7 +1867,7 @@ useEffect(() => {
               showWhatsApp
                 ? 'grid-cols-2 divide-x divide-white/20'
                 : 'grid-cols-1'
-            } px-5 py-5 text-white sm:px-9`}
+            } px-3 py-4 text-white sm:px-6`}
             style={{
               background:
                 `linear-gradient(90deg,${

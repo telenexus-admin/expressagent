@@ -321,7 +321,7 @@ export default function BillingFibreGis() {
       map.remove();
       mapRef.current = null;
     };
-  }, [mapRetryKey, updateDraftSource]);
+  }, [loading, mapRetryKey, updateDraftSource]);
 
   useEffect(() => {
     const map = mapRef.current;

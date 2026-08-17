@@ -56,9 +56,36 @@ function mapProxyAbsoluteBase(req) {
 
 function rewriteOpenFreeMapJson(value, req) {
   const proxyBase = mapProxyAbsoluteBase(req);
-  return String(value || '')
-    .replaceAll('https://tiles.openfreemap.org', proxyBase)
-    .replaceAll('http://tiles.openfreemap.org', proxyBase);
+  const rewriteUrl = (input) => {
+    if (typeof input !== 'string') return input;
+    if (input.startsWith('https://tiles.openfreemap.org')) {
+      return `${proxyBase}${input.slice('https://tiles.openfreemap.org'.length)}`;
+    }
+    if (input.startsWith('http://tiles.openfreemap.org')) {
+      return `${proxyBase}${input.slice('http://tiles.openfreemap.org'.length)}`;
+    }
+    if (input.startsWith('/') && !input.startsWith('//')) {
+      return `${proxyBase}${input}`;
+    }
+    return input;
+  };
+
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    const walk = (node) => {
+      if (Array.isArray(node)) return node.map(walk);
+      if (node && typeof node === 'object') {
+        for (const [key, child] of Object.entries(node)) {
+          node[key] = walk(child);
+        }
+        return node;
+      }
+      return rewriteUrl(node);
+    };
+    return JSON.stringify(walk(parsed));
+  } catch (_) {
+    return rewriteUrl(String(value || ''));
+  }
 }
 
 function proxyOpenFreeMap(req, res) {

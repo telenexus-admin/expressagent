@@ -64,15 +64,45 @@ function Gauge({ label, value, icon }) {
 }
 
 function TrafficChart({ rows }) {
-  const data = Array.isArray(rows) ? rows.slice(-36) : [];
-  if (!data.length) return <div className="flex h-[132px] items-center justify-center text-[10px] font-semibold text-slate-400">Traffic history will appear after NOC samples are collected.</div>;
-  const values = data.flatMap((row) => [Number(row.download_mbps || 0), Number(row.upload_mbps || 0)]);
-  const max = Math.max(1, ...values);
-  const width = 720; const height = 132; const pad = 12; const usableWidth = width - pad * 2; const usableHeight = height - pad * 2;
-  const point = (row, index, key) => { const x = pad + (data.length <= 1 ? 0 : (index / (data.length - 1)) * usableWidth); const y = pad + usableHeight - (Number(row[key] || 0) / max) * usableHeight; return `${x.toFixed(1)},${y.toFixed(1)}`; };
+  const buckets = new Map();
+  (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+    if (!row) return;
+    const down = Number(row.download_mbps);
+    const up = Number(row.upload_mbps);
+    if (!Number.isFinite(down) && !Number.isFinite(up)) return;
+    const parsedTime = new Date(row.timestamp || row.created_at || '').getTime();
+    const hasTime = Number.isFinite(parsedTime) && parsedTime > 0;
+    const bucket = hasTime ? Math.floor(parsedTime / 5000) * 5000 : index;
+    buckets.set(bucket, {
+      timestamp: hasTime ? parsedTime : index,
+      download_mbps: Number.isFinite(down) ? Math.max(0, down) : 0,
+      upload_mbps: Number.isFinite(up) ? Math.max(0, up) : 0,
+    });
+  });
+
+  const data = [...buckets.values()]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-60);
+  if (!data.length) return <div className="flex h-[150px] items-center justify-center text-[10px] font-semibold text-slate-400">Traffic history will appear after NOC samples are collected.</div>;
+
+  const peak = Math.max(0, ...data.flatMap((row) => [row.download_mbps, row.upload_mbps]));
+  const scaleMax = peak > 0 ? peak * 1.12 : 1;
+  const width = 720;
+  const height = 150;
+  const padX = 12;
+  const padY = 14;
+  const usableWidth = width - padX * 2;
+  const usableHeight = height - padY * 2;
+  const point = (row, index, key) => {
+    const x = padX + (data.length <= 1 ? usableWidth / 2 : (index / (data.length - 1)) * usableWidth);
+    const value = Number.isFinite(row[key]) ? row[key] : 0;
+    const y = padY + usableHeight - (value / scaleMax) * usableHeight;
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
   const down = data.map((row, index) => point(row, index, 'download_mbps')).join(' ');
   const up = data.map((row, index) => point(row, index, 'upload_mbps')).join(' ');
-  return <div><svg viewBox={`0 0 ${width} ${height}`} className="h-[132px] w-full" role="img" aria-label="NOC traffic graph">{[0.25, 0.5, 0.75].map((ratio) => <line key={ratio} x1={pad} x2={width - pad} y1={pad + usableHeight * ratio} y2={pad + usableHeight * ratio} stroke="currentColor" className="text-slate-100" strokeWidth="1" />)}<polyline points={down} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" /><polyline points={up} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" opacity=".85" /></svg><div className="mt-1 flex items-center justify-between text-[10px] font-bold text-slate-400"><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" />Download</span><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" />Upload</span></div></div>;
+
+  return <div><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-[150px] w-full" role="img" aria-label="NOC traffic graph">{[0.25, 0.5, 0.75].map((ratio) => <line key={ratio} x1={padX} x2={width - padX} y1={padY + usableHeight * ratio} y2={padY + usableHeight * ratio} stroke="currentColor" className="text-slate-100" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}<polyline points={down} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /><polyline points={up} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></svg><div className="mt-2 flex items-center justify-between text-[10px] font-bold text-slate-400"><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" />Download</span><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" />Upload</span><span className="hidden sm:inline">Peak {peak.toFixed(2)} Mbps</span></div></div>;
 }
 
 function EmptyNoc({ onOpenRouters }) {

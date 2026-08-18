@@ -2801,7 +2801,7 @@ function buildHostedPortalBootstrap({
         mac:"$(mac)",
         ip:"$(ip)",
         "link-login-only":"$(link-login-only)",
-        "link-orig":"$(link-orig)"
+        "link-orig":"http://neverssl.com/"
       };
       Object.keys(query).forEach(function(key){
         if(query[key]) target += "&"+encodeURIComponent(key)+"="+encodeURIComponent(query[key]);

@@ -1,0 +1,149 @@
+name: Validate hotspot bootstrap token provisioning
+
+on:
+  pull_request:
+    branches:
+      - production-sync-2026-08-04
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/hotspot-bootstrap-token-provisioning'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-bootstrap-token-provisioning
+          fetch-depth: 0
+
+      - name: Apply bootstrap token fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          # 1) Make every router-file writer reject an empty bootstrap token and
+          # use a no-JS meta refresh/bootstrap link.
+          p = Path('backend/src/services/hotspotEdgePortal.js')
+          s = p.read_text()
+
+          pattern = re.compile(
+              r"function buildHostedPortalBootstrap\(\{\n  bootstrapToken,\n\}\) \{.*?\n\}\n\n\nasync function replaceHotspotPortalFiles",
+              re.S,
+          )
+          replacement = r'''function buildHostedPortalBootstrap({
+            bootstrapToken,
+          }) {
+            const normalizedToken =
+              String(bootstrapToken || '').trim();
+
+            if (normalizedToken.length < 50) {
+              throw new Error(
+                'Hotspot bootstrap token is required before portal files can be published'
+              );
+            }
+
+            const hostedPortal =
+              `${API_BASE}/bootstrap?bootstrapToken=${encodeURIComponent(normalizedToken)}`;
+
+            const target =
+              `${hostedPortal}` +
+              `&mac=$(mac)` +
+              `&ip=$(ip)` +
+              `&link-login-only=$(link-login-only)` +
+              `&link-orig=http://neverssl.com/`;
+
+            const htmlTarget =
+              target.replace(/&/g, '&amp;');
+
+            return `<!doctype html>
+          <html lang="en">
+          <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1">
+            <meta http-equiv="cache-control" content="no-store">
+            <meta http-equiv="refresh" content="0;url=${htmlTarget}">
+            <title>Connecting…</title>
+            <style>
+              body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}
+              .card{padding:24px;text-align:center}
+              a{display:inline-block;margin-top:18px;border-radius:12px;padding:12px 18px;background:#17c77a;color:#04150e;text-decoration:none;font-weight:800}
+            </style>
+          </head>
+          <body>
+            <div class="card">
+              <div>Opening your hotspot portal…</div>
+              <p><a href="${htmlTarget}">Open hotspot portal</a></p>
+            </div>
+          </body>
+          </html>`;
+          }
+
+
+          async function replaceHotspotPortalFiles'''
+
+          s2, n = pattern.subn(replacement, s, count=1)
+          if n != 1:
+              raise SystemExit(f'bootstrap function replacement count={n}')
+          p.write_text(s2)
+
+          # 2) Provisioning path must generate/pass a router-bound bootstrap token.
+          p = Path('backend/src/services/mikrotikProvisioning.js')
+          s = p.read_text()
+
+          old = """const {\n  createHotspotPortalToken,\n} = require('./hotspotPortalToken');"""
+          new = """const {\n  createHotspotPortalToken,\n  createHotspotPortalBootstrapToken,\n} = require('./hotspotPortalToken');"""
+          if s.count(old) != 1:
+              raise SystemExit(f'import block count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          old = """async function writePortalFile(\n  client,\n  clientId,\n  portalToken,\n  record\n) {"""
+          new = """async function writePortalFile(\n  client,\n  clientId,\n  portalToken,\n  bootstrapToken,\n  record\n) {"""
+          if s.count(old) != 1:
+              raise SystemExit(f'writePortalFile signature count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          old = """    await replaceHotspotPortalFiles(\n      client,\n      edgeHtml\n    );"""
+          new = """    await replaceHotspotPortalFiles(\n      client,\n      edgeHtml,\n      bootstrapToken\n    );"""
+          if s.count(old) != 1:
+              raise SystemExit(f'replaceHotspotPortalFiles provisioning call count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          old = """  const portalToken = createHotspotPortalToken(clientId);\n  const hotspotGatewayIp = stripCidr(config.hotspot_gateway);"""
+          new = """  const portalToken = createHotspotPortalToken(clientId);\n  const bootstrapToken = createHotspotPortalBootstrapToken(\n    clientId,\n    Number(router.id)\n  );\n  const hotspotGatewayIp = stripCidr(config.hotspot_gateway);"""
+          if s.count(old) != 1:
+              raise SystemExit(f'configureRouter token block count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          old = """  await writePortalFile(\n    client,\n    clientId,\n    portalToken,\n    record\n  );"""
+          new = """  await writePortalFile(\n    client,\n    clientId,\n    portalToken,\n    bootstrapToken,\n    record\n  );"""
+          if s.count(old) != 1:
+              raise SystemExit(f'writePortalFile invocation count={s.count(old)}')
+          s = s.replace(old, new, 1)
+
+          p.write_text(s)
+          PY
+
+      - name: Validate backend source
+        shell: bash
+        run: |
+          node --check backend/src/services/hotspotEdgePortal.js
+          node --check backend/src/services/mikrotikProvisioning.js
+          grep -q "Hotspot bootstrap token is required" backend/src/services/hotspotEdgePortal.js
+          grep -q 'http-equiv="refresh"' backend/src/services/hotspotEdgePortal.js
+          grep -q 'createHotspotPortalBootstrapToken' backend/src/services/mikrotikProvisioning.js
+          grep -A5 'await replaceHotspotPortalFiles' backend/src/services/mikrotikProvisioning.js | grep -q 'bootstrapToken'
+          git diff --check
+
+      - name: Commit validated source
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/services/hotspotEdgePortal.js backend/src/services/mikrotikProvisioning.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Fix hotspot bootstrap token provisioning"
+          git push origin HEAD:agent/hotspot-bootstrap-token-provisioning

@@ -1,0 +1,95 @@
+name: Validate hotspot RouterOS 302 handoff
+
+on:
+  pull_request:
+    branches:
+      - production-sync-2026-08-04
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/hotspot-router-302-handoff'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-router-302-handoff
+          fetch-depth: 0
+
+      - name: Apply RouterOS native redirect
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('backend/src/services/hotspotEdgePortal.js')
+          s = p.read_text()
+
+          pattern = re.compile(
+              r"function buildHostedPortalBootstrap\(\{\n"
+              r"  bootstrapToken,\n"
+              r"\}\) \{.*?\n\}\n\n\nasync function replaceHotspotPortalFiles",
+              re.S,
+          )
+
+          replacement = r'''function buildHostedPortalBootstrap({
+            bootstrapToken,
+          }) {
+            const normalizedToken =
+              String(bootstrapToken || '').trim();
+
+            if (normalizedToken.length < 50) {
+              throw new Error(
+                'Hotspot bootstrap token is required before portal files can be published'
+              );
+            }
+
+            const target =
+              `${API_BASE}/bootstrap` +
+              `?bootstrapToken=${encodeURIComponent(normalizedToken)}` +
+              `&mac=$(mac-esc)` +
+              `&ip=$(ip-esc)` +
+              `&link-login-only=$(link-login-only-esc)` +
+              `&server-address=$(server-address-esc)`;
+
+            return `$(if http-status == 302)Hotspot portal redirect$(endif)\n` +
+              `$(if http-header == "Location")${target}$(endif)`;
+          }
+
+
+          async function replaceHotspotPortalFiles'''
+
+          updated, count = pattern.subn(replacement, s, count=1)
+          if count != 1:
+              raise SystemExit(f'expected one bootstrap function, replaced {count}')
+
+          p.write_text(updated)
+          PY
+
+      - name: Validate source
+        shell: bash
+        run: |
+          node --check backend/src/services/hotspotEdgePortal.js
+          grep -q 'http-status == 302' backend/src/services/hotspotEdgePortal.js
+          grep -q 'http-header == "Location"' backend/src/services/hotspotEdgePortal.js
+          grep -q '\$(mac-esc)' backend/src/services/hotspotEdgePortal.js
+          grep -q '\$(ip-esc)' backend/src/services/hotspotEdgePortal.js
+          grep -q '\$(link-login-only-esc)' backend/src/services/hotspotEdgePortal.js
+          grep -q '\$(server-address-esc)' backend/src/services/hotspotEdgePortal.js
+          grep -q 'Hotspot bootstrap token is required' backend/src/services/hotspotEdgePortal.js
+          ! grep -q 'Open hotspot portal' backend/src/services/hotspotEdgePortal.js
+          ! grep -q 'http-equiv="refresh"' backend/src/services/hotspotEdgePortal.js
+          git diff --check
+
+      - name: Commit validated source to feature branch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/services/hotspotEdgePortal.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Use native RouterOS hotspot HTTPS redirect"
+          git push origin HEAD:agent/hotspot-router-302-handoff

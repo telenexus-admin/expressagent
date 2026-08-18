@@ -2789,40 +2789,17 @@ function buildHostedPortalBootstrap({
     );
   }
 
-  const hostedPortal =
-    `${API_BASE}/bootstrap?bootstrapToken=${encodeURIComponent(normalizedToken)}`;
-
   const target =
-    `${hostedPortal}` +
-    `&mac=$(mac)` +
-    `&ip=$(ip)` +
-    `&link-login-only=$(link-login-only)` +
-    `&link-orig=http://neverssl.com/`;
+    `${API_BASE}/bootstrap` +
+    `?bootstrapToken=${encodeURIComponent(normalizedToken)}` +
+    `&mac=$(mac-esc)` +
+    `&ip=$(ip-esc)` +
+    `&link-login-only=$(link-login-only-esc)` +
+    `&server-address=$(server-address-esc)`;
 
-  const htmlTarget =
-    target.replace(/&/g, '&amp;');
-
-  return `<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1">
-  <meta http-equiv="cache-control" content="no-store">
-  <meta http-equiv="refresh" content="0;url=${htmlTarget}">
-  <title>Connecting…</title>
-  <style>
-    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}
-    .card{padding:24px;text-align:center}
-    a{display:inline-block;margin-top:18px;border-radius:12px;padding:12px 18px;background:#17c77a;color:#04150e;text-decoration:none;font-weight:800}
-  </style>
-</head>
-<body>
-  <div class="card">
-    <div>Opening your hotspot portal…</div>
-    <p><a href="${htmlTarget}">Open hotspot portal</a></p>
-  </div>
-</body>
-</html>`;
+  return `$(if http-status == 302)Hotspot portal redirect$(endif)
+` +
+    `$(if http-header == "Location")${target}$(endif)`;
 }
 
 

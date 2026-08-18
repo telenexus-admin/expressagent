@@ -96,7 +96,11 @@ router.get('/bootstrap', (req, res) => {
   const target = new URL('/hotspot', portalOrigin(req));
   target.searchParams.set('portalToken', portalToken);
   target.searchParams.set('mac', mac); target.searchParams.set('ip', ip);
-  ['link-login-only', 'link-orig'].forEach((key) => { if (req.query[key]) target.searchParams.set(key, String(req.query[key])); });
+  const loginOnly = String(req.query['link-login-only'] || '').trim();
+  if (loginOnly && loginOnly.length <= 512) {
+    target.searchParams.set('link-login-only', loginOnly);
+  }
+  target.searchParams.set('link-orig', 'http://neverssl.com/');
   res.set({ 'Cache-Control': 'private, no-store, max-age=0', 'Referrer-Policy': 'no-referrer' });
   return res.redirect(303, target.toString());
 });

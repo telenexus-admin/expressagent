@@ -3191,6 +3191,55 @@ async function installHotspotEdgePortal({
       );
     }
 
+    /*
+     * The hosted landing page is HTTPS and must be reachable before the
+     * HotSpot user is authenticated. Keep the normal HTTP(S) walled-garden
+     * rule above, and also permit TCP/443 at the packet-level HotSpot
+     * walled garden. RouterOS resolves dst-host into the dynamic destination
+     * entry, so this stays tied to the configured billing hostname.
+     */
+    const gardenIp =
+      rows(
+        await client.command(
+          '/ip/hotspot/walled-garden/ip/print'
+        )
+      );
+
+    const existingHttpsIpRule =
+      gardenIp.find(item =>
+        item['dst-host'] === domain &&
+        String(item.protocol || '').toLowerCase() === 'tcp' &&
+        Number(item['dst-port'] || 0) === 443
+      );
+
+    if (
+      existingHttpsIpRule &&
+      rowId(existingHttpsIpRule)
+    ) {
+      await client.command(
+        '/ip/hotspot/walled-garden/ip/set',
+        {
+          '.id': rowId(existingHttpsIpRule),
+          'dst-host': domain,
+          protocol: 'tcp',
+          'dst-port': '443',
+          action: 'accept',
+          disabled: 'no',
+        }
+      );
+    } else {
+      await client.command(
+        '/ip/hotspot/walled-garden/ip/add',
+        {
+          'dst-host': domain,
+          protocol: 'tcp',
+          'dst-port': '443',
+          action: 'accept',
+          disabled: 'no',
+        }
+      );
+    }
+
     const portalPrefix =
       `${normalizeRouterFilePath(
         install.html_directory

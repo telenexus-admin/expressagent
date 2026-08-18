@@ -1,0 +1,73 @@
+name: Validate hotspot link-orig loop fix
+
+on:
+  pull_request:
+    branches:
+      - production-sync-2026-08-04
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/hotspot-link-orig-loop-fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-link-orig-loop-fix
+          fetch-depth: 0
+
+      - name: Apply focused redirect-loop fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          # Router-hosted bootstrap: never feed RouterOS $(link-orig) back into
+          # the hosted portal URL. That value can become the hosted portal itself
+          # and recursively embed the previous URL on every captive-portal reopen.
+          p = Path('backend/src/services/hotspotEdgePortal.js')
+          s = p.read_text()
+          old = '"link-orig":"$(link-orig)"'
+          new = '"link-orig":"http://neverssl.com/"'
+          if s.count(old) != 1:
+              raise SystemExit(f'hotspotEdgePortal raw link-orig: expected one match, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+
+          # Hosted bootstrap endpoint: independently ignore inbound link-orig.
+          # This also protects routers that still have the older entry file until
+          # Publish writes the corrected bootstrap template to MikroTik.
+          p = Path('backend/src/routes/hotspotPortal.js')
+          s = p.read_text()
+          old = "  ['link-login-only', 'link-orig'].forEach((key) => { if (req.query[key]) target.searchParams.set(key, String(req.query[key])); });"
+          new = """  const loginOnly = String(req.query['link-login-only'] || '').trim();
+            if (loginOnly && loginOnly.length <= 512) {
+              target.searchParams.set('link-login-only', loginOnly);
+            }
+            target.searchParams.set('link-orig', 'http://neverssl.com/');"""
+          if s.count(old) != 1:
+              raise SystemExit(f'hotspotPortal raw forwarding line: expected one match, found {s.count(old)}')
+          p.write_text(s.replace(old, new, 1))
+          PY
+
+      - name: Syntax and safety assertions
+        shell: bash
+        run: |
+          node --check backend/src/services/hotspotEdgePortal.js
+          node --check backend/src/routes/hotspotPortal.js
+          grep -q '"link-orig":"http://neverssl.com/"' backend/src/services/hotspotEdgePortal.js
+          ! grep -q '"link-orig":"$(link-orig)"' backend/src/services/hotspotEdgePortal.js
+          grep -q "target.searchParams.set('link-orig', 'http://neverssl.com/')" backend/src/routes/hotspotPortal.js
+          ! grep -q "\['link-login-only', 'link-orig'\]" backend/src/routes/hotspotPortal.js
+          git diff --check
+
+      - name: Commit validated source to feature branch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/services/hotspotEdgePortal.js backend/src/routes/hotspotPortal.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Stop hotspot link-orig redirect recursion"
+          git push origin HEAD:agent/hotspot-link-orig-loop-fix

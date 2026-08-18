@@ -1,0 +1,16 @@
+name: Validate hotspot no-js bootstrap trigger
+
+on:
+  push:
+    branches:
+      - agent/hotspot-link-orig-loop-fix
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo trigger

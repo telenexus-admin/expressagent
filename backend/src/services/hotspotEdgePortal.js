@@ -2780,15 +2780,27 @@ async function writeRouterFile({
 function buildHostedPortalBootstrap({
   bootstrapToken,
 }) {
-  const hostedPortal =
-    `${API_BASE}/bootstrap`;
+  const normalizedToken =
+    String(bootstrapToken || '').trim();
 
-  const escapedToken =
-    String(bootstrapToken || '')
-      .replace(/&/g, '&amp;')
-      .replace(/"/g, '&quot;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;');
+  if (normalizedToken.length < 50) {
+    throw new Error(
+      'Hotspot bootstrap token is required before portal files can be published'
+    );
+  }
+
+  const hostedPortal =
+    `${API_BASE}/bootstrap?bootstrapToken=${encodeURIComponent(normalizedToken)}`;
+
+  const target =
+    `${hostedPortal}` +
+    `&mac=$(mac)` +
+    `&ip=$(ip)` +
+    `&link-login-only=$(link-login-only)` +
+    `&link-orig=http://neverssl.com/`;
+
+  const htmlTarget =
+    target.replace(/&/g, '&amp;');
 
   return `<!doctype html>
 <html lang="en">
@@ -2796,39 +2808,19 @@ function buildHostedPortalBootstrap({
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="cache-control" content="no-store">
+  <meta http-equiv="refresh" content="0;url=${htmlTarget}">
   <title>Connecting…</title>
   <style>
     body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}
     .card{padding:24px;text-align:center}
-    button{margin-top:18px;border:0;border-radius:12px;padding:12px 18px;background:#17c77a;color:#04150e;font:800 14px system-ui,sans-serif;cursor:pointer}
+    a{display:inline-block;margin-top:18px;border-radius:12px;padding:12px 18px;background:#17c77a;color:#04150e;text-decoration:none;font-weight:800}
   </style>
 </head>
 <body>
   <div class="card">
     <div>Opening your hotspot portal…</div>
-    <form id="portal-form" action="${hostedPortal}" method="get">
-      <input type="hidden" name="bootstrapToken" value="${escapedToken}">
-      <input type="hidden" name="mac" value="$(mac)">
-      <input type="hidden" name="ip" value="$(ip)">
-      <input type="hidden" name="link-login-only" value="$(link-login-only)">
-      <input type="hidden" name="server-address" value="$(server-address)">
-      <input type="hidden" name="link-orig" value="http://neverssl.com/">
-      <button id="portal-submit" type="submit">Open hotspot portal</button>
-    </form>
+    <p><a href="${htmlTarget}">Open hotspot portal</a></p>
   </div>
-  <script>
-    (function(){
-      var form=document.getElementById("portal-form");
-      var button=document.getElementById("portal-submit");
-      if(!form)return;
-      if(button)button.style.display="none";
-      try{form.submit();}
-      catch(_){if(button)button.style.display="inline-block";}
-      window.setTimeout(function(){
-        if(button)button.style.display="inline-block";
-      },2500);
-    })();
-  </script>
 </body>
 </html>`;
 }

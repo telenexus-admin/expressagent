@@ -16,6 +16,7 @@ const {
 } = require('./networkExecutor');
 const {
   createHotspotPortalToken,
+  createHotspotPortalBootstrapToken,
 } = require('./hotspotPortalToken');
 const {
   buildHotspotEdgeHtml,
@@ -792,6 +793,7 @@ async function writePortalFile(
   client,
   clientId,
   portalToken,
+  bootstrapToken,
   record
 ) {
   const edgeConfig =
@@ -809,7 +811,8 @@ async function writePortalFile(
   const installed =
     await replaceHotspotPortalFiles(
       client,
-      edgeHtml
+      edgeHtml,
+      bootstrapToken
     );
 
   await record(
@@ -829,6 +832,10 @@ async function configureRouter({
   record,
 }) {
   const portalToken = createHotspotPortalToken(clientId);
+  const bootstrapToken = createHotspotPortalBootstrapToken(
+    clientId,
+    Number(router.id)
+  );
   const hotspotGatewayIp = stripCidr(config.hotspot_gateway);
   const hotspotNetwork = `${subnetPrefix(config.hotspot_gateway)}.0/24`;
 
@@ -1102,6 +1109,7 @@ async function configureRouter({
     client,
     clientId,
     portalToken,
+    bootstrapToken,
     record
   );
 

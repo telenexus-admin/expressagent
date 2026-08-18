@@ -1,0 +1,47 @@
+name: Validate hotspot preauth access
+
+on:
+  pull_request:
+    branches: [production-sync-2026-08-04]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/hotspot-preauth-access'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-preauth-access
+          fetch-depth: 0
+      - name: Apply focused hotspot fix
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          p=Path('backend/src/services/hotspotEdgePortal.js')
+          s=p.read_text()
+          needle='''    if (\n      existingRule &&\n      rowId(existingRule)\n    ) {\n      await client.command(\n        '/ip/hotspot/walled-garden/set',\n        {\n          '.id':\n            rowId(existingRule),\n\n          action:\n            'allow',\n\n          disabled:\n            'no',\n        }\n      );\n    } else {\n      await client.command(\n        '/ip/hotspot/walled-garden/add',\n        {\n          'dst-host':\n            domain,\n\n          action:\n            'allow',\n\n          disabled:\n            'no',\n        }\n      );\n    }\n'''
+          if s.count(needle)!=1:
+              raise SystemExit(f'expected one walled garden block, found {s.count(needle)}')
+          addition='''\n    /*\n     * The hosted landing page is HTTPS and must be reachable before the\n     * HotSpot user is authenticated. Keep the normal HTTP(S) walled-garden\n     * rule above, and also permit TCP/443 at the packet-level HotSpot\n     * walled garden. RouterOS resolves dst-host into the dynamic destination\n     * entry, so this stays tied to the configured billing hostname.\n     */\n    const gardenIp =\n      rows(\n        await client.command(\n          '/ip/hotspot/walled-garden/ip/print'\n        )\n      );\n\n    const existingHttpsIpRule =\n      gardenIp.find(item =>\n        item['dst-host'] === domain &&\n        String(item.protocol || '').toLowerCase() === 'tcp' &&\n        Number(item['dst-port'] || 0) === 443\n      );\n\n    if (\n      existingHttpsIpRule &&\n      rowId(existingHttpsIpRule)\n    ) {\n      await client.command(\n        '/ip/hotspot/walled-garden/ip/set',\n        {\n          '.id': rowId(existingHttpsIpRule),\n          'dst-host': domain,\n          protocol: 'tcp',\n          'dst-port': '443',\n          action: 'accept',\n          disabled: 'no',\n        }\n      );\n    } else {\n      await client.command(\n        '/ip/hotspot/walled-garden/ip/add',\n        {\n          'dst-host': domain,\n          protocol: 'tcp',\n          'dst-port': '443',\n          action: 'accept',\n          disabled: 'no',\n        }\n      );\n    }\n'''
+          p.write_text(s.replace(needle, needle+addition, 1))
+          PY
+      - name: Syntax and assertions
+        run: |
+          node --check backend/src/services/hotspotEdgePortal.js
+          grep -q "/ip/hotspot/walled-garden/ip/print" backend/src/services/hotspotEdgePortal.js
+          grep -q "'dst-port': '443'" backend/src/services/hotspotEdgePortal.js
+          grep -q "action: 'accept'" backend/src/services/hotspotEdgePortal.js
+          git diff --check
+      - name: Commit validated source to feature branch
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/services/hotspotEdgePortal.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Allow hosted hotspot portal before authentication"
+          git push origin HEAD:agent/hotspot-preauth-access

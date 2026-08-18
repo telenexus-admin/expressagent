@@ -1,0 +1,65 @@
+name: Validate traffic router fix PR
+
+on:
+  pull_request:
+    branches:
+      - production-sync-2026-08-04
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply fix
+        run: python3 .github/scripts/apply_traffic_router_fix.py
+
+      - name: Backend syntax
+        run: |
+          node --check backend/src/services/mikrotik.js
+          node --check backend/src/services/noc.js
+
+      - name: Assertions
+        run: |
+          grep -q "status_source: statusSource" backend/src/services/mikrotik.js
+          grep -q "LEFT JOIN router_states" backend/src/services/mikrotik.js
+          grep -q "bucketSeconds" backend/src/services/noc.js
+          grep -q "recentSnapshotOrLive" backend/src/services/noc.js
+          grep -q "const scaleMax = peak > 0" frontend/src/pages/BillingNoc.jsx
+          grep -q "const scaleMax = peak > 0" frontend/src/pages/BillingWorkspace.jsx
+          ! grep -q 'section:has(svg\[aria-label="Live bandwidth traffic graph"\]) > div:nth-child(2)' frontend/src/pages/BillingWorkspace.jsx
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Diff check
+        run: git diff --check
+
+      - name: Commit validated source to feature branch
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/src/services/mikrotik.js \
+            backend/src/services/noc.js \
+            frontend/src/pages/BillingNoc.jsx \
+            frontend/src/pages/BillingWorkspace.jsx
+          git commit -m "Fix traffic charts and live router status"
+          git push origin HEAD:${{ github.head_ref }}

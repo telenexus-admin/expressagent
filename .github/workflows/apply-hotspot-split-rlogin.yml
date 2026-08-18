@@ -1,0 +1,81 @@
+name: Validate split HotSpot rlogin handoff
+
+on:
+  push:
+    branches:
+      - agent/hotspot-split-rlogin-handoff
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-split-rlogin-handoff
+          fetch-depth: 0
+
+      - name: Apply split handoff
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+
+          p = Path('backend/src/services/hotspotEdgePortal.js')
+          s = p.read_text()
+
+          marker = '''function hotspotRedirectResponse() {
+            return `$(if http-status == 302)Hotspot redirect$(endif)\n$(if http-header == \"Location\")$(link-redirect)$(endif)`;
+          }
+          '''
+
+          if marker not in s:
+              raise SystemExit('hotspotRedirectResponse marker not found')
+
+          helper = marker + '''
+          function hotspotLoginRedirectResponse() {
+            return `$(if http-status == 302)Hotspot login required$(endif)\n$(if http-header == \"Location\")$(link-login-only)$(endif)`;
+          }
+          '''
+
+          s = s.replace(marker, helper, 1)
+
+          old = '''        contents:
+                  hostedBootstrap,
+          '''
+          new = '''        contents:
+                  fileName === 'rlogin.html'
+                    ? hotspotLoginRedirectResponse()
+                    : hostedBootstrap,
+          '''
+
+          if old not in s:
+              raise SystemExit('entry-page write block not found')
+
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+
+      - name: Validate backend source
+        shell: bash
+        run: |
+          node --check backend/src/services/hotspotEdgePortal.js
+          grep -q 'function hotspotLoginRedirectResponse' backend/src/services/hotspotEdgePortal.js
+          grep -q '\$(link-login-only)\$(endif)' backend/src/services/hotspotEdgePortal.js
+          grep -q "fileName === 'rlogin.html'" backend/src/services/hotspotEdgePortal.js
+          grep -q 'Hotspot bootstrap token is required' backend/src/services/hotspotEdgePortal.js
+          grep -q '\$(mac-esc)' backend/src/services/hotspotEdgePortal.js
+          git diff --check
+
+      - name: Commit validated source
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/services/hotspotEdgePortal.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Restore standard HotSpot rlogin handoff"
+          git push origin HEAD:agent/hotspot-split-rlogin-handoff

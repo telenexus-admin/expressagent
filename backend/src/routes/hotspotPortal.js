@@ -87,6 +87,36 @@ function portalOrigin(req) {
   return String(process.env.FRONTEND_URL || (req.protocol + '://' + req.get('host'))).replace(/\/$/, '');
 }
 
+function safeBootstrapRouterLogin(loginOnly, serverAddress, clientIp) {
+  const direct = safeRouterLoginUrl(loginOnly, clientIp);
+  if (direct) return direct;
+
+  const raw = String(serverAddress || '').trim();
+  if (!raw || raw.length > 120) return null;
+
+  try {
+    const normalized = raw.replace(/^https?:\/\//i, '');
+    const url = new URL(`http://${normalized}`);
+    if (
+      url.username ||
+      url.password ||
+      url.search ||
+      url.hash ||
+      (url.pathname && url.pathname !== '/')
+    ) return null;
+    if (
+      net.isIP(url.hostname) !== 4 ||
+      !privateIpv4(url.hostname) ||
+      !privateIpv4(clientIp) ||
+      !samePrivateSubnet(url.hostname, clientIp)
+    ) return null;
+    const port = url.port && url.port !== '80' ? `:${url.port}` : '';
+    return `http://${url.hostname}${port}/login`;
+  } catch (_) {
+    return null;
+  }
+}
+
 router.get('/bootstrap', (req, res) => {
   const bootstrap = verifyHotspotPortalBootstrapToken(req.query.bootstrapToken);
   const mac = String(req.query.mac || '').trim().toLowerCase();
@@ -96,8 +126,12 @@ router.get('/bootstrap', (req, res) => {
   const target = new URL('/hotspot', portalOrigin(req));
   target.searchParams.set('portalToken', portalToken);
   target.searchParams.set('mac', mac); target.searchParams.set('ip', ip);
-  const loginOnly = String(req.query['link-login-only'] || '').trim();
-  if (loginOnly && loginOnly.length <= 512) {
+  const loginOnly = safeBootstrapRouterLogin(
+    req.query['link-login-only'],
+    req.query['server-address'],
+    ip
+  );
+  if (loginOnly) {
     target.searchParams.set('link-login-only', loginOnly);
   }
   target.searchParams.set('link-orig', 'http://neverssl.com/');

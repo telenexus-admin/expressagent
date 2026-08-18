@@ -2781,7 +2781,14 @@ function buildHostedPortalBootstrap({
   bootstrapToken,
 }) {
   const hostedPortal =
-    `${API_BASE}/bootstrap?bootstrapToken=${encodeURIComponent(bootstrapToken || '')}`;
+    `${API_BASE}/bootstrap`;
+
+  const escapedToken =
+    String(bootstrapToken || '')
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
 
   return `<!doctype html>
 <html lang="en">
@@ -2790,25 +2797,36 @@ function buildHostedPortalBootstrap({
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta http-equiv="cache-control" content="no-store">
   <title>Connecting…</title>
-  <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}.card{padding:24px;text-align:center}a{color:#78e7ad}</style>
+  <style>
+    body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}
+    .card{padding:24px;text-align:center}
+    button{margin-top:18px;border:0;border-radius:12px;padding:12px 18px;background:#17c77a;color:#04150e;font:800 14px system-ui,sans-serif;cursor:pointer}
+  </style>
 </head>
 <body>
-  <div class="card">Opening your hotspot portal…<noscript><p><a id="portal-link" href="#">Open portal</a></p></noscript></div>
+  <div class="card">
+    <div>Opening your hotspot portal…</div>
+    <form id="portal-form" action="${hostedPortal}" method="get">
+      <input type="hidden" name="bootstrapToken" value="${escapedToken}">
+      <input type="hidden" name="mac" value="$(mac)">
+      <input type="hidden" name="ip" value="$(ip)">
+      <input type="hidden" name="link-login-only" value="$(link-login-only)">
+      <input type="hidden" name="server-address" value="$(server-address)">
+      <input type="hidden" name="link-orig" value="http://neverssl.com/">
+      <button id="portal-submit" type="submit">Open hotspot portal</button>
+    </form>
+  </div>
   <script>
     (function(){
-      var target=${JSON.stringify(hostedPortal)};
-      var query={
-        mac:"$(mac)",
-        ip:"$(ip)",
-        "link-login-only":"$(link-login-only)",
-        "link-orig":"http://neverssl.com/"
-      };
-      Object.keys(query).forEach(function(key){
-        if(query[key]) target += "&"+encodeURIComponent(key)+"="+encodeURIComponent(query[key]);
-      });
-      var link=document.getElementById("portal-link");
-      if(link) link.href=target;
-      window.location.replace(target);
+      var form=document.getElementById("portal-form");
+      var button=document.getElementById("portal-submit");
+      if(!form)return;
+      if(button)button.style.display="none";
+      try{form.submit();}
+      catch(_){if(button)button.style.display="inline-block";}
+      window.setTimeout(function(){
+        if(button)button.style.display="inline-block";
+      },2500);
     })();
   </script>
 </body>

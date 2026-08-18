@@ -1,0 +1,550 @@
+name: Validate traffic charts and live router status
+
+on:
+  push:
+    branches:
+      - agent/traffic-router-live-status
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 18.19.1
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Apply focused fixes
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          def one(text, old, new, label):
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{label}: expected 1 exact match, found {count}')
+              return text.replace(old, new, 1)
+
+          # ------------------------------------------------------------------
+          # BillingWorkspace: chart normalization, remove broken layout CSS,
+          # and refresh DB-backed real router monitor state.
+          # ------------------------------------------------------------------
+          path = Path('frontend/src/pages/BillingWorkspace.jsx')
+          text = path.read_text()
+
+          old = '''const routerDisplayStatus = (router) => {
+            const status = String(
+              router?.last_status ||
+              router?.status ||
+              ''
+            ).trim().toLowerCase();
+
+            if (status === 'error') return 'offline';
+
+            return status || 'pending';
+          };'''
+          new = '''const routerDisplayStatus = (router) => {
+            if (router?.is_active === false) return 'inactive';
+            const status = String(
+              router?.last_status ||
+              router?.status ||
+              ''
+            ).trim().toLowerCase();
+
+            if (['error', 'failed', 'offline'].includes(status)) return 'offline';
+            if (['online', 'active'].includes(status)) return 'online';
+            if (['unknown', 'stale'].includes(status)) return 'unknown';
+            return status || 'pending';
+          };'''
+          text = one(text, old, new, 'routerDisplayStatus')
+
+          old = '''  useEffect(() => {
+            const id = 'nexa-billing-modern-font';
+            if (!document.getElementById(id)) {
+              const link = document.createElement('link');
+              link.id = id;
+              link.rel = 'stylesheet';
+              link.href = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap';
+              document.head.appendChild(link);
+            }
+          }, []);
+
+          useEffect(() => {
+            let mounted = true;'''
+          new = '''  useEffect(() => {
+            const id = 'nexa-billing-modern-font';
+            if (!document.getElementById(id)) {
+              const link = document.createElement('link');
+              link.id = id;
+              link.rel = 'stylesheet';
+              link.href = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap';
+              document.head.appendChild(link);
+            }
+          }, []);
+
+          useEffect(() => {
+            let mounted = true;
+            const refreshRouterStates = async () => {
+              try {
+                const result = await api.get('/mikrotik');
+                if (!mounted) return;
+                const routerData = result.data;
+                setRouters(
+                  Array.isArray(routerData)
+                    ? routerData
+                    : Array.isArray(routerData?.routers)
+                      ? routerData.routers
+                      : []
+                );
+              } catch (_) {
+                // Keep the last confirmed monitor state until the next refresh.
+              }
+            };
+
+            const timer = window.setInterval(refreshRouterStates, 30000);
+            return () => {
+              mounted = false;
+              window.clearInterval(timer);
+            };
+          }, []);
+
+          useEffect(() => {
+            let mounted = true;'''
+          text = one(text, old, new, 'router monitor polling effect')
+
+          old = '''      section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) {
+                grid-template-columns: minmax(0, 1fr) !important;
+              }
+              section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:first-child {
+                display: none !important;
+              }
+              section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:last-child {
+                grid-column: 1 / -1;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                column-gap: .75rem;
+              }
+              section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:last-child > div:nth-child(n+3) {
+                display: none !important;
+              }
+
+'''
+          text = one(text, old, '', 'broken bandwidth CSS override')
+
+          start = text.index('function BandwidthOverviewExact({')
+          marker = text.index('\n\n  return (', start)
+          prefix = text[start:marker]
+          new_prefix = '''function BandwidthOverviewExact({
+            history = [],
+            tick = 0,
+            panel =
+              'bg-white text-slate-900',
+            muted =
+              'text-slate-400',
+          }) {
+            const buckets = new Map();
+
+            (Array.isArray(history) ? history : []).forEach((row, index) => {
+              if (!row) return;
+              const down = Number(row.download_mbps);
+              const up = Number(row.upload_mbps);
+              if (!Number.isFinite(down) && !Number.isFinite(up)) return;
+
+              const parsedTime = new Date(row.timestamp || row.created_at || '').getTime();
+              const hasTime = Number.isFinite(parsedTime) && parsedTime > 0;
+              const bucket = hasTime ? Math.floor(parsedTime / 5000) * 5000 : index;
+              buckets.set(bucket, {
+                timestamp: hasTime ? parsedTime : index,
+                download_mbps: Number.isFinite(down) ? Math.max(0, down) : 0,
+                upload_mbps: Number.isFinite(up) ? Math.max(0, up) : 0,
+              });
+            });
+
+            const rows = [...buckets.values()]
+              .sort((a, b) => a.timestamp - b.timestamp)
+              .slice(-60);
+
+            const latest = rows[rows.length - 1] || null;
+            const download = Number(latest?.download_mbps || 0);
+            const upload = Number(latest?.upload_mbps || 0);
+            const peak = Math.max(
+              0,
+              ...rows.flatMap((row) => [row.download_mbps, row.upload_mbps])
+            );
+            const scaleMax = peak > 0 ? peak * 1.12 : 1;
+
+            const points = (key) => rows
+              .map((row, index) => {
+                const x = rows.length <= 1 ? 50 : (index / (rows.length - 1)) * 100;
+                const value = Number.isFinite(row[key]) ? row[key] : 0;
+                const y = 38 - (value / scaleMax) * 32;
+                return `${x.toFixed(2)},${y.toFixed(2)}`;
+              })
+              .join(' ');
+
+            void tick;'''
+          text = text[:start] + new_prefix + text[marker:]
+
+          old = '''              peak ===
+                        1 &&
+                        !rows.length
+                          ? '—'
+                          : `${peak.toFixed(
+                              2
+                            )} Mbps`'''
+          new = '''              !rows.length
+                          ? '—'
+                          : `${peak.toFixed(
+                              2
+                            )} Mbps`'''
+          text = one(text, old, new, 'overview actual peak display')
+
+          old = '''                <Badge
+                          tone={
+                            ['online', 'active'].includes(routerDisplayStatus(router))
+                              ? 'green'
+                              : 'amber'
+                          }
+                        >
+                          {routerDisplayStatus(router)}
+                        </Badge>'''
+          new = '''                <Badge
+                          tone={
+                            routerDisplayStatus(router) === 'online'
+                              ? 'green'
+                              : routerDisplayStatus(router) === 'offline'
+                                ? 'rose'
+                                : 'amber'
+                          }
+                        >
+                          {routerDisplayStatus(router)}
+                        </Badge>'''
+          text = one(text, old, new, 'router badge tone')
+
+          old = "tone === 'indigo' ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : 'bg-slate-100 text-slate-600'"
+          new = "tone === 'indigo' ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : tone === 'rose' ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200' : 'bg-slate-100 text-slate-600'"
+          text = one(text, old, new, 'Badge rose tone')
+
+          old = '''                  <p className={`mt-1 text-xs ${muted}`}>
+                            {router.host ||
+                              router.wireguard_tunnel_ip ||
+                              'Private tunnel'}
+                            <span className="mx-1.5 text-slate-500">|</span>
+                            API {router.port || 8728}
+                          </p>'''
+          new = '''                  <p className={`mt-1 text-xs ${muted}`}>
+                            {router.host ||
+                              router.wireguard_tunnel_ip ||
+                              'Private tunnel'}
+                            <span className="mx-1.5 text-slate-500">|</span>
+                            API {router.port || 8728}
+                          </p>
+
+                          {router.status_checked_at && (
+                            <p className={`mt-1 text-[10px] font-semibold ${muted}`}>
+                              {router.status_source === 'monitor' ? 'Live monitor' : 'Last check'} · {new Date(router.status_checked_at).toLocaleTimeString()}
+                            </p>
+                          )}'''
+          text = one(text, old, new, 'router checked-at label')
+
+          path.write_text(text)
+
+          # ------------------------------------------------------------------
+          # BillingNoc: normalize/dedupe chart points and use dynamic scaling.
+          # ------------------------------------------------------------------
+          path = Path('frontend/src/pages/BillingNoc.jsx')
+          text = path.read_text()
+          pattern = re.compile(r'function TrafficChart\(\{ rows \}\) \{.*?\n\}\n\nfunction EmptyNoc', re.S)
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('TrafficChart: function block not found')
+          replacement = '''function TrafficChart({ rows }) {
+            const buckets = new Map();
+            (Array.isArray(rows) ? rows : []).forEach((row, index) => {
+              if (!row) return;
+              const down = Number(row.download_mbps);
+              const up = Number(row.upload_mbps);
+              if (!Number.isFinite(down) && !Number.isFinite(up)) return;
+              const parsedTime = new Date(row.timestamp || row.created_at || '').getTime();
+              const hasTime = Number.isFinite(parsedTime) && parsedTime > 0;
+              const bucket = hasTime ? Math.floor(parsedTime / 5000) * 5000 : index;
+              buckets.set(bucket, {
+                timestamp: hasTime ? parsedTime : index,
+                download_mbps: Number.isFinite(down) ? Math.max(0, down) : 0,
+                upload_mbps: Number.isFinite(up) ? Math.max(0, up) : 0,
+              });
+            });
+
+            const data = [...buckets.values()]
+              .sort((a, b) => a.timestamp - b.timestamp)
+              .slice(-60);
+            if (!data.length) return <div className="flex h-[150px] items-center justify-center text-[10px] font-semibold text-slate-400">Traffic history will appear after NOC samples are collected.</div>;
+
+            const peak = Math.max(0, ...data.flatMap((row) => [row.download_mbps, row.upload_mbps]));
+            const scaleMax = peak > 0 ? peak * 1.12 : 1;
+            const width = 720;
+            const height = 150;
+            const padX = 12;
+            const padY = 14;
+            const usableWidth = width - padX * 2;
+            const usableHeight = height - padY * 2;
+            const point = (row, index, key) => {
+              const x = padX + (data.length <= 1 ? usableWidth / 2 : (index / (data.length - 1)) * usableWidth);
+              const value = Number.isFinite(row[key]) ? row[key] : 0;
+              const y = padY + usableHeight - (value / scaleMax) * usableHeight;
+              return `${x.toFixed(1)},${y.toFixed(1)}`;
+            };
+            const down = data.map((row, index) => point(row, index, 'download_mbps')).join(' ');
+            const up = data.map((row, index) => point(row, index, 'upload_mbps')).join(' ');
+
+            return <div><svg viewBox={`0 0 ${width} ${height}`} preserveAspectRatio="none" className="h-[150px] w-full" role="img" aria-label="NOC traffic graph">{[0.25, 0.5, 0.75].map((ratio) => <line key={ratio} x1={padX} x2={width - padX} y1={padY + usableHeight * ratio} y2={padY + usableHeight * ratio} stroke="currentColor" className="text-slate-100" strokeWidth="1" vectorEffect="non-scaling-stroke" />)}<polyline points={down} fill="none" stroke="#0ea5e9" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /><polyline points={up} fill="none" stroke="#10b981" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" vectorEffect="non-scaling-stroke" /></svg><div className="mt-2 flex items-center justify-between text-[10px] font-bold text-slate-400"><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-sky-500" />Download</span><span className="inline-flex items-center gap-1.5"><i className="h-2 w-2 rounded-full bg-emerald-500" />Upload</span><span className="hidden sm:inline">Peak {peak.toFixed(2)} Mbps</span></div></div>;
+          }
+
+          function EmptyNoc'''
+          text = text[:match.start()] + replacement + text[match.end():]
+          path.write_text(text)
+
+          # ------------------------------------------------------------------
+          # MikroTik router list: derive UI status from real one-minute monitor
+          # state, never an indefinitely stale manual test.
+          # ------------------------------------------------------------------
+          path = Path('backend/src/services/mikrotik.js')
+          text = path.read_text()
+          pattern = re.compile(r'function safeRouter\(row\) \{.*?\n\}\n\nfunction routerOsQuote', re.S)
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('safeRouter: function block not found')
+          replacement = '''function safeRouter(row) {
+            const features = cleanFeatures(row.features);
+            const now = Date.now();
+            const monitorCheckedAt = row.monitor_updated_at || null;
+            const monitorCheckedMs = monitorCheckedAt ? new Date(monitorCheckedAt).getTime() : NaN;
+            const monitorFresh = Number.isFinite(monitorCheckedMs) && now - monitorCheckedMs <= 3 * 60 * 1000;
+            const storedSeenMs = row.last_seen_at ? new Date(row.last_seen_at).getTime() : NaN;
+            const storedFresh = Number.isFinite(storedSeenMs) && now - storedSeenMs <= 3 * 60 * 1000;
+            const storedStatus = String(row.last_status || '').trim().toLowerCase();
+            const monitorState = row.monitor_state_json && typeof row.monitor_state_json === 'object'
+              ? row.monitor_state_json
+              : {};
+            const monitorFailures = Number(monitorState.failure_count || 0);
+
+            let lastStatus = 'pending';
+            let statusSource = 'unconfirmed';
+            let statusCheckedAt = null;
+            let lastError = row.last_error || '';
+
+            if (row.is_active === false) {
+              lastStatus = 'inactive';
+              statusSource = 'configuration';
+            } else if (monitorCheckedAt) {
+              statusCheckedAt = monitorCheckedAt;
+              if (!monitorFresh) {
+                lastStatus = 'unknown';
+                statusSource = 'stale_monitor';
+              } else if (row.monitor_is_online === true) {
+                lastStatus = 'online';
+                statusSource = 'monitor';
+                lastError = '';
+              } else if (monitorFailures >= 2) {
+                lastStatus = 'offline';
+                statusSource = 'monitor';
+                lastError = monitorState.last_error || lastError;
+              } else {
+                lastStatus = 'checking';
+                statusSource = 'monitor';
+                lastError = monitorState.last_error || lastError;
+              }
+            } else if (storedFresh && ['online', 'active'].includes(storedStatus)) {
+              lastStatus = 'online';
+              statusSource = 'manual_test';
+              statusCheckedAt = row.last_seen_at;
+            } else if (['error', 'offline', 'failed'].includes(storedStatus)) {
+              lastStatus = 'offline';
+              statusSource = 'manual_test';
+              statusCheckedAt = row.updated_at || null;
+            }
+
+            return {
+              id: row.id,
+              name: row.name,
+              host: row.host,
+              port: row.port,
+              connection_type: row.connection_type || 'api',
+              username: row.username,
+              connection_method: row.connection_method || 'public_api',
+              wireguard_tunnel_ip: row.wireguard_tunnel_ip || '',
+              wireguard_interface: row.wireguard_interface || '',
+              wireguard_mikrotik_public_key: row.wireguard_mikrotik_public_key || '',
+              wireguard_billing_api_ips: row.wireguard_billing_api_ips || '',
+              provisioning_status: row.provisioning_status || 'not_configured',
+              provisioned_at: row.provisioned_at || null,
+              password_configured: Boolean(row.password_encrypted),
+              features,
+              is_active: row.is_active !== false,
+              last_status: lastStatus,
+              last_error: lastError,
+              last_identity: row.last_identity || '',
+              last_version: row.last_version || '',
+              last_uptime: row.last_uptime || '',
+              last_seen_at: row.monitor_last_seen || row.last_seen_at,
+              status_source: statusSource,
+              status_checked_at: statusCheckedAt,
+              monitor_offline_since: row.monitor_offline_since || null,
+              created_at: row.created_at,
+              updated_at: row.updated_at,
+            };
+          }
+
+          function routerOsQuote'''
+          text = text[:match.start()] + replacement + text[match.end():]
+
+          old = '''async function listRouters(clientId) {
+            await ensureMikrotikTables();
+            const result = await db.query(`SELECT * FROM mikrotik_routers WHERE client_id = $1 ORDER BY created_at DESC`, [clientId]);
+            return result.rows.map(safeRouter);
+          }'''
+          new = '''async function listRouters(clientId) {
+            await ensureMikrotikTables();
+            const stateTable = await db.query(
+              `SELECT TO_REGCLASS('public.router_states') AS table_name`
+            );
+            const hasMonitorState = Boolean(stateTable.rows[0]?.table_name);
+            const result = hasMonitorState
+              ? await db.query(
+                  `SELECT r.*,
+                          s.is_online AS monitor_is_online,
+                          s.last_seen AS monitor_last_seen,
+                          s.offline_since AS monitor_offline_since,
+                          s.updated_at AS monitor_updated_at,
+                          s.state_json AS monitor_state_json
+                   FROM mikrotik_routers r
+                   LEFT JOIN router_states s ON s.router_id = r.id
+                   WHERE r.client_id = $1
+                   ORDER BY r.created_at DESC`,
+                  [clientId]
+                )
+              : await db.query(
+                  `SELECT * FROM mikrotik_routers WHERE client_id = $1 ORDER BY created_at DESC`,
+                  [clientId]
+                );
+            return result.rows.map(safeRouter);
+          }'''
+          text = one(text, old, new, 'listRouters monitor join')
+          path.write_text(text)
+
+          # ------------------------------------------------------------------
+          # NOC: dedupe stored history into time buckets and reuse recent live
+          # snapshots for status/analysis so one UI refresh doesn't write 3.
+          # ------------------------------------------------------------------
+          path = Path('backend/src/services/noc.js')
+          text = path.read_text()
+          pattern = re.compile(r'async function nocHistory\(clientId, routerId, range = \'6h\'\) \{.*?\n\}\n\nasync function nocStatus', re.S)
+          match = pattern.search(text)
+          if not match:
+              raise SystemExit('nocHistory: function block not found')
+          replacement = '''async function nocHistory(clientId, routerId, range = '6h') {
+            await ensureNocTables();
+            const router = await resolveRouter(clientId, routerId);
+            const hours = range === '24h' ? 24 : range === '1h' ? 1 : 6;
+            const bucketSeconds = hours === 24 ? 60 : 10;
+            const result = await db.query(
+              `SELECT created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent,
+                      storage_used_percent, active_pppoe, active_hotspot, router_health_percent
+               FROM (
+                 SELECT DISTINCT ON (FLOOR(EXTRACT(EPOCH FROM created_at) / $4::numeric))
+                        created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent,
+                        storage_used_percent, active_pppoe, active_hotspot, router_health_percent
+                 FROM noc_router_snapshots
+                 WHERE client_id = $1
+                   AND router_id = $2
+                   AND created_at >= NOW() - ($3::text)::interval
+                 ORDER BY FLOOR(EXTRACT(EPOCH FROM created_at) / $4::numeric), created_at DESC
+               ) sampled
+               ORDER BY created_at ASC`,
+              [clientId, router.id, `${hours} hours`, bucketSeconds]
+            );
+            return result.rows.map((row) => ({
+              timestamp: row.created_at,
+              download_mbps: Number(row.download_mbps || 0),
+              upload_mbps: Number(row.upload_mbps || 0),
+              cpu_load: row.cpu_load === null ? null : Number(row.cpu_load),
+              memory_used_percent: row.memory_used_percent === null ? null : Number(row.memory_used_percent),
+              storage_used_percent: row.storage_used_percent === null ? null : Number(row.storage_used_percent),
+              pppoe_count: row.active_pppoe === null ? null : Number(row.active_pppoe),
+              hotspot_count: row.active_hotspot === null ? null : Number(row.active_hotspot),
+              router_health_percent: row.router_health_percent === null ? null : Number(row.router_health_percent),
+            }));
+          }
+
+          async function recentSnapshotOrLive(clientId, routerId, seconds = 20) {
+            const router = await resolveRouter(clientId, routerId);
+            const previous = await latestStoredSnapshot(clientId, router.id).catch(() => null);
+            if (previous && recentEnough(previous.checked_at || previous.cached_at, seconds / 60)) {
+              return previous;
+            }
+            return readLiveSnapshot(clientId, router.id);
+          }
+
+          async function nocStatus'''
+          text = text[:match.start()] + replacement + text[match.end():]
+
+          pattern = re.compile(r'(async function nocStatus\(clientId, routerId\) \{\n\s*)const snapshot = await readLiveSnapshot\(clientId, routerId\);')
+          text, count = pattern.subn(r'\1const snapshot = await recentSnapshotOrLive(clientId, routerId);', text, count=1)
+          if count != 1:
+              raise SystemExit(f'nocStatus snapshot reuse: expected 1, found {count}')
+
+          pattern = re.compile(r'(async function nocAnalysis\(clientId, routerId\) \{\n\s*)const snapshot = await nocOverview\(clientId, routerId\);')
+          text, count = pattern.subn(r'\1const snapshot = await recentSnapshotOrLive(clientId, routerId);', text, count=1)
+          if count != 1:
+              raise SystemExit(f'nocAnalysis snapshot reuse: expected 1, found {count}')
+
+          path.write_text(text)
+          PY
+
+      - name: Backend syntax checks
+        run: |
+          node --check backend/src/services/mikrotik.js
+          node --check backend/src/services/noc.js
+
+      - name: Source assertions
+        run: |
+          grep -q "status_source: statusSource" backend/src/services/mikrotik.js
+          grep -q "LEFT JOIN router_states" backend/src/services/mikrotik.js
+          grep -q "bucketSeconds" backend/src/services/noc.js
+          grep -q "recentSnapshotOrLive" backend/src/services/noc.js
+          grep -q "const scaleMax = peak > 0" frontend/src/pages/BillingNoc.jsx
+          grep -q "const scaleMax = peak > 0" frontend/src/pages/BillingWorkspace.jsx
+          ! grep -q 'section:has(svg\[aria-label="Live bandwidth traffic graph"\]) > div:nth-child(2)' frontend/src/pages/BillingWorkspace.jsx
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: frontend
+        run: npm run build
+
+      - name: Diff validation
+        run: git diff --check
+
+      - name: Commit validated source
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            backend/src/services/mikrotik.js \
+            backend/src/services/noc.js \
+            frontend/src/pages/BillingNoc.jsx \
+            frontend/src/pages/BillingWorkspace.jsx
+          git commit -m "Fix traffic charts and live router status"
+          git push origin HEAD:agent/traffic-router-live-status

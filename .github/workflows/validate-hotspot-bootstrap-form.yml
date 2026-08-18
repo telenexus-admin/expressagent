@@ -18,145 +18,10 @@ jobs:
           ref: agent/hotspot-bootstrap-form-fix
           fetch-depth: 0
 
-      - name: Apply focused hotspot bootstrap fix
-        shell: bash
-        run: |
-          python3 <<'PY'
-          from pathlib import Path
-          import re
-
-          # Replace the JS-built redirect with the form-submit pattern recommended
-          # for external RouterOS HotSpot authentication. The visible submit button
-          # is a fallback for restrictive captive-portal WebViews.
-          p = Path('backend/src/services/hotspotEdgePortal.js')
-          s = p.read_text()
-          pattern = re.compile(
-              r"function buildHostedPortalBootstrap\(\{.*?\n\}\n\n\nasync function replaceHotspotPortalFiles",
-              re.S,
-          )
-          match = pattern.search(s)
-          if not match:
-              raise SystemExit('buildHostedPortalBootstrap function not found')
-
-          replacement = r'''function buildHostedPortalBootstrap({
-            bootstrapToken,
-          }) {
-            const hostedPortal =
-              `${API_BASE}/bootstrap`;
-
-            const escapedToken =
-              String(bootstrapToken || '')
-                .replace(/&/g, '&amp;')
-                .replace(/"/g, '&quot;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;');
-
-            return `<!doctype html>
-          <html lang="en">
-          <head>
-            <meta charset="utf-8">
-            <meta name="viewport" content="width=device-width,initial-scale=1">
-            <meta http-equiv="cache-control" content="no-store">
-            <title>Connecting…</title>
-            <style>
-              body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}
-              .card{padding:24px;text-align:center}
-              button{margin-top:18px;border:0;border-radius:12px;padding:12px 18px;background:#17c77a;color:#04150e;font:800 14px system-ui,sans-serif;cursor:pointer}
-            </style>
-          </head>
-          <body>
-            <div class="card">
-              <div>Opening your hotspot portal…</div>
-              <form id="portal-form" action="${hostedPortal}" method="get">
-                <input type="hidden" name="bootstrapToken" value="${escapedToken}">
-                <input type="hidden" name="mac" value="$(mac)">
-                <input type="hidden" name="ip" value="$(ip)">
-                <input type="hidden" name="link-login-only" value="$(link-login-only)">
-                <input type="hidden" name="server-address" value="$(server-address)">
-                <input type="hidden" name="link-orig" value="http://neverssl.com/">
-                <button id="portal-submit" type="submit">Open hotspot portal</button>
-              </form>
-            </div>
-            <script>
-              (function(){
-                var form=document.getElementById("portal-form");
-                var button=document.getElementById("portal-submit");
-                if(!form)return;
-                if(button)button.style.display="none";
-                try{form.submit();}
-                catch(_){if(button)button.style.display="inline-block";}
-                window.setTimeout(function(){
-                  if(button)button.style.display="inline-block";
-                },2500);
-              })();
-            </script>
-          </body>
-          </html>`;
-          }
-
-
-          async function replaceHotspotPortalFiles'''
-          s = s[:match.start()] + replacement + s[match.end():]
-          p.write_text(s)
-
-          # Bootstrap route: derive a safe private-IP RouterOS login URL from
-          # $(server-address) when RouterOS advertises a DNS alias such as
-          # login.nexa.local. This keeps the existing anti-credential-exfiltration
-          # restriction: only a private IPv4 in the client's /24 is accepted.
-          p = Path('backend/src/routes/hotspotPortal.js')
-          s = p.read_text()
-
-          marker = '''function portalOrigin(req) {
-            return String(process.env.FRONTEND_URL || (req.protocol + '://' + req.get('host'))).replace(/\\/$/, '');
-          }
-'''
-          if s.count(marker) != 1:
-              raise SystemExit(f'portalOrigin marker expected once, found {s.count(marker)}')
-
-          helper = marker + '''
-          function safeBootstrapRouterLogin(loginOnly, serverAddress, clientIp) {
-            const direct = safeRouterLoginUrl(loginOnly, clientIp);
-            if (direct) return direct;
-
-            const raw = String(serverAddress || '').trim();
-            if (!raw || raw.length > 120) return null;
-
-            try {
-              const normalized = raw.replace(/^https?:\\/\\//i, '');
-              const url = new URL(`http://${normalized}`);
-              if (url.username || url.password || url.search || url.hash || (url.pathname && url.pathname !== '/')) return null;
-              if (net.isIP(url.hostname) !== 4 || !privateIpv4(url.hostname) || !privateIpv4(clientIp) || !samePrivateSubnet(url.hostname, clientIp)) return null;
-              const port = url.port && url.port !== '80' ? `:${url.port}` : '';
-              return `http://${url.hostname}${port}/login`;
-            } catch (_) {
-              return null;
-            }
-          }
-'''
-          s = s.replace(marker, helper, 1)
-
-          old = '''  const loginOnly = String(req.query['link-login-only'] || '').trim();
-            if (loginOnly && loginOnly.length <= 512) {
-              target.searchParams.set('link-login-only', loginOnly);
-            }
-            target.searchParams.set('link-orig', 'http://neverssl.com/');'''
-          new = '''  const loginOnly = safeBootstrapRouterLogin(
-              req.query['link-login-only'],
-              req.query['server-address'],
-              ip
-            );
-            if (loginOnly) {
-              target.searchParams.set('link-login-only', loginOnly);
-            }
-            target.searchParams.set('link-orig', 'http://neverssl.com/');'''
-          if s.count(old) != 1:
-              raise SystemExit(f'bootstrap login block expected once, found {s.count(old)}')
-          s = s.replace(old, new, 1)
-          p.write_text(s)
-          PY
+      - name: Apply source patch
+        run: python3 .github/scripts/apply_hotspot_bootstrap_form.py
 
       - name: Syntax and safety assertions
-        shell: bash
         run: |
           node --check backend/src/services/hotspotEdgePortal.js
           node --check backend/src/routes/hotspotPortal.js
@@ -168,8 +33,7 @@ jobs:
           grep -q "req.query\['server-address'\]" backend/src/routes/hotspotPortal.js
           git diff --check
 
-      - name: Commit validated source to feature branch
-        shell: bash
+      - name: Commit validated source
         run: |
           git config user.name github-actions[bot]
           git config user.email 41898282+github-actions[bot]@users.noreply.github.com

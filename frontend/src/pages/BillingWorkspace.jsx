@@ -128,17 +128,19 @@ const navGroups = [
 
 const money = (v) => `KSh ${Number(v || 0).toLocaleString()}`;
 const routerDisplayStatus = (router) => {
+  if (router?.is_active === false) return 'inactive';
   const status = String(
     router?.last_status ||
     router?.status ||
     ''
   ).trim().toLowerCase();
 
-  if (status === 'error') return 'offline';
-
+  if (['error', 'failed', 'offline'].includes(status)) return 'offline';
+  if (['online', 'active'].includes(status)) return 'online';
+  if (['unknown', 'stale'].includes(status)) return 'unknown';
   return status || 'pending';
 };
-const Badge = ({ children, tone = 'slate' }) => <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[.12em] ${tone === 'green' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : tone === 'amber' ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' : tone === 'indigo' ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : 'bg-slate-100 text-slate-600'}`}>{children}</span>;
+const Badge = ({ children, tone = 'slate' }) => <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-[.12em] ${tone === 'green' ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200' : tone === 'amber' ? 'bg-amber-50 text-amber-700 ring-1 ring-amber-200' : tone === 'indigo' ? 'bg-indigo-50 text-indigo-700 ring-1 ring-indigo-200' : tone === 'rose' ? 'bg-rose-50 text-rose-700 ring-1 ring-rose-200' : 'bg-slate-100 text-slate-600'}`}>{children}</span>;
 const Field = ({ label, children, hint }) => <label className="block"><span className="text-xs font-bold text-slate-700">{label}</span>{hint && <span className="ml-1 text-[11px] text-slate-400">{hint}</span>}<div className="mt-1.5">{children}</div></label>;
 const Card = ({ className = '', children }) => <section className={`rounded-2xl border border-slate-200/80 bg-white shadow-[0_1px_2px_rgba(15,23,42,.04)] ${className}`}>{children}</section>;
 const Empty = ({ title, text }) => <div className="px-6 py-16 text-center"><div className="mx-auto flex h-11 w-11 items-center justify-center rounded-2xl bg-slate-100 text-xl text-slate-400">+</div><h3 className="mt-4 font-bold text-slate-800">{title}</h3><p className="mx-auto mt-1 max-w-xs text-sm leading-6 text-slate-500">{text}</p></div>;const SkeletonBlock = ({ className = '' }) => <div className={`animate-pulse rounded-xl bg-slate-200/80 ${className}`} />;
@@ -361,6 +363,32 @@ export default function BillingWorkspace() {
       link.href = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap';
       document.head.appendChild(link);
     }
+  }, []);
+
+  useEffect(() => {
+    let mounted = true;
+    const refreshRouterStates = async () => {
+      try {
+        const result = await api.get('/mikrotik');
+        if (!mounted) return;
+        const routerData = result.data;
+        setRouters(
+          Array.isArray(routerData)
+            ? routerData
+            : Array.isArray(routerData?.routers)
+              ? routerData.routers
+              : []
+        );
+      } catch (_) {
+        // Keep the last confirmed monitor state until the next refresh.
+      }
+    };
+
+    const timer = window.setInterval(refreshRouterStates, 30000);
+    return () => {
+      mounted = false;
+      window.clearInterval(timer);
+    };
   }, []);
 
   useEffect(() => {
@@ -720,20 +748,6 @@ export default function BillingWorkspace() {
       }
 
       [data-billing-tab="tr069"] header {
-        display: none !important;
-      }
-      section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) {
-        grid-template-columns: minmax(0, 1fr) !important;
-      }
-      section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:first-child {
-        display: none !important;
-      }
-      section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:last-child {
-        grid-column: 1 / -1;
-        grid-template-columns: repeat(2, minmax(0, 1fr));
-        column-gap: .75rem;
-      }
-      section:has(svg[aria-label="Live bandwidth traffic graph"]) > div:nth-child(2) > div:last-child > div:nth-child(n+3) {
         display: none !important;
       }
 
@@ -1302,13 +1316,21 @@ function Routers({
                     <span className="mx-1.5 text-slate-500">|</span>
                     API {router.port || 8728}
                   </p>
+
+                  {router.status_checked_at && (
+                    <p className={`mt-1 text-[10px] font-semibold ${muted}`}>
+                      {router.status_source === 'monitor' ? 'Live monitor' : 'Last check'} · {new Date(router.status_checked_at).toLocaleTimeString()}
+                    </p>
+                  )}
                 </div>
 
                 <Badge
                   tone={
-                    ['online', 'active'].includes(routerDisplayStatus(router))
+                    routerDisplayStatus(router) === 'online'
                       ? 'green'
-                      : 'amber'
+                      : routerDisplayStatus(router) === 'offline'
+                        ? 'rose'
+                        : 'amber'
                   }
                 >
                   {routerDisplayStatus(router)}
@@ -1754,131 +1776,46 @@ function MobileAction({ icon, label, onClick }) { return <button onClick={onClic
 function BandwidthOverviewExact({
   history = [],
   tick = 0,
-  panel =
-    'bg-white text-slate-900',
-  muted =
-    'text-slate-400',
+  panel = 'bg-white text-slate-900',
+  muted = 'text-slate-400',
 }) {
-  const rows =
-    (
-      Array.isArray(
-        history
-      )
-        ? history
-        : []
-    )
-      .filter(
-        row =>
-          row &&
-          (
-            Number.isFinite(
-              Number(
-                row.download_mbps
-              )
-            ) ||
-            Number.isFinite(
-              Number(
-                row.upload_mbps
-              )
-            )
-          )
-      )
-      .slice(
-        -48
-      );
+  const buckets = new Map();
 
+  (Array.isArray(history) ? history : []).forEach((row, index) => {
+    if (!row) return;
+    const down = Number(row.download_mbps);
+    const up = Number(row.upload_mbps);
+    if (!Number.isFinite(down) && !Number.isFinite(up)) return;
 
-  const latest =
-    rows[
-      rows.length -
-      1
-    ] ||
-    null;
+    const parsedTime = new Date(row.timestamp || row.created_at || '').getTime();
+    const hasTime = Number.isFinite(parsedTime) && parsedTime > 0;
+    const bucket = hasTime ? Math.floor(parsedTime / 5000) * 5000 : index;
+    buckets.set(bucket, {
+      timestamp: hasTime ? parsedTime : index,
+      download_mbps: Number.isFinite(down) ? Math.max(0, down) : 0,
+      upload_mbps: Number.isFinite(up) ? Math.max(0, up) : 0,
+    });
+  });
 
+  const rows = [...buckets.values()]
+    .sort((a, b) => a.timestamp - b.timestamp)
+    .slice(-60);
+  const latest = rows[rows.length - 1] || null;
+  const download = Number(latest?.download_mbps || 0);
+  const upload = Number(latest?.upload_mbps || 0);
+  const peak = Math.max(0, ...rows.flatMap((row) => [row.download_mbps, row.upload_mbps]));
+  const scaleMax = peak > 0 ? peak * 1.12 : 1;
 
-  const download =
-    Number(
-      latest
-        ?.download_mbps ||
-      0
-    );
-
-
-  const upload =
-    Number(
-      latest
-        ?.upload_mbps ||
-      0
-    );
-
-
-  const peak =
-    Math.max(
-      1,
-
-      ...rows.flatMap(
-        row => [
-          Number(
-            row.download_mbps ||
-            0
-          ),
-
-          Number(
-            row.upload_mbps ||
-            0
-          ),
-        ]
-      )
-    );
-
-
-  const points =
-    key =>
-      rows
-        .map(
-          (
-            row,
-            index
-          ) => {
-            const x =
-              rows.length <=
-              1
-                ? 50
-                : (
-                    index /
-                    (
-                      rows.length -
-                      1
-                    )
-                  ) *
-                  100;
-
-            const value =
-              Number(
-                row[key] ||
-                0
-              );
-
-            const y =
-              37 -
-              (
-                value /
-                peak
-              ) *
-              31;
-
-            return `${x.toFixed(
-              2
-            )},${y.toFixed(
-              2
-            )}`;
-          }
-        )
-        .join(' ');
-
+  const points = (key) => rows
+    .map((row, index) => {
+      const x = rows.length <= 1 ? 50 : (index / (rows.length - 1)) * 100;
+      const value = Number.isFinite(row[key]) ? row[key] : 0;
+      const y = 38 - (value / scaleMax) * 32;
+      return `${x.toFixed(2)},${y.toFixed(2)}`;
+    })
+    .join(' ');
 
   void tick;
-
 
   return (
     <section
@@ -1915,13 +1852,7 @@ function BandwidthOverviewExact({
 
           <strong className="mt-0.5 block text-xs">
             {
-              peak ===
-              1 &&
-              !rows.length
-                ? '—'
-                : `${peak.toFixed(
-                    2
-                  )} Mbps`
+              !rows.length ? '—' : `${peak.toFixed(2)} Mbps`
             }
           </strong>
         </div>

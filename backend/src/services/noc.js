@@ -542,12 +542,22 @@ async function nocHistory(clientId, routerId, range = '6h') {
   await ensureNocTables();
   const router = await resolveRouter(clientId, routerId);
   const hours = range === '24h' ? 24 : range === '1h' ? 1 : 6;
+  const bucketSeconds = hours === 24 ? 60 : 10;
   const result = await db.query(
-    `SELECT created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent, storage_used_percent, active_pppoe, active_hotspot, router_health_percent
-     FROM noc_router_snapshots
-     WHERE client_id = $1 AND router_id = $2 AND created_at >= NOW() - ($3::text)::interval
+    `SELECT created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent,
+            storage_used_percent, active_pppoe, active_hotspot, router_health_percent
+     FROM (
+       SELECT DISTINCT ON (FLOOR(EXTRACT(EPOCH FROM created_at) / $4::numeric))
+              created_at, download_mbps, upload_mbps, cpu_load, memory_used_percent,
+              storage_used_percent, active_pppoe, active_hotspot, router_health_percent
+       FROM noc_router_snapshots
+       WHERE client_id = $1
+         AND router_id = $2
+         AND created_at >= NOW() - ($3::text)::interval
+       ORDER BY FLOOR(EXTRACT(EPOCH FROM created_at) / $4::numeric), created_at DESC
+     ) sampled
      ORDER BY created_at ASC`,
-    [clientId, router.id, `${hours} hours`]
+    [clientId, router.id, `${hours} hours`, bucketSeconds]
   );
   return result.rows.map((row) => ({
     timestamp: row.created_at,
@@ -562,8 +572,17 @@ async function nocHistory(clientId, routerId, range = '6h') {
   }));
 }
 
+async function recentSnapshotOrLive(clientId, routerId, seconds = 20) {
+  const router = await resolveRouter(clientId, routerId);
+  const previous = await latestStoredSnapshot(clientId, router.id).catch(() => null);
+  if (previous && recentEnough(previous.checked_at || previous.cached_at, seconds / 60)) {
+    return previous;
+  }
+  return readLiveSnapshot(clientId, router.id);
+}
+
 async function nocStatus(clientId, routerId) {
-  const snapshot = await readLiveSnapshot(clientId, routerId);
+  const snapshot = await recentSnapshotOrLive(clientId, routerId);
   const history = await nocHistory(clientId, snapshot.router_id, '1h');
   return [
     {
@@ -605,7 +624,7 @@ async function nocStatus(clientId, routerId) {
 }
 
 async function nocAnalysis(clientId, routerId) {
-  const snapshot = await nocOverview(clientId, routerId);
+  const snapshot = await recentSnapshotOrLive(clientId, routerId);
   const history = await nocHistory(clientId, snapshot.router_id, '1h').catch(() => []);
   return buildNocAnalysis(snapshot, history);
 }

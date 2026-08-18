@@ -160,6 +160,54 @@ function cleanFeatures(features) {
 
 function safeRouter(row) {
   const features = cleanFeatures(row.features);
+  const now = Date.now();
+  const monitorCheckedAt = row.monitor_updated_at || null;
+  const monitorCheckedMs = monitorCheckedAt ? new Date(monitorCheckedAt).getTime() : NaN;
+  const monitorFresh = Number.isFinite(monitorCheckedMs) && now - monitorCheckedMs <= 3 * 60 * 1000;
+  const storedSeenMs = row.last_seen_at ? new Date(row.last_seen_at).getTime() : NaN;
+  const storedFresh = Number.isFinite(storedSeenMs) && now - storedSeenMs <= 3 * 60 * 1000;
+  const storedStatus = String(row.last_status || '').trim().toLowerCase();
+  const monitorState = row.monitor_state_json && typeof row.monitor_state_json === 'object'
+    ? row.monitor_state_json
+    : {};
+  const monitorFailures = Number(monitorState.failure_count || 0);
+
+  let lastStatus = 'pending';
+  let statusSource = 'unconfirmed';
+  let statusCheckedAt = null;
+  let lastError = row.last_error || '';
+
+  if (row.is_active === false) {
+    lastStatus = 'inactive';
+    statusSource = 'configuration';
+  } else if (monitorCheckedAt) {
+    statusCheckedAt = monitorCheckedAt;
+    if (!monitorFresh) {
+      lastStatus = 'unknown';
+      statusSource = 'stale_monitor';
+    } else if (row.monitor_is_online === true) {
+      lastStatus = 'online';
+      statusSource = 'monitor';
+      lastError = '';
+    } else if (monitorFailures >= 2) {
+      lastStatus = 'offline';
+      statusSource = 'monitor';
+      lastError = monitorState.last_error || lastError;
+    } else {
+      lastStatus = 'checking';
+      statusSource = 'monitor';
+      lastError = monitorState.last_error || lastError;
+    }
+  } else if (storedFresh && ['online', 'active'].includes(storedStatus)) {
+    lastStatus = 'online';
+    statusSource = 'manual_test';
+    statusCheckedAt = row.last_seen_at;
+  } else if (['error', 'offline', 'failed'].includes(storedStatus)) {
+    lastStatus = 'offline';
+    statusSource = 'manual_test';
+    statusCheckedAt = row.updated_at || null;
+  }
+
   return {
     id: row.id,
     name: row.name,
@@ -177,12 +225,15 @@ function safeRouter(row) {
     password_configured: Boolean(row.password_encrypted),
     features,
     is_active: row.is_active !== false,
-    last_status: row.last_status || '',
-    last_error: row.last_error || '',
+    last_status: lastStatus,
+    last_error: lastError,
     last_identity: row.last_identity || '',
     last_version: row.last_version || '',
     last_uptime: row.last_uptime || '',
-    last_seen_at: row.last_seen_at,
+    last_seen_at: row.monitor_last_seen || row.last_seen_at,
+    status_source: statusSource,
+    status_checked_at: statusCheckedAt,
+    monitor_offline_since: row.monitor_offline_since || null,
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
@@ -2571,7 +2622,28 @@ async function probeRouter(config) {
 
 async function listRouters(clientId) {
   await ensureMikrotikTables();
-  const result = await db.query(`SELECT * FROM mikrotik_routers WHERE client_id = $1 ORDER BY created_at DESC`, [clientId]);
+  const stateTable = await db.query(
+    `SELECT TO_REGCLASS('public.router_states') AS table_name`
+  );
+  const hasMonitorState = Boolean(stateTable.rows[0]?.table_name);
+  const result = hasMonitorState
+    ? await db.query(
+        `SELECT r.*,
+                s.is_online AS monitor_is_online,
+                s.last_seen AS monitor_last_seen,
+                s.offline_since AS monitor_offline_since,
+                s.updated_at AS monitor_updated_at,
+                s.state_json AS monitor_state_json
+         FROM mikrotik_routers r
+         LEFT JOIN router_states s ON s.router_id = r.id
+         WHERE r.client_id = $1
+         ORDER BY r.created_at DESC`,
+        [clientId]
+      )
+    : await db.query(
+        `SELECT * FROM mikrotik_routers WHERE client_id = $1 ORDER BY created_at DESC`,
+        [clientId]
+      );
   return result.rows.map(safeRouter);
 }
 

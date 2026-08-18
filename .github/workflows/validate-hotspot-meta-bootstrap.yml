@@ -1,0 +1,94 @@
+name: Validate hotspot no-js bootstrap
+
+on:
+  pull_request:
+    branches:
+      - production-sync-2026-08-04
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.head_ref == 'agent/hotspot-link-orig-loop-fix'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/hotspot-link-orig-loop-fix
+          fetch-depth: 0
+
+      - name: Replace JS bootstrap with meta refresh
+        shell: bash
+        run: |
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+
+          p = Path('backend/src/services/hotspotEdgePortal.js')
+          s = p.read_text()
+          pattern = re.compile(r"function buildHostedPortalBootstrap\(\{\n  bootstrapToken,\n\}\) \{.*?\n\}\n\n\nasync function replaceHotspotPortalFiles", re.S)
+          m = pattern.search(s)
+          if not m:
+              raise SystemExit('buildHostedPortalBootstrap function not found')
+
+          replacement = r'''function buildHostedPortalBootstrap({
+  bootstrapToken,
+}) {
+  const hostedPortal =
+    `${API_BASE}/bootstrap?bootstrapToken=${encodeURIComponent(bootstrapToken || '')}`;
+
+  const target =
+    `${hostedPortal}` +
+    `&mac=$(mac)` +
+    `&ip=$(ip)` +
+    `&link-login-only=$(link-login-only)` +
+    `&link-orig=http://neverssl.com/`;
+
+  const htmlTarget =
+    target.replace(/&/g, '&amp;');
+
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta http-equiv="cache-control" content="no-store">
+  <meta http-equiv="refresh" content="0;url=${htmlTarget}">
+  <title>Connecting…</title>
+  <style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#06140e;color:#fff;font:600 16px system-ui,sans-serif}.card{padding:24px;text-align:center}a{color:#78e7ad}</style>
+</head>
+<body>
+  <div class="card">
+    Opening your hotspot portal…
+    <p><a href="${htmlTarget}">Open portal</a></p>
+  </div>
+</body>
+</html>`;
+}
+
+
+async function replaceHotspotPortalFiles'''
+
+          p.write_text(s[:m.start()] + replacement + s[m.end():])
+          PY
+
+      - name: Syntax and assertions
+        shell: bash
+        run: |
+          node --check backend/src/services/hotspotEdgePortal.js
+          grep -q 'http-equiv="refresh"' backend/src/services/hotspotEdgePortal.js
+          grep -q '&link-login-only=$(link-login-only)' backend/src/services/hotspotEdgePortal.js
+          grep -q '&link-orig=http://neverssl.com/' backend/src/services/hotspotEdgePortal.js
+          ! grep -q 'window.location.replace(target)' backend/src/services/hotspotEdgePortal.js
+          git diff --check
+
+      - name: Commit validated source
+        shell: bash
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add backend/src/services/hotspotEdgePortal.js
+          git diff --cached --quiet && exit 0
+          git commit -m "Use no-JS hotspot bootstrap redirect"
+          git push origin HEAD:agent/hotspot-link-orig-loop-fix

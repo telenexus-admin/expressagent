@@ -1,0 +1,16 @@
+{
+  "name": "nexa-cloudone-phone-panel",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite --host 0.0.0.0"
+  },
+  "dependencies": {
+    "sip.js": "0.21.2"
+  },
+  "devDependencies": {
+    "vite": "5.4.19"
+  }
+}

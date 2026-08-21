@@ -49,6 +49,11 @@ function normalizedMac(value) {
   return normalizeMac(value) || '';
 }
 
+function voucherMacFromUsedBy(value) {
+  const match = String(value || '').match(/(?:^|\s)mac:([0-9a-f:.-]+)/i);
+  return match ? normalizedMac(match[1]) : '';
+}
+
 async function ensureHotspotSubscriberSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
@@ -891,6 +896,8 @@ async function reconcileExpiredHotspotAccess({
 
          WHERE voucher.expires_at <= NOW()
 
+           AND voucher.status IS DISTINCT FROM 'expired'
+
            AND fulfillment.device_activation_status
                  IS DISTINCT FROM 'deleted'
 
@@ -1144,6 +1151,79 @@ async function reconcileExpiredHotspotAccess({
           error:
             errors.join('; '),
         });
+      }
+    }
+
+    /*
+     * Additional-device vouchers are independent RADIUS logins.
+     * They do not have a fulfillment.voucher_id, so clean them
+     * separately and actively drop the matching hotspot session.
+     */
+    const additionalExpiredResult = await db.query(
+      `SELECT v.id AS voucher_id, v.client_id, v.code AS voucher_code,
+              v.used_by, v.expires_at, p.router_id
+       FROM billing_hotspot_vouchers v
+       JOIN hotspot_payment_fulfillments f
+         ON f.client_id = v.client_id
+        AND f.additional_voucher_ids @> jsonb_build_array(v.id)
+       LEFT JOIN billing_hotspot_plans p
+         ON p.id = v.plan_id AND p.client_id = v.client_id
+       WHERE v.status = 'active'
+         AND v.expires_at <= NOW()
+       ORDER BY v.expires_at ASC
+       LIMIT $1`,
+      [Math.max(1, Number(limit) || 250)]
+    );
+
+    result.checked += additionalExpiredResult.rows.length;
+
+    for (const voucher of additionalExpiredResult.rows) {
+      const mac = voucherMacFromUsedBy(voucher.used_by);
+      const errors = [];
+
+      try {
+        await revokeHotspotRadiusAccess({ voucherCode: voucher.voucher_code });
+      } catch (error) {
+        errors.push(`RADIUS: ${error.message}`);
+      }
+
+      if (mac) {
+        try {
+          await revokeHotspotDeviceAccess({
+            clientId: voucher.client_id,
+            routerId: voucher.router_id || null,
+            macAddress: mac,
+          });
+        } catch (error) {
+          errors.push(`MikroTik: ${error.message}`);
+        }
+      }
+
+      const cleanupSucceeded = errors.length === 0;
+      await db.query(
+        `UPDATE billing_hotspot_vouchers
+         SET status = 'expired'
+         WHERE id = $1 AND client_id = $2`,
+        [voucher.voucher_id, voucher.client_id]
+      );
+
+      if (mac) {
+        await db.query(
+          `UPDATE mikrotik_clients
+           SET status = 'expired', is_online = FALSE,
+               last_seen = 'package expired', updated_at = NOW()
+           WHERE client_id = $1 AND service_type = 'hotspot'
+             AND UPPER(REGEXP_REPLACE(COALESCE(mac_address, username, ''), '[^0-9A-Fa-f]', '', 'g')) =
+                 UPPER(REGEXP_REPLACE($2, '[^0-9A-Fa-f]', '', 'g'))`,
+          [voucher.client_id, mac]
+        );
+      }
+
+      if (cleanupSucceeded) {
+        result.cleaned += 1;
+      } else {
+        result.failed += 1;
+        result.errors.push({ voucher_code: voucher.voucher_code, error: errors.join('; ') });
       }
     }
 

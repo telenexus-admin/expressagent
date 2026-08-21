@@ -13,6 +13,7 @@ const {
   getHotspotPaymentStatus,
 } = require('../services/hotspotPayments');
 const { ensureHotspotPlanSchema } = require('../services/hotspotPlanSchema');
+const { activatePaidHotspotDevice } = require('../services/hotspotMacAccess');
 const { verifyHotspotPortalToken, verifyHotspotPortalBootstrapToken, createHotspotPortalToken } = require('../services/hotspotPortalToken');
 
 const router = express.Router();
@@ -1107,6 +1108,26 @@ router.post('/login', [
   if (!account) return;
   const loginTarget = safeRouterLoginUrl(req.body.link_login_only, req.body.ip);
   if (req.body.link_login_only && !loginTarget) return res.status(400).json({ error: 'The router login target must be this hotspot gateway\'s local /login address.' });
+
+  const activateVoucherDevice = async voucher => {
+    const macAddress = req.body.mac || req.hotspotPortalClaims?.mac || '';
+    const ipAddress = req.body.ip || req.hotspotPortalClaims?.ip || '';
+
+    if (!macAddress || !voucher.router_id || !voucher.expires_at) {
+      return null;
+    }
+
+    return activatePaidHotspotDevice({
+      clientId: account.id,
+      routerId: voucher.router_id,
+      macAddress,
+      ipAddress,
+      expiresAt: voucher.expires_at,
+      rateLimit: voucher.mikrotik_rate_limit || null,
+      dataLimitMb: voucher.data_limit_mb || null,
+    });
+  };
+
   const client = await db.connect();
   try {    await client.query('BEGIN');
     const voucherResult = await client.query(`
@@ -1170,7 +1191,26 @@ router.post('/login', [
       await client.query('ROLLBACK');
       return res.status(403).json({ error: 'This voucher is already assigned to another device.' });
     }
-    if (voucher.status === 'active' && voucher.expires_at && new Date(voucher.expires_at) > new Date()) { await client.query('COMMIT'); return res.json({ success: true, already_active: true, voucher: { code: voucher.code, plan_name: voucher.plan_name, expires_at: voucher.expires_at, duration_minutes: voucher.duration_minutes }, login: { username: voucher.code, password: voucher.code, url: loginTarget || null, destination: req.body.link_orig || null } }); }
+    if (voucher.status === 'active' && voucher.expires_at && new Date(voucher.expires_at) > new Date()) {
+      await client.query('COMMIT');
+
+      let deviceActivation = null;
+      try {
+        deviceActivation = await activateVoucherDevice(voucher);
+      } catch (error) {
+        return res.status(502).json({
+          error: `Voucher is valid but telenexus could not activate this device: ${error.message}`,
+        });
+      }
+
+      return res.json({
+        success: true,
+        already_active: true,
+        voucher: { code: voucher.code, plan_name: voucher.plan_name, expires_at: voucher.expires_at, duration_minutes: voucher.duration_minutes },
+        login: { username: voucher.code, password: voucher.code, url: loginTarget || null, destination: req.body.link_orig || null },
+        device_activation: deviceActivation,
+      });
+    }
     if (voucher.status !== 'available') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'This voucher is no longer available' }); }
     const usedBy = [req.body.mac && `mac:${req.body.mac}`, req.body.ip && `ip:${req.body.ip}`].filter(Boolean).join(' ') || 'Hotspot portal user';
     const updated = await client.query(`UPDATE billing_hotspot_vouchers SET status = 'active', used_by = $1, activated_at = NOW(), expires_at = NOW() + ($2::text || ' minutes')::interval WHERE id = $3 RETURNING *`, [usedBy, voucher.duration_minutes, voucher.id]);
@@ -1185,7 +1225,25 @@ router.post('/login', [
       fup_download_speed_mbps: voucher.fup_download_speed_mbps,
       fup_upload_speed_mbps: voucher.fup_upload_speed_mbps,
     });
-    res.json({ success: true, voucher: { code: updated.rows[0].code, plan_name: voucher.plan_name, price: voucher.price, expires_at: updated.rows[0].expires_at, duration_minutes: voucher.duration_minutes, data_limit_mb: voucher.data_limit_mb }, login: { username: updated.rows[0].code, password: updated.rows[0].code, url: loginTarget || null, destination: req.body.link_orig || null }, radius_sync: radiusSync });
+    let deviceActivation = null;
+    try {
+      deviceActivation = await activateVoucherDevice({
+        ...voucher,
+        ...updated.rows[0],
+      });
+    } catch (error) {
+      return res.status(502).json({
+        error: `Voucher is valid but telenexus could not activate this device: ${error.message}`,
+      });
+    }
+
+    res.json({
+      success: true,
+      voucher: { code: updated.rows[0].code, plan_name: voucher.plan_name, price: voucher.price, expires_at: updated.rows[0].expires_at, duration_minutes: voucher.duration_minutes, data_limit_mb: voucher.data_limit_mb },
+      login: { username: updated.rows[0].code, password: updated.rows[0].code, url: loginTarget || null, destination: req.body.link_orig || null },
+      radius_sync: radiusSync,
+      device_activation: deviceActivation,
+    });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) { /* transaction may already be closed */ }
     console.error('Public hotspot login error:', err.message);

@@ -646,6 +646,15 @@ async function syncManagedHotspotSubscriber(
     );
   }
 
+  await db.query(
+    `UPDATE billing_hotspot_vouchers
+     SET status = 'active'
+     WHERE id = $1
+       AND client_id = $2
+       AND expires_at > NOW()`,
+    [subscriber.voucher_id, subscriber.client_id]
+  );
+
   let device = null;
 
   if (subscriber.current_mac) {
@@ -776,6 +785,16 @@ router.patch(
               subscriber.ip_address ||
               '',
           });
+        }
+
+        if (subscriber.voucher_id) {
+          await db.query(
+            `UPDATE billing_hotspot_vouchers
+             SET status = 'suspended'
+             WHERE id = $1
+               AND client_id = $2`,
+            [subscriber.voucher_id, subscriber.client_id]
+          );
         }
 
         const updated =

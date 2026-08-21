@@ -95,3 +95,39 @@ Planned controls:
 ## Safety rule
 
 Do not reset the application tree or database. Production contains uncommitted feature work; security changes must remain additive, backed up and regression-tested.
+
+
+## Phase 1 standalone review — 2026-08-22
+
+**Score: 7.5/10 for the perimeter and administrative-access phase.**
+
+The score is for Phase 1 only, not for the security of the complete application.
+
+Re-verification evidence:
+
+- UFW remained active and enabled with default-deny incoming policy.
+- TCP 3001 remained blocked externally: the independent client connection timed out while HTTPS returned HTTP 200.
+- Firewall counters showed direct TCP 3001 probes being dropped.
+- RADIUS 1812/1813 remained allowed only from `10.77.0.0/24`.
+- SSH remained rate-limited and Fail2ban remained active.
+- Fail2ban had observed 70 failed SSH attempts and banned nine sources since installation.
+- Root and Ubuntu account passwords remained locked.
+- Fresh key-based Ubuntu access and sudo had already been proven.
+- Nginx, PostgreSQL, FreeRADIUS, backend, WireGuard, UFW and Fail2ban were active and enabled where applicable.
+- Protected billing API returned HTTP 401 without authentication.
+- Active router `10.77.0.4` remained reachable with 0% packet loss.
+- WireGuard showed a recent handshake.
+- FreeRADIUS configuration validation remained successful.
+- Backend limits remained active: 1 GiB memory, 512 tasks and 200% CPU.
+- Rollback copies remained root-protected under `/var/backups/nexa-security-phase1/20260822-0045`.
+
+Score deductions and Phase 2 handoff:
+
+- The Node backend still runs as root.
+- Node still listens on all interfaces; UFW blocks it externally, but localhost-only binding is still required for defence in depth.
+- The SSH daemon still advertises `PermitRootLogin yes`, `PasswordAuthentication yes` and `X11Forwarding yes`; account passwords are locked, but persistent daemon policy must be tightened.
+- SIP and RTP remain publicly exposed because the current Asterisk integration requires them; provider allowlisting or a SIP edge gateway is still needed.
+- UFW is the only confirmed host perimeter. A provider/cloud firewall has not yet been verified as a second independent layer.
+- Centralized alerting and reboot-based persistence testing remain Phase 3 work.
+
+A 10/10 rating is intentionally not used: no internet-facing system is unbreakable, and Phase 1 is one security layer rather than the complete control programme.

@@ -78,6 +78,10 @@ function hotspotLoginRedirectResponse() {
 $(if http-header == "Location")$(link-login-only)$(endif)`;
 }
 
+function voucherLoginHandoffPage() {
+  return `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Connecting…</title><style>body{margin:0;min-height:100vh;display:grid;place-items:center;background:#071a11;color:#fff;font:600 16px system-ui,sans-serif}p{opacity:.85}</style></head><body><p>Connecting to the hotspot…</p><script>(function(){var q=new URLSearchParams(location.hash.slice(1)),u=q.get('u')||'',p=q.get('p')||'',d=q.get('d')||'http://neverssl.com/';if(!u||!p){document.body.innerHTML='<p>Voucher details are missing. Return to the hotspot portal and try again.</p>';return}var f=document.createElement('form');f.method='post';f.action='/login';[['username',u],['password',p],['dst',d]].forEach(function(pair){var i=document.createElement('input');i.type='hidden';i.name=pair[0];i.value=pair[1];f.appendChild(i)});document.body.appendChild(f);f.submit()})();</script></body></html>`;
+}
+
 function hotspotApiDocument() {
   return `{
   "captive": $(if logged-in == 'yes')false$(else)true$(endif),
@@ -2838,6 +2842,9 @@ async function replaceHotspotPortalFiles(
   ];
 
   const auxiliaryContents = {
+    'voucher-login.html':
+      voucherLoginHandoffPage(),
+
     'redirect.html':
       hotspotRedirectResponse(),
 

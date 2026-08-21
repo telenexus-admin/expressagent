@@ -381,8 +381,11 @@ function preflight(config, discovery) {
   const conflicts = (discovery.addresses || []).filter((item) => {
     const address = String(item.address || '');
     const managed = String(item.comment || '').startsWith('NEXA managed');
-    return (
-      !managed &&
+    const selectedHotspotGateway =
+      gatewayPrefix &&
+      address === config.hotspot_gateway &&
+      String(item.interface || '') === config.subscriber_bridge;
+    return !managed && !selectedHotspotGateway && (
       (gatewayPrefix && address.startsWith(`${gatewayPrefix}.`)) ||
       (pppoePrefix && address.startsWith(`${pppoePrefix}.`))
     );
@@ -390,7 +393,7 @@ function preflight(config, discovery) {
 
   if (conflicts.length) {
     blockers.push(
-      `The proposed 10.20.0.0/24 or 10.30.0.0/24 network conflicts with ${conflicts
+      `A proposed subscriber network conflicts with ${conflicts
         .map((item) => `${item.address} on ${item.interface}`)
         .join(', ')}`
     );

@@ -525,6 +525,7 @@ async function fulfillHotspotPayment(
   let voucher;
   let fulfillment;
   let subscriberBinding;
+  let routerId = null;
 
   try {
     await connection.query('BEGIN');
@@ -610,6 +611,13 @@ async function fulfillHotspotPayment(
       };
     }
 
+    routerId =
+      Number(
+        metadata.router_id ||
+        plan.router_id ||
+        0
+      ) || null;
+
     subscriberBinding =
       await resolveHotspotSubscriberBinding({
         queryable: connection,
@@ -622,8 +630,7 @@ async function fulfillHotspotPayment(
 
         requestedMac,
 
-        routerId:
-          plan.router_id || null,
+        routerId: routerId,
       });
 
     metadata.mac =
@@ -951,7 +958,7 @@ async function fulfillHotspotPayment(
       deviceActivation =
         await activatePaidHotspotDevice({
           clientId: payment.client_id,
-          routerId: plan.router_id || null,
+          routerId: routerId,
           macAddress: metadata.mac,
           ipAddress: metadata.ip || '',
           expiresAt: voucher.expires_at,
@@ -1004,8 +1011,7 @@ async function fulfillHotspotPayment(
 
           requestedMac,
 
-          routerId:
-            plan.router_id || null,
+          routerId: routerId,
 
           plan,
           payment,

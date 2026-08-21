@@ -1505,4 +1505,606 @@ router.post('/communication/email/test', async (req, res) => {
   }
 });
 
+
+/* voucher-direct-communication */
+
+let voucherCommunicationSchedulerStarted = false;
+
+
+function normalizeVoucherSharePhone(value) {
+  let phone =
+    String(value || '')
+      .replace(/\D/g, '');
+
+  if (phone.startsWith('0')) {
+    phone =
+      `254${phone.slice(1)}`;
+  } else if (
+    phone.startsWith('7') ||
+    phone.startsWith('1')
+  ) {
+    phone =
+      `254${phone}`;
+  }
+
+  return phone;
+}
+
+
+async function ensureVoucherCommunicationQueue() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS
+      billing_communication_jobs (
+        id BIGSERIAL PRIMARY KEY,
+
+        client_id INTEGER NOT NULL
+          REFERENCES clients(id)
+          ON DELETE CASCADE,
+
+        channel VARCHAR(20)
+          NOT NULL,
+
+        phone VARCHAR(40)
+          NOT NULL,
+
+        message TEXT
+          NOT NULL,
+
+        voucher_id BIGINT,
+
+        voucher_code VARCHAR(120),
+
+        metadata JSONB
+          NOT NULL DEFAULT '{}'::jsonb,
+
+        scheduled_for TIMESTAMPTZ
+          NOT NULL,
+
+        status VARCHAR(20)
+          NOT NULL DEFAULT 'queued',
+
+        attempts INTEGER
+          NOT NULL DEFAULT 0,
+
+        last_error TEXT,
+
+        sent_at TIMESTAMPTZ,
+
+        created_at TIMESTAMPTZ
+          NOT NULL DEFAULT NOW(),
+
+        updated_at TIMESTAMPTZ
+          NOT NULL DEFAULT NOW()
+      )
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS
+      idx_billing_communication_jobs_due
+
+    ON billing_communication_jobs (
+      status,
+      scheduled_for
+    )
+  `);
+}
+
+
+async function voucherCommunicationClient(clientId) {
+  const result =
+    await db.query(
+      `SELECT *
+       FROM clients
+       WHERE id = $1
+       LIMIT 1`,
+      [clientId]
+    );
+
+  return result.rows[0] || null;
+}
+
+
+async function deliverVoucherCommunication(
+  client,
+  channel,
+  phone,
+  message
+) {
+  if (!client) {
+    throw new Error(
+      'Billing account not found'
+    );
+  }
+
+  if (channel === 'sms') {
+    if (
+      !client.sms_api_key ||
+      !client.sms_sender_id
+    ) {
+      throw new Error(
+        'Configure SMS in Communication before sharing vouchers by SMS'
+      );
+    }
+
+    await sendSMS(
+      phone,
+      message,
+      {
+        provider:
+          client.sms_provider ||
+          'blessed_text',
+
+        apiKey:
+          client.sms_api_key,
+
+        senderId:
+          client.sms_sender_id,
+
+        partnerId:
+          client.sms_partner_id,
+
+        client,
+      }
+    );
+
+    return {
+      channel:
+        'sms',
+    };
+  }
+
+
+  if (channel === 'whatsapp') {
+    if (
+      client.connection_provider ===
+        'evolution' &&
+      client.evolution_instance_name
+    ) {
+      await sendClientText(
+        client,
+        phone,
+        message
+      );
+
+      return {
+        channel:
+          'whatsapp',
+      };
+    }
+
+
+    if (
+      !client.meta_phone_number_id ||
+      !client.meta_access_token
+    ) {
+      throw new Error(
+        'Connect WhatsApp in Communication before sharing vouchers'
+      );
+    }
+
+
+    await sendWhatsAppMessage(
+      client.meta_phone_number_id,
+      client.meta_access_token,
+      phone,
+      message
+    );
+
+    return {
+      channel:
+        'whatsapp',
+    };
+  }
+
+
+  if (channel === 'call') {
+    throw new Error(
+      'Outbound Call is not configured in Billing Communication yet'
+    );
+  }
+
+
+  throw new Error(
+    'Unsupported communication channel'
+  );
+}
+
+
+async function processVoucherCommunicationQueue() {
+  await ensureVoucherCommunicationQueue();
+
+  const claimed =
+    await db.query(`
+      WITH due AS (
+        SELECT id
+
+        FROM billing_communication_jobs
+
+        WHERE status = 'queued'
+          AND scheduled_for <= NOW()
+
+        ORDER BY scheduled_for ASC
+
+        LIMIT 20
+
+        FOR UPDATE SKIP LOCKED
+      )
+
+      UPDATE billing_communication_jobs job
+
+      SET
+        status = 'processing',
+        updated_at = NOW()
+
+      FROM due
+
+      WHERE job.id = due.id
+
+      RETURNING job.*
+    `);
+
+
+  for (const job of claimed.rows) {
+    const attempt =
+      Number(job.attempts || 0) + 1;
+
+    try {
+      const client =
+        await voucherCommunicationClient(
+          job.client_id
+        );
+
+      await deliverVoucherCommunication(
+        client,
+        job.channel,
+        job.phone,
+        job.message
+      );
+
+      await db.query(
+        `UPDATE billing_communication_jobs
+
+         SET
+           status = 'sent',
+           attempts = $2,
+           sent_at = NOW(),
+           last_error = NULL,
+           updated_at = NOW()
+
+         WHERE id = $1`,
+        [
+          job.id,
+          attempt,
+        ]
+      );
+
+    } catch (error) {
+      const retry =
+        attempt < 3 &&
+        job.channel !== 'call';
+
+      await db.query(
+        `UPDATE billing_communication_jobs
+
+         SET
+           status = $2,
+           attempts = $3,
+           last_error = $4,
+
+           scheduled_for =
+             CASE
+               WHEN $2 = 'queued'
+                 THEN NOW() +
+                      INTERVAL '2 minutes'
+               ELSE scheduled_for
+             END,
+
+           updated_at = NOW()
+
+         WHERE id = $1`,
+        [
+          job.id,
+
+          retry
+            ? 'queued'
+            : 'failed',
+
+          attempt,
+
+          String(
+            error.message ||
+            error
+          ).slice(
+            0,
+            1000
+          ),
+        ]
+      );
+    }
+  }
+}
+
+
+function startVoucherCommunicationScheduler() {
+  if (
+    voucherCommunicationSchedulerStarted
+  ) {
+    return;
+  }
+
+  voucherCommunicationSchedulerStarted =
+    true;
+
+
+  ensureVoucherCommunicationQueue()
+    .then(
+      () =>
+        processVoucherCommunicationQueue()
+    )
+    .catch(
+      error =>
+        console.error(
+          'Voucher communication queue init error:',
+          error.message
+        )
+    );
+
+
+  const timer =
+    setInterval(
+      () => {
+        processVoucherCommunicationQueue()
+          .catch(
+            error =>
+              console.error(
+                'Voucher communication scheduler error:',
+                error.message
+              )
+          );
+      },
+      15000
+    );
+
+  timer.unref?.();
+}
+
+
+router.post(
+  '/communication/direct',
+  async (req, res) => {
+    const targetClient =
+      resolveTargetClient(
+        req,
+        res
+      );
+
+    if (!targetClient) {
+      return;
+    }
+
+
+    try {
+      const channel =
+        String(
+          req.body.channel ||
+          ''
+        )
+          .trim()
+          .toLowerCase();
+
+      if (
+        ![
+          'sms',
+          'whatsapp',
+          'call',
+        ].includes(channel)
+      ) {
+        return res.status(400).json({
+          error:
+            'Choose SMS, WhatsApp or Call',
+        });
+      }
+
+
+      const phone =
+        normalizeVoucherSharePhone(
+          req.body.phone
+        );
+
+      if (
+        phone.length < 8 ||
+        phone.length > 15
+      ) {
+        return res.status(400).json({
+          error:
+            'Enter a valid phone number with country code',
+        });
+      }
+
+
+      const message =
+        String(
+          req.body.message ||
+          ''
+        ).trim();
+
+      if (
+        !message ||
+        message.length > 1600
+      ) {
+        return res.status(400).json({
+          error:
+            'Voucher message is empty or too long',
+        });
+      }
+
+
+      if (channel === 'call') {
+        return res.status(400).json({
+          error:
+            'Outbound Call is not configured in Billing Communication yet',
+        });
+      }
+
+
+      const scheduledValue =
+        req.body.scheduled_for;
+
+      let scheduledFor =
+        null;
+
+
+      if (scheduledValue) {
+        scheduledFor =
+          new Date(
+            scheduledValue
+          );
+
+        if (
+          Number.isNaN(
+            scheduledFor.getTime()
+          )
+        ) {
+          return res.status(400).json({
+            error:
+              'Choose a valid schedule date and time',
+          });
+        }
+      }
+
+
+      const voucherId =
+        Number(
+          req.body.voucher_id ||
+          0
+        ) || null;
+
+      const voucherCode =
+        String(
+          req.body.voucher_code ||
+          ''
+        )
+          .trim()
+          .slice(
+            0,
+            120
+          ) || null;
+
+
+      if (
+        scheduledFor &&
+        scheduledFor.getTime() >
+          Date.now() + 5000
+      ) {
+        await ensureVoucherCommunicationQueue();
+
+        const created =
+          await db.query(
+            `INSERT INTO billing_communication_jobs (
+               client_id,
+               channel,
+               phone,
+               message,
+               voucher_id,
+               voucher_code,
+               metadata,
+               scheduled_for,
+               status
+             )
+
+             VALUES (
+               $1,
+               $2,
+               $3,
+               $4,
+               $5,
+               $6,
+               $7::jsonb,
+               $8,
+               'queued'
+             )
+
+             RETURNING
+               id,
+               channel,
+               phone,
+               scheduled_for,
+               status`,
+            [
+              targetClient,
+              channel,
+              phone,
+              message,
+              voucherId,
+              voucherCode,
+
+              JSON.stringify({
+                source:
+                  'voucher_share',
+              }),
+
+              scheduledFor,
+            ]
+          );
+
+
+        return res.status(202).json({
+          success:
+            true,
+
+          scheduled:
+            true,
+
+          job:
+            created.rows[0],
+        });
+      }
+
+
+      const client =
+        await voucherCommunicationClient(
+          targetClient
+        );
+
+
+      await deliverVoucherCommunication(
+        client,
+        channel,
+        phone,
+        message
+      );
+
+
+      res.json({
+        success:
+          true,
+
+        scheduled:
+          false,
+
+        channel,
+
+        sent_to:
+          phone,
+      });
+
+    } catch (error) {
+      console.error(
+        'POST /settings/communication/direct error:',
+        error.message
+      );
+
+      res.status(500).json({
+        error:
+          error.message ||
+          'Voucher could not be shared',
+      });
+    }
+  }
+);
+
+
+startVoucherCommunicationScheduler();
+
+
 module.exports = router;

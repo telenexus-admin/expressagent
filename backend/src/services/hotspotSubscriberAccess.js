@@ -664,6 +664,8 @@ async function backfillHotspotSubscribers() {
           'hotspot'
         AND fulfillment.mac_address
           IS NOT NULL
+        AND fulfillment.device_activation_status
+              IS DISTINCT FROM 'deleted'
         AND voucher.expires_at
           IS NOT NULL
 
@@ -888,6 +890,9 @@ async function reconcileExpiredHotspotAccess({
                 fulfillment.payment_request_id
 
          WHERE voucher.expires_at <= NOW()
+
+           AND fulfillment.device_activation_status
+                 IS DISTINCT FROM 'deleted'
 
            AND (
              fulfillment.device_activation_status

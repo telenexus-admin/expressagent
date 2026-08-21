@@ -577,6 +577,12 @@ export default function HotspotPortal() {
     )
   );
 
+  useEffect(() => {
+    const link=document.createElement('link'); link.id='polyizon-hotspot-manifest'; link.rel='manifest'; link.href='/hotspot-manifest.webmanifest'; document.head.appendChild(link);
+    if ('serviceWorker' in navigator && window.location.pathname === '/hotspot') navigator.serviceWorker.register('/hotspot-sw.js', { scope: '/hotspot' }).catch(() => {});
+    return () => { document.getElementById('polyizon-hotspot-manifest')?.remove(); };
+  }, []);
+
   const cachedConfigOnLoad =
     useRef(Boolean(config));
 

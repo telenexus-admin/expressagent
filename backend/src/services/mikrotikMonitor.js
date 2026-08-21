@@ -21,12 +21,15 @@ const CHECK_INTERVAL_MS = 60 * 1000;
  * This sentinel performs ONLY a lightweight TCP
  * reachability check against the MikroTik API port.
  *
- * 2 second cadence + 3 consecutive failures gives
- * approximately 4-6 second outage detection.
+ * A voice call needs a sustained outage, not a momentary
+ * WireGuard or API delay. The normal monitor remains at
+ * one-minute telemetry; this sentinel only confirms a
+ * continuous one-minute TCP outage before calling.
  */
-const FAST_OUTAGE_INTERVAL_MS = 2000;
-const FAST_OUTAGE_TIMEOUT_MS = 1000;
-const FAST_OUTAGE_FAILURE_THRESHOLD = 3;
+const FAST_OUTAGE_INTERVAL_MS = 5000;
+const FAST_OUTAGE_TIMEOUT_MS = 3000;
+const FAST_OUTAGE_FAILURE_THRESHOLD = 12;
+const FAST_OUTAGE_MIN_DURATION_MS = 60 * 1000;
 
 let fastOutageStarted = false;
 let fastOutageBusy = false;
@@ -910,9 +913,16 @@ async function processFastRouterProbe(
     );
 
 
+  if (
+    elapsedSeconds * 1000 <
+      FAST_OUTAGE_MIN_DURATION_MS
+  ) {
+    return;
+  }
+
   /*
    * Set alerted before the network request so another
-   * 2-second tick cannot create a second simultaneous
+   * Fast Watch tick cannot create a second simultaneous
    * Vapi call.
    */
 
@@ -970,17 +980,11 @@ async function processFastRouterProbe(
     ) {
 
       /*
-       * Re-arm after failure so a later check can
-       * retry instead of permanently losing alerting.
+       * A timeout is an uncertain delivery outcome: Vapi may
+       * already have created the call. Keep this incident armed
+       * until the router is seen reachable again, rather than
+       * repeatedly calling during one outage.
        */
-
-      fast.alerted =
-        false;
-
-      fastOutageState.set(
-        routerId,
-        fast
-      );
 
       console.error(
         '[Nexa Fast Watch] Voice call failed',

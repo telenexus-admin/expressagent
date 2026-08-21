@@ -73,6 +73,11 @@ function hotspotRedirectResponse() {
 $(if http-header == "Location")$(link-redirect)$(endif)`;
 }
 
+function hotspotLoginRedirectResponse() {
+  return `$(if http-status == 302)Hotspot login required$(endif)
+$(if http-header == "Location")$(link-login-only)$(endif)`;
+}
+
 function hotspotApiDocument() {
   return `{
   "captive": $(if logged-in == 'yes')false$(else)true$(endif),
@@ -2900,7 +2905,9 @@ async function replaceHotspotPortalFiles(
           `${htmlDirectory}/${fileName}`,
 
         contents:
-          hostedBootstrap,
+          fileName === 'rlogin.html'
+            ? hotspotLoginRedirectResponse()
+            : hostedBootstrap,
       })
     );
   }

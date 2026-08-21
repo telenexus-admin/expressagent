@@ -84,7 +84,10 @@ function safeRouterLoginUrl(value, clientIp) {
 }
 
 function portalOrigin(req) {
-  return String(process.env.FRONTEND_URL || (req.protocol + '://' + req.get('host'))).replace(/\/$/, '');
+  return String(
+    process.env.HOTSPOT_PORTAL_URL ||
+    'https://demo.polyizon.tech'
+  ).replace(/\/$/, '');
 }
 
 function safeBootstrapRouterLogin(loginOnly, serverAddress, clientIp) {
@@ -976,6 +979,14 @@ router.post('/checkout', [
             String(req.body.ip || '')
               .trim()
               .slice(0, 80),
+          router_id:
+            Number(
+              req.hotspotPortalClaims
+                ?.router_id ||
+              checkoutPlan.plan.router_id ||
+              0
+            ) || null,
+
           payhero_channel_id:
             HOTSPOT_PAYHERO_CHANNEL_ID,
         },
@@ -1133,7 +1144,7 @@ router.post('/login', [
         AND LOWER(v.code) =
             LOWER($2)
 
-      FOR UPDATE
+      FOR UPDATE OF v
     `, [
       account.id,
       req.body.code.trim(),

@@ -393,33 +393,126 @@ function CountdownRing({ offer, now }) {
 
 function MikroTikLogin({ login }) {
   useEffect(() => {
-    if (!login?.url) return undefined;
+    if (!login?.url) {
+      return undefined;
+    }
+
     let target;
+
     try {
-      target = new URL(login.url);
-      const currentIp = new URLSearchParams(window.location.search).get('ip') || '';
-      const privateIp = (value) => /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(value);
-      if (!['http:', 'https:'].includes(target.protocol) || target.pathname !== '/login' || !privateIp(target.hostname) || !privateIp(currentIp) || target.hostname.split('.').slice(0, 3).join('.') !== currentIp.split('.').slice(0, 3).join('.')) throw new Error('unsafe login target');
-    } catch (_) { return undefined; }
-    const form = document.createElement('form');
-    form.method = 'post';
-    form.action = target.toString();
+      target =
+        new URL(
+          login.url
+        );
 
-    [
-      ['username', login.username],
-      ['password', login.password],
-      ['dst', login.destination || ''],
-    ].forEach(([name, value]) => {
-      const input = document.createElement('input');
-      input.type = 'hidden';
-      input.name = name;
-      input.value = value || '';
-      form.appendChild(input);
-    });
+      const currentIp =
+        new URLSearchParams(
+          window.location.search
+        ).get('ip') || '';
 
-    document.body.appendChild(form);
-    form.submit();
-    return () => form.remove();
+      const privateIp =
+        value =>
+          /^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/
+            .test(value);
+
+      if (
+        ![
+          'http:',
+          'https:',
+        ].includes(
+          target.protocol
+        ) ||
+        target.pathname !==
+          '/login' ||
+        !privateIp(
+          target.hostname
+        ) ||
+        !privateIp(
+          currentIp
+        ) ||
+        target.hostname
+          .split('.')
+          .slice(0, 3)
+          .join('.') !==
+        currentIp
+          .split('.')
+          .slice(0, 3)
+          .join('.')
+      ) {
+        throw new Error(
+          'unsafe login target'
+        );
+      }
+
+    } catch (_) {
+      return undefined;
+    }
+
+    /*
+     * Do not POST an insecure HTTP form
+     * directly from the HTTPS public portal.
+     *
+     * Navigate the top-level captive window
+     * to a tiny page hosted by the MikroTik.
+     * That local page then POSTs to /login
+     * from the same HTTP origin.
+     */
+    const helper =
+      new URL(
+        '/voucher-login.html',
+        target.origin
+      );
+
+    const handoff =
+      new URLSearchParams();
+
+    handoff.set(
+      'u',
+      String(
+        login.username ||
+        ''
+      )
+    );
+
+    handoff.set(
+      'p',
+      String(
+        login.password ||
+        ''
+      )
+    );
+
+    handoff.set(
+      'd',
+      String(
+        login.destination ||
+        'http://neverssl.com/'
+      )
+    );
+
+    /*
+     * Fragment data is handled by the local
+     * helper page and is not sent as part of
+     * the HTTP request for the helper file.
+     */
+    helper.hash =
+      handoff.toString();
+
+    const timer =
+      window.setTimeout(
+        () => {
+          window.location.replace(
+            helper.toString()
+          );
+        },
+        150
+      );
+
+    return () =>
+      window.clearTimeout(
+        timer
+      );
+
   }, [login]);
 
   return (

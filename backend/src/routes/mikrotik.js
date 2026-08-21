@@ -1,4 +1,5 @@
 const express = require('express');
+const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const {
   activateWireguardPeer,
@@ -54,13 +55,290 @@ router.get('/', async (req, res) => {
 });
 
 router.get('/clients', async (req, res) => {
-  const clientId = resolveTargetClient(req, res);
+  const clientId =
+    resolveTargetClient(req, res);
+
   if (!clientId) return;
+
   try {
-    res.json(await listMikrotikClients(clientId, req.query || {}));
+    const liveResult =
+      await listMikrotikClients(
+        clientId,
+        req.query || {}
+      );
+
+    const liveClients =
+      Array.isArray(liveResult)
+        ? liveResult
+        : Array.isArray(liveResult?.clients)
+          ? liveResult.clients
+          : [];
+
+    /*
+     * Paid HotSpot customers are authoritative
+     * billing subscribers even when MikroTik is
+     * currently granting access through an
+     * ip-binding bypass instead of
+     * /ip/hotspot/active.
+     */
+    const paidResult =
+      await db.query(
+        `SELECT
+           (
+             'paid-hotspot-' ||
+             subscriber.id::text
+           ) AS id,
+
+           subscriber.id
+             AS hotspot_subscriber_id,
+
+           subscriber.current_mac
+             AS username,
+
+           subscriber.current_mac
+             AS mac_address,
+
+           subscriber.customer_phone
+             AS phone,
+
+           subscriber.customer_phone
+             AS account_number,
+
+           'hotspot'::text
+             AS service_type,
+
+           subscriber.package_name,
+
+           subscriber.package_name
+             AS profile,
+
+           subscriber.router_id,
+
+           router.name
+             AS router_name,
+
+           subscriber.status
+             AS subscriber_status,
+
+           subscriber.expires_at,
+
+           subscriber.last_payment_at,
+
+           subscriber.last_payment_amount,
+
+           subscriber.device_activation_status,
+
+           subscriber.updated_at
+             AS last_synced_at,
+
+           CASE
+             WHEN
+               subscriber.status = 'active'
+               AND subscriber.expires_at > NOW()
+               AND COALESCE(
+                     subscriber.device_activation_status,
+                     ''
+                   ) IN (
+                     'active',
+                     'bypassed',
+                     'mac',
+                     'voucher',
+                     'authenticated'
+                   )
+             THEN TRUE
+             ELSE FALSE
+           END AS is_online,
+
+           'paid-hotspot'
+             AS client_source
+
+         FROM billing_hotspot_subscribers
+           subscriber
+
+         LEFT JOIN mikrotik_routers
+           router
+           ON router.id =
+                subscriber.router_id
+          AND router.client_id =
+                subscriber.client_id
+
+         WHERE subscriber.client_id = $1
+
+           AND subscriber.current_mac
+                 IS NOT NULL
+
+           AND subscriber.status <>
+                 'replaced'
+
+         ORDER BY
+           subscriber.updated_at DESC`,
+        [clientId]
+      );
+
+    const normalizeMac =
+      value =>
+        String(value || '')
+          .replace(
+            /[^0-9A-Fa-f]/g,
+            ''
+          )
+          .toUpperCase();
+
+    const merged =
+      [...liveClients];
+
+    for (
+      const paid of paidResult.rows
+    ) {
+      const paidMac =
+        normalizeMac(
+          paid.mac_address
+        );
+
+      if (!paidMac) {
+        continue;
+      }
+
+      /*
+       * If MikroTik already has a genuine
+       * HotSpot session for this MAC, enrich
+       * that row instead of creating a
+       * duplicate.
+       */
+      const existingIndex =
+        merged.findIndex(
+          client => {
+            const serviceType =
+              String(
+                client.service_type ||
+                ''
+              ).toLowerCase();
+
+            if (
+              serviceType !== 'hotspot'
+            ) {
+              return false;
+            }
+
+            const clientMac =
+              normalizeMac(
+                client.mac_address ||
+                client.username
+              );
+
+            return (
+              clientMac ===
+              paidMac
+            );
+          }
+        );
+
+      if (
+        existingIndex >= 0
+      ) {
+        const live =
+          merged[
+            existingIndex
+          ];
+
+        merged[
+          existingIndex
+        ] = {
+          ...paid,
+          ...live,
+
+          phone:
+            paid.phone ||
+            live.phone ||
+            '',
+
+          package_name:
+            paid.package_name ||
+            live.package_name ||
+            live.profile ||
+            '',
+
+          profile:
+            paid.package_name ||
+            live.profile ||
+            '',
+
+          expires_at:
+            paid.expires_at ||
+            live.expires_at ||
+            null,
+
+          last_payment_at:
+            paid.last_payment_at ||
+            null,
+
+          last_payment_amount:
+            paid.last_payment_amount ||
+            null,
+
+          device_activation_status:
+            paid.device_activation_status ||
+            null,
+
+          is_online:
+            Boolean(
+              live.is_online ||
+              paid.is_online
+            ),
+
+          client_source:
+            live.is_online
+              ? 'mikrotik-live+paid'
+              : 'paid-hotspot',
+        };
+
+        continue;
+      }
+
+      /*
+       * No /ip/hotspot/active row exists.
+       * This is exactly what happens with the
+       * currently installed paid-device bypass.
+       */
+      merged.push(
+        paid
+      );
+    }
+
+    if (
+      Array.isArray(liveResult)
+    ) {
+      return res.json(
+        merged
+      );
+    }
+
+    if (
+      liveResult &&
+      typeof liveResult ===
+        'object'
+    ) {
+      return res.json({
+        ...liveResult,
+        clients:
+          merged,
+      });
+    }
+
+    return res.json(
+      merged
+    );
+
   } catch (err) {
-    console.error('GET /mikrotik/clients error:', err.message);
-    res.status(500).json({ error: 'Failed to load MikroTik clients' });
+    console.error(
+      'GET /mikrotik/clients error:',
+      err.message
+    );
+
+    res.status(500).json({
+      error:
+        'Failed to load MikroTik clients',
+    });
   }
 });
 

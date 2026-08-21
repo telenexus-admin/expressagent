@@ -539,7 +539,7 @@ async function activatePaidHotspotDevice({
         '.id':
           rowId(hotspotProfile),
         'login-by':
-          'mac,http-chap,http-pap,cookie',
+          'mac,mac-cookie,http-chap,http-pap,cookie',
         'mac-auth-password':
           macPassword,
         'radius-mac-format':
@@ -571,7 +571,7 @@ async function activatePaidHotspotDevice({
 
     for (
       let attempt = 0;
-      attempt < 5;
+      attempt < 12;
       attempt += 1
     ) {
       await wait(1000);
@@ -597,26 +597,20 @@ async function activatePaidHotspotDevice({
       }
     }
 
-    const bypass =
-      await installBypass({
-        client,
-        mac,
-        ipAddress,
-        remainingSeconds,
-        rateLimit,
-      });
-
-    await clearDeviceSessions({
-      client,
-      mac,
-      ipAddress,
-    });
-
+    /*
+     * Native MAC authentication did not appear
+     * quickly enough.
+     *
+     * Do NOT bypass the HotSpot. Returning a
+     * non-MAC activation state makes the public
+     * portal use its existing automatic voucher
+     * login flow instead.
+     */
     return {
-      ...bypass,
+      status: 'login_required',
       router_id: router.id,
       username: mac,
-      login_by: 'bypass',
+      login_by: 'voucher',
       radius_status:
         radius.status,
     };

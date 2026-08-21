@@ -1,4 +1,6 @@
 const db = require('../db');
+const net = require('net');
+const { callRouterOfflineAlert } = require('./vapiAlerts');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendClientText } = require('./clientEvolution');
 const { collectMonitoringSnapshot, ensureMikrotikTables } = require('./mikrotik');
@@ -10,6 +12,26 @@ let schedulerStarted = false;
 let schedulerBusy = false;
 
 const CHECK_INTERVAL_MS = 60 * 1000;
+
+/* nexa-fast-outage-sentinel */
+
+/*
+ * Full telemetry remains every 60 seconds.
+ *
+ * This sentinel performs ONLY a lightweight TCP
+ * reachability check against the MikroTik API port.
+ *
+ * 2 second cadence + 3 consecutive failures gives
+ * approximately 4-6 second outage detection.
+ */
+const FAST_OUTAGE_INTERVAL_MS = 2000;
+const FAST_OUTAGE_TIMEOUT_MS = 1000;
+const FAST_OUTAGE_FAILURE_THRESHOLD = 3;
+
+let fastOutageStarted = false;
+let fastOutageBusy = false;
+
+const fastOutageState = new Map();
 const COOLDOWNS = {
   router_offline: 5,
   router_back_online: 0,
@@ -226,14 +248,24 @@ async function getState(routerId) {
 
 async function saveState(routerId, patch) {
   const current = await getState(routerId);
+  const has = (key) => Object.prototype.hasOwnProperty.call(patch, key);
+
   const next = {
-    is_online: patch.is_online ?? current?.is_online ?? false,
-    last_seen: patch.last_seen ?? current?.last_seen ?? null,
-    offline_since: patch.offline_since ?? current?.offline_since ?? null,
-    previous_pppoe_count: patch.previous_pppoe_count ?? current?.previous_pppoe_count ?? 0,
-    previous_hotspot_count: patch.previous_hotspot_count ?? current?.previous_hotspot_count ?? 0,
-    last_cpu_status: patch.last_cpu_status ?? current?.last_cpu_status ?? null,
-    last_security_signature: patch.last_security_signature ?? current?.last_security_signature ?? null,
+    is_online: has('is_online') ? patch.is_online : (current?.is_online ?? false),
+    last_seen: has('last_seen') ? patch.last_seen : (current?.last_seen ?? null),
+    offline_since: has('offline_since') ? patch.offline_since : (current?.offline_since ?? null),
+    previous_pppoe_count: has('previous_pppoe_count')
+      ? patch.previous_pppoe_count
+      : (current?.previous_pppoe_count ?? 0),
+    previous_hotspot_count: has('previous_hotspot_count')
+      ? patch.previous_hotspot_count
+      : (current?.previous_hotspot_count ?? 0),
+    last_cpu_status: has('last_cpu_status')
+      ? patch.last_cpu_status
+      : (current?.last_cpu_status ?? null),
+    last_security_signature: has('last_security_signature')
+      ? patch.last_security_signature
+      : (current?.last_security_signature ?? null),
     state_json: { ...(current?.state_json || {}), ...(patch.state_json || {}) },
   };
   await db.query(
@@ -503,6 +535,7 @@ async function processSnapshot(router, client, snapshot, state) {
     last_security_signature: securitySignature,
     state_json: {
       failure_count: 0,
+      last_error: null,
       cpu_confirm_count: cpuConfirmCount,
       last_cpu_alert_status: ['warning', 'critical'].includes(currentCpuStatus) && cpuConfirmCount >= requiredCpuChecks
         ? currentCpuStatus
@@ -574,6 +607,36 @@ async function processRouter(router) {
           possible_causes: 'power, uplink, router reboot, API, or WireGuard tunnel problem',
         },
       });
+
+      /* nexa-vapi-confirmed-offline-call */
+
+      try {
+
+        await callRouterOfflineAlert({
+          router,
+
+          downtimeMinutes,
+
+          failureCount,
+
+          lastSeen:
+            state?.last_seen ||
+            router.last_seen_at ||
+            'not confirmed',
+        });
+
+      } catch (callError) {
+
+        /*
+         * Vapi must never interfere with
+         * router monitoring itself.
+         */
+
+        console.error(
+          '[Nexa Vapi] Outage voice alert error:',
+          callError.message
+        );
+      }
     }
   }
 }
@@ -587,9 +650,558 @@ async function runMikrotikMonitorOnce() {
   return { routers: routers.length };
 }
 
+
+function fastRouterTcpProbe(router) {
+  return new Promise((resolve) => {
+
+    const host =
+      String(
+        router.wireguard_tunnel_ip ||
+        router.host ||
+        ''
+      ).trim();
+
+    const port =
+      Number(
+        router.port ||
+        8728
+      );
+
+    if (!host) {
+      resolve(false);
+      return;
+    }
+
+    const socket =
+      new net.Socket();
+
+    let finished =
+      false;
+
+    const finish =
+      (reachable) => {
+
+        if (finished) {
+          return;
+        }
+
+        finished =
+          true;
+
+        try {
+          socket.destroy();
+        } catch (_) {
+          // Ignore socket cleanup errors.
+        }
+
+        resolve(reachable);
+      };
+
+
+    socket.setTimeout(
+      FAST_OUTAGE_TIMEOUT_MS
+    );
+
+    socket.once(
+      'connect',
+      () => finish(true)
+    );
+
+    socket.once(
+      'timeout',
+      () => finish(false)
+    );
+
+    socket.once(
+      'error',
+      () => finish(false)
+    );
+
+
+    try {
+
+      socket.connect({
+        host,
+        port,
+      });
+
+    } catch (_) {
+
+      finish(false);
+    }
+  });
+}
+
+
+async function processFastRouterProbe(
+  router,
+  reachable
+) {
+
+  const routerId =
+    Number(router.id);
+
+  let fast =
+    fastOutageState.get(routerId);
+
+  if (!fast) {
+
+    fast = {
+      failures: 0,
+      firstFailureAt: null,
+      alerted: false,
+
+      /*
+       * This becomes true after the sentinel
+       * has personally observed the router online.
+       *
+       * It allows a genuine quick recovery followed
+       * by another outage to create another alert
+       * without waiting for the 60-second monitor.
+       */
+      rearmed: false,
+    };
+  }
+
+
+  if (reachable) {
+
+    const hadFailures =
+      fast.failures > 0 ||
+      fast.alerted;
+
+    fast.failures =
+      0;
+
+    fast.firstFailureAt =
+      null;
+
+    fast.alerted =
+      false;
+
+    fast.rearmed =
+      true;
+
+    fastOutageState.set(
+      routerId,
+      fast
+    );
+
+
+    if (hadFailures) {
+
+      console.log(
+        '[Nexa Fast Watch] Router reachable again',
+        {
+          routerId,
+          routerName:
+            router.last_identity ||
+            router.name,
+        }
+      );
+    }
+
+    return;
+  }
+
+
+  if (!fast.firstFailureAt) {
+
+    fast.firstFailureAt =
+      Date.now();
+  }
+
+
+  fast.failures += 1;
+
+
+  console.log(
+    '[Nexa Fast Watch] Reachability failure',
+    {
+      routerId,
+
+      routerName:
+        router.last_identity ||
+        router.name,
+
+      failure:
+        fast.failures,
+
+      required:
+        FAST_OUTAGE_FAILURE_THRESHOLD,
+    }
+  );
+
+
+  fastOutageState.set(
+    routerId,
+    fast
+  );
+
+
+  if (
+    fast.failures <
+      FAST_OUTAGE_FAILURE_THRESHOLD ||
+    fast.alerted
+  ) {
+    return;
+  }
+
+
+  /*
+   * On service startup we must NOT call about routers
+   * that were already known offline before restart.
+   *
+   * But if this sentinel has seen the router online
+   * during this process lifetime, it is a new outage.
+   */
+
+  const state =
+    await getState(routerId);
+
+
+  const previousFailureCount =
+    Number(
+      state?.state_json?.failure_count ||
+      0
+    );
+
+
+  if (
+    !fast.rearmed &&
+    state &&
+    state.is_online === false &&
+    previousFailureCount >= 2
+  ) {
+
+    fast.alerted =
+      true;
+
+    fastOutageState.set(
+      routerId,
+      fast
+    );
+
+
+    console.log(
+      '[Nexa Fast Watch] Existing offline router suppressed',
+      {
+        routerId,
+
+        routerName:
+          router.last_identity ||
+          router.name,
+      }
+    );
+
+    return;
+  }
+
+
+  const elapsedSeconds =
+    Math.max(
+      1,
+      Math.round(
+        (
+          Date.now() -
+          fast.firstFailureAt
+        ) / 1000
+      )
+    );
+
+
+  /*
+   * Set alerted before the network request so another
+   * 2-second tick cannot create a second simultaneous
+   * Vapi call.
+   */
+
+  fast.alerted =
+    true;
+
+  fast.rearmed =
+    false;
+
+  fastOutageState.set(
+    routerId,
+    fast
+  );
+
+
+  console.log(
+    '[Nexa Fast Watch] Confirmed fast outage',
+    {
+      routerId,
+
+      routerName:
+        router.last_identity ||
+        router.name,
+
+      elapsedSeconds,
+    }
+  );
+
+
+  try {
+
+    const result =
+      await callRouterOfflineAlert({
+        router,
+
+        downtimeMinutes:
+          0,
+
+        downtimeSeconds:
+          elapsedSeconds,
+
+        failureCount:
+          fast.failures,
+
+        lastSeen:
+          state?.last_seen ||
+          router.last_seen_at ||
+          'just before the outage',
+      });
+
+
+    if (
+      result &&
+      result.success === false
+    ) {
+
+      /*
+       * Re-arm after failure so a later check can
+       * retry instead of permanently losing alerting.
+       */
+
+      fast.alerted =
+        false;
+
+      fastOutageState.set(
+        routerId,
+        fast
+      );
+
+      console.error(
+        '[Nexa Fast Watch] Voice call failed',
+        {
+          routerId,
+          error:
+            result.error ||
+            'unknown Vapi error',
+        }
+      );
+
+      return;
+    }
+
+
+    /*
+     * Make the normal monitor aware that this outage
+     * was already confirmed quickly.
+     *
+     * This prevents the 60-second monitor from making
+     * another duplicate Vapi call a minute later.
+     */
+
+    await saveState(
+      routerId,
+      {
+        is_online:
+          false,
+
+        offline_since:
+          state?.offline_since ||
+          new Date(),
+
+        previous_pppoe_count:
+          state?.previous_pppoe_count ||
+          0,
+
+        previous_hotspot_count:
+          state?.previous_hotspot_count ||
+          0,
+
+        state_json: {
+          ...(state?.state_json || {}),
+
+          failure_count:
+            Math.max(
+              2,
+              fast.failures
+            ),
+
+          last_error:
+            'Fast outage sentinel: MikroTik API unreachable',
+
+          fast_outage_detected:
+            true,
+
+          fast_outage_detected_at:
+            new Date().toISOString(),
+
+          fast_outage_seconds:
+            elapsedSeconds,
+        },
+      }
+    );
+
+
+    console.log(
+      '[Nexa Fast Watch] Voice alert created',
+      {
+        routerId,
+
+        routerName:
+          router.last_identity ||
+          router.name,
+
+        elapsedSeconds,
+
+        callId:
+          result?.callId ||
+          null,
+      }
+    );
+
+
+  } catch (error) {
+
+    fast.alerted =
+      false;
+
+    fastOutageState.set(
+      routerId,
+      fast
+    );
+
+
+    console.error(
+      '[Nexa Fast Watch] Alert error',
+      {
+        routerId,
+
+        error:
+          error.message,
+      }
+    );
+  }
+}
+
+
+async function runFastRouterOutageCheck() {
+
+  const routers =
+    await activeRouters();
+
+
+  /*
+   * Probe all routers concurrently.
+   *
+   * A dead router therefore does not make every other
+   * router wait behind its TCP timeout.
+   */
+
+  const results =
+    await Promise.all(
+      routers.map(
+        async (router) => ({
+          router,
+
+          reachable:
+            await fastRouterTcpProbe(
+              router
+            ),
+        })
+      )
+    );
+
+
+  for (const result of results) {
+
+    await processFastRouterProbe(
+      result.router,
+      result.reachable
+    );
+  }
+
+
+  return {
+    routers:
+      routers.length,
+  };
+}
+
+
+function startFastRouterOutageWatcher() {
+
+  if (fastOutageStarted) {
+    return;
+  }
+
+
+  fastOutageStarted =
+    true;
+
+
+  console.log(
+    'Nexa fast router outage watcher ready ' +
+    '(2 second probes, 3-failure confirmation).'
+  );
+
+
+  const run =
+    () => {
+
+      if (fastOutageBusy) {
+        return;
+      }
+
+
+      fastOutageBusy =
+        true;
+
+
+      runFastRouterOutageCheck()
+        .catch(
+          (error) =>
+            console.error(
+              '[Nexa Fast Watch] Check failed:',
+              error.message
+            )
+        )
+        .finally(
+          () => {
+            fastOutageBusy =
+              false;
+          }
+        );
+    };
+
+
+  /*
+   * Start immediately rather than waiting two seconds
+   * after backend boot.
+   */
+
+  setTimeout(
+    run,
+    250
+  );
+
+
+  setInterval(
+    run,
+    FAST_OUTAGE_INTERVAL_MS
+  );
+}
+
+
 function startMikrotikMonitorScheduler() {
   if (schedulerStarted) return;
   schedulerStarted = true;
+
+  startFastRouterOutageWatcher();
   ensureMonitorSchema()
     .then(() => console.log('MikroTik monitor scheduler ready for 1 minute checks.'))
     .catch((err) => console.error('MikroTik monitor schema failed:', err.message));

@@ -275,13 +275,17 @@ export default function BillingFibreGis() {
           maxzoom: 6,
           attribution: 'OpenFreeMap © OpenMapTiles Data from OpenStreetMap',
         });
-        const firstNonBackgroundLayer = (map.getStyle()?.layers || []).find((layer) => layer.type !== 'background')?.id;
+        /*
+         * Keep the resilient raster map ABOVE the provider's opaque base
+         * layers. If vector tiles arrive slowly, users still see geography;
+         * GIS routes and assets are added afterwards and stay on top.
+         */
         map.addLayer({
           id: 'fibre-map-fallback',
           type: 'raster',
           source: 'fibre-map-fallback',
-          paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 },
-        }, firstNonBackgroundLayer);
+          paint: { 'raster-opacity': 0.58, 'raster-fade-duration': 0 },
+        });
       }
 
       map.addSource('fibre-routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });

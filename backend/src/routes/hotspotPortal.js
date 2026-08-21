@@ -83,6 +83,15 @@ function safeRouterLoginUrl(value, clientIp) {
   } catch (_) { return null; }
 }
 
+function normalizedMacIdentity(value) {
+  return String(value || '').replace(/[^a-f0-9]/gi, '').toLowerCase();
+}
+
+function voucherBoundMac(usedBy) {
+  const match = String(usedBy || '').match(/(?:^|\s)mac:([0-9a-f:.-]+)/i);
+  return match ? normalizedMacIdentity(match[1]) : '';
+}
+
 function portalOrigin(req) {
   return String(
     process.env.HOTSPOT_PORTAL_URL ||
@@ -1155,6 +1164,12 @@ router.post('/login', [
     if (claims.router_id && voucher.router_id && Number(claims.router_id) !== Number(voucher.router_id)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This voucher belongs to a different router.' }); }
     if (claims.mac && req.body.mac && String(claims.mac).toLowerCase() !== String(req.body.mac).toLowerCase()) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This portal link is bound to a different device.' }); }
     if (claims.ip && req.body.ip && String(claims.ip) !== String(req.body.ip)) { await client.query('ROLLBACK'); return res.status(403).json({ error: 'This portal link is bound to a different device.' }); }
+    const boundMac = Number(voucher.max_devices || 1) === 1 ? voucherBoundMac(voucher.used_by) : '';
+    const requestedMac = normalizedMacIdentity(req.body.mac || claims.mac);
+    if (boundMac && (!requestedMac || boundMac !== requestedMac)) {
+      await client.query('ROLLBACK');
+      return res.status(403).json({ error: 'This voucher is already assigned to another device.' });
+    }
     if (voucher.status === 'active' && voucher.expires_at && new Date(voucher.expires_at) > new Date()) { await client.query('COMMIT'); return res.json({ success: true, already_active: true, voucher: { code: voucher.code, plan_name: voucher.plan_name, expires_at: voucher.expires_at, duration_minutes: voucher.duration_minutes }, login: { username: voucher.code, password: voucher.code, url: loginTarget || null, destination: req.body.link_orig || null } }); }
     if (voucher.status !== 'available') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'This voucher is no longer available' }); }
     const usedBy = [req.body.mac && `mac:${req.body.mac}`, req.body.ip && `ip:${req.body.ip}`].filter(Boolean).join(' ') || 'Hotspot portal user';

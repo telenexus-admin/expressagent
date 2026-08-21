@@ -535,6 +535,10 @@ export default function HotspotPortal() {
   );
   const [draftPortal, setDraftPortal] = useState(null);
   const [voucherCode, setVoucherCode] = useState('');
+  const [portalLoginMode, setPortalLoginMode] = useState('voucher');
+  const [memberUsername, setMemberUsername] = useState('');
+  const [memberPassword, setMemberPassword] = useState('');
+  const [reconnectReference, setReconnectReference] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [login, setLogin] = useState(null);
@@ -1184,6 +1188,15 @@ useEffect(() => {
     } finally {
       setBusy(false);
     }
+  };
+
+  const submitMemberLogin = async (event) => {
+    event.preventDefault(); setError(''); if (!memberUsername.trim() || !memberPassword) { setError('Enter your member username and password.'); return; }
+    setBusy(true); try { const response=await fetch(apiBase + '/member-login', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({portal_token:portalToken,username:memberUsername.trim(),password:memberPassword,mac:params.get('mac')||'',ip:params.get('ip')||'',link_login_only:loginUrl,link_orig:origin})}); const data=await response.json(); if(!response.ok)throw new Error(data.error||'Member login failed'); setLogin(data.login?.url?data.login:null); } catch(e){setError(e.message);} finally {setBusy(false);}
+  };
+  const submitReconnect = async (event) => {
+    event.preventDefault(); setError(''); if(!reconnectReference.trim()){setError('Enter the transaction or reference code.');return;}
+    setBusy(true); try { const response=await fetch(apiBase + '/reconnect', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({portal_token:portalToken,reference:reconnectReference.trim(),mac:params.get('mac')||'',ip:params.get('ip')||'',link_login_only:loginUrl,link_orig:origin})}); const data=await response.json(); if(!response.ok)throw new Error(data.error||'Reconnect failed'); setActive(data.voucher); setLogin(data.login?.url?data.login:null); } catch(e){setError(e.message);} finally {setBusy(false);}
   };
 
   const whatsAppHref = whatsappPhone
@@ -1895,6 +1908,16 @@ useEffect(() => {
 
         {showVoucherLogin && (
         <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
+          <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
+            <h2 className="text-center text-lg font-black">Reconnect account</h2><p className="mt-1 text-center text-xs text-slate-500">Enter your M-Pesa transaction or access reference.</p>
+            <form onSubmit={submitReconnect} className="mt-4 flex gap-2"><input value={reconnectReference} onChange={e=>setReconnectReference(e.target.value.toUpperCase())} placeholder="M-Pesa / voucher reference" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/><button disabled={busy} className="rounded-xl px-4 text-sm font-black text-white disabled:opacity-60" style={{backgroundColor:accentColor}}>Reconnect</button></form>
+            <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5"><button type="button" onClick={()=>setPortalLoginMode('voucher')} className="rounded-xl px-3 py-3 text-sm font-black" style={portalLoginMode==='voucher'?{backgroundColor:accentColor,color:'#fff'}:{}}>Voucher</button><button type="button" onClick={()=>setPortalLoginMode('member')} className="rounded-xl px-3 py-3 text-sm font-black" style={portalLoginMode==='member'?{backgroundColor:accentColor,color:'#fff'}:{}}>Member</button></div>
+            {portalLoginMode==='member' && <form onSubmit={submitMemberLogin} className="mt-4 space-y-3"><input value={memberUsername} onChange={e=>setMemberUsername(e.target.value)} placeholder="Member username" autoComplete="username" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/><input type="password" value={memberPassword} onChange={e=>setMemberPassword(e.target.value)} placeholder="Password" autoComplete="current-password" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/><button disabled={busy||Boolean(login)} className="w-full rounded-xl py-3 text-sm font-black text-white disabled:opacity-60" style={{backgroundColor:accentColor}}>{busy?'Connecting...':'Member login'}</button></form>}
+          </div>
+        </section>)}
+        {showVoucherLogin && portalLoginMode==='voucher' && (
+        <section ref={voucherRef}
+ className="px-3 pb-4 pt-4 sm:px-6">
           <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
             <div className="flex items-center gap-3" style={{ color: accentColor }}>
               <Icon name="ticket" className="h-7 w-7" />

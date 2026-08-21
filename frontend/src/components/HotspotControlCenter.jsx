@@ -754,6 +754,13 @@ function ModalShell({
 }
 
 
+function MemberAccessPanel({ routers }) {
+  const [form,setForm]=useState({username:'',password:'',router_id:'',download_mbps:'',upload_mbps:''}); const [members,setMembers]=useState([]); const [busy,setBusy]=useState(false); const [message,setMessage]=useState('');
+  const load=()=>api.get('/billing-workspace/hotspot/members').then(r=>setMembers(Array.isArray(r.data)?r.data:[])).catch(()=>setMembers([])); useEffect(()=>{load();},[]);
+  const submit=async e=>{e.preventDefault();setBusy(true);setMessage('');try{await api.post('/billing-workspace/hotspot/members',form);setForm({username:'',password:'',router_id:'',download_mbps:'',upload_mbps:''});setMessage('Member login created and synchronized to RADIUS.');load();}catch(err){setMessage(err.response?.data?.error||'Could not create member login.')}finally{setBusy(false)}};
+  return <section className="rounded-[20px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5"><div className="flex items-start justify-between gap-3"><div><h3 className="text-sm font-black text-slate-900">Member access</h3><p className="mt-1 text-[10px] leading-4 text-slate-400">Create member logins for the hotspot portal. Every login is limited to one router and its selected speed.</p></div><span className="rounded-full bg-emerald-50 px-2 py-1 text-[8px] font-black text-emerald-700">RADIUS</span></div><form onSubmit={submit} className="mt-4 grid gap-2 sm:grid-cols-3"><input required value={form.username} onChange={e=>setForm({...form,username:e.target.value})} placeholder="Username" className={inputClass}/><input required minLength="8" type="password" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} placeholder="Password (8+ chars)" className={inputClass}/><select required value={form.router_id} onChange={e=>setForm({...form,router_id:e.target.value})} className={inputClass}><option value="">Assign router</option>{routers.map(r=><option key={r.id} value={r.id}>{r.name||('Router '+r.id)}</option>)}</select><input required min="1" type="number" value={form.download_mbps} onChange={e=>setForm({...form,download_mbps:e.target.value})} placeholder="Download Mbps" className={inputClass}/><input required min="1" type="number" value={form.upload_mbps} onChange={e=>setForm({...form,upload_mbps:e.target.value})} placeholder="Upload Mbps" className={inputClass}/><button disabled={busy} className="rounded-xl bg-emerald-400 px-4 py-3 text-[9px] font-black text-emerald-950 disabled:opacity-50">{busy?'Creating�w^~)�v':'+ Create member'}</button></form>{message&&<p className="mt-3 text-[10px] font-bold text-emerald-700">{message}</p>}{members.length>0&&<div className="mt-4 space-y-2">{members.map(m=><div key={m.id} className="flex items-center justify-between rounded-xl bg-slate-50 px-3 py-2"><span className="text-xs font-black text-slate-800">{m.username}</span><span className="text-[10px] text-slate-500">{m.router_name||'Router'} � {m.rate_limit}</span></div>)}</div>}</section>;
+}
+
 export default function HotspotControlCenter({
   plans = [],
   routers = [],
@@ -2256,6 +2263,8 @@ export default function HotspotControlCenter({
             </span>
           </div>
         </section>
+
+        <MemberAccessPanel routers={routers} />
 
         {/* MOBILE ACTIONS */}
 

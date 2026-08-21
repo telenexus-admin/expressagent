@@ -1,5 +1,6 @@
 const express = require('express');
 const net = require('net');
+const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { radiusEnabled, syncHotspotVoucherRadius } = require('../services/radiusSync');
@@ -1249,6 +1250,16 @@ router.post('/login', [
     console.error('Public hotspot login error:', err.message);
     res.status(500).json({ error: 'Could not activate this voucher' });
   } finally { client.release(); }
+});
+
+async function ensureHotspotMemberPortalSchema() {
+  await db.query("CREATE TABLE IF NOT EXISTS billing_hotspot_members (id BIGSERIAL PRIMARY KEY, client_id BIGINT NOT NULL, router_id BIGINT NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, rate_limit TEXT, expires_at TIMESTAMPTZ, is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(client_id, username))");
+}
+router.post('/member-login', async (req,res) => {
+ try { const account=await resolveClientId(req,res); if(!account)return; await ensureHotspotMemberPortalSchema(); const username=String(req.body.username||'').trim(),password=String(req.body.password||''),claims=req.hotspotPortalClaims||{},target=safeRouterLoginUrl(req.body.link_login_only,req.body.ip); if(req.body.link_login_only&&!target)return res.status(400).json({error:'The router login target is not safe.'}); const q=await db.query("SELECT * FROM billing_hotspot_members WHERE client_id=$1 AND LOWER(username)=LOWER($2) AND is_active=TRUE AND (expires_at IS NULL OR expires_at>NOW()) LIMIT 1",[account.id,username]),m=q.rows[0]; if(!m||(claims.router_id&&Number(m.router_id)!==Number(claims.router_id))||!(await bcrypt.compare(password,m.password_hash)))return res.status(401).json({error:'Invalid member credentials for this hotspot.'}); res.json({success:true,login:{username:m.username,password,url:target||null,destination:req.body.link_orig||null},member:{username:m.username,rate_limit:m.rate_limit,expires_at:m.expires_at}}); } catch(e){ console.error('Member portal login error:',e.message);res.status(500).json({error:'Could not sign in this member'}); }
+});
+router.post('/reconnect', async (req,res) => {
+ try { const account=await resolveClientId(req,res); if(!account)return; const reference=String(req.body.reference||'').trim(); if(reference.length<4)return res.status(400).json({error:'Enter the M-Pesa transaction code. Use the voucher/reference supplied after payment.'}); const rows=await db.query("SELECT v.*,p.mikrotik_rate_limit,p.data_limit_mb FROM billing_hotspot_vouchers v LEFT JOIN billing_hotspot_plans p ON p.id=v.plan_id WHERE v.client_id=$1 AND LOWER(v.code)=LOWER($2) AND v.status='active' AND v.expires_at>NOW() ORDER BY v.activated_at DESC LIMIT 1",[account.id,reference]),v=rows.rows[0]; if(!v)return res.status(404).json({error:'No active hotspot access was found for this reference.'}); const claims=req.hotspotPortalClaims||{}; if(claims.router_id&&Number(v.router_id)!==Number(claims.router_id))return res.status(403).json({error:'This reference belongs to a different hotspot.'}); const activation=await activatePaidHotspotDevice({clientId:account.id,routerId:v.router_id,macAddress:req.body.mac||claims.mac,ipAddress:req.body.ip||claims.ip,expiresAt:v.expires_at,rateLimit:v.mikrotik_rate_limit,dataLimitMb:v.data_limit_mb}); res.json({success:true,login:{username:v.code,password:v.code,url:safeRouterLoginUrl(req.body.link_login_only,req.body.ip),destination:req.body.link_orig||null},voucher:{code:v.code,expires_at:v.expires_at},device_activation:activation}); } catch(e){console.error('Hotspot reconnect error:',e.message);res.status(500).json({error:'Could not reconnect this account'});}
 });
 
 router.get('/session', async (req, res) => {

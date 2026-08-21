@@ -1,10 +1,11 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const net = require('net');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, revokeHotspotRadiusAccess, syncHotspotVoucherRadius, syncSubscriberRadius } = require('../services/radiusSync');
+const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, revokeHotspotRadiusAccess, syncHotspotMemberRadius, syncHotspotVoucherRadius, syncSubscriberRadius } = require('../services/radiusSync');
 const {
   activatePaidHotspotDevice,
   revokeHotspotDeviceAccess,
@@ -3785,5 +3786,10 @@ router.post(
   }
 );
 
+
+let hotspotMemberSchemaPromise;
+function ensureHotspotMemberSchema(){ if(!hotspotMemberSchemaPromise) hotspotMemberSchemaPromise=db.query("CREATE TABLE IF NOT EXISTS billing_hotspot_members (id BIGSERIAL PRIMARY KEY, client_id BIGINT NOT NULL, router_id BIGINT NOT NULL, username TEXT NOT NULL, password_hash TEXT NOT NULL, rate_limit TEXT, is_active BOOLEAN NOT NULL DEFAULT TRUE, created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), UNIQUE(client_id,username))"); return hotspotMemberSchemaPromise; }
+router.get('/hotspot/members',async(req,res)=>{try{await ensureHotspotMemberSchema();const q=await db.query("SELECT m.id,m.username,m.router_id,m.rate_limit,m.is_active,m.created_at,r.name router_name FROM billing_hotspot_members m LEFT JOIN mikrotik_routers r ON r.id=m.router_id WHERE m.client_id=$1 ORDER BY m.created_at DESC",[req.scope.clientId]);res.json(q.rows)}catch(e){res.status(500).json({error:'Could not load member logins'})}});
+router.post('/hotspot/members',async(req,res)=>{try{await ensureHotspotMemberSchema();const username=String(req.body.username||'').trim(),password=String(req.body.password||''),routerId=Number(req.body.router_id),down=Number(req.body.download_mbps),up=Number(req.body.upload_mbps);if(!/^[A-Za-z0-9._-]{3,48}$/.test(username)||password.length<8||!routerId||!(down>0)||!(up>0))return res.status(400).json({error:'Enter username, password, router and both speeds.'});const routerQ=await db.query("SELECT id,COALESCE(wireguard_address,private_tunnel_ip,management_ip) router_address FROM mikrotik_routers WHERE id=$1 AND client_id=$2 LIMIT 1",[routerId,req.scope.clientId]);if(!routerQ.rows[0])return res.status(400).json({error:'Select an onboarded router.'});const rateLimit=up+'M/'+down+'M',hash=await bcrypt.hash(password,12),q=await db.query("INSERT INTO billing_hotspot_members(client_id,router_id,username,password_hash,rate_limit) VALUES($1,$2,$3,$4,$5) RETURNING *",[req.scope.clientId,routerId,username,hash,rateLimit]);const sync=await syncHotspotMemberRadius(Object.assign({},q.rows[0],{password:password,router_address:routerQ.rows[0].router_address}));res.status(201).json({success:true,member:{id:q.rows[0].id,username:q.rows[0].username,router_id:q.rows[0].router_id,rate_limit:q.rows[0].rate_limit,is_active:q.rows[0].is_active},radius_sync:sync})}catch(e){res.status(500).json({error:e.code==='23505'?'That username already exists.':(e.message||'Could not create member')})}});
 
 module.exports = router;

@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import api from '../utils/api';
 
 const fieldClass =
-  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10';
+  'w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10';
 
 export default function RouterServiceWizard({
   router,
@@ -17,10 +17,9 @@ export default function RouterServiceWizard({
   const [error, setError] = useState('');
   const [result, setResult] = useState(null);
 
-  const surface = darkMode
-    ? 'border-slate-700 bg-[#11172a] text-slate-100'
-    : 'border-slate-200 bg-white text-slate-900';
-  const muted = darkMode ? 'text-slate-400' : 'text-slate-500';
+  const surface = 'border-emerald-100 bg-white text-slate-900';
+  const muted = 'text-slate-500';
+  const modeLabel = form?.mode === 'hotspot' ? 'Hotspot' : form?.mode === 'pppoe' ? 'PPPoE' : 'Hotspot + PPPoE';
 
   useEffect(() => {
     let active = true;
@@ -103,7 +102,7 @@ export default function RouterServiceWizard({
     if (!form || preview?.blockers?.length) return;
     const ports = (form.subscriber_ports || []).join(', ');
     const confirmed = window.confirm(
-      `Configure Hotspot and PPPoE on ${router.name}?\n\nWAN: ${form.wan_interface}\nSubscriber ports: ${ports}\n\nA MikroTik backup will be created first. Devices on the selected LAN ports may reconnect briefly.`
+      `Configure ${modeLabel} on ${router.name}?\n\nWAN: ${form.wan_interface}\nSubscriber ports: ${ports}\n\nA MikroTik backup will be created first. Devices on the selected LAN ports may reconnect briefly.`
     );
     if (!confirmed) return;
 
@@ -139,7 +138,7 @@ export default function RouterServiceWizard({
               Automatic service setup
             </p>
             <h3 className="mt-1 text-xl font-black">
-              Hotspot + PPPoE
+              {modeLabel}
             </h3>
             <p className={`mt-1 text-xs ${muted}`}>
               {router.name} · {router.wireguard_tunnel_ip || router.host}
@@ -229,10 +228,12 @@ export default function RouterServiceWizard({
                   <p className={`text-[10px] font-black uppercase ${muted}`}>
                     Service mode
                   </p>
-                  <p className="mt-2 font-black">Hotspot + PPPoE</p>
-                  <p className={`mt-1 text-xs ${muted}`}>
-                    Both services share the selected subscriber bridge.
-                  </p>
+                  <select value={form.mode || 'both'} onChange={(event) => setForm((current) => ({ ...current, mode: event.target.value, ...(event.target.value === 'pppoe' ? { wireless_interface: '', wireless_ssid: '' } : {}) }))} className="mt-2 w-full rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-black text-emerald-950 outline-none focus:border-emerald-500">
+                    <option value="both">Hotspot + PPPoE</option>
+                    <option value="hotspot">Hotspot only</option>
+                    <option value="pppoe">PPPoE only</option>
+                  </select>
+                  <p className={`mt-2 text-xs ${muted}`}>Choose exactly what this router should provide. Recheck before applying.</p>
                 </div>
                 <div className={`rounded-2xl border p-4 ${surface}`}>
                   <p className={`text-[10px] font-black uppercase ${muted}`}>
@@ -323,7 +324,7 @@ export default function RouterServiceWizard({
                           onClick={() => togglePort(port)}
                           className={`rounded-xl border px-3 py-3 text-xs font-black transition ${
                             checked
-                              ? 'border-violet-500 bg-violet-600 text-white'
+                              ? 'border-emerald-500 bg-emerald-600 text-white'
                               : darkMode
                                 ? 'border-slate-700 bg-slate-800 text-slate-300'
                                 : 'border-slate-200 bg-white text-slate-600'
@@ -354,7 +355,7 @@ export default function RouterServiceWizard({
                       <select value={form.wireless_interface || ''} onChange={(event) => {
                         const selected = availableWireless.find((item) => item.name === event.target.value);
                         setForm((current) => ({ ...current, wireless_interface: event.target.value, wireless_ssid: event.target.value ? (current.wireless_ssid || selected?.ssid || '') : '' }));
-                      }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10">
+                      }} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10">
                         <option value="">Do not configure Wi-Fi</option>
                         {availableWireless.map((radio) => (
                           <option key={radio.name} value={radio.name} disabled={!radio.supported}>
@@ -366,7 +367,7 @@ export default function RouterServiceWizard({
                     {form.wireless_interface && (
                       <label className="block">
                         <span className="text-xs font-bold">Wi-Fi network name (SSID)</span>
-                        <input maxLength={32} placeholder="e.g. Polyizon Hotspot" value={form.wireless_ssid || ''} onChange={(event) => update('wireless_ssid', event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10" />
+                        <input maxLength={32} placeholder="e.g. Polyizon Hotspot" value={form.wireless_ssid || ''} onChange={(event) => update('wireless_ssid', event.target.value)} className="mt-1.5 w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/10" />
                       </label>
                     )}
                   </div>
@@ -446,11 +447,11 @@ export default function RouterServiceWizard({
                     Boolean(preview?.blockers?.length) ||
                     !(form.subscriber_ports || []).length
                   }
-                  className="rounded-xl bg-violet-600 py-3 text-sm font-black text-white shadow-lg shadow-violet-600/20 disabled:opacity-50"
+                  className="rounded-xl bg-emerald-500 py-3 text-sm font-black text-emerald-950 shadow-lg shadow-emerald-500/20 disabled:opacity-50"
                 >
                   {applying
                     ? 'Configuring router…'
-                    : 'Configure Hotspot + PPPoE'}
+                    : `Configure ${modeLabel}`}
                 </button>
               </div>
             </div>

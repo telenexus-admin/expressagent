@@ -534,7 +534,9 @@ async function loadManagedHotspotSubscriber(
        COALESCE(
          subscriber.router_id,
          plan.router_id
-       ) AS effective_router_id
+       ) AS effective_router_id,
+
+       router.name AS router_name
 
      FROM billing_hotspot_subscribers
        subscriber
@@ -558,6 +560,15 @@ async function loadManagedHotspotSubscriber(
        ON plan.id =
             subscriber.plan_id
       AND plan.client_id =
+            subscriber.client_id
+
+     LEFT JOIN mikrotik_routers router
+       ON router.id =
+            COALESCE(
+              subscriber.router_id,
+              plan.router_id
+            )
+      AND router.client_id =
             subscriber.client_id
 
      WHERE subscriber.id = $1
@@ -721,6 +732,95 @@ async function syncManagedHotspotSubscriber(
 }
 
 
+router.get('/hotspot/subscribers/:id/profile', async (req, res) => {
+  try {
+    const subscriber = await loadManagedHotspotSubscriber(req.scope.clientId, req.params.id);
+    if (!subscriber) return res.status(404).json({ error: 'Hotspot subscriber was not found' });
+
+    const clientId = req.scope.clientId;
+    const paymentRequestId = subscriber.payment_request_id;
+    let vouchers = [];
+    let payments = [];
+
+    if (paymentRequestId) {
+      const result = await Promise.all([
+        db.query(`SELECT v.id, v.code, v.status, v.max_devices, v.used_by, v.activated_at, v.expires_at,
+                    COALESCE((regexp_match(v.used_by, 'mac:([0-9A-Fa-f:.-]+)', 'i'))[1], $3) AS mac_address
+                  FROM hotspot_payment_fulfillments f
+                  JOIN billing_hotspot_vouchers v
+                    ON v.client_id = f.client_id
+                   AND (v.id = f.voucher_id OR f.additional_voucher_ids @> jsonb_build_array(v.id))
+                  WHERE f.client_id = $1 AND f.payment_request_id = $2
+                  ORDER BY v.activated_at NULLS LAST, v.id`,
+          [clientId, paymentRequestId, subscriber.current_mac || '']),
+        db.query(`SELECT id, amount, status, external_reference, updated_at, created_at, customer_phone
+                  FROM payhero_payment_requests
+                  WHERE client_id = $1
+                    AND (
+                      id = $2
+                      OR (
+                        $3 <> ''
+                        AND customer_phone = $3
+                        AND metadata->>'purpose' = 'hotspot'
+                      )
+                    )
+                  ORDER BY updated_at DESC`,
+          [clientId, paymentRequestId, subscriber.customer_phone || '']),
+        db.query(`SELECT mac_address, username, ip_address, is_online, uptime, last_seen, raw
+                  FROM mikrotik_clients
+                  WHERE client_id = $1 AND service_type = 'hotspot'`,
+          [clientId]),
+      ]);
+      const clients = result[2].rows;
+      const compact = value => String(value || '').replace(/[^a-f0-9]/gi, '').toUpperCase();
+      vouchers = result[0].rows.map(voucher => {
+        const mac = compact(voucher.mac_address);
+        const live = clients.find(client => compact(client.mac_address || client.username) === mac);
+        const active = live?.raw?.active || {};
+        return {
+          ...voucher,
+          mac_address: voucher.mac_address || null,
+          is_online: Boolean(live?.is_online),
+          ip_address: live?.ip_address || null,
+          uptime: live?.uptime || null,
+          last_seen: live?.last_seen || null,
+          download_bytes: Number(active['bytes-in'] || 0),
+          upload_bytes: Number(active['bytes-out'] || 0),
+        };
+      });
+      payments = result[1].rows;
+    }
+
+    const summary = vouchers.reduce((total, voucher) => ({
+      download_bytes: total.download_bytes + voucher.download_bytes,
+      upload_bytes: total.upload_bytes + voucher.upload_bytes,
+      online_devices: total.online_devices + (voucher.is_online ? 1 : 0),
+    }), { download_bytes: 0, upload_bytes: 0, online_devices: 0 });
+    summary.total_bytes = summary.download_bytes + summary.upload_bytes;
+    summary.shared_devices = vouchers.length;
+    summary.payment_count = payments.filter(payment => payment.status === 'paid').length;
+    summary.lifetime_spend = payments.reduce((total, payment) => payment.status === 'paid' ? total + Number(payment.amount || 0) : total, 0);
+
+    const history = [
+      ...payments.map(payment => ({
+        type: payment.status === 'paid' ? 'payment' : 'payment_pending',
+        occurred_at: payment.updated_at || payment.created_at,
+        title: payment.status === 'paid' ? 'Package payment received' : 'Payment awaiting confirmation',
+        detail: payment.external_reference || payment.customer_phone || 'Hotspot payment',
+        amount: Number(payment.amount || 0),
+      })),
+      ...vouchers.filter(voucher => voucher.activated_at).map(voucher => ({
+        type: 'device', occurred_at: voucher.activated_at,
+        title: 'Shared device connected', detail: voucher.mac_address || voucher.code, amount: null,
+      })),
+    ].sort((left, right) => new Date(right.occurred_at || 0) - new Date(left.occurred_at || 0)).slice(0, 12);
+
+    return res.json({ subscriber, summary, devices: vouchers, payments, history });
+  } catch (error) {
+    console.error('Load hotspot subscriber profile error:', error.message);
+    return res.status(500).json({ error: 'Could not load this hotspot account profile' });
+  }
+});
 router.patch(
   '/hotspot/subscribers/:id',
   [

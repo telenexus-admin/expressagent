@@ -29,150 +29,63 @@ function HotspotSubscriberDetail({
   subscriber,
   back,
 }) {
-  const expiry =
-    subscriber.expires_at
-      ? new Date(
-          subscriber.expires_at
-        )
-      : null;
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const paidAt =
-    subscriber.last_payment_at
-      ? new Date(
-          subscriber.last_payment_at
-        )
-      : null;
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setLoadError('');
+    api.get(`/billing-workspace/hotspot/subscribers/${subscriber.id}/profile`)
+      .then(response => {
+        if (mounted) setProfile(response.data);
+      })
+      .catch(error => {
+        if (mounted) setLoadError(
+          error.response?.data?.error ||
+          'Could not load this hotspot account.'
+        );
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [subscriber.id]);
 
-  return (
-    <div className="mx-auto max-w-5xl space-y-4 px-2 py-2 text-xs">
-      <button
-        type="button"
-        onClick={back}
-        className="font-extrabold text-violet-600"
-      >
-        ← Back to subscribers
-      </button>
+  const account = profile?.subscriber || subscriber;
+  const summary = profile?.summary || {};
+  const devices = profile?.devices || [];
+  const payments = profile?.payments || [];
+  const history = profile?.history || [];
+  const expiry = account.expires_at ? new Date(account.expires_at) : null;
+  const money = value => `KES ${Number(value || 0).toLocaleString()}`;
+  const date = value => value ? new Date(value).toLocaleString() : '—';
+  const Metric = ({ label, value, hint, tone = 'emerald' }) => <div className={`rounded-2xl border p-4 ${tone === 'emerald' ? 'border-emerald-100 bg-emerald-50/70' : tone === 'sky' ? 'border-sky-100 bg-sky-50/70' : tone === 'violet' ? 'border-violet-100 bg-violet-50/70' : 'border-amber-100 bg-amber-50/70'}`}><p className="text-[10px] font-black uppercase tracking-[.14em] text-slate-400">{label}</p><p className="mt-2 text-xl font-black tracking-tight text-slate-900">{value}</p><p className="mt-1 text-[11px] font-medium text-slate-500">{hint}</p></div>;
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-[.18em] text-slate-400">
-              Hotspot subscriber
-            </p>
+  return <div className="mx-auto max-w-6xl space-y-4 px-2 py-2 text-xs">
+    <button type="button" onClick={back} className="font-extrabold text-emerald-700">← Back to subscribers</button>
 
-            <h2 className="mt-1 text-lg font-black text-slate-900">
-              {subscriber.mac_address ||
-                subscriber.full_name ||
-                'Hotspot device'}
-            </h2>
+    <section className="overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#06291a,#0b5b39_55%,#12a56b)] p-5 text-white shadow-xl sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="text-[10px] font-black uppercase tracking-[.22em] text-emerald-100/70">Hotspot customer profile</p><h2 className="mt-2 font-[Georgia,Times,serif] text-2xl font-semibold tracking-[-.03em] sm:text-3xl">{account.customer_phone || account.phone || account.current_mac || 'Hotspot customer'}</h2><p className="mt-2 text-xs text-emerald-50/80">{account.package_name || account.plan_name || 'No active package'} · {account.router_name || 'Router pending'}</p></div>
+        <div className={`rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${summary.online_devices ? 'bg-emerald-300 text-emerald-950' : 'bg-white/15 text-white'}`}>{summary.online_devices ? `${summary.online_devices} device${summary.online_devices === 1 ? '' : 's'} online` : 'Offline'}</div>
+      </div>
+      <div className="mt-6 grid gap-2 sm:grid-cols-4"><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Package expires</p><p className="mt-1 font-bold">{expiry && !Number.isNaN(expiry.getTime()) ? expiry.toLocaleString() : 'No expiry'}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Shared access</p><p className="mt-1 text-lg font-black">{summary.shared_devices || 0}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Current session</p><p className="mt-1 text-lg font-black">{formatBytes(summary.total_bytes)}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Lifetime spend</p><p className="mt-1 text-lg font-black">{money(summary.lifetime_spend)}</p></div></div>
+    </section>
 
-            <p className="mt-1 text-xs text-slate-500">
-              {subscriber.phone ||
-                subscriber.account_number ||
-                'No phone'}
-            </p>
-          </div>
+    {loading ? <div className="grid gap-4 sm:grid-cols-4">{[0,1,2,3].map(item => <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-200" />)}</div> : loadError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 font-bold text-rose-700">{loadError}</div> : <>
+      <section className="grid gap-3 sm:grid-cols-4"><Metric label="Data consumed" value={formatBytes(summary.total_bytes)} hint="Current live session counters" tone="emerald" /><Metric label="Download" value={formatBytes(summary.download_bytes)} hint="Across connected devices" tone="sky" /><Metric label="Upload" value={formatBytes(summary.upload_bytes)} hint="Across connected devices" tone="violet" /><Metric label="Payments" value={money(summary.lifetime_spend)} hint={`${summary.payment_count || 0} confirmed payment${summary.payment_count === 1 ? '' : 's'}`} tone="amber" /></section>
 
-          <span
-            className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${
-              subscriber.is_online
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {subscriber.is_online
-              ? 'Online'
-              : 'Offline'}
-          </span>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-[1.25fr_.75fr]">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div><h3 className="font-black text-slate-900">Shared account access</h3><p className="mt-1 text-[11px] text-slate-500">Every phone unlocked by this package.</p></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">{devices.length} devices</span></div><div className="divide-y divide-slate-100">{devices.length ? devices.map((device, index) => <div key={device.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div className="flex items-center gap-3"><div className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black ${device.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{index + 1}</div><div><p className="font-bold text-slate-900">{device.mac_address || device.code}</p><p className="mt-0.5 text-[11px] text-slate-500">{device.ip_address || 'Waiting for an IP'} · {device.uptime || 'Not currently active'}</p></div></div><div className="text-right"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${device.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{device.is_online ? 'ONLINE' : String(device.status || 'offline').toUpperCase()}</span><p className="mt-1 text-[10px] font-semibold text-slate-500">↓ {formatBytes(device.download_bytes)} · ↑ {formatBytes(device.upload_bytes)}</p></div></div>) : <p className="p-8 text-center text-sm text-slate-400">No devices are linked yet.</p>}</div></section>
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h3 className="font-black text-slate-900">Account snapshot</h3><p className="mt-1 text-[11px] text-slate-500">The essentials at a glance.</p></div><div className="space-y-4 p-5"><div><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Customer phone</p><p className="mt-1 font-bold text-slate-800">{account.customer_phone || 'Not captured'}</p></div><div><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Router</p><p className="mt-1 font-bold text-slate-800">{account.router_name || 'Unassigned'}</p></div><div><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Authentication</p><p className="mt-1 font-bold text-emerald-700">{account.device_activation_status || 'Active'}</p></div></div></section>
+      </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            [
-              'Package',
-              subscriber.plan_name ||
-                'No package',
-            ],
-            [
-              'Router',
-              subscriber.router_name ||
-                'Unassigned',
-            ],
-            [
-              'Expires',
-              expiry &&
-              !Number.isNaN(
-                expiry.getTime()
-              )
-                ? expiry.toLocaleString()
-                : 'No expiry',
-            ],
-            [
-              'Last payment',
-              subscriber.last_payment_amount
-                ? `KES ${Number(
-                    subscriber.last_payment_amount
-                  ).toLocaleString()}`
-                : '—',
-            ],
-          ].map(
-            ([label, value]) => (
-              <div
-                key={label}
-                className="rounded-xl bg-slate-50 p-3"
-              >
-                <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
-                  {label}
-                </div>
-
-                <div className="mt-1 text-xs font-bold text-slate-800">
-                  {value}
-                </div>
-              </div>
-            )
-          )}
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-400">
-              MAC
-            </span>
-            <div className="mt-1 font-bold">
-              {subscriber.mac_address ||
-                '—'}
-            </div>
-          </div>
-
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-400">
-              Authentication
-            </span>
-            <div className="mt-1 font-bold">
-              {subscriber.device_activation_status ||
-                '—'}
-            </div>
-          </div>
-
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-400">
-              Paid at
-            </span>
-            <div className="mt-1 font-bold">
-              {paidAt &&
-              !Number.isNaN(
-                paidAt.getTime()
-              )
-                ? paidAt.toLocaleString()
-                : '—'}
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
+      <div className="grid gap-4 lg:grid-cols-2"><section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div><h3 className="font-black text-slate-900">Payment history</h3><p className="mt-1 text-[11px] text-slate-500">Confirmed payments for this account.</p></div><span className="font-black text-emerald-700">{money(summary.lifetime_spend)}</span></div>{payments.length ? <div className="divide-y divide-slate-100">{payments.map(payment => <div key={payment.id} className="flex items-center justify-between gap-3 px-5 py-3.5"><div><p className="font-bold text-slate-800">{payment.status === 'paid' ? 'Package payment' : 'Payment pending'}</p><p className="mt-0.5 text-[10px] text-slate-500">{date(payment.updated_at || payment.created_at)} · {payment.external_reference || 'No reference'}</p></div><p className="font-black text-slate-900">{money(payment.amount)}</p></div>)}</div> : <p className="p-8 text-center text-sm text-slate-400">No recorded payments yet.</p>}</section><section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h3 className="font-black text-slate-900">Account activity</h3><p className="mt-1 text-[11px] text-slate-500">A concise history of payments and linked devices.</p></div><div className="divide-y divide-slate-100">{history.length ? history.map((item, index) => <div key={`${item.type}-${index}`} className="flex gap-3 px-5 py-3.5"><div className={`mt-0.5 h-2.5 w-2.5 rounded-full ${item.type === 'payment' ? 'bg-emerald-500' : item.type === 'device' ? 'bg-sky-500' : 'bg-amber-500'}`} /><div><p className="font-bold text-slate-800">{item.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{date(item.occurred_at)} · {item.detail}</p></div></div>) : <p className="p-8 text-center text-sm text-slate-400">No account activity yet.</p>}</div></section></div>
+    </>}
+  </div>;
 }
-
 function StatusGlyph({ kind }) { const paths = { online: <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>, offline: <><circle cx="12" cy="9" r="3" /><path d="M6 20a6 6 0 0 1 12 0" /></>, expired: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></> }; return <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-current/10"><svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[kind]}</svg></span>; }
 function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="9" cy="9" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><circle cx="17" cy="11" r="2" /><path d="M14 20a4 4 0 0 1 7 0" /></> : kind === 'static' ? <><circle cx="12" cy="12" r="2" /><path d="M12 4v6m0 4v6M4 12h6m4 0h6" /></> : <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>; return <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{content}</svg>; }export default function BillingSubscribers({ subscribers, items: sourceItems, networkClients = [], plans, hotspotPlans = [], routers = [], createOpen, setCreateOpen, search, setSearch, reload, setError, darkMode = false }) {
   const [menuId, setMenuId] = useState(null);

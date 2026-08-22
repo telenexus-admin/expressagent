@@ -3,6 +3,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
+const { strongAdminPassword } = require('../security/passwordPolicy');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { logActivity } = require('../services/audit');
 
@@ -62,7 +63,7 @@ router.post(
   [
     body('name').trim().notEmpty().withMessage('Name is required'),
     body('email').isEmail().normalizeEmail().withMessage('Valid email required'),
-    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+    body('password').custom(strongAdminPassword),
     body('role').optional().isIn(['admin', 'superadmin']).withMessage('Invalid role'),
     body('client_id').optional().isInt({ min: 1 }).withMessage('client_id must be a positive integer'),
     body('permissions').optional().isArray().withMessage('permissions must be an array'),

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
+import { isStrongAdminPassword, adminPasswordHelp } from '../utils/passwordPolicy';
 
 const ROLE_STYLES = {
   superadmin: 'bg-[#3535FF] text-white',
@@ -91,8 +92,8 @@ export default function AdminManagement() {
       setFormError('All fields are required');
       return;
     }
-    if (form.password.length < 8) {
-      setFormError('Password must be at least 8 characters');
+    if (!isStrongAdminPassword(form.password)) {
+      setFormError(adminPasswordHelp);
       return;
     }
     if (form.role !== 'superadmin' && form.permissions.length === 0) {

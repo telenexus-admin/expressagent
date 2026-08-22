@@ -60,8 +60,9 @@ function run() {
     routerName: 'Synthetic', apiPassword: 'readonly-password', executorPassword: 'executor-password-123456',
     tunnelIp: '10.77.0.240', callbackToken: 'synthetic-token', portalUrl: 'https://example.test/hotspot?token=test',
   });
-  assert.ok(onboarding.includes('name=nexa-readonly policy=read,test,api'));
-  assert.ok(onboarding.includes('name=nexa-executor policy=read,write,test,api'));
+  const normalizedOnboarding = onboarding.replace(/\\\s*/g, ' ').replace(/\s+/g, ' ');
+  assert.ok(normalizedOnboarding.includes('name=nexa-readonly policy=read,test,api'));
+  assert.ok(normalizedOnboarding.includes('name=nexa-executor policy=ftp,read,write,policy,test,sensitive,api'));
   assert.ok(onboarding.includes(':local nexaExecutorPassword "executor-password-123456"'));
   assert.ok(!onboarding.includes('`n'), 'RouterOS script contains a literal PowerShell newline marker');
 

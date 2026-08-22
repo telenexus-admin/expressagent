@@ -3,15 +3,116 @@ import maplibregl from '../utils/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import api from '../utils/api';
 
-const MAP_STYLE = '/api/noc/fibre-gis/map/styles/liberty?polyizon_map_v=20260818-1';
 const MAP_PROXY_PATH = '/api/noc/fibre-gis/map/';
 const MAP_FALLBACK_TILES = `${MAP_PROXY_PATH}natural_earth/ne2sr/{z}/{x}/{y}.png`;
 
-function transformMapRequest(url) {
-  if (!String(url || '').includes(MAP_PROXY_PATH)) return { url };
-  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-  return token ? { url, headers: { Authorization: `Bearer ${token}` } } : { url };
-}
+// Keep the GIS basemap deterministic and same-origin. The low-resolution
+// raster is always visible, while OpenFreeMap vectors add street-level detail.
+// This avoids a blank canvas if a third-party style changes or loads partially.
+const MAP_STYLE = {
+  version: 8,
+  glyphs: `${MAP_PROXY_PATH}fonts/{fontstack}/{range}.pbf`,
+  sources: {
+    'fibre-map-fallback': {
+      type: 'raster',
+      tiles: [MAP_FALLBACK_TILES],
+      tileSize: 256,
+      maxzoom: 6,
+      attribution: 'OpenFreeMap © OpenMapTiles · OpenStreetMap contributors',
+    },
+    openmaptiles: {
+      type: 'vector',
+      url: `${MAP_PROXY_PATH}planet`,
+    },
+  },
+  layers: [
+    { id: 'map-background', type: 'background', paint: { 'background-color': '#eaf2ef' } },
+    {
+      id: 'fibre-map-fallback',
+      type: 'raster',
+      source: 'fibre-map-fallback',
+      paint: { 'raster-opacity': 1, 'raster-fade-duration': 0 },
+    },
+    {
+      id: 'map-landcover',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'landcover',
+      paint: { 'fill-color': '#dcecdf', 'fill-opacity': 0.42 },
+    },
+    {
+      id: 'map-landuse',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'landuse',
+      paint: { 'fill-color': '#e7eee9', 'fill-opacity': 0.34 },
+    },
+    {
+      id: 'map-water',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'water',
+      paint: { 'fill-color': '#b9dce7', 'fill-opacity': 0.92 },
+    },
+    {
+      id: 'map-boundaries',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'boundary',
+      paint: { 'line-color': '#8da39b', 'line-width': 0.7, 'line-opacity': 0.55 },
+    },
+    {
+      id: 'map-roads-casing',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#c8d1cd',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.6, 10, 2.2, 15, 7],
+        'line-opacity': 0.9,
+      },
+    },
+    {
+      id: 'map-roads',
+      type: 'line',
+      source: 'openmaptiles',
+      'source-layer': 'transportation',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      layout: { 'line-cap': 'round', 'line-join': 'round' },
+      paint: {
+        'line-color': '#ffffff',
+        'line-width': ['interpolate', ['linear'], ['zoom'], 5, 0.3, 10, 1.3, 15, 5],
+        'line-opacity': 0.96,
+      },
+    },
+    {
+      id: 'map-buildings',
+      type: 'fill',
+      source: 'openmaptiles',
+      'source-layer': 'building',
+      minzoom: 12,
+      paint: { 'fill-color': '#c8d0cc', 'fill-opacity': 0.7, 'fill-outline-color': '#aebbb5' },
+    },
+    {
+      id: 'map-place-labels',
+      type: 'symbol',
+      source: 'openmaptiles',
+      'source-layer': 'place',
+      minzoom: 4,
+      layout: {
+        'text-field': ['coalesce', ['get', 'name:latin'], ['get', 'name'], ''],
+        'text-font': ['Noto Sans Regular'],
+        'text-size': ['interpolate', ['linear'], ['zoom'], 4, 9, 10, 12, 15, 14],
+        'text-allow-overlap': false,
+      },
+      paint: { 'text-color': '#33413c', 'text-halo-color': '#f4f8f6', 'text-halo-width': 1.2 },
+    },
+  ],
+};
+
+function transformMapRequest(url) { return { url }; }
 
 const ASSET_TYPES = [
   ['pop', 'POP', '#064e3b'],
@@ -275,13 +376,17 @@ export default function BillingFibreGis() {
           maxzoom: 6,
           attribution: 'OpenFreeMap © OpenMapTiles Data from OpenStreetMap',
         });
-        const firstNonBackgroundLayer = (map.getStyle()?.layers || []).find((layer) => layer.type !== 'background')?.id;
+        /*
+         * Keep the resilient raster map ABOVE the provider's opaque base
+         * layers. If vector tiles arrive slowly, users still see geography;
+         * GIS routes and assets are added afterwards and stay on top.
+         */
         map.addLayer({
           id: 'fibre-map-fallback',
           type: 'raster',
           source: 'fibre-map-fallback',
-          paint: { 'raster-opacity': 0.88, 'raster-fade-duration': 0 },
-        }, firstNonBackgroundLayer);
+          paint: { 'raster-opacity': 0.58, 'raster-fade-duration': 0 },
+        });
       }
 
       map.addSource('fibre-routes', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });

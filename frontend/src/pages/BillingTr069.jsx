@@ -1,4 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 import api from '../utils/api';
 
 const input = 'h-12 w-full rounded-2xl border border-slate-200 bg-slate-50 px-4 text-sm text-slate-900 outline-none focus:border-violet-400';
@@ -29,32 +31,24 @@ function OntMap({ devices, onSelect }) {
   useEffect(() => {
     let cancelled = false;
     const init = () => {
-      if (cancelled || !mapNode.current || !window.L) return;
+      if (cancelled || !mapNode.current || !L) return;
       if (map.current) { map.current.remove(); map.current = null; }
       const points = devices.filter((item) => Number.isFinite(Number(item.latitude)) && Number.isFinite(Number(item.longitude)));
       const center = points.length ? [Number(points[0].latitude), Number(points[0].longitude)] : [-1.2864, 36.8172];
-      map.current = window.L.map(mapNode.current, { zoomControl: true }).setView(center, points.length ? 12 : 6);
-      window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map.current);
+      map.current = L.map(mapNode.current, { zoomControl: true }).setView(center, points.length ? 12 : 6);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 19, attribution: '&copy; OpenStreetMap contributors' }).addTo(map.current);
       const bounds = [];
       points.forEach((device) => {
         const latlng = [Number(device.latitude), Number(device.longitude)]; bounds.push(latlng);
         const color = device.status === 'online' ? '#10b981' : device.status === 'warning' ? '#f59e0b' : '#64748b';
-        const marker = window.L.circleMarker(latlng, { radius: 8, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1 }).addTo(map.current);
+        const marker = L.circleMarker(latlng, { radius: 8, color: '#fff', weight: 3, fillColor: color, fillOpacity: 1 }).addTo(map.current);
         marker.bindTooltip(`${device.subscriber_name || device.serial_number || device.device_id}<br>${device.status}`, { direction: 'top' });
         marker.on('click', () => onSelect(device));
       });
       if (bounds.length > 1) map.current.fitBounds(bounds, { padding: [28, 28] });
       setTimeout(() => map.current?.invalidateSize(), 100);
     };
-    if (window.L) init();
-    else {
-      if (!document.getElementById('leaflet-css')) {
-        const css = document.createElement('link'); css.id = 'leaflet-css'; css.rel = 'stylesheet'; css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'; document.head.appendChild(css);
-      }
-      let script = document.getElementById('leaflet-js');
-      if (!script) { script = document.createElement('script'); script.id = 'leaflet-js'; script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'; document.head.appendChild(script); }
-      script.addEventListener('load', init, { once: true });
-    }
+    init();
     return () => { cancelled = true; if (map.current) { map.current.remove(); map.current = null; } };
   }, [devices, onSelect]);
   return <div className="overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-sm"><div ref={mapNode} className="h-[430px] w-full bg-slate-100" /><div className="border-t border-slate-100 px-4 py-3 text-[10px] text-slate-400">Only ONTs with verified coordinates are placed on the map.</div></div>;

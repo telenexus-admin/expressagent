@@ -33,8 +33,7 @@ export default function ClientAccess() {
     setBusyId(client.id);
     setError('');
     try {
-      const { data } = await api.post(`/operator-access/${client.id}`);
-      impersonateClient(data.token, data.admin);
+      await impersonateClient(client.id);
       navigate('/dashboard/statistics', { replace: true });
     } catch (err) {
       setError(err.response?.data?.error || 'Could not open this client dashboard');

@@ -3,6 +3,7 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
+const { strongAdminPassword } = require('../security/passwordPolicy');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { ensureEvoOnboardingTable, refreshOnboarding, makeSessionToken, makeInstanceName, createPairingInstance, cleanProviderError } = require('../services/evoSelfOnboarding');
 const { setClientWebhook } = require('../services/clientEvolution');
@@ -183,7 +184,7 @@ router.post(
     body('photo_troubleshooting_enabled').optional().isBoolean(),
     body('admin_name').trim().notEmpty().withMessage('Dashboard admin name is required'),
     body('admin_email').isEmail().normalizeEmail().withMessage('A valid dashboard email is required'),
-    body('admin_password').isLength({ min: 8 }).withMessage('Dashboard password must be at least 8 characters'),
+    body('admin_password').custom(strongAdminPassword),
   ],
   async (req, res) => {
     const errors = validationResult(req);

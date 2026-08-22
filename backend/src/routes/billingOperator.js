@@ -2,6 +2,7 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
+const { strongAdminPassword } = require('../security/passwordPolicy');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { logActivity } = require('../services/audit');
 const { ensureClientDomainSchema, getDomainSettings, saveDomainSettings, createClientSubdomain, verifyDomainAutomation } = require('../services/clientDomains');
@@ -77,7 +78,7 @@ router.post('/accounts', [
   body('contact_email').isEmail().normalizeEmail().withMessage('A valid account email is required'),
   body('admin_name').trim().notEmpty().withMessage('Account owner name is required'),
   body('admin_email').isEmail().normalizeEmail().withMessage('A valid administrator email is required'),
-  body('admin_password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters'),
+  body('admin_password').custom(strongAdminPassword),
   body('account_status').optional().isIn(['trial', 'active', 'suspended']).withMessage('Invalid account status'),
   body('billing_plan').optional().trim().isLength({ max: 80 }),
   body('domain_slug').optional().trim().matches(/^[a-zA-Z0-9-]*$/).withMessage('Domain slug can only use letters, numbers and hyphens'),

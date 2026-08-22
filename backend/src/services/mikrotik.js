@@ -1,12 +1,15 @@
 const net = require('net');
 const tls = require('tls');
 const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
 const db = require('../db');
 const { createNocLiveUrl } = require('./nocPublicLinks');
 
 const execFileAsync = promisify(execFile);
+const { executeNetworkOperation } = require('./networkPrivilegeClient');
 
 const DEFAULT_FEATURES = {
   ppp_active: true,
@@ -2409,18 +2412,11 @@ async function activateWireguardPeer(payload = {}) {
   const publicKey = cleanWireguardPublicKey(payload.public_key || payload.wireguard_mikrotik_public_key);
   const tunnelIp = cleanTunnelIp(payload.tunnel_ip || payload.wireguard_tunnel_ip);
   try {
-    await execFileAsync('wg', ['set', WIREGUARD_INTERFACE, 'peer', publicKey, 'allowed-ips', `${tunnelIp}/32`], { timeout: 15000 });
-    await execFileAsync('wg-quick', ['save', WIREGUARD_INTERFACE], { timeout: 15000 });
+    await executeNetworkOperation({ operation: 'activate-peer', public_key: publicKey, tunnel_ip: tunnelIp });
   } catch (err) {
-    const detail = err.stderr || err.stdout || err.message;
-    throw new Error(`Could not activate WireGuard peer on Nexa server: ${detail}`);
+    throw new Error(`Could not activate WireGuard peer through the protected executor: ${err.message || 'executor failed'}`);
   }
-  return {
-    ok: true,
-    interface: WIREGUARD_INTERFACE,
-    public_key: publicKey,
-    tunnel_ip: tunnelIp,
-  };
+  return { ok: true, interface: WIREGUARD_INTERFACE, public_key: publicKey, tunnel_ip: tunnelIp };
 }
 
 async function prepareWireguardOnboarding(clientId, payload = {}) {

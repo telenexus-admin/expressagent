@@ -96,7 +96,7 @@ function showFatalError(error) {
 
         <button
           type="button"
-          onclick="window.location.replace('${recoveryUrl()}')"
+          id="nexa-fatal-reload"
           style="
             width:100%;
             margin-top:20px;
@@ -113,6 +113,7 @@ function showFatalError(error) {
       </section>
     </main>
   `;
+  rootElement.querySelector('#nexa-fatal-reload')?.addEventListener('click', () => window.location.replace(recoveryUrl()));
 }
 
 function showDashboardLoader() {

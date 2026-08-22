@@ -1,0 +1,14 @@
+## Critical infrastructure and secret configuration integrity
+-w /etc/nexa-platform -p wa -k nexa_secrets
+-w /etc/nexa-phone-panel -p wa -k nexa_phone_secrets
+-w /etc/wireguard -p wa -k nexa_wireguard
+-w /etc/freeradius/3.0 -p wa -k nexa_radius
+-w /etc/asterisk -p wa -k nexa_asterisk
+-w /etc/nginx/sites-enabled -p wa -k nexa_nginx
+-w /etc/ssh/sshd_config -p wa -k nexa_ssh
+-w /etc/ssh/sshd_config.d -p wa -k nexa_ssh
+-w /etc/systemd/system -p wa -k nexa_systemd
+
+## Interactive privileged execution. Service accounts and unset login UIDs are excluded.
+-a always,exit -F arch=b64 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k nexa_privileged_exec
+-a always,exit -F arch=b32 -S execve -F euid=0 -F auid>=1000 -F auid!=4294967295 -k nexa_privileged_exec

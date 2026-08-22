@@ -1,0 +1,15 @@
+[Unit]
+Description=Nexa continuous security assurance monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/sbin/nexa-security-monitor
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nexa-security /var/log/nexa-security

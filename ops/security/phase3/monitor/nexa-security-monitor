@@ -1,0 +1,95 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 027
+
+readonly STATE_DIR="/var/lib/nexa-security"
+readonly LOG_DIR="/var/log/nexa-security"
+readonly EVENT_LOG="${LOG_DIR}/events.jsonl"
+readonly CONFIG_FILE="/etc/nexa-security/monitor.env"
+
+mkdir -p "${STATE_DIR}" "${LOG_DIR}"
+touch "${EVENT_LOG}"
+chmod 0750 "${STATE_DIR}" "${LOG_DIR}"
+chmod 0640 "${EVENT_LOG}"
+chown root:adm "${LOG_DIR}" "${EVENT_LOG}"
+
+[[ -r "${CONFIG_FILE}" ]] && source "${CONFIG_FILE}"
+
+findings=()
+services=(nginx postgresql freeradius asterisk nexa-platform-backend nexa-network-executor fail2ban auditd)
+for service in "${services[@]}"; do
+  systemctl is-active --quiet "${service}" || findings+=("service:${service}:inactive")
+done
+
+/lib/ufw/ufw-init status 2>/dev/null | grep -q '^Firewall is running$' || findings+=("firewall:ufw:inactive")
+fail2ban-client status sshd >/dev/null 2>&1 || findings+=("fail2ban:sshd:unavailable")
+
+now_epoch="$(date +%s)"
+check_stamp() {
+  local path="$1" max_age="$2" label="$3" stamp epoch age
+  [[ -s "${path}" ]] || { findings+=("assurance:${label}:missing"); return; }
+  stamp="$(cat "${path}")"
+  epoch="$(date -d "${stamp}" +%s 2>/dev/null || echo 0)"
+  age=$((now_epoch - epoch))
+  (( epoch > 0 && age <= max_age )) || findings+=("assurance:${label}:stale")
+}
+
+check_stamp /var/lib/nexa-backup/last-success 108000 backup
+check_stamp /var/lib/nexa-backup/last-restore-verified 691200 restore_proof
+
+if [[ -s /etc/nexa-backup/offsite.env ]] && grep -q '^NEXA_OFFSITE_REPOSITORY=.' /etc/nexa-backup/offsite.env; then
+  check_stamp /var/lib/nexa-backup/last-offsite-success 108000 offsite_backup
+  check_stamp /var/lib/nexa-backup/last-offsite-restore-verified 691200 offsite_restore_proof
+fi
+
+root_usage="$(df -P / | awk 'NR==2 {gsub(/%/, "", $5); print $5}')"
+[[ "${root_usage}" =~ ^[0-9]+$ ]] || findings+=("storage:root:unknown")
+(( root_usage < 85 )) || findings+=("storage:root:${root_usage}pct")
+
+cert_end="$(timeout 12 openssl s_client -servername billing.polyizon.tech -connect billing.polyizon.tech:443 </dev/null 2>/dev/null | openssl x509 -noout -enddate 2>/dev/null | cut -d= -f2-)"
+if [[ -z "${cert_end}" ]]; then
+  findings+=("tls:billing.polyizon.tech:unreadable")
+else
+  cert_epoch="$(date -d "${cert_end}" +%s 2>/dev/null || echo 0)"
+  (( cert_epoch - now_epoch > 1209600 )) || findings+=("tls:billing.polyizon.tech:expires_within_14_days")
+fi
+
+[[ "${1:-}" == "--self-test" ]] && findings+=("self_test:synthetic_alert")
+
+status=ok
+severity=info
+if ((${#findings[@]})); then
+  status=degraded
+  severity=warning
+fi
+
+event="$(jq -cn \
+  --arg timestamp "$(date -u +%FT%TZ)" \
+  --arg status "${status}" \
+  --arg severity "${severity}" \
+  --arg host "$(hostname -f)" \
+  --argjson findings "$(printf '%s\n' "${findings[@]:-}" | jq -Rsc 'split("\n") | map(select(length > 0))')" \
+  '{timestamp:$timestamp,source:"nexa-security-monitor",host:$host,status:$status,severity:$severity,findings:$findings}')"
+printf '%s\n' "${event}" >> "${EVENT_LOG}"
+
+if [[ "${status}" == "degraded" ]]; then
+  logger -p authpriv.warning -t nexa-security-monitor -- "${event}"
+  event_hash="$(printf '%s' "${findings[*]}" | sha256sum | cut -d' ' -f1)"
+  previous_hash="$(cat "${STATE_DIR}/last-alert-hash" 2>/dev/null || true)"
+  previous_epoch="$(stat -c %Y "${STATE_DIR}/last-alert-hash" 2>/dev/null || echo 0)"
+  if [[ "${event_hash}" != "${previous_hash}" || $((now_epoch - previous_epoch)) -ge 21600 ]]; then
+    printf '%s' "${event_hash}" > "${STATE_DIR}/last-alert-hash"
+    if [[ -n "${NEXA_SECURITY_WEBHOOK_URL:-}" ]]; then
+      curl --fail --silent --show-error \
+        --connect-timeout 5 \
+        --max-time 15 \
+        -H 'Content-Type: application/json' \
+        --data-binary "${event}" \
+        "${NEXA_SECURITY_WEBHOOK_URL}" >/dev/null
+    fi
+  fi
+  exit 1
+fi
+
+logger -p authpriv.info -t nexa-security-monitor "assurance checks passed"

@@ -1,0 +1,96 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 077
+
+readonly CONFIG_FILE="/etc/nexa-backup/backup.env"
+readonly OFFSITE_FILE="/etc/nexa-backup/offsite.env"
+readonly STATE_DIR="/var/lib/nexa-backup"
+readonly LOCK_FILE="/run/lock/nexa-phase3-backup.lock"
+
+export RESTIC_CACHE_DIR="${STATE_DIR}/cache"
+mkdir -p "${RESTIC_CACHE_DIR}"
+exec 9>"${LOCK_FILE}"
+flock -n 9 || { logger -t nexa-backup "backup already running"; exit 0; }
+
+[[ -r "${CONFIG_FILE}" ]] || { echo "Missing ${CONFIG_FILE}" >&2; exit 1; }
+# shellcheck disable=SC1090
+source "${CONFIG_FILE}"
+[[ -r "${OFFSITE_FILE}" ]] && source "${OFFSITE_FILE}"
+
+: "${NEXA_LOCAL_REPOSITORY:?NEXA_LOCAL_REPOSITORY is required}"
+: "${NEXA_LOCAL_PASSWORD_FILE:?NEXA_LOCAL_PASSWORD_FILE is required}"
+
+run_dir="$(mktemp -d "${STATE_DIR}/run.XXXXXX")"
+cleanup() { rm -rf -- "${run_dir}"; }
+trap cleanup EXIT
+
+mkdir -p "${run_dir}/databases"
+runuser -u postgres -- pg_dumpall --globals-only > "${run_dir}/databases/globals.sql"
+
+for database in nexa_billing radius; do
+  runuser -u postgres -- pg_dump \
+    --format=custom \
+    --compress=9 \
+    "${database}" > "${run_dir}/databases/${database}.dump"
+done
+
+(
+  cd "${run_dir}"
+  find databases -type f -print0 | sort -z | xargs -0 sha256sum > SHA256SUMS
+)
+
+sources=("${run_dir}")
+for candidate in \
+  /var/www/nexa-platform/frontend/public \
+  /var/www/nexa-platform/backend/uploads \
+  /etc/nexa-platform \
+  /etc/nexa-phone-panel \
+  /etc/wireguard \
+  /etc/freeradius/3.0 \
+  /etc/asterisk \
+  /etc/nginx/sites-enabled \
+  /etc/systemd/system; do
+  [[ -e "${candidate}" ]] && sources+=("${candidate}")
+done
+
+backup_repository() {
+  local repository="$1"
+  local password_file="$2"
+  local label="$3"
+  export RESTIC_REPOSITORY="${repository}"
+  export RESTIC_PASSWORD_FILE="${password_file}"
+
+  if ! restic snapshots --latest 1 >/dev/null 2>&1; then
+    restic init
+  fi
+
+  restic backup \
+    --host "$(hostname -f)" \
+    --tag nexa-phase3 \
+    --tag "${label}" \
+    --one-file-system \
+    "${sources[@]}"
+
+  restic forget \
+    --tag nexa-phase3 \
+    --keep-daily 7 \
+    --keep-weekly 5 \
+    --keep-monthly 12 \
+    --keep-yearly 3 \
+    --prune
+
+  restic check --read-data-subset=5%
+}
+
+backup_repository "${NEXA_LOCAL_REPOSITORY}" "${NEXA_LOCAL_PASSWORD_FILE}" local
+
+if [[ -n "${NEXA_OFFSITE_REPOSITORY:-}" || -n "${NEXA_OFFSITE_PASSWORD_FILE:-}" ]]; then
+  : "${NEXA_OFFSITE_REPOSITORY:?Both off-site settings are required}"
+  : "${NEXA_OFFSITE_PASSWORD_FILE:?Both off-site settings are required}"
+  backup_repository "${NEXA_OFFSITE_REPOSITORY}" "${NEXA_OFFSITE_PASSWORD_FILE}" offsite
+  date -u +%FT%TZ > "${STATE_DIR}/last-offsite-success"
+fi
+
+date -u +%FT%TZ > "${STATE_DIR}/last-success"
+logger -p authpriv.info -t nexa-backup "encrypted backup completed and repository integrity verified"

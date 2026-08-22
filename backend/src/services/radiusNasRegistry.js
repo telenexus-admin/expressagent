@@ -1,13 +1,3 @@
-const fs = require('fs');
-const path = require('path');
-const {
-  execFile,
-} = require('child_process');
-const {
-  promisify,
-} = require('util');
-
-const execFileAsync = promisify(execFile);
 
 const IP_COLUMNS = [
   'nasname',
@@ -289,112 +279,6 @@ async function discoverNasSyncQueue(pool) {
     table: 'nexa_nas_sync',
   };
 }
-function findClientsDirectory() {
-  const candidates = [
-    process.env.FREERADIUS_CLIENTS_DIR,
-    '/etc/freeradius/3.2/clients.d',
-    '/etc/freeradius/3.0/clients.d',
-    '/etc/freeradius/3.1/clients.d',
-    '/etc/raddb/clients.d',
-  ].filter(Boolean);
-
-  for (const directory of candidates) {
-    if (!fs.existsSync(directory)) continue;
-
-    try {
-      fs.accessSync(
-        directory,
-        fs.constants.W_OK
-      );
-    } catch (_) {
-      continue;
-    }
-
-    const parent = path.dirname(directory);
-    const clientsFile = path.join(
-      parent,
-      'clients.conf'
-    );
-
-    if (!fs.existsSync(clientsFile)) continue;
-
-    const contents = fs.readFileSync(
-      clientsFile,
-      'utf8'
-    );
-
-    if (
-      contents.includes('clients.d') ||
-      contents.includes(path.basename(directory))
-    ) {
-      return directory;
-    }
-  }
-
-  return null;
-}
-
-async function resolveRadiusCommand() {
-  const candidates = [
-    '/usr/sbin/freeradius',
-    '/usr/sbin/radiusd',
-    'freeradius',
-    'radiusd',
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      await execFileAsync(
-        candidate,
-        ['-v'],
-        { timeout: 5000 }
-      );
-
-      return candidate;
-    } catch (error) {
-      if (
-        error.code !== 'ENOENT' &&
-        error.code !== 127
-      ) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-async function resolveRadiusService() {
-  for (const service of [
-    'freeradius',
-    'radiusd',
-  ]) {
-    try {
-      const result = await execFileAsync(
-        'systemctl',
-        [
-          'show',
-          service,
-          '--property=LoadState',
-          '--value',
-        ],
-        { timeout: 5000 }
-      );
-
-      if (
-        String(result.stdout || '').trim() ===
-        'loaded'
-      ) {
-        return service;
-      }
-    } catch (_) {
-      // Try the next common service name.
-    }
-  }
-
-  return null;
-}
-
 async function inspectRadiusNasRegistration(pool) {
   const syncQueue =
     await discoverNasSyncQueue(pool);
@@ -419,22 +303,7 @@ async function inspectRadiusNasRegistration(pool) {
     };
   }
 
-  const directory = findClientsDirectory();
-  const command = await resolveRadiusCommand();
-  const service = await resolveRadiusService();
-
-  if (directory && command && service) {
-    return {
-      mode: 'file',
-      directory,
-      command,
-      service,
-    };
-  }
-
-  throw new Error(
-    'No compatible SQL NAS table or local FreeRADIUS clients.d configuration was found'
-  );
+  throw new Error('No approved database-backed RADIUS NAS registration target was found');
 }
 
 async function registerSqlClient(
@@ -647,98 +516,6 @@ async function registerSyncQueue(
     'The RADIUS server did not confirm NAS registration within 60 seconds'
   );
 }
-async function registerFileClient(
-  credential,
-  routerName
-) {
-  const directory = findClientsDirectory();
-  const command = await resolveRadiusCommand();
-  const service = await resolveRadiusService();
-
-  if (!directory || !command || !service) {
-    throw new Error(
-      'Local FreeRADIUS client registration is unavailable'
-    );
-  }
-
-  const clientName = safeClientName(
-    credential.nas_identifier
-  );
-
-  const target = path.join(
-    directory,
-    `nexa-${clientName}.conf`
-  );
-
-  const temporary = `${target}.tmp-${process.pid}`;
-  const previous = fs.existsSync(target)
-    ? fs.readFileSync(target)
-    : null;
-
-  const configuration = [
-    `client ${clientName} {`,
-    `  ipaddr = ${credential.nas_ip}`,
-    `  secret = ${radiusQuoted(credential.secret)}`,
-    `  shortname = ${safeClientName(routerName)}`,
-    '  nas_type = other',
-    '}',
-    '',
-  ].join('\n');
-
-  fs.writeFileSync(
-    temporary,
-    configuration,
-    {
-      encoding: 'utf8',
-      mode: 0o600,
-    }
-  );
-
-  fs.renameSync(temporary, target);
-  fs.chmodSync(target, 0o600);
-
-  try {
-    await execFileAsync(
-      command,
-      ['-XC'],
-      {
-        timeout: 20000,
-        maxBuffer: 4 * 1024 * 1024,
-      }
-    );
-
-    await execFileAsync(
-      'systemctl',
-      ['reload-or-restart', service],
-      {
-        timeout: 20000,
-        maxBuffer: 1024 * 1024,
-      }
-    );
-  } catch (error) {
-    if (previous) {
-      fs.writeFileSync(target, previous, {
-        mode: 0o600,
-      });
-    } else {
-      fs.rmSync(target, { force: true });
-    }
-
-    throw new Error(
-      `FreeRADIUS client configuration failed: ${
-        error.stderr ||
-        error.stdout ||
-        error.message
-      }`
-    );
-  }
-
-  return {
-    mode: 'file',
-    location: target,
-  };
-}
-
 async function registerRadiusNas(
   pool,
   credential,
@@ -767,10 +544,7 @@ async function registerRadiusNas(
     );
   }
 
-  return registerFileClient(
-    credential,
-    routerName
-  );
+  throw new Error('RADIUS NAS registration requires the approved database-backed synchronizer');
 }
 
 module.exports = {

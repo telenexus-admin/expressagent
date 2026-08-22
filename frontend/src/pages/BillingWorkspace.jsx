@@ -754,6 +754,10 @@ export default function BillingWorkspace() {
       [data-billing-tab="communication"] > div > header {
         display: none !important;
       }
+
+      [data-billing-tab="vouchers"] > div > header {
+        display: none !important;
+      }
     `}</style>
     {open && <button aria-label="Close menu" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" />}
     <aside
@@ -1066,9 +1070,108 @@ function Routers({
 }) {
   const [open, setOpen] = useState(false);
   const [serviceRouter, setServiceRouter] = useState(null);
+
+  const [
+    routerActionBusy,
+    setRouterActionBusy,
+  ] = useState('');
+
+  const [
+    routerActionError,
+    setRouterActionError,
+  ] = useState('');
   const safeRouters = Array.isArray(routers)
     ? routers.filter(Boolean)
     : [];
+
+  const removeRouter = async router => {
+    if (
+      !router?.id ||
+      routerActionBusy
+    ) {
+      return;
+    }
+
+    const label =
+      router.name ||
+      router.host ||
+      `Router ${router.id}`;
+
+    if (
+      !window.confirm(
+        `Delete ${label}?`
+      )
+    ) {
+      return;
+    }
+
+    try {
+      setRouterActionError('');
+
+      setRouterActionBusy(
+        `delete-${router.id}`
+      );
+
+      await api.delete(
+        `/mikrotik/${router.id}`
+      );
+
+      await reload?.();
+
+    } catch (
+      requestError
+    ) {
+      setRouterActionError(
+        requestError
+          .response
+          ?.data
+          ?.error ||
+        'Could not delete this router.'
+      );
+
+    } finally {
+      setRouterActionBusy('');
+    }
+  };
+
+
+  const pingRouter = async router => {
+    if (
+      !router?.id ||
+      routerActionBusy
+    ) {
+      return;
+    }
+
+    try {
+      setRouterActionError('');
+
+      setRouterActionBusy(
+        `ping-${router.id}`
+      );
+
+      await test(
+        router.id
+      );
+
+    } catch (
+      requestError
+    ) {
+      setRouterActionError(
+        requestError
+          ?.response
+          ?.data
+          ?.error ||
+        requestError
+          ?.message ||
+        'Router ping failed.'
+      );
+
+    } finally {
+      setRouterActionBusy('');
+    }
+  };
+
 
   const [scriptCopied, setScriptCopied] = useState(false);
 
@@ -1292,81 +1395,443 @@ function Routers({
         </div>
       )}
 
-      {safeRouters.length ? (
-        <div className="space-y-3 px-5 sm:px-10">
-          {safeRouters.map((router) => (
-            <section
-              key={router.id || router.name}
-              className={`router-surface rounded-2xl border p-5 shadow-sm ${surface}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <h3
-                    className={`truncate font-black ${
-                      darkMode ? 'text-slate-100' : 'text-slate-900'
-                    }`}
-                  >
-                    {router.name || 'MikroTik router'}
-                  </h3>
-
-                  <p className={`mt-1 text-xs ${muted}`}>
-                    {router.host ||
-                      router.wireguard_tunnel_ip ||
-                      'Private tunnel'}
-                    <span className="mx-1.5 text-slate-500">|</span>
-                    API {router.port || 8728}
-                  </p>
-
-                  {router.status_checked_at && (
-                    <p className={`mt-1 text-[10px] font-semibold ${muted}`}>
-                      {router.status_source === 'monitor' ? 'Live monitor' : 'Last check'} · {new Date(router.status_checked_at).toLocaleTimeString()}
-                    </p>
-                  )}
-                </div>
-
-                <Badge
-                  tone={
-                    routerDisplayStatus(router) === 'online'
-                      ? 'green'
-                      : routerDisplayStatus(router) === 'offline'
-                        ? 'rose'
-                        : 'amber'
-                  }
-                >
-                  {routerDisplayStatus(router)}
-                </Badge>
-              </div>
-
-              <div className="mt-4 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => test(router.id)}
-                  disabled={saving}
-                  className={`rounded-xl border px-3 py-2 text-xs font-extrabold disabled:opacity-50 ${
-                    darkMode
-                      ? 'border-violet-400/30 bg-violet-500/10 text-violet-300'
-                      : 'border-violet-200 text-violet-700'
-                  }`}
-                >
-                  Test connection
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setServiceRouter(router)}
-                  disabled={saving}
-                  className={`rounded-xl border px-3 py-2 text-xs font-extrabold disabled:opacity-50 ${
-                    darkMode
-                      ? 'border-slate-600 bg-slate-800/50 text-slate-300'
-                      : 'border-slate-200 text-slate-600'
-                  }`}
-                >
-                  {router.provisioning_status === 'ready' ? 'Services ready' : 'Configure services'}
-                </button>
-              </div>
-            </section>
-          ))}
+      {routerActionError && (
+        <div className="mx-5 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3 text-[11px] font-bold text-rose-700 sm:mx-10">
+          {routerActionError}
         </div>
+      )}
+
+      {safeRouters.length ? (
+
+        <section className="mx-5 overflow-hidden rounded-[22px] border border-slate-200 bg-white shadow-sm sm:mx-10">
+
+          {/* DESKTOP */}
+
+          <div className="hidden md:block">
+
+            <table className="w-full table-fixed text-left">
+
+              <thead>
+
+                <tr className="border-b border-slate-100 bg-slate-50/80 text-[9px] font-black uppercase tracking-[.13em] text-slate-400">
+
+                  <th className="w-[24%] px-5 py-3.5">
+                    Name
+                  </th>
+
+                  <th className="w-[20%] px-4 py-3.5">
+                    IP
+                  </th>
+
+                  <th className="w-[18%] px-4 py-3.5">
+                    Password
+                  </th>
+
+                  <th className="w-[14%] px-4 py-3.5">
+                    Status
+                  </th>
+
+                  <th className="w-[24%] px-5 py-3.5 text-right">
+                    Actions
+                  </th>
+
+                </tr>
+
+              </thead>
+
+
+              <tbody className="divide-y divide-slate-100">
+
+                {safeRouters.map(router => {
+
+                  const status =
+                    routerDisplayStatus(
+                      router
+                    );
+
+                  const pingBusy =
+                    routerActionBusy ===
+                    `ping-${router.id}`;
+
+                  const deleteBusy =
+                    routerActionBusy ===
+                    `delete-${router.id}`;
+
+                  return (
+                    <tr
+                      key={
+                        router.id ||
+                        router.name
+                      }
+                      className="transition hover:bg-emerald-50/30"
+                    >
+
+                      {/* NAME */}
+
+                      <td className="px-5 py-4">
+
+                        <div className="text-[13px] font-black text-slate-950">
+                          {router.name ||
+                           'MikroTik router'}
+                        </div>
+
+                        <div className="mt-1 text-[9px] font-semibold text-slate-400">
+                          API {router.port ||
+                               8728}
+                        </div>
+
+                      </td>
+
+
+                      {/* IP */}
+
+                      <td className="px-4 py-4">
+
+                        <div className="font-mono text-[11px] font-bold text-slate-700">
+                          {router.host ||
+                           router.wireguard_tunnel_ip ||
+                           'Private tunnel'}
+                        </div>
+
+                        {router.status_checked_at && (
+                          <div className="mt-1 text-[8px] font-semibold text-slate-400">
+                            {router.status_source ===
+                            'monitor'
+                              ? 'Live monitor'
+                              : 'Last check'}
+                            {' · '}
+                            {new Date(
+                              router.status_checked_at
+                            ).toLocaleTimeString()}
+                          </div>
+                        )}
+
+                      </td>
+
+
+                      {/* PASSWORD */}
+
+                      <td className="px-4 py-4">
+
+                        <div className="inline-flex items-center gap-2 rounded-xl bg-slate-50 px-3 py-2">
+
+                          <span className="font-mono text-[11px] font-black tracking-[.16em] text-slate-500">
+                            ••••••••
+                          </span>
+
+                          <span className="text-[8px] font-bold text-emerald-600">
+                            SECURE
+                          </span>
+
+                        </div>
+
+                      </td>
+
+
+                      {/* STATUS */}
+
+                      <td className="px-4 py-4">
+
+                        <span
+                          className={`inline-flex rounded-full px-2.5 py-1 text-[8px] font-black uppercase tracking-[.12em] ring-1 ${
+                            status ===
+                            'online'
+                              ? 'bg-emerald-50 text-emerald-700 ring-emerald-200'
+                              : status ===
+                                'offline'
+                                ? 'bg-rose-50 text-rose-700 ring-rose-200'
+                                : 'bg-amber-50 text-amber-700 ring-amber-200'
+                          }`}
+                        >
+                          {status}
+                        </span>
+
+                      </td>
+
+
+                      {/* ACTIONS */}
+
+                      <td className="px-5 py-4">
+
+                        <div className="flex items-center justify-end gap-1.5">
+
+                          {/* SETTINGS */}
+
+                          <button
+                            type="button"
+                            title="Configure services"
+                            aria-label={`Configure ${router.name || 'router'}`}
+                            disabled={saving}
+                            onClick={() =>
+                              setServiceRouter(
+                                router
+                              )
+                            }
+                            className="group flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-500 transition hover:border-emerald-200 hover:bg-emerald-50 hover:text-emerald-700 disabled:opacity-40"
+                          >
+
+                            <svg
+                              viewBox="0 0 24 24"
+                              className="h-4 w-4 fill-none stroke-current"
+                              strokeWidth="1.8"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              aria-hidden="true"
+                            >
+                              <circle
+                                cx="12"
+                                cy="12"
+                                r="3"
+                              />
+
+                              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.86 2.86-.06-.06A1.7 1.7 0 0 0 15 19.4a1.7 1.7 0 0 0-1 .6 1.7 1.7 0 0 0-.4 1.1V21h-4v-.1A1.7 1.7 0 0 0 8.6 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.86-2.86.06-.06A1.7 1.7 0 0 0 4.2 15a1.7 1.7 0 0 0-.6-1 1.7 1.7 0 0 0-1.1-.4H2.4v-4h.1A1.7 1.7 0 0 0 4.2 8.6a1.7 1.7 0 0 0-.34-1.88l-.06-.06L6.66 3.8l.06.06A1.7 1.7 0 0 0 8.6 4.2a1.7 1.7 0 0 0 1-.6 1.7 1.7 0 0 0 .4-1.1v-.1h4v.1a1.7 1.7 0 0 0 1 1.7 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.86 2.86-.06.06A1.7 1.7 0 0 0 19.4 8.6a1.7 1.7 0 0 0 .6 1 1.7 1.7 0 0 0 1.1.4h.1v4h-.1a1.7 1.7 0 0 0-1.7 1Z" />
+                            </svg>
+
+                          </button>
+
+
+                          {/* PING */}
+
+                          <button
+                            type="button"
+                            title="Ping / test connection"
+                            aria-label={`Ping ${router.name || 'router'}`}
+                            disabled={
+                              saving ||
+                              pingBusy
+                            }
+                            onClick={() =>
+                              pingRouter(
+                                router
+                              )
+                            }
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-200 bg-white text-sky-600 transition hover:border-sky-200 hover:bg-sky-50 disabled:opacity-40"
+                          >
+
+                            {pingBusy ? (
+
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-sky-200 border-t-sky-600" />
+
+                            ) : (
+
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 fill-none stroke-current"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M3 12h3l2-5 4 10 3-7 2 2h4" />
+                              </svg>
+
+                            )}
+
+                          </button>
+
+
+                          {/* DELETE */}
+
+                          <button
+                            type="button"
+                            title="Delete router"
+                            aria-label={`Delete ${router.name || 'router'}`}
+                            disabled={
+                              saving ||
+                              deleteBusy
+                            }
+                            onClick={() =>
+                              removeRouter(
+                                router
+                              )
+                            }
+                            className="flex h-9 w-9 items-center justify-center rounded-xl border border-transparent text-slate-300 transition hover:border-rose-100 hover:bg-rose-50 hover:text-rose-600 disabled:opacity-40"
+                          >
+
+                            {deleteBusy ? (
+
+                              <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-rose-200 border-t-rose-600" />
+
+                            ) : (
+
+                              <svg
+                                viewBox="0 0 24 24"
+                                className="h-4 w-4 fill-none stroke-current"
+                                strokeWidth="1.8"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                aria-hidden="true"
+                              >
+                                <path d="M4 7h16" />
+                                <path d="M9 7V4h6v3" />
+                                <path d="M7 7l1 13h8l1-13" />
+                                <path d="M10 11v5M14 11v5" />
+                              </svg>
+
+                            )}
+
+                          </button>
+
+                        </div>
+
+                      </td>
+
+                    </tr>
+                  );
+                })}
+
+              </tbody>
+
+            </table>
+
+          </div>
+
+
+          {/* MOBILE */}
+
+          <div className="divide-y divide-slate-100 md:hidden">
+
+            {safeRouters.map(router => {
+
+              const status =
+                routerDisplayStatus(
+                  router
+                );
+
+              const pingBusy =
+                routerActionBusy ===
+                `ping-${router.id}`;
+
+              return (
+                <article
+                  key={
+                    router.id ||
+                    router.name
+                  }
+                  className="p-4"
+                >
+
+                  <div className="flex items-start justify-between gap-3">
+
+                    <div className="min-w-0">
+
+                      <h3 className="truncate text-[14px] font-black text-slate-950">
+                        {router.name ||
+                         'MikroTik router'}
+                      </h3>
+
+                      <p className="mt-1 font-mono text-[10px] font-semibold text-slate-500">
+                        {router.host ||
+                         router.wireguard_tunnel_ip ||
+                         'Private tunnel'}
+                      </p>
+
+                    </div>
+
+
+                    <span
+                      className={`rounded-full px-2.5 py-1 text-[8px] font-black uppercase tracking-[.12em] ${
+                        status ===
+                        'online'
+                          ? 'bg-emerald-50 text-emerald-700'
+                          : status ===
+                            'offline'
+                            ? 'bg-rose-50 text-rose-700'
+                            : 'bg-amber-50 text-amber-700'
+                      }`}
+                    >
+                      {status}
+                    </span>
+
+                  </div>
+
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+
+                    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">
+                        Password
+                      </span>
+
+                      <span className="mt-1 block font-mono text-[10px] font-black tracking-widest text-slate-500">
+                        ••••••••
+                      </span>
+
+                    </div>
+
+
+                    <div className="rounded-xl bg-slate-50 px-3 py-2.5">
+
+                      <span className="text-[8px] font-black uppercase tracking-wider text-slate-400">
+                        API Port
+                      </span>
+
+                      <span className="mt-1 block text-[10px] font-black text-slate-600">
+                        {router.port ||
+                         8728}
+                      </span>
+
+                    </div>
+
+                  </div>
+
+
+                  <div className="mt-3 flex items-center justify-end gap-2">
+
+                    <button
+                      type="button"
+                      aria-label="Configure router services"
+                      onClick={() =>
+                        setServiceRouter(
+                          router
+                        )
+                      }
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-50 text-emerald-700"
+                    >
+                      ⚙
+                    </button>
+
+
+                    <button
+                      type="button"
+                      aria-label="Ping router"
+                      onClick={() =>
+                        pingRouter(
+                          router
+                        )
+                      }
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-700"
+                    >
+                      {pingBusy
+                        ? '…'
+                        : '⌁'}
+                    </button>
+
+
+                    <button
+                      type="button"
+                      aria-label="Delete router"
+                      onClick={() =>
+                        removeRouter(
+                          router
+                        )
+                      }
+                      className="flex h-9 w-9 items-center justify-center rounded-xl bg-rose-50 text-rose-600"
+                    >
+                      ×
+                    </button>
+
+                  </div>
+
+                </article>
+              );
+            })}
+
+          </div>
+
+        </section>
+
       ) : (
         <section
           className={`router-empty-state mx-5 rounded-[28px] border border-dashed px-5 py-16 text-center sm:mx-10 ${surface}`}
@@ -2790,17 +3255,1383 @@ function HotspotUsers({ vouchers }) { return <Card><div className="border-b bord
 function Invoices({ invoices, subscribers, form, setForm, save, saving }) { return <div className="grid gap-6 xl:grid-cols-[1fr_370px]"><Card><div className="border-b border-slate-100 px-5 py-5"><h2 className="font-extrabold">Invoices</h2><p className="mt-1 text-sm text-slate-500">Track money due and settlement progress.</p></div>{invoices.length ? <div className="divide-y divide-slate-100">{invoices.map((i) => <div key={i.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-5"><div><div className="font-extrabold">{i.invoice_number}</div><div className="mt-1 text-xs text-slate-500">{i.subscriber_name || 'Subscriber'} · Due {i.due_date || 'not set'}</div></div><div className="text-right"><div className="font-extrabold">{money(i.amount)}</div><div className="mt-1 text-xs text-slate-500">Paid {money(i.paid_amount)}</div><div className="mt-1"><Badge tone={i.status === 'paid' ? 'green' : i.status === 'overdue' ? 'amber' : 'indigo'}>{i.status}</Badge></div></div></div>)}</div> : <Empty title="No invoices issued" text="Select a subscriber and issue their first invoice." />}</Card><Card className="h-fit p-5"><form id="invoice-form" onSubmit={save}><h2 className="font-extrabold">New invoice</h2><div className="mt-5 space-y-4"><Field label="Subscriber"><select required className={input} value={form.subscriber_id} onChange={(e) => setForm({ ...form, subscriber_id: e.target.value })}><option value="">Select subscriber</option>{subscribers.map((s) => <option key={s.id} value={s.id}>{s.full_name} · {s.account_number}</option>)}</select></Field><Field label="Amount (KSh)"><input required type="number" min="1" className={input} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field><Field label="Due date" hint="optional"><input type="date" className={input} value={form.due_date} onChange={(e) => setForm({ ...form, due_date: e.target.value })} /></Field><button disabled={saving || !subscribers.length} className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{saving ? 'Issuing…' : 'Issue invoice'}</button></div></form></Card></div>; }
 function Payments({ payments, invoices, form, setForm, save, saving }) { const unpaid = invoices.filter((i) => !['paid', 'void'].includes(i.status)); return <div className="grid gap-6 xl:grid-cols-[1fr_370px]"><Card><div className="border-b border-slate-100 px-5 py-5"><h2 className="font-extrabold">Payments</h2><p className="mt-1 text-sm text-slate-500">Record collections against invoices. Balances update automatically.</p></div>{payments.length ? <div className="divide-y divide-slate-100">{payments.map((p) => <div key={p.id} className="flex items-center justify-between gap-4 px-5 py-5"><div><div className="font-extrabold">{p.reference || 'Payment recorded'}</div><div className="mt-1 text-xs text-slate-500">{p.invoice_number || 'Invoice'} · {p.method}</div></div><div className="text-right"><div className="font-extrabold">{money(p.amount)}</div><div className="mt-1"><Badge tone="green">{p.status}</Badge></div></div></div>)}</div> : <Empty title="No payments recorded" text="Once a customer pays, record the transaction here." />}</Card><Card className="h-fit p-5"><form id="payment-form" onSubmit={save}><h2 className="font-extrabold">Record payment</h2><div className="mt-5 space-y-4"><Field label="Invoice"><select required className={input} value={form.invoice_id} onChange={(e) => setForm({ ...form, invoice_id: e.target.value })}><option value="">Select an unpaid invoice</option>{unpaid.map((i) => <option key={i.id} value={i.id}>{i.invoice_number} · {money(Number(i.amount) - Number(i.paid_amount || 0))}</option>)}</select></Field><div className="grid grid-cols-2 gap-3"><Field label="Amount (KSh)"><input required type="number" min="1" className={input} value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} /></Field><Field label="Method"><select className={input} value={form.method} onChange={(e) => setForm({ ...form, method: e.target.value })}><option>M-Pesa</option><option>Cash</option><option>Bank</option><option>Card</option></select></Field></div><Field label="Reference"><input required className={input} placeholder="Transaction reference" value={form.reference} onChange={(e) => setForm({ ...form, reference: e.target.value })} /></Field><button disabled={saving || !unpaid.length} className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{saving ? 'Recording…' : 'Record payment'}</button></div></form></Card></div>; }
 function Hotspot({ plans, vouchers, planForm, setPlanForm, voucherForm, setVoucherForm, savePlan, generate, simulate, saving }) { return <div className="space-y-6"><Card className="overflow-hidden"><div className="flex flex-wrap items-center justify-between gap-4 bg-gradient-to-r from-cyan-950 via-sky-900 to-indigo-900 px-6 py-6 text-white"><div><div className="text-[10px] font-extrabold uppercase tracking-[.18em] text-cyan-200">Pre-router simulation</div><h2 className="mt-1 text-xl font-black">Hotspot vouchers</h2><p className="mt-2 max-w-2xl text-sm leading-6 text-cyan-50">Create packages and vouchers now. Voucher login is simulated until a MikroTik hotspot is connected, then these rules will be applied by FreeRADIUS.</p></div><Badge tone="indigo">Simulation mode</Badge></div></Card><div className="grid gap-6 xl:grid-cols-[1fr_370px]"><Card><div className="border-b border-slate-100 px-5 py-5"><h2 className="font-extrabold">Hotspot packages</h2><p className="mt-1 text-sm text-slate-500">Time, data and speed rules for pay-as-you-go access.</p></div>{plans.length ? <div className="divide-y divide-slate-100">{plans.map((p) => <div key={p.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-5"><div><div className="font-extrabold">{p.name}</div><div className="mt-1 text-xs text-slate-500">{p.duration_minutes} minutes · {p.data_limit_mb ? `${p.data_limit_mb} MB` : 'Unlimited data'} · {p.mikrotik_rate_limit || 'No speed limit set'}</div></div><div className="font-extrabold">{money(p.price)}</div></div>)}</div> : <Empty title="No hotspot packages yet" text="Create a package to begin generating simulated vouchers." />}</Card><Card className="h-fit p-5"><form onSubmit={savePlan}><h2 className="font-extrabold">New hotspot package</h2><div className="mt-5 space-y-4"><Field label="Package name"><input required className={input} placeholder="1 Hour Wi-Fi" value={planForm.name} onChange={(e) => setPlanForm({ ...planForm, name: e.target.value })} /></Field><div className="grid grid-cols-2 gap-3"><Field label="Price (KSh)"><input required min="0" type="number" className={input} value={planForm.price} onChange={(e) => setPlanForm({ ...planForm, price: e.target.value })} /></Field><Field label="Minutes"><input required min="1" type="number" className={input} value={planForm.duration_minutes} onChange={(e) => setPlanForm({ ...planForm, duration_minutes: e.target.value })} /></Field></div><Field label="Data limit (MB)" hint="optional"><input min="1" type="number" className={input} value={planForm.data_limit_mb} onChange={(e) => setPlanForm({ ...planForm, data_limit_mb: e.target.value })} /></Field><Field label="MikroTik rate limit" hint="optional"><input className={input} placeholder="5M/5M" value={planForm.mikrotik_rate_limit} onChange={(e) => setPlanForm({ ...planForm, mikrotik_rate_limit: e.target.value })} /></Field><button disabled={saving} className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{saving ? 'Saving…' : 'Create package'}</button></div></form></Card></div><div className="grid gap-6 xl:grid-cols-[1fr_370px]"><Card><div className="border-b border-slate-100 px-5 py-5"><h2 className="font-extrabold">Vouchers</h2><p className="mt-1 text-sm text-slate-500">Generated codes are ready for a future MikroTik hotspot; use Simulate login to test their lifecycle now.</p></div>{vouchers.length ? <div className="divide-y divide-slate-100">{vouchers.map((v) => <div key={v.id} className="flex flex-wrap items-center justify-between gap-4 px-5 py-5"><div><div className="font-mono text-sm font-black tracking-wide text-slate-800">{v.code}</div><div className="mt-1 text-xs text-slate-500">{v.plan_name} · {v.duration_minutes} min · {v.mikrotik_rate_limit || 'standard speed'}</div>{v.expires_at && <div className="mt-1 text-xs text-slate-500">Expires {new Date(v.expires_at).toLocaleString()}</div>}</div><div className="flex items-center gap-3"><Badge tone={v.status === 'available' ? 'indigo' : v.status === 'active' ? 'green' : 'amber'}>{v.status}</Badge>{v.status === 'available' && <button onClick={() => simulate(v.id)} disabled={saving} className="rounded-lg border border-indigo-200 px-3 py-2 text-xs font-bold text-indigo-700 hover:bg-indigo-50 disabled:opacity-50">Simulate login</button>}</div></div>)}</div> : <Empty title="No vouchers generated" text="Choose a package and generate one or more codes." />}</Card><Card className="h-fit p-5"><form onSubmit={generate}><h2 className="font-extrabold">Generate vouchers</h2><div className="mt-5 space-y-4"><Field label="Hotspot package"><select required className={input} value={voucherForm.plan_id} onChange={(e) => setVoucherForm({ ...voucherForm, plan_id: e.target.value })}><option value="">Select package</option>{plans.map((p) => <option key={p.id} value={p.id}>{p.name} · {money(p.price)}</option>)}</select></Field><Field label="Quantity"><input required min="1" max="100" type="number" className={input} value={voucherForm.quantity} onChange={(e) => setVoucherForm({ ...voucherForm, quantity: e.target.value })} /></Field><button disabled={saving || !plans.length} className="w-full rounded-xl bg-indigo-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{saving ? 'Generating…' : 'Generate vouchers'}</button></div></form></Card></div></div>; }
-function Vouchers({ plans, vouchers, form, setForm, generate, simulate, saving, reload, setError }) {
-  const [createOpen, setCreateOpen] = useState(false); const [selected, setSelected] = useState([]); const [shareIds, setShareIds] = useState([]); const [shareOpen, setShareOpen] = useState(false); const [busyAction, setBusyAction] = useState(false); const pressTimer = useRef(null);
-  const toggle = (id) => setSelected((current) => current.includes(id) ? current.filter((item) => item !== id) : [...current, id]);
-  const beginPress = (id) => { if (pressTimer.current) clearTimeout(pressTimer.current); pressTimer.current = setTimeout(() => toggle(id), 520); };
-  const endPress = () => { if (pressTimer.current) clearTimeout(pressTimer.current); };
-  const openShare = (ids) => { setShareIds(ids); setShareOpen(true); };
-  const remove = async (ids) => { const removable = vouchers.filter((voucher) => ids.includes(voucher.id) && ['available', 'expired'].includes(voucher.status)); if (!removable.length) { setError('Only available or expired vouchers can be deleted.'); return; } if (!window.confirm(`Delete ${removable.length} voucher${removable.length === 1 ? '' : 's'}?`)) return; try { setBusyAction(true); await Promise.all(removable.map((voucher) => api.delete(`/billing-workspace/hotspot/vouchers/${voucher.id}`))); setSelected([]); await reload(); } catch (error) { setError(error.response?.data?.error || 'Voucher deletion failed.'); } finally { setBusyAction(false); } };
-  const submitCreate = async (event) => { await generate(event); setCreateOpen(false); };
-  const shareOptions = [['sms', 'SMS', '▣'], ['whatsapp', 'WhatsApp', ''], ['call', 'Nexa Call', ''], ['email', 'Email', '✉']];
-  return <div className="space-y-5"><section className="relative isolate overflow-hidden rounded-2xl billing-network-hero bg-[#0a2417] px-5 pb-20 pt-6 text-white shadow-lg sm:px-8"><div className="relative z-10"><p className="text-[10px] font-extrabold uppercase tracking-[.2em] text-violet-200">Hotspot access</p><h2 className="mt-2 text-2xl font-black tracking-tight sm:text-3xl">Voucher management</h2><p className="mt-2 max-w-xl text-sm text-violet-100">View and manage created access vouchers. Generate new codes only when needed.</p><button type="button" onClick={() => setCreateOpen(true)} className="mt-5 rounded-xl bg-emerald-400 px-4 py-2.5 text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300">+ Create voucher</button></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-20"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#fbfbff" /></svg></div><div className="pointer-events-none absolute right-[-8%] top-0 h-36 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>{selected.length > 0 && <div className="sticky top-2 z-20 flex items-center justify-between gap-3 rounded-2xl border border-violet-200 bg-violet-50 px-4 py-3 shadow-lg"><span className="text-sm font-black text-violet-900">{selected.length} selected</span><div className="flex items-center gap-2"><button type="button" onClick={() => openShare(selected)} className="rounded-xl bg-white px-3 py-2 text-xs font-extrabold text-violet-700">Share</button><button type="button" onClick={() => remove(selected)} disabled={busyAction} className="rounded-xl bg-rose-600 px-3 py-2 text-xs font-extrabold text-white disabled:opacity-50">Delete</button><button type="button" onClick={() => setSelected([])} className="rounded-xl px-2 py-2 text-xs font-bold text-slate-500">Clear</button></div></div>}{vouchers.length ? <section className="rounded-2xl border border-slate-200 bg-white p-3 shadow-sm sm:p-5"><div className="mb-3 flex items-center justify-between gap-3"><div><h3 className="font-black text-slate-900">Created vouchers</h3><p className="mt-1 text-xs text-slate-500">Long-press a voucher to select multiple.</p></div><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-700">{vouchers.length}</span></div><div className="space-y-2">{vouchers.map((voucher) => <article key={voucher.id} onPointerDown={() => beginPress(voucher.id)} onPointerUp={endPress} onPointerCancel={endPress} onContextMenu={(event) => { event.preventDefault(); toggle(voucher.id); }} onClick={() => selected.length > 0 && toggle(voucher.id)} className={`select-none rounded-2xl border p-4 transition ${selected.includes(voucher.id) ? 'border-violet-500 bg-violet-50 ring-2 ring-violet-200' : 'border-slate-100 bg-white hover:border-violet-200 hover:bg-violet-50/40'}`}><div className="flex items-start justify-between gap-3"><div className="flex min-w-0 items-start gap-3"><div className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-lg font-black ${voucher.status === 'active' ? 'bg-emerald-100 text-emerald-700' : voucher.status === 'expired' ? 'bg-rose-100 text-rose-700' : 'bg-violet-100 text-violet-700'}`}>{selected.includes(voucher.id) ? '✓' : ''}</div><div className="min-w-0"><div className="break-all font-mono text-base font-black tracking-wide text-slate-900">{voucher.code}</div><div className="mt-1 text-xs text-slate-500">{voucher.plan_name || 'Package removed'} · {voucher.duration_minutes || ''} minutes</div><div className="mt-2 flex flex-wrap items-center gap-2"><Badge tone={voucher.status === 'active' ? 'green' : voucher.status === 'available' ? 'indigo' : 'amber'}>{voucher.status}</Badge>{voucher.used_by && <span className="text-[11px] text-slate-400">Used by {voucher.used_by}</span>}</div></div></div><button type="button" aria-label={`Actions for ${voucher.code}`} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); openShare([voucher.id]); }} className="rounded-xl px-2 py-1 text-slate-400 hover:bg-slate-100"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-current"><circle cx="12" cy="5" r="1.6" /><circle cx="12" cy="12" r="1.6" /><circle cx="12" cy="19" r="1.6" /></svg></button></div><div className="mt-4 flex gap-2 border-t border-slate-100 pt-3"><button type="button" onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); openShare([voucher.id]); }} className="flex-1 rounded-xl border border-violet-200 py-2.5 text-xs font-extrabold text-violet-700">Share</button><button type="button" disabled={busyAction || !['available', 'expired'].includes(voucher.status)} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); remove([voucher.id]); }} className="flex-1 rounded-xl border border-rose-200 py-2.5 text-xs font-extrabold text-rose-600 disabled:cursor-not-allowed disabled:opacity-40">Delete</button>{voucher.status === 'available' && <button type="button" disabled={saving} onPointerDown={(event) => event.stopPropagation()} onClick={(event) => { event.stopPropagation(); simulate(voucher.id); }} className="flex-1 rounded-xl border border-emerald-200 py-2.5 text-xs font-extrabold text-emerald-700 disabled:opacity-40">Simulate</button>}</div></article>)}</div></section> : <section className="rounded-2xl border border-dashed border-violet-200 bg-white px-5 py-16 text-center"><div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-violet-100 text-2xl text-violet-600"></div><h3 className="mt-4 font-black text-slate-900">No vouchers created</h3><p className="mx-auto mt-1 max-w-xs text-sm text-slate-500">Create a voucher batch when you are ready to issue hotspot access.</p><button type="button" onClick={() => setCreateOpen(true)} className="mt-5 rounded-xl bg-violet-600 px-4 py-3 text-sm font-extrabold text-white">Create voucher</button></section>}{createOpen && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 p-3 sm:items-center"><form onSubmit={submitCreate} className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl"><div className="flex items-center justify-between"><div><div className="text-[10px] font-extrabold uppercase tracking-[.18em] text-violet-600">New hotspot access</div><h3 className="mt-1 text-xl font-black text-slate-900">Create vouchers</h3></div><button type="button" onClick={() => setCreateOpen(false)} className="text-2xl text-slate-400"></button></div><div className="mt-5 space-y-4"><Field label="Hotspot package"><select required className={input} value={form.plan_id} onChange={(event) => setForm({ ...form, plan_id: event.target.value })}><option value="">Select package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {money(plan.price)}</option>)}</select></Field><Field label="Quantity"><input required min="1" max="100" type="number" className={input} value={form.quantity} onChange={(event) => setForm({ ...form, quantity: event.target.value })} /></Field><button disabled={saving || !plans.length} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{saving ? 'Creating…' : 'Create voucher batch'}</button></div></form></div>}{shareOpen && <div className="fixed inset-0 z-[10001] flex items-end justify-center bg-slate-950/45 p-3 sm:items-center"><div className="w-full max-w-sm rounded-3xl bg-white p-5 shadow-2xl"><div className="mx-auto mb-4 h-1.5 w-12 rounded-full bg-slate-200 sm:hidden" /><div className="flex items-center justify-between"><div><div className="text-[10px] font-extrabold uppercase tracking-[.18em] text-violet-600">Share voucher</div><h3 className="mt-1 text-xl font-black text-slate-900">Choose a channel</h3><p className="mt-1 text-xs text-slate-500">{shareIds.length} voucher{shareIds.length === 1 ? '' : 's'} selected</p></div><button type="button" onClick={() => setShareOpen(false)} className="text-2xl text-slate-400"></button></div><div className="mt-5 grid grid-cols-2 gap-3">{shareOptions.map(([key, label, icon]) => <button type="button" key={key} onClick={() => { setShareOpen(false); setError(`${label} sharing will be connected in the next module.`); }} className="flex flex-col items-center gap-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-center transition hover:border-violet-300 hover:bg-violet-50"><span className="flex h-11 w-11 items-center justify-center rounded-2xl bg-violet-100 text-xl text-violet-700">{icon}</span><span className="text-xs font-black text-slate-800">{label}</span><span className="text-[10px] font-semibold text-slate-400">Coming soon</span></button>)}</div></div></div>}</div>;
+function Vouchers({
+  plans,
+  vouchers,
+  form,
+  setForm,
+  generate,
+  saving,
+  reload,
+  setError,
+}) {
+  const [
+    createOpen,
+    setCreateOpen,
+  ] = useState(false);
+
+  const [
+    deletingId,
+    setDeletingId,
+  ] = useState(null);
+
+  const [
+    shareVoucher,
+    setShareVoucher,
+  ] = useState(null);
+
+  const [
+    shareChannel,
+    setShareChannel,
+  ] = useState('sms');
+
+  const [
+    sharePhone,
+    setSharePhone,
+  ] = useState('');
+
+  const [
+    shareMode,
+    setShareMode,
+  ] = useState('now');
+
+  const [
+    shareWhen,
+    setShareWhen,
+  ] = useState('');
+
+  const [
+    shareBusy,
+    setShareBusy,
+  ] = useState(false);
+
+  const [
+    shareNotice,
+    setShareNotice,
+  ] = useState(null);
+
+
+  const formatVoucherDate = value => {
+    if (!value) {
+      return '—';
+    }
+
+    const date =
+      new Date(value);
+
+    if (
+      Number.isNaN(
+        date.getTime()
+      )
+    ) {
+      return '—';
+    }
+
+    return date.toLocaleString(
+      'en-KE',
+      {
+        day:
+          '2-digit',
+
+        month:
+          'short',
+
+        year:
+          'numeric',
+
+        hour:
+          '2-digit',
+
+        minute:
+          '2-digit',
+      }
+    );
+  };
+
+
+  const statusStyle = status => {
+    switch (
+      String(
+        status ||
+        ''
+      ).toLowerCase()
+    ) {
+      case 'active':
+        return 'bg-sky-50 text-sky-700 ring-sky-200';
+
+      case 'expired':
+        return 'bg-rose-50 text-rose-700 ring-rose-200';
+
+      case 'available':
+        return 'bg-emerald-50 text-emerald-700 ring-emerald-200';
+
+      default:
+        return 'bg-slate-100 text-slate-600 ring-slate-200';
+    }
+  };
+
+
+  const canDelete = voucher =>
+    [
+      'available',
+      'expired',
+    ].includes(
+      String(
+        voucher?.status ||
+        ''
+      ).toLowerCase()
+    );
+
+
+  const shareMessage = voucher =>
+    `Your hotspot voucher is ${voucher.code}. Use this code on the Wi-Fi login page.`;
+
+
+  const openShare = (
+    voucher,
+    channel
+  ) => {
+    setShareVoucher(
+      voucher
+    );
+
+    setShareChannel(
+      channel
+    );
+
+    setSharePhone(
+      ''
+    );
+
+    setShareMode(
+      'now'
+    );
+
+    setShareWhen(
+      ''
+    );
+
+    setShareNotice(
+      null
+    );
+  };
+
+
+  const closeShare = () => {
+    if (shareBusy) {
+      return;
+    }
+
+    setShareVoucher(
+      null
+    );
+
+    setShareNotice(
+      null
+    );
+  };
+
+
+  const sendShare =
+    async () => {
+      if (!shareVoucher) {
+        return;
+      }
+
+      const phone =
+        String(
+          sharePhone ||
+          ''
+        ).trim();
+
+      if (
+        phone.replace(
+          /\D/g,
+          ''
+        ).length < 8
+      ) {
+        setShareNotice({
+          type:
+            'error',
+
+          text:
+            'Enter a valid phone number.',
+        });
+
+        return;
+      }
+
+
+      let scheduledFor =
+        null;
+
+
+      if (
+        shareMode ===
+        'schedule'
+      ) {
+        if (!shareWhen) {
+          setShareNotice({
+            type:
+              'error',
+
+            text:
+              'Choose the date and time.',
+          });
+
+          return;
+        }
+
+        const when =
+          new Date(
+            shareWhen
+          );
+
+        if (
+          Number.isNaN(
+            when.getTime()
+          ) ||
+          when.getTime() <=
+            Date.now()
+        ) {
+          setShareNotice({
+            type:
+              'error',
+
+            text:
+              'Schedule time must be in the future.',
+          });
+
+          return;
+        }
+
+        scheduledFor =
+          when.toISOString();
+      }
+
+
+      try {
+        setShareBusy(
+          true
+        );
+
+        setShareNotice(
+          null
+        );
+
+
+        const result =
+          await api.post(
+            '/settings/communication/direct',
+            {
+              channel:
+                shareChannel,
+
+              phone,
+
+              message:
+                shareMessage(
+                  shareVoucher
+                ),
+
+              voucher_id:
+                shareVoucher.id,
+
+              voucher_code:
+                shareVoucher.code,
+
+              scheduled_for:
+                scheduledFor,
+            }
+          );
+
+
+        setShareNotice({
+          type:
+            'success',
+
+          text:
+            result.data
+              ?.scheduled
+              ? `Voucher scheduled via ${shareChannel === 'sms' ? 'SMS' : shareChannel === 'whatsapp' ? 'WhatsApp' : 'Call'}.`
+              : `Voucher sent via ${shareChannel === 'sms' ? 'SMS' : shareChannel === 'whatsapp' ? 'WhatsApp' : 'Call'}.`,
+        });
+
+
+      } catch (
+        requestError
+      ) {
+        setShareNotice({
+          type:
+            'error',
+
+          text:
+            requestError
+              .response
+              ?.data
+              ?.error ||
+            'Voucher could not be shared.',
+        });
+
+      } finally {
+        setShareBusy(
+          false
+        );
+      }
+    };
+
+
+  const removeVoucher =
+    async voucher => {
+      if (
+        !canDelete(
+          voucher
+        )
+      ) {
+        setError(
+          'Active vouchers cannot be deleted while access is still valid.'
+        );
+
+        return;
+      }
+
+      if (
+        !window.confirm(
+          `Delete voucher ${voucher.code}?`
+        )
+      ) {
+        return;
+      }
+
+      try {
+        setDeletingId(
+          voucher.id
+        );
+
+        await api.delete(
+          `/billing-workspace/hotspot/vouchers/${voucher.id}`
+        );
+
+        await reload();
+
+      } catch (
+        requestError
+      ) {
+        setError(
+          requestError
+            .response
+            ?.data
+            ?.error ||
+          'Voucher deletion failed.'
+        );
+
+      } finally {
+        setDeletingId(
+          null
+        );
+      }
+    };
+
+
+  const submitCreate =
+    async event => {
+      await generate(
+        event
+      );
+
+      setCreateOpen(
+        false
+      );
+    };
+
+
+  const MessageIcon = () => (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4 fill-none stroke-current"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <rect
+        x="3"
+        y="5"
+        width="18"
+        height="14"
+        rx="3"
+      />
+
+      <path d="m5 8 7 5 7-5" />
+    </svg>
+  );
+
+
+  const WhatsAppIcon = () => (
+    <svg
+      viewBox="0 0 32 32"
+      className="h-4 w-4"
+      aria-hidden="true"
+    >
+      <circle
+        cx="16"
+        cy="16"
+        r="15"
+        fill="currentColor"
+      />
+
+      <path
+        fill="white"
+        d="M16 7.2a8.8 8.8 0 0 0-7.55 13.32L7.2 24.6l4.2-1.23A8.8 8.8 0 1 0 16 7.2Zm4.15 11.73c-.23-.12-1.32-.65-1.52-.72-.2-.07-.35-.11-.5.12-.15.22-.57.72-.7.87-.13.15-.26.17-.48.06-.22-.12-.93-.35-1.78-1.09-.65-.58-1.1-1.3-1.23-1.52-.13-.22-.01-.34.1-.45.1-.1.22-.26.33-.39.11-.13.15-.22.22-.37.08-.15.04-.28-.02-.39-.05-.11-.5-1.2-.68-1.66-.19-.43-.37-.38-.5-.39h-.43c-.15 0-.39.06-.59.28-.2.22-.78.76-.78 1.85s.8 2.14.91 2.29c.11.15 1.57 2.4 3.8 3.36.53.23.95.37 1.28.47.53.17 1.01.15 1.4.09.42-.06 1.32-.54 1.5-1.05.19-.52.19-.96.13-1.05-.05-.09-.2-.15-.42-.26Z"
+      />
+    </svg>
+  );
+
+
+  const PhoneIcon = () => (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4 fill-none stroke-current"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M5 4h3l2 5-2.4 1.4a11 11 0 0 0 6 6L15 14l5 2v3a2 2 0 0 1-2 2A16 16 0 0 1 3 6a2 2 0 0 1 2-2Z" />
+    </svg>
+  );
+
+
+  const DeleteIcon = () => (
+    <svg
+      viewBox="0 0 24 24"
+      className="h-4 w-4 fill-none stroke-current"
+      strokeWidth="1.8"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M4 7h16" />
+      <path d="M9 7V4h6v3" />
+      <path d="M7 7l1 13h8l1-13" />
+      <path d="M10 11v5M14 11v5" />
+    </svg>
+  );
+
+
+  const Actions = ({
+    voucher,
+  }) => {
+    const removable =
+      canDelete(
+        voucher
+      );
+
+    const deleting =
+      deletingId ===
+      voucher.id;
+
+    return (
+      <div className="flex items-center justify-end gap-1">
+
+        <button
+          type="button"
+          title="Share by SMS"
+          aria-label={`Share ${voucher.code} by SMS`}
+          onClick={() =>
+            openShare(
+              voucher,
+              'sms'
+            )
+          }
+          className="flex h-8 w-8 items-center justify-center rounded-xl text-sky-600 transition hover:bg-sky-50"
+        >
+          <MessageIcon />
+        </button>
+
+
+        <button
+          type="button"
+          title="Share by WhatsApp"
+          aria-label={`Share ${voucher.code} by WhatsApp`}
+          onClick={() =>
+            openShare(
+              voucher,
+              'whatsapp'
+            )
+          }
+          className="flex h-8 w-8 items-center justify-center rounded-xl text-[#25D366] transition hover:bg-emerald-50"
+        >
+          <WhatsAppIcon />
+        </button>
+
+
+        <button
+          type="button"
+          title="Share by Call"
+          aria-label={`Share ${voucher.code} by call`}
+          onClick={() =>
+            openShare(
+              voucher,
+              'call'
+            )
+          }
+          className="flex h-8 w-8 items-center justify-center rounded-xl text-violet-600 transition hover:bg-violet-50"
+        >
+          <PhoneIcon />
+        </button>
+
+
+        <span className="mx-0.5 h-4 w-px bg-slate-100" />
+
+
+        <button
+          type="button"
+          disabled={
+            deleting ||
+            !removable
+          }
+          onClick={() =>
+            removeVoucher(
+              voucher
+            )
+          }
+          title={
+            removable
+              ? `Delete ${voucher.code}`
+              : 'Active vouchers cannot be deleted'
+          }
+          aria-label={`Delete voucher ${voucher.code}`}
+          className="flex h-8 w-8 items-center justify-center rounded-xl text-slate-300 transition hover:bg-rose-50 hover:text-rose-600 disabled:cursor-not-allowed disabled:opacity-35"
+        >
+          {deleting ? (
+            <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-rose-200 border-t-rose-600" />
+          ) : (
+            <DeleteIcon />
+          )}
+        </button>
+
+      </div>
+    );
+  };
+
+
+  return (
+    <div className="-mx-3 -mt-3 min-h-screen bg-[#f7f8fb] pb-20 sm:-mx-8 sm:-mt-8">
+
+      <section className="relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:px-8">
+
+        <div className="relative z-10 flex items-start justify-between gap-4">
+
+          <div className="min-w-0">
+
+            <p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">
+              Finance / Vouchers
+            </p>
+
+            <h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">
+              Vouchers
+            </h2>
+
+            <p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">
+              Create, share and manage hotspot access codes.
+            </p>
+
+          </div>
+
+
+          <button
+            type="button"
+            onClick={() =>
+              setCreateOpen(
+                true
+              )
+            }
+            className="inline-flex h-10 shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-3.5 text-[10px] font-black text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:px-4"
+          >
+            <span className="text-base leading-none">
+              +
+            </span>
+
+            <span className="hidden sm:inline">
+              Create voucher
+            </span>
+
+            <span className="sm:hidden">
+              Create
+            </span>
+          </button>
+
+        </div>
+
+
+        <div className="pointer-events-none absolute right-[-7%] top-0 h-36 w-3/5 opacity-[.13]">
+
+          <svg
+            viewBox="0 0 600 180"
+            className="h-full w-full"
+          >
+            <path
+              d="M0 120 C120 20 220 180 350 80 S520 20 600 70"
+              fill="none"
+              stroke="white"
+              strokeWidth="2"
+            />
+
+            <path
+              d="M0 145 C120 45 220 205 350 105 S520 45 600 95"
+              fill="none"
+              stroke="white"
+              strokeWidth="1"
+            />
+          </svg>
+
+        </div>
+
+
+        <div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9">
+
+          <svg
+            viewBox="0 0 1200 180"
+            preserveAspectRatio="none"
+            className="h-full w-full"
+          >
+            <path
+              d="M0 100 C210 30 330 178 520 112 C735 36 850 170 1040 70 C1110 34 1165 55 1200 32 L1200 180 L0 180 Z"
+              fill="#f7f8fb"
+            />
+          </svg>
+
+        </div>
+
+      </section>
+
+
+      <div className="space-y-4 px-3 sm:px-8">
+
+        {vouchers.length ? (
+          <section className="overflow-hidden rounded-[20px] border border-slate-200 bg-white shadow-sm">
+
+            <header className="flex items-center justify-between gap-3 border-b border-slate-100 px-4 py-4 sm:px-5">
+
+              <div>
+
+                <h3 className="text-sm font-black text-slate-950 sm:text-base">
+                  Created vouchers
+                </h3>
+
+                <p className="mt-0.5 text-[9px] text-slate-400 sm:text-[10px]">
+                  Access codes and activation lifecycle
+                </p>
+
+              </div>
+
+
+              <span className="inline-flex h-8 min-w-8 items-center justify-center rounded-xl bg-emerald-50 px-2.5 text-[10px] font-black text-emerald-700">
+                {vouchers.length}
+              </span>
+
+            </header>
+
+
+            <div className="hidden overflow-x-auto md:block">
+
+              <table className="w-full min-w-[1050px] table-fixed text-left">
+
+                <thead>
+
+                  <tr className="border-b border-slate-100 bg-slate-50/80 text-[9px] font-black uppercase tracking-[.12em] text-slate-400">
+
+                    <th className="w-[6%] px-4 py-3.5 sm:px-5">
+                      ID
+                    </th>
+
+                    <th className="w-[16%] px-3 py-3.5">
+                      Code
+                    </th>
+
+                    <th className="w-[10%] px-3 py-3.5">
+                      Status
+                    </th>
+
+                    <th className="w-[21%] px-3 py-3.5">
+                      Used By
+                    </th>
+
+                    <th className="w-[15%] px-3 py-3.5">
+                      Activated At
+                    </th>
+
+                    <th className="w-[15%] px-3 py-3.5">
+                      Expires At
+                    </th>
+
+                    <th className="w-[17%] px-3 py-3.5 text-right">
+                      Actions
+                    </th>
+
+                  </tr>
+
+                </thead>
+
+
+                <tbody className="divide-y divide-slate-100">
+
+                  {vouchers.map(
+                    voucher => (
+                      <tr
+                        key={voucher.id}
+                        className="bg-white transition hover:bg-emerald-50/30"
+                      >
+
+                        <td className="px-4 py-3.5 sm:px-5">
+
+                          <span className="text-[11px] font-black text-slate-500">
+                            #{voucher.id}
+                          </span>
+
+                        </td>
+
+
+                        <td className="px-3 py-3.5">
+
+                          <span className="font-mono text-[12px] font-black tracking-[.03em] text-slate-900">
+                            {voucher.code}
+                          </span>
+
+                        </td>
+
+
+                        <td className="px-3 py-3.5">
+
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-1 text-[8px] font-black uppercase tracking-[.1em] ring-1 ${statusStyle(
+                              voucher.status
+                            )}`}
+                          >
+                            {voucher.status ||
+                             'unknown'}
+                          </span>
+
+                        </td>
+
+
+                        <td className="px-3 py-3.5">
+
+                          <div
+                            title={
+                              voucher.used_by ||
+                              ''
+                            }
+                            className="line-clamp-2 break-words text-[10px] font-semibold leading-4 text-slate-600"
+                          >
+                            {voucher.used_by ||
+                             '—'}
+                          </div>
+
+                        </td>
+
+
+                        <td className="px-3 py-3.5">
+
+                          <span className="whitespace-nowrap text-[10px] font-semibold text-slate-600">
+                            {formatVoucherDate(
+                              voucher.activated_at
+                            )}
+                          </span>
+
+                        </td>
+
+
+                        <td className="px-3 py-3.5">
+
+                          <span className={`whitespace-nowrap text-[10px] font-semibold ${
+                            voucher.status ===
+                            'expired'
+                              ? 'text-rose-600'
+                              : 'text-slate-600'
+                          }`}>
+                            {formatVoucherDate(
+                              voucher.expires_at
+                            )}
+                          </span>
+
+                        </td>
+
+
+                        <td className="px-3 py-3.5">
+
+                          <Actions
+                            voucher={
+                              voucher
+                            }
+                          />
+
+                        </td>
+
+                      </tr>
+                    )
+                  )}
+
+                </tbody>
+
+              </table>
+
+            </div>
+
+
+            <div className="divide-y divide-slate-100 md:hidden">
+
+              {vouchers.map(
+                voucher => (
+                  <article
+                    key={voucher.id}
+                    className="px-4 py-4"
+                  >
+
+                    <div className="flex items-start justify-between gap-3">
+
+                      <div className="min-w-0">
+
+                        <div className="flex flex-wrap items-center gap-2">
+
+                          <span className="font-mono text-[12px] font-black tracking-wide text-slate-900">
+                            {voucher.code}
+                          </span>
+
+                          <span
+                            className={`inline-flex rounded-full px-2 py-0.5 text-[7px] font-black uppercase tracking-[.1em] ring-1 ${statusStyle(
+                              voucher.status
+                            )}`}
+                          >
+                            {voucher.status}
+                          </span>
+
+                        </div>
+
+                        <span className="mt-1 block text-[9px] font-black uppercase tracking-wide text-slate-400">
+                          Voucher #{voucher.id}
+                        </span>
+
+                      </div>
+
+                    </div>
+
+
+                    <div className="mt-4 grid grid-cols-2 gap-x-4 gap-y-3">
+
+                      <div className="col-span-2">
+
+                        <span className="block text-[8px] font-black uppercase tracking-[.12em] text-slate-400">
+                          Used By
+                        </span>
+
+                        <span className="mt-1 block break-words text-[10px] font-semibold leading-4 text-slate-600">
+                          {voucher.used_by ||
+                           '—'}
+                        </span>
+
+                      </div>
+
+
+                      <div>
+
+                        <span className="block text-[8px] font-black uppercase tracking-[.12em] text-slate-400">
+                          Activated
+                        </span>
+
+                        <span className="mt-1 block text-[10px] font-semibold leading-4 text-slate-600">
+                          {formatVoucherDate(
+                            voucher.activated_at
+                          )}
+                        </span>
+
+                      </div>
+
+
+                      <div>
+
+                        <span className="block text-[8px] font-black uppercase tracking-[.12em] text-slate-400">
+                          Expires
+                        </span>
+
+                        <span className="mt-1 block text-[10px] font-semibold leading-4 text-slate-600">
+                          {formatVoucherDate(
+                            voucher.expires_at
+                          )}
+                        </span>
+
+                      </div>
+
+                    </div>
+
+
+                    <div className="mt-4 border-t border-slate-100 pt-3">
+
+                      <Actions
+                        voucher={
+                          voucher
+                        }
+                      />
+
+                    </div>
+
+                  </article>
+                )
+              )}
+
+            </div>
+
+          </section>
+
+        ) : (
+
+          <section className="rounded-[20px] border border-dashed border-emerald-200 bg-white px-5 py-16 text-center shadow-sm">
+
+            <h3 className="text-sm font-black text-slate-900">
+              No vouchers created
+            </h3>
+
+            <p className="mx-auto mt-1 max-w-xs text-[11px] leading-5 text-slate-400">
+              Create a voucher when you are ready to issue hotspot access.
+            </p>
+
+            <button
+              type="button"
+              onClick={() =>
+                setCreateOpen(
+                  true
+                )
+              }
+              className="mt-5 rounded-xl bg-emerald-400 px-4 py-2.5 text-[10px] font-black text-emerald-950"
+            >
+              Create voucher
+            </button>
+
+          </section>
+
+        )}
+
+
+        {shareVoucher && (
+          <div
+            className="fixed inset-0 z-[10020] flex items-end justify-center bg-slate-950/35 p-3 backdrop-blur-[2px] sm:items-center"
+            onMouseDown={
+              event => {
+                if (
+                  event.target ===
+                  event.currentTarget
+                ) {
+                  closeShare();
+                }
+              }
+            }
+          >
+
+            <section className="w-full max-w-sm overflow-hidden rounded-[24px] border border-slate-200 bg-white shadow-2xl">
+
+              <header className="flex items-start justify-between gap-3 border-b border-slate-100 px-4 py-4">
+
+                <div>
+
+                  <div className="text-[9px] font-black uppercase tracking-[.17em] text-emerald-600">
+                    Share voucher
+                  </div>
+
+                  <h3 className="mt-1 font-mono text-sm font-black text-slate-950">
+                    {shareVoucher.code}
+                  </h3>
+
+                </div>
+
+
+                <button
+                  type="button"
+                  onClick={
+                    closeShare
+                  }
+                  className="flex h-8 w-8 items-center justify-center rounded-xl bg-slate-100 text-slate-400"
+                >
+                  ×
+                </button>
+
+              </header>
+
+
+              <div className="space-y-4 p-4">
+
+                <div className="grid grid-cols-3 gap-2">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareChannel(
+                        'sms'
+                      )
+                    }
+                    className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border text-[9px] font-black ${
+                      shareChannel ===
+                      'sms'
+                        ? 'border-sky-200 bg-sky-50 text-sky-700'
+                        : 'border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    <MessageIcon />
+                    SMS
+                  </button>
+
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareChannel(
+                        'whatsapp'
+                      )
+                    }
+                    className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border text-[9px] font-black ${
+                      shareChannel ===
+                      'whatsapp'
+                        ? 'border-emerald-200 bg-emerald-50 text-[#25D366]'
+                        : 'border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    <WhatsAppIcon />
+                    WhatsApp
+                  </button>
+
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareChannel(
+                        'call'
+                      )
+                    }
+                    className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border text-[9px] font-black ${
+                      shareChannel ===
+                      'call'
+                        ? 'border-violet-200 bg-violet-50 text-violet-700'
+                        : 'border-slate-200 text-slate-400'
+                    }`}
+                  >
+                    <PhoneIcon />
+                    Call
+                  </button>
+
+                </div>
+
+
+                <label className="block">
+
+                  <span className="text-[9px] font-black uppercase tracking-[.12em] text-slate-400">
+                    Phone number
+                  </span>
+
+                  <input
+                    autoFocus
+                    type="tel"
+                    placeholder="0712345678 or 254712345678"
+                    value={
+                      sharePhone
+                    }
+                    onChange={
+                      event =>
+                        setSharePhone(
+                          event.target.value
+                        )
+                    }
+                    className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-xs font-semibold text-slate-900 outline-none transition focus:border-emerald-400 focus:bg-white focus:ring-4 focus:ring-emerald-100"
+                  />
+
+                </label>
+
+
+                <div className="rounded-xl border border-slate-100 bg-slate-50 px-3.5 py-3">
+
+                  <span className="text-[8px] font-black uppercase tracking-[.12em] text-slate-400">
+                    Message preview
+                  </span>
+
+                  <p className="mt-1.5 text-[10px] font-semibold leading-5 text-slate-600">
+                    {shareMessage(
+                      shareVoucher
+                    )}
+                  </p>
+
+                </div>
+
+
+                <div className="grid grid-cols-2 rounded-xl bg-slate-100 p-1">
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareMode(
+                        'now'
+                      )
+                    }
+                    className={`rounded-lg py-2 text-[9px] font-black ${
+                      shareMode ===
+                      'now'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    Send now
+                  </button>
+
+
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setShareMode(
+                        'schedule'
+                      )
+                    }
+                    className={`rounded-lg py-2 text-[9px] font-black ${
+                      shareMode ===
+                      'schedule'
+                        ? 'bg-white text-slate-900 shadow-sm'
+                        : 'text-slate-400'
+                    }`}
+                  >
+                    Schedule
+                  </button>
+
+                </div>
+
+
+                {shareMode ===
+                  'schedule' && (
+                  <label className="block">
+
+                    <span className="text-[9px] font-black uppercase tracking-[.12em] text-slate-400">
+                      Send at
+                    </span>
+
+                    <input
+                      type="datetime-local"
+                      value={
+                        shareWhen
+                      }
+                      onChange={
+                        event =>
+                          setShareWhen(
+                            event.target.value
+                          )
+                      }
+                      className="mt-1.5 h-11 w-full rounded-xl border border-slate-200 bg-slate-50 px-3.5 text-xs font-semibold outline-none focus:border-emerald-400 focus:bg-white"
+                    />
+
+                  </label>
+                )}
+
+
+                {shareNotice && (
+                  <div
+                    className={`rounded-xl border px-3 py-2.5 text-[10px] font-bold ${
+                      shareNotice.type ===
+                      'success'
+                        ? 'border-emerald-100 bg-emerald-50 text-emerald-700'
+                        : 'border-rose-100 bg-rose-50 text-rose-700'
+                    }`}
+                  >
+                    {shareNotice.text}
+                  </div>
+                )}
+
+
+                {shareChannel ===
+                  'call' && (
+                  <p className="text-[9px] leading-4 text-violet-500">
+                    The Call icon is ready in the Voucher UI. An outbound voice/SIP provider still needs to be connected to Billing Communication before calls can be placed.
+                  </p>
+                )}
+
+
+                <button
+                  type="button"
+                  disabled={
+                    shareBusy
+                  }
+                  onClick={
+                    sendShare
+                  }
+                  className={`w-full rounded-xl py-3 text-[10px] font-black text-white transition disabled:opacity-50 ${
+                    shareChannel ===
+                    'whatsapp'
+                      ? 'bg-[#25D366]'
+                      : shareChannel ===
+                        'call'
+                        ? 'bg-violet-600'
+                        : 'bg-sky-600'
+                  }`}
+                >
+                  {shareBusy
+                    ? 'Working…'
+                    : shareMode ===
+                      'schedule'
+                      ? 'Schedule voucher'
+                      : `Send via ${
+                          shareChannel ===
+                          'sms'
+                            ? 'SMS'
+                            : shareChannel ===
+                              'whatsapp'
+                              ? 'WhatsApp'
+                              : 'Call'
+                        }`}
+                </button>
+
+              </div>
+
+            </section>
+
+          </div>
+        )}
+
+
+        {createOpen && (
+          <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 p-3 sm:items-center">
+
+            <form
+              onSubmit={
+                submitCreate
+              }
+              className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-3xl bg-white p-5 shadow-2xl"
+            >
+
+              <div className="flex items-center justify-between">
+
+                <div>
+
+                  <div className="text-[9px] font-black uppercase tracking-[.18em] text-emerald-600">
+                    Hotspot access
+                  </div>
+
+                  <h3 className="mt-1 text-xl font-black text-slate-900">
+                    Create vouchers
+                  </h3>
+
+                </div>
+
+
+                <button
+                  type="button"
+                  onClick={() =>
+                    setCreateOpen(
+                      false
+                    )
+                  }
+                  className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-100 text-slate-500"
+                >
+                  ×
+                </button>
+
+              </div>
+
+
+              <div className="mt-5 space-y-4">
+
+                <Field label="Hotspot package">
+
+                  <select
+                    required
+                    className={
+                      input
+                    }
+                    value={
+                      form.plan_id
+                    }
+                    onChange={
+                      event =>
+                        setForm({
+                          ...form,
+
+                          plan_id:
+                            event.target.value,
+                        })
+                    }
+                  >
+
+                    <option value="">
+                      Select package
+                    </option>
+
+                    {plans.map(
+                      plan => (
+                        <option
+                          key={
+                            plan.id
+                          }
+                          value={
+                            plan.id
+                          }
+                        >
+                          {plan.name} · {money(
+                            plan.price
+                          )}
+                        </option>
+                      )
+                    )}
+
+                  </select>
+
+                </Field>
+
+
+                <Field label="Quantity">
+
+                  <input
+                    required
+                    min="1"
+                    max="100"
+                    type="number"
+                    className={
+                      input
+                    }
+                    value={
+                      form.quantity
+                    }
+                    onChange={
+                      event =>
+                        setForm({
+                          ...form,
+
+                          quantity:
+                            event.target.value,
+                        })
+                    }
+                  />
+
+                </Field>
+
+
+                <button
+                  disabled={
+                    saving ||
+                    !plans.length
+                  }
+                  className="w-full rounded-xl bg-emerald-400 py-3 text-xs font-black text-emerald-950 disabled:opacity-50"
+                >
+                  {saving
+                    ? 'Creating…'
+                    : 'Create voucher batch'}
+                </button>
+
+              </div>
+
+            </form>
+
+          </div>
+        )}
+
+      </div>
+
+    </div>
+  );
 }
+
 function Reports({ invoices = [], payments = [], subscribers = [], routers = [], bandwidthHistory = [], employees = [], tickets = [], money }) {
   const [section, setSection] = useState('financial'); const [range, setRange] = useState('this_month'); const [from, setFrom] = useState(''); const [to, setTo] = useState('');
   const now = new Date(); const start = range === 'today' ? new Date(now.getFullYear(), now.getMonth(), now.getDate()) : range === 'this_week' ? new Date(now.getTime() - 6 * 86400000) : range === 'this_year' ? new Date(now.getFullYear(), 0, 1) : range === 'custom' && from ? new Date(from) : new Date(now.getFullYear(), now.getMonth(), 1); const end = range === 'custom' && to ? new Date(`${to}T23:59:59`) : now; const inRange = (value) => { const date = new Date(value || 0); return date >= start && date <= end; }; const rangePayments = payments.filter((item) => inRange(item.paid_at || item.created_at)); const rangeInvoices = invoices.filter((item) => inRange(item.created_at || item.due_date)); const income = rangePayments.reduce((sum, item) => sum + Number(item.amount || 0), 0); const outstanding = rangeInvoices.filter((item) => item.status !== 'paid').reduce((sum, item) => sum + Number(item.amount || 0) - Number(item.paid_amount || 0), 0); const online = subscribers.filter((item) => item.is_online).length; const maxTraffic = Math.max(...bandwidthHistory.map((item) => Number(item.download_mbps || 0) + Number(item.upload_mbps || 0)), 1); const exportReport = () => { const rows = section === 'financial' ? [['Metric', 'Value'], ['Income', income], ['Outstanding', outstanding], ['Payments', rangePayments.length]] : section === 'network' ? [['Metric', 'Value'], ['Routers', routers.length], ['Online subscribers', online], ['Peak Mbps', maxTraffic]] : [['Employee', 'Assigned tickets', 'Completed', 'Open']]; const csv = rows.map((row) => row.join(',')).join('\n'); const blob = new Blob([csv], { type: 'text/csv' }); const url = URL.createObjectURL(blob); const link = document.createElement('a'); link.href = url; link.download = `nexa-${section}-report.csv`; link.click(); URL.revokeObjectURL(url); };

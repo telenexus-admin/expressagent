@@ -2,12 +2,13 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
+const { strongAdminPassword } = require('../security/passwordPolicy');
 const { authMiddleware, superadminMiddleware } = require('../middleware/auth');
 const { DEFAULT_SYSTEM_PROMPT } = require('../services/ispKnowledge');
 const { logActivity } = require('../services/audit');
+const { startImpersonation, adminView } = require('../security/adminSessions');
 const {
   createClientSubdomain,
   ensureClientDomainSchema,
@@ -196,61 +197,37 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// POST /api/clients/:id/operator-access - short-lived dashboard session for support/configuration
+// POST /api/clients/:id/operator-access - secure, server-side operator session
 router.post('/:id/operator-access', async (req, res) => {
   try {
+    const clientId = Number.parseInt(req.params.id, 10);
     const result = await db.query(
-      `SELECT id, name, business_name, contact_email, status, account_type
-       FROM clients
-       WHERE id = $1`,
-      [req.params.id]
+      'SELECT id,name,business_name,status,account_type FROM clients WHERE id=$1 LIMIT 1',
+      [clientId]
     );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Client not found' });
-    }
-
     const client = result.rows[0];
-    if (client.status === 'suspended') {
-      return res.status(403).json({ error: 'Client is suspended. Activate the client before opening their dashboard.' });
-    }
-
-    const operatorName = req.user.name || 'Nexa operator';
-    const admin = {
+    if (!client) return res.status(404).json({ error: 'Client not found' });
+    if (client.status !== 'active') return res.status(403).json({ error: 'Activate this client before opening their dashboard.' });
+    await startImpersonation(req, res, client.id);
+    const admin = adminView({
+      ...req.authRow,
       id: req.user.id,
-      name: `${operatorName} (Operator Access)`,
+      name: req.user.name,
       email: req.user.email,
-      role: 'admin',
-      client_id: client.id,
-      account_type: client.account_type || 'ai',
+      role: req.user.role,
+      acting_role: 'admin',
+      acting_client_id: client.id,
       client_name: client.name,
-      client_business_name: client.business_name || null,
+      client_business_name: client.business_name,
+      client_account_type: client.account_type,
       permissions: OPERATOR_ACCESS_PERMISSIONS,
-      operator_access: true,
-      operator_id: req.user.id,
-      operator_email: req.user.email,
-      operator_name: req.user.name || null,
-    };
-
-    const token = jwt.sign(admin, process.env.JWT_SECRET, { expiresIn: '1h' });
-
-    await logActivity({
-      req,
-      action: 'operator_client_access',
-      entityType: 'client',
-      entityId: client.id,
-      description: `${operatorName} opened ${client.name}'s dashboard through operator access.`,
-      metadata: { client_id: client.id, client_name: client.name },
     });
-
-    res.json({
-      token,
-      admin,
-      expires_in_seconds: 3600,
-    });
+    admin.accessed_client_name = client.business_name || client.name;
+    await logActivity({ req, action: 'operator_client_access', entityType: 'client', entityId: client.id, description: `${req.user.name || 'Operator'} opened ${client.name}'s dashboard through secure operator access.`, metadata: { client_id: client.id, secure_session: true } });
+    return res.json({ admin });
   } catch (err) {
     console.error('POST /clients/:id/operator-access error:', err.message);
-    res.status(500).json({ error: 'Server error' });
+    return res.status(500).json({ error: 'Server error' });
   }
 });
 
@@ -321,7 +298,7 @@ router.post(
     body('domain_slug').optional().trim().isLength({ max: 80 }).withMessage('Domain slug max 80 chars'),
     body('admin_name').trim().notEmpty().withMessage('Admin name is required'),
     body('admin_email').isEmail().normalizeEmail().withMessage('Valid admin email required'),
-    body('admin_password').isLength({ min: 8 }).withMessage('Admin password must be at least 8 characters'),
+    body('admin_password').custom(strongAdminPassword),
   ],
   async (req, res) => {
     const errors = validationResult(req);

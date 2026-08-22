@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
 import api from '../../utils/api';
+import { isStrongAdminPassword, adminPasswordHelp } from '../../utils/passwordPolicy';
 
 const VOICE_OPTIONS = ['alloy', 'echo', 'fable', 'onyx', 'nova', 'shimmer'];
 const MIN_META_ACCESS_TOKEN_LENGTH = 50;
@@ -227,20 +228,11 @@ export default function ClientDetail() {
   };
 
   const openClientDashboard = async () => {
-    const tab = window.open('about:blank', '_blank');
     setOpeningDashboard(true);
     try {
-      const { data } = await api.post(`/clients/${id}/operator-access`);
-      const encodedAdmin = window.btoa(unescape(encodeURIComponent(JSON.stringify(data.admin))));
-      const url = `/client-access?token=${encodeURIComponent(data.token)}&admin=${encodeURIComponent(encodedAdmin)}&next=${encodeURIComponent('/dashboard/agent')}`;
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = url;
-      } else {
-        window.location.href = url;
-      }
+      await api.post(`/operator-access/${id}`);
+      window.location.assign('/dashboard/agent');
     } catch (err) {
-      if (tab) tab.close();
       alert(err.response?.data?.error || 'Failed to open client dashboard');
     } finally {
       setOpeningDashboard(false);
@@ -258,8 +250,8 @@ export default function ClientDetail() {
       setAdminFormError('All fields are required');
       return;
     }
-    if (adminForm.password.length < 8) {
-      setAdminFormError('Password must be at least 8 characters');
+    if (!isStrongAdminPassword(adminForm.password)) {
+      setAdminFormError(adminPasswordHelp);
       return;
     }
     setAdminFormLoading(true);

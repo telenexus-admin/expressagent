@@ -9,6 +9,7 @@ const db = require('../db');
 const { createNocLiveUrl } = require('./nocPublicLinks');
 
 const execFileAsync = promisify(execFile);
+const { executeNetworkOperation } = require('./networkPrivilegeClient');
 
 const DEFAULT_FEATURES = {
   ppp_active: true,
@@ -2407,48 +2408,15 @@ async function buildMikrotikAdminContext({ clientId, messageText }) {
   return lines.join('\n');
 }
 
-async function persistWireguardConfiguration() {
-  if (!/^[A-Za-z0-9_.=-]{1,15}$/.test(WIREGUARD_INTERFACE)) {
-    throw new Error('The WireGuard interface name is invalid');
-  }
-
-  const result = await execFileAsync(
-    'wg',
-    ['showconf', WIREGUARD_INTERFACE],
-    { timeout: 15000, maxBuffer: 1024 * 1024 }
-  );
-  const target = path.join('/etc/wireguard', `${WIREGUARD_INTERFACE}.conf`);
-  const temporary = `${target}.tmp-${process.pid}`;
-
-  try {
-    fs.writeFileSync(temporary, result.stdout, {
-      encoding: 'utf8',
-      mode: 0o600,
-    });
-    fs.renameSync(temporary, target);
-    fs.chmodSync(target, 0o600);
-  } catch (error) {
-    fs.rmSync(temporary, { force: true });
-    throw error;
-  }
-}
-
 async function activateWireguardPeer(payload = {}) {
   const publicKey = cleanWireguardPublicKey(payload.public_key || payload.wireguard_mikrotik_public_key);
   const tunnelIp = cleanTunnelIp(payload.tunnel_ip || payload.wireguard_tunnel_ip);
   try {
-    await execFileAsync('wg', ['set', WIREGUARD_INTERFACE, 'peer', publicKey, 'allowed-ips', `${tunnelIp}/32`], { timeout: 15000 });
-    await persistWireguardConfiguration();
+    await executeNetworkOperation({ operation: 'activate-peer', public_key: publicKey, tunnel_ip: tunnelIp });
   } catch (err) {
-    const detail = err.stderr || err.stdout || err.message;
-    throw new Error(`Could not activate WireGuard peer on Nexa server: ${detail}`);
+    throw new Error(`Could not activate WireGuard peer through the protected executor: ${err.message || 'executor failed'}`);
   }
-  return {
-    ok: true,
-    interface: WIREGUARD_INTERFACE,
-    public_key: publicKey,
-    tunnel_ip: tunnelIp,
-  };
+  return { ok: true, interface: WIREGUARD_INTERFACE, public_key: publicKey, tunnel_ip: tunnelIp };
 }
 
 async function prepareWireguardOnboarding(clientId, payload = {}) {

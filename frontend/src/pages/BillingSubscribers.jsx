@@ -24,6 +24,155 @@ function SubscriberDetail({ subscriber, back, setError }) {
   const total = usage?.usage?.total || {}; const daily = usage?.usage?.daily || []; const sessions = usage?.usage?.sessions || []; const download = Number(total.download_bytes || 0); const upload = Number(total.upload_bytes || 0); const combined = download + upload; const maxDay = Math.max(1, ...daily.map((day) => Number(day.download_bytes || 0) + Number(day.upload_bytes || 0)));
   return <div className="space-y-4"><button onClick={back} className="text-sm font-extrabold text-violet-600">← Back to clients</button><section className="rounded-3xl bg-gradient-to-br from-[#26006b] via-[#5600c6] to-[#8d2cff] p-6 text-white shadow-xl"><div className="flex flex-wrap items-start justify-between gap-4"><div><p className="text-xs font-bold uppercase tracking-[0.2em] text-violet-200">Client profile</p><h2 className="mt-2 text-2xl font-black">{subscriber.full_name}</h2><p className="mt-1 text-sm text-violet-100">{subscriber.account_number} · {subscriber.plan_name || 'No package'}</p></div><span className={`rounded-full px-3 py-1 text-xs font-black ${subscriber.is_online ? 'bg-emerald-300 text-emerald-950' : 'bg-white/20 text-white'}`}>{subscriber.is_online ? 'Online' : 'Offline'}</span></div><div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-4"><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold text-violet-200">Total used</p><p className="mt-1 text-lg font-black">{formatBytes(combined)}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold text-violet-200">Download</p><p className="mt-1 text-lg font-black">{formatBytes(download)}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold text-violet-200">Upload</p><p className="mt-1 text-lg font-black">{formatBytes(upload)}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold text-violet-200">Sessions</p><p className="mt-1 text-lg font-black">{total.session_count || 0}</p></div></div></section><div className="flex gap-2 overflow-x-auto rounded-2xl border border-slate-200 bg-white p-1 shadow-sm">{[['overview','Overview'],['usage','Bandwidth Usage'],['invoices','Invoices'],['payments','Payments'],['tickets','Tickets']].map(([key,label]) => <button key={key} onClick={() => setTab(key)} className={`whitespace-nowrap rounded-xl px-4 py-3 text-xs font-extrabold ${tab === key ? 'bg-violet-600 text-white' : 'text-slate-500'}`}>{label}</button>)}</div>{loading ? <UsageSkeleton /> : tab === 'usage' ? <><section className="grid gap-4 sm:grid-cols-3"><div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold text-slate-400">Online duration</p><p className="mt-2 text-2xl font-black text-slate-900">{formatDuration(total.session_seconds)}</p><p className="mt-1 text-xs text-slate-500">Last 30 days</p></div><div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold text-slate-400">First seen</p><p className="mt-2 text-sm font-black text-slate-900">{total.first_seen ? new Date(total.first_seen).toLocaleString() : 'No sessions'}</p></div><div className="rounded-2xl border border-slate-200 bg-white p-5"><p className="text-xs font-bold text-slate-400">Last activity</p><p className="mt-2 text-sm font-black text-slate-900">{total.last_seen ? new Date(total.last_seen).toLocaleString() : 'No activity'}</p></div></section><section className="rounded-2xl border border-slate-200 bg-white p-5"><div className="flex items-center justify-between"><div><h3 className="font-black text-slate-900">30-day traffic rhythm</h3><p className="mt-1 text-xs text-slate-500">Daily download and upload totals</p></div><span className="rounded-full bg-violet-50 px-3 py-1 text-xs font-black text-violet-600">{formatBytes(combined)} total</span></div>{daily.length ? <div className="mt-6 flex h-48 items-end gap-1 overflow-x-auto">{daily.map((day) => { const down=Number(day.download_bytes||0); const up=Number(day.upload_bytes||0); const height=Math.max(4,Math.round(((down+up)/maxDay)*100)); return <div key={day.day} className="group flex min-w-[18px] flex-1 flex-col items-center justify-end gap-1"><div title={`${day.day}: ${formatBytes(down+up)}`} className="w-full rounded-t-md bg-violet-500 transition group-hover:bg-fuchsia-500" style={{height:`${height}%`}} /><span className="text-[8px] text-slate-400">{day.day.slice(5)}</span></div>; })}</div> : <p className="mt-8 text-center text-sm text-slate-400">No accounting data available yet.</p>}</section><section className="rounded-2xl border border-slate-200 bg-white"><div className="border-b border-slate-100 p-5"><h3 className="font-black text-slate-900">Session history</h3><p className="mt-1 text-xs text-slate-500">Recent RADIUS sessions and traffic totals</p></div>{sessions.length ? <div className="divide-y divide-slate-100">{sessions.map((session, index) => <div key={`${session.acctstarttime}-${index}`} className="flex flex-wrap items-center justify-between gap-3 p-4"><div><p className="text-sm font-bold text-slate-800">{session.is_active ? 'Live session' : 'Completed session'}</p><p className="mt-1 text-xs text-slate-500">{session.acctstarttime ? new Date(session.acctstarttime).toLocaleString() : 'Unknown start'} · {session.framedipaddress || 'No IP'}</p></div><div className="text-right"><p className="text-xs font-black text-slate-700">↓ {formatBytes(session.download_bytes)} · ↑ {formatBytes(session.upload_bytes)}</p><p className="mt-1 text-[11px] text-slate-400">{formatDuration(session.acctsessiontime)}</p></div></div>)}</div> : <p className="p-8 text-center text-sm text-slate-400">No sessions recorded.</p>}</section></> : <div className="rounded-2xl border border-slate-200 bg-white p-10 text-center"><h3 className="font-black text-slate-900">{tab[0].toUpperCase()+tab.slice(1)} sub-tab</h3><p className="mt-2 text-sm text-slate-500">This client record is ready for {tab} history and actions.</p></div>}</div>;
 }
+
+function HotspotSubscriberDetail({
+  subscriber,
+  back,
+}) {
+  const expiry =
+    subscriber.expires_at
+      ? new Date(
+          subscriber.expires_at
+        )
+      : null;
+
+  const paidAt =
+    subscriber.last_payment_at
+      ? new Date(
+          subscriber.last_payment_at
+        )
+      : null;
+
+  return (
+    <div className="mx-auto max-w-5xl space-y-4 px-2 py-2 text-xs">
+      <button
+        type="button"
+        onClick={back}
+        className="font-extrabold text-violet-600"
+      >
+        ← Back to subscribers
+      </button>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <p className="text-[9px] font-black uppercase tracking-[.18em] text-slate-400">
+              Hotspot subscriber
+            </p>
+
+            <h2 className="mt-1 text-lg font-black text-slate-900">
+              {subscriber.mac_address ||
+                subscriber.full_name ||
+                'Hotspot device'}
+            </h2>
+
+            <p className="mt-1 text-xs text-slate-500">
+              {subscriber.phone ||
+                subscriber.account_number ||
+                'No phone'}
+            </p>
+          </div>
+
+          <span
+            className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${
+              subscriber.is_online
+                ? 'bg-emerald-100 text-emerald-700'
+                : 'bg-slate-100 text-slate-600'
+            }`}
+          >
+            {subscriber.is_online
+              ? 'Online'
+              : 'Offline'}
+          </span>
+        </div>
+
+        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {[
+            [
+              'Package',
+              subscriber.plan_name ||
+                'No package',
+            ],
+            [
+              'Router',
+              subscriber.router_name ||
+                'Unassigned',
+            ],
+            [
+              'Expires',
+              expiry &&
+              !Number.isNaN(
+                expiry.getTime()
+              )
+                ? expiry.toLocaleString()
+                : 'No expiry',
+            ],
+            [
+              'Last payment',
+              subscriber.last_payment_amount
+                ? `KES ${Number(
+                    subscriber.last_payment_amount
+                  ).toLocaleString()}`
+                : '—',
+            ],
+          ].map(
+            ([label, value]) => (
+              <div
+                key={label}
+                className="rounded-xl bg-slate-50 p-3"
+              >
+                <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
+                  {label}
+                </div>
+
+                <div className="mt-1 text-xs font-bold text-slate-800">
+                  {value}
+                </div>
+              </div>
+            )
+          )}
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-400">
+              MAC
+            </span>
+            <div className="mt-1 font-bold">
+              {subscriber.mac_address ||
+                '—'}
+            </div>
+          </div>
+
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-400">
+              Authentication
+            </span>
+            <div className="mt-1 font-bold">
+              {subscriber.device_activation_status ||
+                '—'}
+            </div>
+          </div>
+
+          <div>
+            <span className="text-[9px] font-black uppercase text-slate-400">
+              Paid at
+            </span>
+            <div className="mt-1 font-bold">
+              {paidAt &&
+              !Number.isNaN(
+                paidAt.getTime()
+              )
+                ? paidAt.toLocaleString()
+                : '—'}
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 function StatusGlyph({ kind }) { const paths = { online: <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>, offline: <><circle cx="12" cy="9" r="3" /><path d="M6 20a6 6 0 0 1 12 0" /></>, expired: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></> }; return <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-current/10"><svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[kind]}</svg></span>; }
 function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="9" cy="9" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><circle cx="17" cy="11" r="2" /><path d="M14 20a4 4 0 0 1 7 0" /></> : kind === 'static' ? <><circle cx="12" cy="12" r="2" /><path d="M12 4v6m0 4v6M4 12h6m4 0h6" /></> : <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>; return <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{content}</svg>; }export default function BillingSubscribers({ subscribers, items: sourceItems, networkClients = [], plans, hotspotPlans = [], routers = [], createOpen, setCreateOpen, search, setSearch, reload, setError, darkMode = false }) {
   const [menuId, setMenuId] = useState(null);
@@ -188,6 +337,10 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
         is_mikrotik_live:
           true,
 
+        hotspot_subscriber_id:
+          client.hotspot_subscriber_id ||
+          null,
+
         service_type:
           serviceType,
 
@@ -258,6 +411,12 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
             ?.router_name ||
           '',
 
+        router_id:
+          client.router_id ||
+          managedSubscriber
+            ?.router_id ||
+          null,
+
         service_status:
           client.is_expired
             ? 'expired'
@@ -283,6 +442,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
         expires_at:
           hotspot
             ? (
+                client.expires_at ||
                 client.expiry_date ||
                 null
               )
@@ -306,6 +466,22 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
 
         last_seen:
           client.last_seen ||
+          '',
+
+        last_payment_amount:
+          client.last_payment_amount ||
+          null,
+
+        last_payment_at:
+          client.last_payment_at ||
+          null,
+
+        device_activation_status:
+          client.device_activation_status ||
+          null,
+
+        client_source:
+          client.client_source ||
           '',
 
         access_mode:
@@ -641,16 +817,26 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   };
 
   const suspend = (subscriber) => {
-    if (
+    const hotspot =
+      subscriber.service_type ===
+      'hotspot';
+
+    const suspended =
       subscriber.service_status ===
-      'suspended'
-    ) {
-      return;
-    }
+      'suspended';
+
+    const nextStatus =
+      suspended
+        ? 'active'
+        : 'suspended';
 
     if (
       !window.confirm(
-        `Suspend ${subscriber.full_name}? Their internet access will be disabled.`
+        `${
+          suspended
+            ? 'Resume'
+            : 'Suspend'
+        } ${subscriber.full_name}?`
       )
     ) {
       return;
@@ -660,19 +846,48 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
       subscriber,
       () =>
         api.patch(
-          `/billing-workspace/subscribers/${subscriber.id}`,
+          hotspot
+            ? `/billing-workspace/hotspot/subscribers/${subscriber.id}`
+            : `/billing-workspace/subscribers/${subscriber.id}`,
           {
             service_status:
-              'suspended',
+              nextStatus,
           }
         )
     );
   };
 
-  const sync = (subscriber) => run(subscriber, () => api.post(`/billing-workspace/subscribers/${subscriber.id}/radius/sync`));
+  const sync = (subscriber) =>
+    run(
+      subscriber,
+      () =>
+        api.post(
+          subscriber.service_type ===
+            'hotspot'
+            ? `/billing-workspace/hotspot/subscribers/${subscriber.id}/sync`
+            : `/billing-workspace/subscribers/${subscriber.id}/radius/sync`
+        )
+    );
+
   const remove = (subscriber) => {
-    if (!window.confirm(`Delete ${subscriber.full_name}? Their RADIUS access will be disabled first.`)) return;
-    void run(subscriber, () => api.delete(`/billing-workspace/subscribers/${subscriber.id}`));
+    if (
+      !window.confirm(
+        `Delete ${subscriber.full_name}? Their network access will be disabled first.`
+      )
+    ) {
+      return;
+    }
+
+    void run(
+      subscriber,
+      () =>
+        api.delete(
+          subscriber.service_type ===
+            'hotspot'
+            ? `/billing-workspace/hotspot/subscribers/${subscriber.id}`
+            : `/billing-workspace/subscribers/${subscriber.id}`
+        )
+    );
   };
   const extendSubscription = async (event) => {
     event.preventDefault();
@@ -689,7 +904,10 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
       setError('');
 
       await api.post(
-        `/billing-workspace/subscribers/${extending.id}/extend`,
+        extending.service_type ===
+          'hotspot'
+          ? `/billing-workspace/hotspot/subscribers/${extending.id}/extend`
+          : `/billing-workspace/subscribers/${extending.id}/extend`,
         {
           days:
             Number(
@@ -786,10 +1004,108 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   };
   if (createOpen && !typeChosen) return <ClientTypeChooser choose={(access_mode) => { setCreating({ ...emptySubscriber, access_mode }); setTypeChosen(true); }} close={() => { setCreating(emptySubscriber); setCreateOpen(false); }} />;
   if (createOpen && creating.access_mode === 'hotspot') return <HotspotClientForm value={hotspotForm} setValue={setHotspotForm} plans={hotspotPlans} busy={busyId === 'hotspot-create'} close={() => { setHotspotForm(emptyHotspot); setCreateOpen(false); }} submit={saveHotspot} />;
-  if (selectedSubscriber) return <PppoeSubscriberDetail subscriber={selectedSubscriber} back={() => setSelectedSubscriber(null)} setError={setError} />;
+  if (selectedSubscriber) {
+    return selectedSubscriber.service_type ===
+      'hotspot'
+      ? (
+          <HotspotSubscriberDetail
+            subscriber={selectedSubscriber}
+            back={() =>
+              setSelectedSubscriber(
+                null
+              )
+            }
+          />
+        )
+      : (
+          <PppoeSubscriberDetail
+            subscriber={selectedSubscriber}
+            back={() =>
+              setSelectedSubscriber(
+                null
+              )
+            }
+            setError={setError}
+          />
+        );
+  }
   if (createOpen && ['pppoe_static', 'dhcp_static'].includes(creating.access_mode)) return <StaticClientForm value={creating} setValue={setCreating} plans={plans} routers={routers} busy={busyId === 'create'} close={() => { setCreating(emptySubscriber); setCreateOpen(false); }} submit={saveCreate} />;
-  return <div data-subscriber-theme={darkMode ? 'dark' : 'light'} className={`-mx-5 -mt-5 min-h-screen space-y-4 pb-8 sm:-mx-8 sm:-mt-8 ${darkMode ? 'bg-[#0b1020] text-slate-100' : 'bg-[#fbfbff] text-slate-900'}`}><section className="relative isolate overflow-hidden bg-[#07090d] px-5 pb-20 pt-7 text-white sm:px-8 sm:pb-20 sm:pt-7" style={{ backgroundImage: `linear-gradient(115deg, rgba(3,22,13,.64), rgba(9,42,27,.58)), url(${polyizonLoginNetwork})`, backgroundSize: 'cover', backgroundPosition: 'center' }}><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="subscriber-hero-title mt-2 text-[2rem] font-semibold tracking-[-.03em] sm:text-[2.55rem]">Subscribers</h2><p className="mt-1.5 text-sm text-violet-100">View and manage all your subscribers</p></div><button type="button" onClick={() => setCreateOpen(true)} className="relative z-10 mt-5 rounded-xl bg-emerald-400 px-3.5 py-2 text-xs sm:text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:absolute sm:right-8 sm:top-8 sm:mt-0">+ Add a client</button><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill={darkMode ? '#0b1020' : '#fbfbff'} /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
+  return <div data-subscriber-theme={darkMode ? 'dark' : 'light'} className={`-mx-5 -mt-5 min-h-screen space-y-4 pb-8 sm:-mx-8 sm:-mt-8 ${darkMode ? 'bg-[#0b1020] text-slate-100' : 'bg-[#fbfbff] text-slate-900'}`}><section className="relative isolate overflow-hidden bg-[#07090d] px-5 pb-20 pt-7 text-white sm:px-8 sm:pb-20 sm:pt-7" style={{ backgroundImage: `linear-gradient(115deg, rgba(3,22,13,.64), rgba(9,42,27,.58)), url(${polyizonLoginNetwork})`, backgroundSize: 'cover', backgroundPosition: 'center' }}><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="subscriber-hero-title mt-2 text-[1.65rem] font-semibold tracking-[-.03em] sm:text-[1.95rem]">Subscribers</h2><p className="mt-1.5 text-sm text-violet-100">View and manage all your subscribers</p></div><button type="button" onClick={() => setCreateOpen(true)} className="relative z-10 mt-5 rounded-xl bg-emerald-400 px-3.5 py-2 text-xs sm:text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:absolute sm:right-8 sm:top-8 sm:mt-0">+ Add a client</button><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill={darkMode ? '#0b1020' : '#fbfbff'} /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
     <style>{`.subscriber-hero-title{font-family:Georgia,Times,"Times New Roman",serif}.subscriber-type-tabs button.bg-violet-600{background:#10231f!important;color:#ecfff8!important;box-shadow:inset 0 0 0 1px rgba(76,214,160,.42)}.client-status-card{min-height:88px}.client-status-card svg{width:1.35rem!important;height:1.35rem!important}@media(min-width:640px){.client-status-card{padding:14px!important}.client-status-card .text-2xl{font-size:1.75rem;line-height:1.85rem}.client-status-card .text-xs{font-size:.72rem}.subscriber-type-tabs button{padding-top:.55rem!important;padding-bottom:.55rem!important}.subscriber-list-panel>div.grid{padding:12px 16px!important}}section > .grid.grid-cols-2.border-b{display:none}@media(max-width:639px){.client-status-meta{display:none}.client-status-card{min-height:92px;padding:10px!important}.client-status-card .text-xs{font-size:10px}.client-status-card .text-2xl{font-size:1.5rem;line-height:2rem}}@media(max-width:639px){table.min-w-\\[700px\\]{min-width:100%!important;table-layout:fixed}table.min-w-\\[700px\\] th,table.min-w-\\[700px\\] td{padding:8px 4px!important;font-size:9px!important;line-height:1.25;overflow-wrap:anywhere}table.min-w-\\[700px\\] th:first-child,table.min-w-\\[700px\\] td:first-child{width:29%;padding-left:8px!important}table.min-w-\\[700px\\] th:nth-child(2),table.min-w-\\[700px\\] td:nth-child(2){width:19%}table.min-w-\\[700px\\] th:nth-child(3),table.min-w-\\[700px\\] td:nth-child(3){width:18%}table.min-w-\\[700px\\] th:nth-child(4),table.min-w-\\[700px\\] td:nth-child(4){width:18%}table.min-w-\\[700px\\] th:last-child,table.min-w-\\[700px\\] td:last-child{width:16%;padding-right:8px!important}.overflow-x-auto:has(table.min-w-\\[700px\\]){overflow-x:visible!important}}`}</style>
+
+    <style>{`
+.client-status-card{
+  min-height:70px!important;
+  padding:10px 12px!important
+}
+.client-status-card .text-2xl{
+  font-size:1.2rem!important;
+  line-height:1.3rem!important
+}
+.client-status-card .text-sm,
+.client-status-meta{
+  font-size:10px!important
+}
+.subscriber-type-tabs button{
+  font-size:11px!important;
+  padding-top:7px!important;
+  padding-bottom:7px!important
+}
+.subscriber-search-box input{
+  font-size:12px!important
+}
+.subscriber-list-panel table{
+  font-size:11px!important
+}
+.subscriber-list-panel thead{
+  font-size:9px!important
+}
+.subscriber-list-panel tbody td{
+  padding-top:8px!important;
+  padding-bottom:8px!important
+}
+@media(min-width:640px){
+  .subscriber-list-scroll{
+    overflow:visible!important
+  }
+}
+@media(max-width:639px){
+  .subscriber-list-scroll table{
+    min-width:100%!important;
+    table-layout:fixed!important
+  }
+  .subscriber-list-scroll th,
+  .subscriber-list-scroll td{
+    font-size:8.5px!important;
+    padding-left:3px!important;
+    padding-right:3px!important
+  }
+  .subscriber-list-scroll th:nth-child(1),
+  .subscriber-list-scroll td:nth-child(1){
+    width:24%!important
+  }
+  .subscriber-list-scroll th:nth-child(2),
+  .subscriber-list-scroll td:nth-child(2){
+    width:15%!important
+  }
+  .subscriber-list-scroll th:nth-child(3),
+  .subscriber-list-scroll td:nth-child(3){
+    width:17%!important
+  }
+  .subscriber-list-scroll th:nth-child(4),
+  .subscriber-list-scroll td:nth-child(4){
+    width:17%!important
+  }
+  .subscriber-list-scroll th:nth-child(5),
+  .subscriber-list-scroll td:nth-child(5){
+    width:13%!important
+  }
+  .subscriber-list-scroll th:nth-child(6),
+  .subscriber-list-scroll td:nth-child(6){
+    width:14%!important
+  }
+}
+`}</style>
     <style>{`
       [data-subscriber-theme="dark"] {
         color-scheme: dark;
@@ -1025,11 +1341,11 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
     <div className="subscriber-type-tabs mx-5 grid grid-cols-3 overflow-hidden rounded-2xl border border-slate-200 bg-white p-1 shadow-sm sm:mx-8"><button onClick={() => { setSubscriberType('pppoe'); setPage(1); }} className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-extrabold sm:text-sm ${subscriberType === 'pppoe' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="pppoe" /><span>PPPoE</span><span className="rounded-full bg-current/10 px-2 py-0.5">{pppoeItems.length}</span></button><button onClick={() => { setSubscriberType('static'); setPage(1); }} className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-extrabold sm:text-sm ${subscriberType === 'static' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="static" /><span>Static</span><span className="rounded-full bg-current/10 px-2 py-0.5">{staticItems.length}</span></button><button onClick={() => { setSubscriberType('hotspot'); setPage(1); }} className={`flex items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-xs font-extrabold sm:text-sm ${subscriberType === 'hotspot' ? 'bg-violet-600 text-white' : 'text-slate-500'}`}><TypeGlyph kind="hotspot" /><span>Hotspot</span><span className="rounded-full bg-current/10 px-2 py-0.5">{hotspotItems.length}</span></button></div>    <section className="subscriber-list-panel overflow-visible rounded-2xl border border-slate-200 bg-white shadow-sm">
       <div className="grid grid-cols-2 border-b border-slate-200 px-4 pt-4"><button onClick={() => setSubscriberType('pppoe')} className={`border-b-2 px-2 pb-3 text-sm font-extrabold ${subscriberType === 'pppoe' ? 'border-violet-600 text-violet-600' : 'border-transparent text-slate-500'}`}>PPPoE Clients <span className="ml-2 rounded-full bg-violet-100 px-2 py-1 text-xs">{pppoeItems.length}</span></button><button onClick={() => setSubscriberType('hotspot')} className={`border-b-2 px-2 pb-3 text-sm font-extrabold ${subscriberType === 'hotspot' ? 'border-violet-600 text-violet-600' : 'border-transparent text-slate-500'}`}>Hotspot Users <span className="ml-2 rounded-full bg-slate-100 px-2 py-1 text-xs">{hotspotItems.length}</span></button></div>
       <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-3 border-b border-slate-100 p-4 sm:p-5">
-        <label className="subscriber-search-box flex min-h-14 min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 shadow-sm focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
+        <label className="subscriber-search-box flex min-h-10 min-w-0 items-center gap-3 rounded-2xl border border-slate-200 bg-white px-4 shadow-sm focus-within:border-violet-500 focus-within:ring-4 focus-within:ring-violet-500/10">
           <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 shrink-0 fill-none stroke-slate-500 stroke-2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
           <input className="min-w-0 flex-1 bg-transparent text-sm text-slate-800 outline-none placeholder:text-slate-400" placeholder="Search subscribers…" value={search} onChange={(event) => { setSearch(event.target.value); setPage(1); }} />
         </label>
-        <button aria-label="Filter subscribers" onClick={() => { setNetworkFilter(networkFilter === 'all' ? 'online' : networkFilter === 'online' ? 'offline' : networkFilter === 'offline' ? 'expired' : 'all'); setPage(1); }} className={`flex min-h-14 items-center justify-center gap-2 rounded-2xl border px-4 text-xs font-extrabold shadow-sm sm:px-5 sm:text-sm ${networkFilter === 'all' ? 'border-slate-200 bg-white text-slate-600' : 'border-violet-300 bg-violet-50 text-violet-700'}`}>
+        <button aria-label="Filter subscribers" onClick={() => { setNetworkFilter(networkFilter === 'all' ? 'online' : networkFilter === 'online' ? 'offline' : networkFilter === 'offline' ? 'expired' : 'all'); setPage(1); }} className={`flex min-h-10 items-center justify-center gap-2 rounded-2xl border px-4 text-xs font-extrabold shadow-sm sm:px-5 sm:text-sm ${networkFilter === 'all' ? 'border-slate-200 bg-white text-slate-600' : 'border-violet-300 bg-violet-50 text-violet-700'}`}>
           <svg aria-hidden="true" viewBox="0 0 24 24" className="h-5 w-5 fill-none stroke-current stroke-2"><path d="M4 5h16l-6 7v6l-4 2v-8L4 5Z"/></svg>
           <span className="hidden min-[360px]:inline">Filters{networkFilter !== 'all' ? `: ${networkFilter}` : ''}</span>
         </button>
@@ -1037,10 +1353,10 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
 
       {items.length ? (
         <div className="subscriber-list-scroll overflow-x-auto">
-          <table className="w-full min-w-[700px] text-left">
+          <table className="w-full min-w-[760px] text-left text-xs">
             <thead className="bg-slate-50 text-[10px] font-extrabold uppercase tracking-wider text-slate-400">
               <tr>
-                <th className="px-4 py-3">
+                <th className="px-4 py-2">
                   Device
                 </th>
 
@@ -1055,7 +1371,11 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                     : 'Network'}
                 </th>
 
-                <th className="px-3 py-3">
+                <th className="px-3 py-2">
+                  Router
+                </th>
+
+                <th className="px-3 py-2">
                   Status
                 </th>
 
@@ -1069,17 +1389,26 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
               {items.map(
                 subscriber => {
                   const managedSubscriberId =
-                    subscriber.billing_id ||
-                    (
-                      subscriber.id &&
-                      !String(
-                        subscriber.id
-                      ).startsWith(
-                        'mikrotik-'
-                      )
-                        ? subscriber.id
-                        : null
-                    );
+                    subscriberType ===
+                    'hotspot'
+                      ? (
+                          subscriber
+                            .hotspot_subscriber_id ||
+                          null
+                        )
+                      : (
+                          subscriber.billing_id ||
+                          (
+                            subscriber.id &&
+                            !String(
+                              subscriber.id
+                            ).startsWith(
+                              'mikrotik-'
+                            )
+                              ? subscriber.id
+                              : null
+                          )
+                        );
 
                   const canManage =
                     subscriberType ===
@@ -1150,12 +1479,12 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                     >
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-3">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-violet-100 text-xs font-black text-violet-700">
+                          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-violet-100 text-[10px] font-black text-violet-700">
                             {initials}
                           </div>
 
                           <div>
-                            <div className="font-bold text-slate-800">
+                            <div className="text-xs font-bold text-slate-800">
                               {
                                 subscriber.full_name
                               }
@@ -1165,7 +1494,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                         </div>
                       </td>
 
-                      <td className="px-3 py-3 text-sm text-slate-600">
+                      <td className="px-3 py-2 text-xs text-slate-600">
                         <span className="rounded-lg bg-violet-50 px-2.5 py-1 text-xs font-bold text-violet-700">
                           {
                             subscriber.plan_name ||
@@ -1174,20 +1503,22 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                         </span>
                       </td>
 
-                      <td className="px-3 py-4 text-sm text-slate-600">
+                      <td className="px-3 py-2 text-xs text-slate-600">
                         <div>
                           {subscriber.account_number ||
                             subscriber.phone ||
                             'No payment phone'}
                         </div>
+                      </td>
 
-                        <div className="mt-1 text-[10px] font-semibold text-violet-500">
+                      <td className="px-3 py-2">
+                        <div className="text-[11px] font-bold text-slate-700">
                           {subscriber.router_name ||
-                            'MikroTik'}
+                            'Unassigned'}
                         </div>
                       </td>
 
-                      <td className="px-3 py-3">
+                      <td className="px-3 py-2">
                         <span
                           className={`rounded-full px-2.5 py-1 text-[10px] font-extrabold uppercase ${
                             isExpired(
@@ -1209,7 +1540,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                         </span>
                       </td>
 
-                      <td className="relative px-4 py-4 text-right">
+                      <td className="relative z-20 px-3 py-2 text-right">
 
                         <button
                           type="button"
@@ -1229,7 +1560,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                                 : subscriber.id
                             );
                           }}
-                          className="inline-flex h-9 w-9 items-center justify-center rounded-xl text-xl font-black text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
+                          className="inline-flex h-7 w-7 items-center justify-center rounded-lg text-lg font-black text-slate-500 transition hover:bg-slate-100 hover:text-slate-900"
                         >
                           ⋮
                         </button>
@@ -1238,7 +1569,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                         {menuId ===
                           subscriber.id && (
                           <div
-                            className="absolute right-3 top-12 z-50 w-48 overflow-hidden rounded-2xl border border-slate-200 bg-white py-1.5 text-left shadow-2xl shadow-slate-300/50"
+                            className="pointer-events-auto absolute right-2 top-10 z-[100] w-44 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-left shadow-2xl shadow-slate-300/50"
                             onClick={event =>
                               event.stopPropagation()
                             }
@@ -1263,7 +1594,10 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               className="flex w-full items-center justify-between px-4 py-2.5 text-[10px] font-black text-amber-700 transition hover:bg-amber-50 disabled:cursor-not-allowed disabled:opacity-45"
                             >
                               <span>
-                                Suspend
+                                {subscriber.service_status ===
+                                  'suspended'
+                                  ? 'Resume'
+                                  : 'Suspend'}
                               </span>
 
                               <span>
@@ -1305,7 +1639,11 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
                               type="button"
                               disabled={
                                 !canManage ||
-                                !subscriber.radius_username
+                                (
+                                  subscriberType !==
+                                    'hotspot' &&
+                                  !subscriber.radius_username
+                                )
                               }
                               onClick={() => {
                                 sync(

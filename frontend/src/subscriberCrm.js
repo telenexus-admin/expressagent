@@ -1,10 +1,6 @@
+import { csrfToken } from './utils/api';
 const apiRoot = '/api/billing-workspace';
 const cash = (value) => `KSh ${Number(value || 0).toLocaleString()}`;
-const authHeaders = () => {
-  const token = sessionStorage.getItem('token') || localStorage.getItem('token');
-  return token ? { Authorization: `Bearer ${token}` } : {};
-};
-
 function shell(content) {
   const host = document.createElement('div');
   host.className = 'billing-crm-overlay';
@@ -19,7 +15,7 @@ function escape(value) { return String(value || '').replace(/[&<>"']/g, (c) => (
 async function openCrm(accountNumber) {
   const host = shell('<div class="billing-crm-loading">Loading client profile…</div>');
   try {
-    const response = await fetch(`${apiRoot}/subscribers/crm?account_number=${encodeURIComponent(accountNumber)}`, { credentials: 'include', headers: authHeaders() });
+    const response = await fetch(`${apiRoot}/subscribers/crm?account_number=${encodeURIComponent(accountNumber)}`, { credentials: 'include' });
     const data = await response.json();
     if (!response.ok) throw new Error(data.error || 'Could not load this client');
     const s = data.subscriber;
@@ -48,7 +44,7 @@ function openAdd() {
   graceInput.placeholder = 'Grace period (days)';
   formElement.insertBefore(packageSelect, submitButton);
   formElement.insertBefore(graceInput, submitButton);
-  fetch(`${apiRoot}/plans`, { credentials: 'include', headers: authHeaders() })
+  fetch(`${apiRoot}/plans`, { credentials: 'include' })
     .then((response) => response.ok ? response.json() : [])
     .then((plans) => plans.forEach((plan) => {
       const option = document.createElement('option');
@@ -57,7 +53,7 @@ function openAdd() {
       packageSelect.appendChild(option);
     }))
     .catch(() => {});
-  host.querySelector('form').onsubmit = async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const body = Object.fromEntries(form.entries()); body.plan_id = body.plan_id || null; body.email = body.email || null; body.phone = body.phone || null; body.grace_period_days = Number(body.grace_period_days || 0); const button = event.currentTarget.querySelector('button'); button.disabled = true; button.textContent = 'Adding…'; const response = await fetch(`${apiRoot}/subscribers`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', ...authHeaders() }, body: JSON.stringify(body) }); const data = await response.json().catch(() => ({})); if (response.ok) { host.remove(); window.location.reload(); } else { button.disabled = false; button.textContent = 'Add client'; let message = host.querySelector('.billing-add-error'); if (!message) { message = document.createElement('p'); message.className = 'billing-add-error'; message.style.cssText = 'color:#dc2626;font-size:12px;margin:4px 0'; event.currentTarget.insertBefore(message, button); } message.textContent = data.error || data.errors?.[0]?.msg || 'Could not add this client.'; } };
+  host.querySelector('form').onsubmit = async (event) => { event.preventDefault(); const form = new FormData(event.currentTarget); const body = Object.fromEntries(form.entries()); body.plan_id = body.plan_id || null; body.email = body.email || null; body.phone = body.phone || null; body.grace_period_days = Number(body.grace_period_days || 0); const button = event.currentTarget.querySelector('button'); button.disabled = true; button.textContent = 'Adding…'; const response = await fetch(`${apiRoot}/subscribers`, { method: 'POST', credentials: 'include', headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrfToken() }, body: JSON.stringify(body) }); const data = await response.json().catch(() => ({})); if (response.ok) { host.remove(); window.location.reload(); } else { button.disabled = false; button.textContent = 'Add client'; let message = host.querySelector('.billing-add-error'); if (!message) { message = document.createElement('p'); message.className = 'billing-add-error'; message.style.cssText = 'color:#dc2626;font-size:12px;margin:4px 0'; event.currentTarget.insertBefore(message, button); } message.textContent = data.error || data.errors?.[0]?.msg || 'Could not add this client.'; } };
 }
 
 export function mountSubscriberCrm() {

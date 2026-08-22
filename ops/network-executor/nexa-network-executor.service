@@ -1,0 +1,43 @@
+[Unit]
+Description=POLYIZON narrowly scoped WireGuard executor
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+Group=nexa-netexec
+Environment=NEXA_WG_INTERFACE=wg0
+Environment=NEXA_WG_SUBNET_PREFIX=10.77.0.
+Environment=NEXA_NETWORK_EXECUTOR_SOCKET=/run/nexa-network-executor/control.sock
+RuntimeDirectory=nexa-network-executor
+RuntimeDirectoryMode=0750
+ExecStart=/opt/node-v24.19.0-linux-x64/bin/node /usr/local/lib/nexa-network-executor/nexa-network-executor.js
+Restart=on-failure
+RestartSec=2
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ReadWritePaths=/etc/wireguard /run/nexa-network-executor
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RemoveIPC=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

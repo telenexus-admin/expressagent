@@ -1,7 +1,10 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const cookieParser = require('cookie-parser');
+const helmet = require('helmet');
 const db = require('./db');
+const { onboardingLimiter, publicWriteLimiter, portalLoginLimiter } = require('./security/rateLimits');
 
 const authRoutes = require('./routes/auth');
 const conversationRoutes = require('./routes/conversations');
@@ -33,6 +36,8 @@ const nocRoutes = require('./routes/noc');
 const tr069Routes = require('./routes/tr069');
 const aiTaskRoutes = require('./routes/aiTasks');
 const nexaKnowledgeRoutes = require('./routes/nexaKnowledge');
+const nexaActionsRoutes = require('./routes/nexaActions');
+const vapiNexaRoutes = require('./routes/vapiNexa');
 const incidentCommanderRoutes = require('./routes/incidentCommander');
 const networkAgentRoutes = require('./routes/networkAgent');
 const networkAutomationRoutes = require('./routes/networkAutomation');
@@ -82,6 +87,19 @@ const {
 } = require('./services/hotspotSubscriberAccess');
 
 const app = express();
+app.set('trust proxy', 1);
+app.disable('x-powered-by');
+app.use(helmet({
+  contentSecurityPolicy: false,
+  crossOriginEmbedderPolicy: false,
+  crossOriginResourcePolicy: false,
+  referrerPolicy: { policy: 'no-referrer' },
+  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
+}));
+app.use(cookieParser());
+
+const writeOnly = (limiter) => (req, res, next) =>
+  ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : limiter(req, res, next);
 
 const tenantCorsCache = new Map();
 const TENANT_CORS_CACHE_MS = 60 * 1000;
@@ -147,16 +165,16 @@ app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);
 
 app.use(express.json({ limit: '12mb' }));
-app.use('/api/public/evo-onboarding', evoSelfOnboardingRoutes);
-app.use('/api/public/customer-intake', customerIntakeRoutes);
-app.use('/api/public/relocation-request', relocationRequestRoutes);
-app.use('/api/public/installation-work-orders', installationWorkOrderRoutes);
+app.use('/api/public/evo-onboarding', writeOnly(publicWriteLimiter), evoSelfOnboardingRoutes);
+app.use('/api/public/customer-intake', writeOnly(publicWriteLimiter), customerIntakeRoutes);
+app.use('/api/public/relocation-request', writeOnly(publicWriteLimiter), relocationRequestRoutes);
+app.use('/api/public/installation-work-orders', writeOnly(publicWriteLimiter), installationWorkOrderRoutes);
 app.use('/api/public/payhero', payheroRoutes);
 app.use('/api/public/site-chat', siteChatRoutes);
 app.use('/api/public/noc', publicNocRoutes);
-app.use('/api/public/mikrotik', mikrotikOnboardingPublicRoutes);
-app.use('/api/public/hotspot', hotspotPortalRoutes);
-app.use('/api/pppoe-portal', pppoePortalRoutes.portalRouter);
+app.use('/api/public/mikrotik', onboardingLimiter, mikrotikOnboardingPublicRoutes);
+app.use('/api/public/hotspot', writeOnly(portalLoginLimiter), hotspotPortalRoutes);
+app.use('/api/pppoe-portal', writeOnly(portalLoginLimiter), pppoePortalRoutes.portalRouter);
 app.get('/api/public/invoices/:token', invoiceRoutes.publicInvoiceHandler);
 app.use('/api/auth', authRoutes);
 app.use('/api/conversations', conversationRoutes);
@@ -189,7 +207,9 @@ app.use('/api/mikrotik', mikrotikRoutes);
 app.use('/api/noc', nocRoutes);
 app.use('/api/tr069', tr069Routes);
 app.use('/api/ai-tasks', aiTaskRoutes);
+app.use('/api/public/vapi', vapiNexaRoutes);
 app.use('/api/nexa-knowledge', nexaKnowledgeRoutes);
+app.use('/api/nexa-actions', nexaActionsRoutes);
 app.use('/api/incident-commander', incidentCommanderRoutes);
 app.use('/api/network-agent', networkAgentRoutes);
 app.use('/api/network-agent', networkAutomationRoutes);

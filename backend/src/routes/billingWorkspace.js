@@ -4,7 +4,11 @@ const net = require('net');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
-const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, syncHotspotVoucherRadius, syncSubscriberRadius } = require('../services/radiusSync');
+const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, revokeHotspotRadiusAccess, syncHotspotVoucherRadius, syncSubscriberRadius } = require('../services/radiusSync');
+const {
+  activatePaidHotspotDevice,
+  revokeHotspotDeviceAccess,
+} = require('../services/hotspotMacAccess');
 const { enqueueRadiusSyncJob, processRadiusSyncJobs } = require('../services/radiusJobs');
 const {
   ensureMikrotikTables,
@@ -497,6 +501,716 @@ router.post('/plans', [
     client.release();
   }
 });
+
+
+/* managed-hotspot-subscriber-actions */
+
+async function loadManagedHotspotSubscriber(
+  clientId,
+  subscriberId
+) {
+  const result = await db.query(
+    `SELECT
+       subscriber.*,
+
+       voucher.code
+         AS voucher_code,
+
+       voucher.status
+         AS voucher_status,
+
+       voucher.expires_at
+         AS voucher_expires_at,
+
+       fulfillment.ip_address,
+
+       plan.mikrotik_rate_limit,
+       plan.data_limit_mb,
+       plan.fup_enabled,
+       plan.fup_threshold_mb,
+       plan.fup_download_speed_mbps,
+       plan.fup_upload_speed_mbps,
+
+       COALESCE(
+         subscriber.router_id,
+         plan.router_id
+       ) AS effective_router_id
+
+     FROM billing_hotspot_subscribers
+       subscriber
+
+     LEFT JOIN billing_hotspot_vouchers
+       voucher
+       ON voucher.id =
+            subscriber.voucher_id
+      AND voucher.client_id =
+            subscriber.client_id
+
+     LEFT JOIN hotspot_payment_fulfillments
+       fulfillment
+       ON fulfillment.payment_request_id =
+            subscriber.payment_request_id
+      AND fulfillment.client_id =
+            subscriber.client_id
+
+     LEFT JOIN billing_hotspot_plans
+       plan
+       ON plan.id =
+            subscriber.plan_id
+      AND plan.client_id =
+            subscriber.client_id
+
+     WHERE subscriber.id = $1
+       AND subscriber.client_id = $2
+
+     LIMIT 1`,
+    [
+      subscriberId,
+      clientId,
+    ]
+  );
+
+  return result.rows[0] || null;
+}
+
+
+async function syncManagedHotspotSubscriber(
+  subscriber
+) {
+  if (
+    !subscriber.voucher_id ||
+    !subscriber.voucher_code
+  ) {
+    throw new Error(
+      'This hotspot subscriber has no active voucher'
+    );
+  }
+
+  const expiresAt =
+    subscriber.expires_at ||
+    subscriber.voucher_expires_at;
+
+  if (
+    !expiresAt ||
+    new Date(expiresAt) <= new Date()
+  ) {
+    throw new Error(
+      'This hotspot package has expired. Extend it first.'
+    );
+  }
+
+  const radius = await syncHotspotVoucherRadius({
+    id:
+      subscriber.voucher_id,
+
+    client_id:
+      subscriber.client_id,
+
+    plan_id:
+      subscriber.plan_id,
+
+    code:
+      subscriber.voucher_code,
+
+    status:
+      'active',
+
+    expires_at:
+      expiresAt,
+
+    mikrotik_rate_limit:
+      subscriber.mikrotik_rate_limit,
+
+    data_limit_mb:
+      subscriber.data_limit_mb,
+
+    fup_enabled:
+      subscriber.fup_enabled,
+
+    fup_threshold_mb:
+      subscriber.fup_threshold_mb,
+
+    fup_download_speed_mbps:
+      subscriber.fup_download_speed_mbps,
+
+    fup_upload_speed_mbps:
+      subscriber.fup_upload_speed_mbps,
+  });
+
+  if (
+    radius.status &&
+    radius.status !== 'synced'
+  ) {
+    throw new Error(
+      'RADIUS did not synchronize this hotspot subscriber'
+    );
+  }
+
+  await db.query(
+    `UPDATE billing_hotspot_vouchers
+     SET status = 'active'
+     WHERE id = $1
+       AND client_id = $2
+       AND expires_at > NOW()`,
+    [subscriber.voucher_id, subscriber.client_id]
+  );
+
+  let device = null;
+
+  if (subscriber.current_mac) {
+    device = await activatePaidHotspotDevice({
+      clientId:
+        subscriber.client_id,
+
+      routerId:
+        subscriber.effective_router_id ||
+        null,
+
+      macAddress:
+        subscriber.current_mac,
+
+      ipAddress:
+        subscriber.ip_address ||
+        '',
+
+      expiresAt,
+
+      rateLimit:
+        subscriber.mikrotik_rate_limit ||
+        null,
+
+      dataLimitMb:
+        subscriber.data_limit_mb ||
+        null,
+    });
+  }
+
+  await db.query(
+    `UPDATE billing_hotspot_subscribers
+     SET status = 'active',
+
+         device_activation_status =
+           COALESCE(
+             $3,
+             device_activation_status
+           ),
+
+         router_id =
+           COALESCE(
+             router_id,
+             $4
+           ),
+
+         updated_at = NOW()
+
+     WHERE id = $1
+       AND client_id = $2`,
+    [
+      subscriber.id,
+      subscriber.client_id,
+      device?.status || null,
+      subscriber.effective_router_id ||
+        null,
+    ]
+  );
+
+  return {
+    radius,
+    device,
+  };
+}
+
+
+router.patch(
+  '/hotspot/subscribers/:id',
+  [
+    body('service_status')
+      .isIn([
+        'active',
+        'suspended',
+      ]),
+  ],
+  async (req, res) => {
+    const errors =
+      validationResult(req);
+
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        errors:
+          errors.array(),
+      });
+    }
+
+    try {
+      const subscriber =
+        await loadManagedHotspotSubscriber(
+          req.scope.clientId,
+          req.params.id
+        );
+
+      if (!subscriber) {
+        return res.status(404).json({
+          error:
+            'Hotspot subscriber not found',
+        });
+      }
+
+      if (
+        req.body.service_status ===
+        'suspended'
+      ) {
+        await revokeHotspotRadiusAccess({
+          macAddress:
+            subscriber.current_mac ||
+            null,
+
+          voucherCode:
+            subscriber.voucher_code ||
+            null,
+        });
+
+        if (subscriber.current_mac) {
+          await revokeHotspotDeviceAccess({
+            clientId:
+              subscriber.client_id,
+
+            routerId:
+              subscriber.effective_router_id ||
+              null,
+
+            macAddress:
+              subscriber.current_mac,
+
+            ipAddress:
+              subscriber.ip_address ||
+              '',
+          });
+        }
+
+        if (subscriber.voucher_id) {
+          await db.query(
+            `UPDATE billing_hotspot_vouchers
+             SET status = 'suspended'
+             WHERE id = $1
+               AND client_id = $2`,
+            [subscriber.voucher_id, subscriber.client_id]
+          );
+        }
+
+        const updated =
+          await db.query(
+            `UPDATE billing_hotspot_subscribers
+             SET status = 'suspended',
+                 device_activation_status =
+                   'suspended',
+                 updated_at = NOW()
+             WHERE id = $1
+               AND client_id = $2
+             RETURNING *`,
+            [
+              subscriber.id,
+              subscriber.client_id,
+            ]
+          );
+
+        return res.json(
+          updated.rows[0]
+        );
+      }
+
+      await syncManagedHotspotSubscriber(
+        subscriber
+      );
+
+      const refreshed =
+        await loadManagedHotspotSubscriber(
+          req.scope.clientId,
+          req.params.id
+        );
+
+      return res.json(
+        refreshed
+      );
+
+    } catch (error) {
+      console.error(
+        'Hotspot subscriber status error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        error:
+          error.message ||
+          'Could not update hotspot subscriber',
+      });
+    }
+  }
+);
+
+
+router.post(
+  '/hotspot/subscribers/:id/extend',
+  [
+    body('days')
+      .isInt({
+        min: 1,
+        max: 365,
+      }),
+  ],
+  async (req, res) => {
+    const errors =
+      validationResult(req);
+
+    if (!errors.isEmpty()) {
+      return res.status(400).json({
+        errors:
+          errors.array(),
+      });
+    }
+
+    const connection =
+      await db.connect();
+
+    try {
+      await connection.query(
+        'BEGIN'
+      );
+
+      const result =
+        await connection.query(
+          `SELECT *
+           FROM billing_hotspot_subscribers
+           WHERE id = $1
+             AND client_id = $2
+           FOR UPDATE`,
+          [
+            req.params.id,
+            req.scope.clientId,
+          ]
+        );
+
+      const subscriber =
+        result.rows[0];
+
+      if (!subscriber) {
+        await connection.query(
+          'ROLLBACK'
+        );
+
+        return res.status(404).json({
+          error:
+            'Hotspot subscriber not found',
+        });
+      }
+
+      if (!subscriber.voucher_id) {
+        await connection.query(
+          'ROLLBACK'
+        );
+
+        return res.status(400).json({
+          error:
+            'This hotspot subscriber has no voucher to extend',
+        });
+      }
+
+      const voucherResult =
+        await connection.query(
+          `UPDATE billing_hotspot_vouchers
+           SET expires_at =
+                 GREATEST(
+                   COALESCE(
+                     expires_at,
+                     NOW()
+                   ),
+                   NOW()
+                 ) +
+                 (
+                   $3::int *
+                   INTERVAL '1 day'
+                 ),
+
+               status = 'active'
+
+           WHERE id = $1
+             AND client_id = $2
+
+           RETURNING expires_at`,
+          [
+            subscriber.voucher_id,
+            req.scope.clientId,
+            Number(req.body.days),
+          ]
+        );
+
+      const expiresAt =
+        voucherResult.rows[0]
+          ?.expires_at;
+
+      if (!expiresAt) {
+        throw new Error(
+          'Could not extend hotspot voucher'
+        );
+      }
+
+      await connection.query(
+        `UPDATE billing_hotspot_subscribers
+         SET expires_at = $3,
+             status = 'active',
+             cleanup_completed_at = NULL,
+             cleanup_error = NULL,
+             updated_at = NOW()
+         WHERE id = $1
+           AND client_id = $2`,
+        [
+          subscriber.id,
+          req.scope.clientId,
+          expiresAt,
+        ]
+      );
+
+      await connection.query(
+        'COMMIT'
+      );
+
+      const refreshed =
+        await loadManagedHotspotSubscriber(
+          req.scope.clientId,
+          req.params.id
+        );
+
+      const syncResult =
+        await syncManagedHotspotSubscriber(
+          refreshed
+        );
+
+      return res.json({
+        ...refreshed,
+        expires_at:
+          expiresAt,
+
+        radius_status:
+          syncResult.radius?.status ||
+          null,
+
+        device_activation_status:
+          syncResult.device?.status ||
+          refreshed
+            ?.device_activation_status ||
+          null,
+      });
+
+    } catch (error) {
+      try {
+        await connection.query(
+          'ROLLBACK'
+        );
+      } catch (_) {}
+
+      console.error(
+        'Extend hotspot subscriber error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        error:
+          error.message ||
+          'Could not extend hotspot subscriber',
+      });
+
+    } finally {
+      connection.release();
+    }
+  }
+);
+
+
+router.post(
+  '/hotspot/subscribers/:id/sync',
+  async (req, res) => {
+    try {
+      const subscriber =
+        await loadManagedHotspotSubscriber(
+          req.scope.clientId,
+          req.params.id
+        );
+
+      if (!subscriber) {
+        return res.status(404).json({
+          error:
+            'Hotspot subscriber not found',
+        });
+      }
+
+      const result =
+        await syncManagedHotspotSubscriber(
+          subscriber
+        );
+
+      return res.json({
+        success: true,
+        radius_status:
+          result.radius?.status ||
+          null,
+        device_activation_status:
+          result.device?.status ||
+          null,
+      });
+
+    } catch (error) {
+      console.error(
+        'Sync hotspot subscriber error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        error:
+          error.message ||
+          'Could not synchronize hotspot subscriber',
+      });
+    }
+  }
+);
+
+
+router.delete(
+  '/hotspot/subscribers/:id',
+  async (req, res) => {
+    try {
+      const subscriber =
+        await loadManagedHotspotSubscriber(
+          req.scope.clientId,
+          req.params.id
+        );
+
+      if (!subscriber) {
+        return res.status(404).json({
+          error:
+            'Hotspot subscriber not found',
+        });
+      }
+
+      await revokeHotspotRadiusAccess({
+        macAddress:
+          subscriber.current_mac ||
+          null,
+
+        voucherCode:
+          subscriber.voucher_code ||
+          null,
+      }).catch(() => {});
+
+      if (subscriber.current_mac) {
+        await revokeHotspotDeviceAccess({
+          clientId:
+            subscriber.client_id,
+
+          routerId:
+            subscriber.effective_router_id ||
+            null,
+
+          macAddress:
+            subscriber.current_mac,
+
+          ipAddress:
+            subscriber.ip_address ||
+            '',
+        }).catch(() => {});
+      }
+
+      const client =
+        await db.connect();
+
+      try {
+        await client.query(
+          'BEGIN'
+        );
+
+        if (subscriber.voucher_id) {
+          await client.query(
+            `UPDATE billing_hotspot_vouchers
+             SET status = 'expired',
+                 expires_at =
+                   LEAST(
+                     COALESCE(
+                       expires_at,
+                       NOW()
+                     ),
+                     NOW()
+                   )
+             WHERE id = $1
+               AND client_id = $2`,
+            [
+              subscriber.voucher_id,
+              subscriber.client_id,
+            ]
+          );
+        }
+
+        if (
+          subscriber.payment_request_id
+        ) {
+          await client.query(
+            `UPDATE hotspot_payment_fulfillments
+             SET device_activation_status =
+                   'deleted',
+                 updated_at = NOW()
+             WHERE payment_request_id = $1
+               AND client_id = $2`,
+            [
+              subscriber.payment_request_id,
+              subscriber.client_id,
+            ]
+          );
+        }
+
+        await client.query(
+          `DELETE FROM
+             billing_hotspot_subscribers
+           WHERE id = $1
+             AND client_id = $2`,
+          [
+            subscriber.id,
+            subscriber.client_id,
+          ]
+        );
+
+        await client.query(
+          'COMMIT'
+        );
+
+      } catch (error) {
+        try {
+          await client.query(
+            'ROLLBACK'
+          );
+        } catch (_) {}
+
+        throw error;
+
+      } finally {
+        client.release();
+      }
+
+      return res.json({
+        success: true,
+      });
+
+    } catch (error) {
+      console.error(
+        'Delete hotspot subscriber error:',
+        error.message
+      );
+
+      return res.status(400).json({
+        error:
+          error.message ||
+          'Could not remove hotspot subscriber',
+      });
+    }
+  }
+);
+
 
 router.get('/subscribers', async (req, res) => {
   const result = await db.query(

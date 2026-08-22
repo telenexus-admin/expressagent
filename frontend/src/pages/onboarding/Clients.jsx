@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import api from '../../utils/api';
+import { isStrongAdminPassword, adminPasswordHelp } from '../../utils/passwordPolicy';
 
 const STATUS_STYLES = {
   active: 'bg-emerald-50 text-emerald-700',
@@ -117,8 +118,8 @@ export default function Clients() {
         return;
       }
     }
-    if (form.admin_password.length < 8) {
-      setFormError('Admin password must be at least 8 characters');
+    if (!isStrongAdminPassword(form.admin_password)) {
+      setFormError(adminPasswordHelp);
       return;
     }
 
@@ -166,20 +167,11 @@ export default function Clients() {
   };
 
   const openClientDashboard = async (client) => {
-    const tab = window.open('about:blank', '_blank');
     setAccessingClientId(client.id);
     try {
-      const { data } = await api.post(`/clients/${client.id}/operator-access`);
-      const encodedAdmin = window.btoa(unescape(encodeURIComponent(JSON.stringify(data.admin))));
-      const url = `/client-access?token=${encodeURIComponent(data.token)}&admin=${encodeURIComponent(encodedAdmin)}&next=${encodeURIComponent('/dashboard/agent')}`;
-      if (tab) {
-        tab.opener = null;
-        tab.location.href = url;
-      } else {
-        window.location.href = url;
-      }
+      await api.post(`/operator-access/${client.id}`);
+      window.location.assign('/dashboard/agent');
     } catch (err) {
-      if (tab) tab.close();
       alert(err.response?.data?.error || 'Failed to open client dashboard');
     } finally {
       setAccessingClientId(null);

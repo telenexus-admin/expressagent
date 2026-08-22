@@ -236,7 +236,7 @@ function normalizeConfig(input = {}, discovery = {}) {
   const config = {
     ...DEFAULTS,
     ...input,
-    mode: 'both',
+    mode: String(input.mode || 'both').trim().toLowerCase(),
     wan_interface:
       input.wan_interface ||
       discovery.wan_interface ||
@@ -249,6 +249,8 @@ function normalizeConfig(input = {}, discovery = {}) {
     wireless_ssid: String(input.wireless_ssid || '').trim(),
   };
 
+  if (!['hotspot', 'pppoe', 'both'].includes(config.mode)) throw new Error('Service mode must be Hotspot, PPPoE, or both');
+
   config.wan_interface = cleanName(
     config.wan_interface,
     'WAN interface'
@@ -257,32 +259,17 @@ function normalizeConfig(input = {}, discovery = {}) {
     config.subscriber_bridge,
     'Subscriber bridge'
   );
-  config.hotspot_gateway = validateCidr(
-    config.hotspot_gateway,
-    'Hotspot gateway'
-  );
-  config.hotspot_pool = validatePool(
-    config.hotspot_pool,
-    'Hotspot pool'
-  );
-  config.pppoe_local_address = String(
-    config.pppoe_local_address || ''
-  ).trim();
-  if (!ipv4(config.pppoe_local_address)) {
-    throw new Error('PPPoE local address must be a valid IPv4 address');
+  if (config.mode === 'hotspot' || config.mode === 'both') {
+    config.hotspot_gateway = validateCidr(config.hotspot_gateway, 'Hotspot gateway');
+    config.hotspot_pool = validatePool(config.hotspot_pool, 'Hotspot pool');
+    config.hotspot_dns_name = cleanName(config.hotspot_dns_name, 'Hotspot DNS name').toLowerCase();
   }
-  config.pppoe_pool = validatePool(
-    config.pppoe_pool,
-    'PPPoE pool'
-  );
-  config.hotspot_dns_name = cleanName(
-    config.hotspot_dns_name,
-    'Hotspot DNS name'
-  ).toLowerCase();
-  config.pppoe_service_name = cleanName(
-    config.pppoe_service_name,
-    'PPPoE service name'
-  );
+  if (config.mode === 'pppoe' || config.mode === 'both') {
+    config.pppoe_local_address = String(config.pppoe_local_address || '').trim();
+    if (!ipv4(config.pppoe_local_address)) throw new Error('PPPoE local address must be a valid IPv4 address');
+    config.pppoe_pool = validatePool(config.pppoe_pool, 'PPPoE pool');
+    config.pppoe_service_name = cleanName(config.pppoe_service_name, 'PPPoE service name');
+  }
   config.radius_host = String(config.radius_host || '').trim();
   if (!ipv4(config.radius_host)) {
     throw new Error('RADIUS WireGuard host must be an IPv4 address');
@@ -318,6 +305,7 @@ function normalizeConfig(input = {}, discovery = {}) {
   }
 
   if (config.wireless_interface || config.wireless_ssid) {
+    if (config.mode === 'pppoe') throw new Error('Wi-Fi access-point setup is available only when Hotspot is selected');
     if (!config.wireless_interface || !config.wireless_ssid) {
       throw new Error('Select a WLAN interface and enter its Wi-Fi network name');
     }
@@ -348,19 +336,19 @@ function normalizeConfig(input = {}, discovery = {}) {
 }
 
 function buildStages(config) {
+  const hasHotspot = config.mode === 'hotspot' || config.mode === 'both';
+  const hasPppoe = config.mode === 'pppoe' || config.mode === 'both';
   return [
     ['backup', 'Create a RouterOS safety backup'],
-    ['bridge', `Create ${config.subscriber_bridge}`],
+    ['bridge', 'Create ' + config.subscriber_bridge],
     ['ports', 'Move selected LAN ports to the subscriber bridge'],
     ...(config.wireless_interface ? [['wireless', 'Configure ' + config.wireless_interface + ' as Wi-Fi ' + config.wireless_ssid]] : []),
-    ['hotspot-address', 'Install the Hotspot gateway address'],
-    ['hotspot-dhcp', 'Create Hotspot DHCP pool, network and server'],
-    ['hotspot', 'Create the Hotspot profile and server'],
-    ['pppoe', 'Create the PPPoE pool, profile and server'],
+    ...(hasHotspot ? [['hotspot-address', 'Install the Hotspot gateway address'], ['hotspot-dhcp', 'Create Hotspot DHCP pool, network and server'], ['hotspot', 'Create the Hotspot profile and server']] : []),
+    ...(hasPppoe ? [['pppoe', 'Create the PPPoE pool, profile and server']] : []),
     ['radius', 'Register and configure RADIUS authentication'],
-    ['portal', 'Install the signed Nexa captive portal'],
-    ['nat', `Enable subscriber internet through ${config.wan_interface}`],
-    ['validation', 'Validate Hotspot, PPPoE, RADIUS and portal services'],
+    ...(hasHotspot ? [['portal', 'Install the signed Nexa captive portal']] : []),
+    ['nat', 'Enable subscriber internet through ' + config.wan_interface],
+    ['validation', hasHotspot && hasPppoe ? 'Validate Hotspot, PPPoE, RADIUS and portal services' : hasHotspot ? 'Validate Hotspot, RADIUS and portal services' : 'Validate PPPoE and RADIUS services'],
   ].map(([stage, label]) => ({ stage, label }));
 }
 
@@ -388,21 +376,24 @@ function preflight(config, discovery) {
     blockers.push(error.message);
   }
 
-  const gatewayPrefix = subnetPrefix(config.hotspot_gateway);
-  const pppoePrefix = subnetPrefix(config.pppoe_local_address);
+  const gatewayPrefix = config.mode === 'hotspot' || config.mode === 'both' ? subnetPrefix(config.hotspot_gateway) : null;
+  const pppoePrefix = config.mode === 'pppoe' || config.mode === 'both' ? subnetPrefix(config.pppoe_local_address) : null;
   const conflicts = (discovery.addresses || []).filter((item) => {
     const address = String(item.address || '');
     const managed = String(item.comment || '').startsWith('NEXA managed');
-    return (
-      !managed &&
-      (address.startsWith(`${gatewayPrefix}.`) ||
-        address.startsWith(`${pppoePrefix}.`))
+    const selectedHotspotGateway =
+      gatewayPrefix &&
+      address === config.hotspot_gateway &&
+      String(item.interface || '') === config.subscriber_bridge;
+    return !managed && !selectedHotspotGateway && (
+      (gatewayPrefix && address.startsWith(`${gatewayPrefix}.`)) ||
+      (pppoePrefix && address.startsWith(`${pppoePrefix}.`))
     );
   });
 
   if (conflicts.length) {
     blockers.push(
-      `The proposed 10.20.0.0/24 or 10.30.0.0/24 network conflicts with ${conflicts
+      `A proposed subscriber network conflicts with ${conflicts
         .map((item) => `${item.address} on ${item.interface}`)
         .join(', ')}`
     );
@@ -416,7 +407,7 @@ function preflight(config, discovery) {
     (item) =>
       !String(item.comment || '').startsWith('NEXA managed')
   );
-  if (foreignHotspot.length || foreignPppoe.length) {
+  if ((gatewayPrefix && foreignHotspot.length) || (pppoePrefix && foreignPppoe.length)) {
     warnings.push(
       'Existing non-Nexa Hotspot or PPPoE services were detected and will be left unchanged'
     );
@@ -836,8 +827,10 @@ async function configureRouter({
     clientId,
     Number(router.id)
   );
-  const hotspotGatewayIp = stripCidr(config.hotspot_gateway);
-  const hotspotNetwork = `${subnetPrefix(config.hotspot_gateway)}.0/24`;
+  const hasHotspot = config.mode === 'hotspot' || config.mode === 'both';
+  const hasPppoe = config.mode === 'pppoe' || config.mode === 'both';
+  const hotspotGatewayIp = hasHotspot ? stripCidr(config.hotspot_gateway) : '';
+  const hotspotNetwork = hasHotspot ? `${subnetPrefix(config.hotspot_gateway)}.0/24` : '';
 
   await ensureResource({
     client,
@@ -858,6 +851,7 @@ async function configureRouter({
   await ensureBridgePorts(client, config, record);
   await configureLegacyWireless(client, config, record);
 
+  if (hasHotspot) {
   await ensureResource({
     client,
     printPath: '/ip/address/print',
@@ -978,7 +972,9 @@ async function configureRouter({
     stage: 'hotspot',
     record,
   });
+  }
 
+  if (hasPppoe) {
   await ensureResource({
     client,
     printPath: '/ip/pool/print',
@@ -1034,6 +1030,7 @@ async function configureRouter({
     stage: 'pppoe',
     record,
   });
+  }
 
   const peers = await routerRows(
     client,
@@ -1066,7 +1063,7 @@ async function configureRouter({
       item.comment === 'NEXA managed RADIUS' ||
       item.address === config.radius_host,
     attrs: {
-      service: 'hotspot,ppp',
+      service: hasHotspot && hasPppoe ? 'hotspot,ppp' : hasHotspot ? 'hotspot' : 'ppp',
       address: config.radius_host,
       secret: credential.secret,
       'authentication-port': String(config.radius_auth_port),
@@ -1086,6 +1083,7 @@ async function configureRouter({
     'interim-update': '1m',
   });
 
+  if (hasHotspot) {
   await ensureResource({
     client,
     printPath: '/ip/hotspot/walled-garden/print',
@@ -1112,6 +1110,7 @@ async function configureRouter({
     bootstrapToken,
     record
   );
+  }
 
   await ensureResource({
     client,
@@ -1141,80 +1140,27 @@ async function configureRouter({
 }
 
 async function validateRouter(client, config) {
+  const hasHotspot = config.mode === 'hotspot' || config.mode === 'both';
+  const hasPppoe = config.mode === 'pppoe' || config.mode === 'both';
   const bridges = await routerRows(client, '/interface/bridge/print');
   const addresses = await routerRows(client, '/ip/address/print');
   const dhcp = await routerRows(client, '/ip/dhcp-server/print');
   const hotspots = await routerRows(client, '/ip/hotspot/print');
-  const pppoe = await routerRows(
-    client,
-    '/interface/pppoe-server/server/print'
-  );
+  const pppoe = await routerRows(client, '/interface/pppoe-server/server/print');
   const radius = await routerRows(client, '/radius/print');
   const files = await routerRows(client, '/file/print');
   const nat = await routerRows(client, '/ip/firewall/nat/print');
-  const wireless = config.wireless_interface
-    ? await routerRows(client, '/interface/wireless/print')
-    : [];
-
+  const wireless = config.wireless_interface ? await routerRows(client, '/interface/wireless/print') : [];
   const validation = {
-    wireless: !config.wireless_interface || wireless.some(
-      (item) => String(item.name || '') === config.wireless_interface &&
-        String(item.ssid || '') === config.wireless_ssid &&
-        String(item.mode || '') === 'ap-bridge' && !bool(item.disabled)
-    ),
-    bridge: bridges.some(
-      (item) => item.name === config.subscriber_bridge
-    ),
-    hotspot_gateway: addresses.some(
-      (item) =>
-        item.comment ===
-          'NEXA managed hotspot gateway' ||
-        (
-          item.address ===
-            config.hotspot_gateway &&
-          item.interface ===
-            config.subscriber_bridge
-        )
-    ),
-    dhcp: dhcp.some((item) => item.name === 'NEXA-HOTSPOT-DHCP'),
-    hotspot: hotspots.some((item) => item.name === 'NEXA-HOTSPOT'),
-    pppoe: pppoe.some(
-      (item) =>
-        item.comment ===
-          'NEXA managed PPPoE server' ||
-        item['service-name'] ===
-          config.pppoe_service_name
-    ),
-    radius: radius.some(
-      (item) =>
-        item.comment ===
-          'NEXA managed RADIUS' ||
-        item.address === config.radius_host
-    ),
-    portal: files.some(
-      (item) => item.name === 'nexa-hotspot/login.html'
-    ),
-    nat: nat.some(
-      (item) =>
-        item.comment ===
-          'NEXA managed subscriber NAT' ||
-        (
-          item.chain === 'srcnat' &&
-          item.action === 'masquerade' &&
-          item['out-interface'] ===
-            config.wan_interface
-        )
-    ),
+    wireless: !config.wireless_interface || wireless.some((item) => String(item.name || '') === config.wireless_interface && String(item.ssid || '') === config.wireless_ssid && String(item.mode || '') === 'ap-bridge' && !bool(item.disabled)),
+    bridge: bridges.some((item) => item.name === config.subscriber_bridge),
+    ...(hasHotspot ? { hotspot_gateway: addresses.some((item) => item.comment === 'NEXA managed hotspot gateway' || (item.address === config.hotspot_gateway && item.interface === config.subscriber_bridge)), dhcp: dhcp.some((item) => item.name === 'NEXA-HOTSPOT-DHCP'), hotspot: hotspots.some((item) => item.name === 'NEXA-HOTSPOT'), portal: files.some((item) => item.name === 'nexa-hotspot/login.html') } : {}),
+    ...(hasPppoe ? { pppoe: pppoe.some((item) => item.comment === 'NEXA managed PPPoE server' || item['service-name'] === config.pppoe_service_name) } : {}),
+    radius: radius.some((item) => item.comment === 'NEXA managed RADIUS' || item.address === config.radius_host),
+    nat: nat.some((item) => item.comment === 'NEXA managed subscriber NAT' || (item.chain === 'srcnat' && item.action === 'masquerade' && item['out-interface'] === config.wan_interface)),
   };
-
-  const missing = Object.entries(validation)
-    .filter(([, value]) => !value)
-    .map(([key]) => key);
-  if (missing.length) {
-    throw new Error(
-      `Provisioning validation failed: ${missing.join(', ')}`
-    );
-  }
+  const missing = Object.entries(validation).filter(([, value]) => !value).map(([key]) => key);
+  if (missing.length) throw new Error('Provisioning validation failed: ' + missing.join(', '));
   return validation;
 }
 
@@ -1241,7 +1187,7 @@ async function previewProvisioning(clientId, routerId, input = {}) {
         host: router.host,
         port: router.port,
       },
-      mode: 'both',
+      mode: config.mode,
       discovery: {
         wan_interface: discovery.wan_interface,
         subscriber_ports: discovery.subscriber_ports,
@@ -1376,13 +1322,13 @@ async function applyProvisioning(clientId, routerId, input = {}) {
       run_id: runId,
       status: 'completed',
       service_status: 'ready',
-      mode: 'both',
+      mode: config.mode,
       backup_name: backupName,
       config,
       steps,
       validation,
       next_test:
-        'Create one Hotspot voucher and one PPPoE subscriber, then connect test devices on the selected LAN ports.',
+        config.mode === 'both' ? 'Create one Hotspot voucher and one PPPoE subscriber, then connect test devices on the selected LAN ports.' : config.mode === 'hotspot' ? 'Create a Hotspot voucher, then connect a test device on the selected LAN ports.' : 'Create a PPPoE subscriber, then connect a PPPoE test device on the selected LAN ports.',
     };
   } catch (error) {
     await db.query(

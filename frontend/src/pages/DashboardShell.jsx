@@ -8,9 +8,12 @@ export default function DashboardShell() {
   const { admin, isImpersonating, returnToOperator } = useAuth();
   const navigate = useNavigate();
 
-  const leaveClientDashboard = () => {
-    if (returnToOperator()) {
+  const leaveClientDashboard = async () => {
+    try {
+      await returnToOperator();
       navigate('/onboarding/client-access', { replace: true });
+    } catch {
+      navigate('/onboarding/login', { replace: true });
     }
   };
 

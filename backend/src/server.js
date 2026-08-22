@@ -209,8 +209,9 @@ app.use((err, _req, res, _next) => {
 });
 
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`WhatsApp Support backend running on port ${PORT}`);
+const HOST = process.env.HOST || '127.0.0.1';
+app.listen(PORT, HOST, () => {
+  console.log(`WhatsApp Support backend running on ${HOST}:${PORT}`);
   console.log(`OpenAI runtime config: ${JSON.stringify(openAIModelSummary())}`);
   billingAgentPortalExtensions.ensureSchema()
     .then(() => console.log('Agent portal extension schema ready.'))

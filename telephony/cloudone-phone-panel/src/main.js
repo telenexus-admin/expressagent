@@ -26,6 +26,9 @@ const state = {
   dialValue: '',
   selectedDid: '',
   error: '',
+  reconnectAttempt: 0,
+  reconnectTimer: null,
+  reconnecting: false,
 };
 
 let timer = null;
@@ -100,6 +103,8 @@ function render() {
       </header>
 
       ${state.error ? `<div class="alert">${escapeHtml(state.error)}<button id="dismissError">×</button></div>` : ''}
+
+      <button id="reconnectPhone" class="text-button">Reconnect phone</button>
 
       <section class="workspace">
         <section class="phone-card">
@@ -228,6 +233,9 @@ function bindUi() {
   document.getElementById('hangupButton')?.addEventListener('click', hangupCall);
   document.getElementById('muteButton')?.addEventListener('click', toggleMute);
   document.getElementById('refreshLogs')?.addEventListener('click', loadLogs);
+  document.getElementById('reconnectPhone')?.addEventListener('click', () => {
+    scheduleReconnect('manual', true);
+  });
 }
 
 function startTimer() {
@@ -394,6 +402,55 @@ async function loadLogs() {
   }
 }
 
+function clearReconnectTimer() {
+  if (state.reconnectTimer) window.clearTimeout(state.reconnectTimer);
+  state.reconnectTimer = null;
+}
+
+async function stopPhone() {
+  const registerer = state.registerer;
+  const userAgent = state.userAgent;
+  state.registerer = null;
+  state.userAgent = null;
+  try {
+    if (registerer && registerer.state === RegistererState.Registered) await registerer.unregister();
+  } catch (error) {
+    console.warn('Nexa phone unregister failed', error);
+  }
+  try {
+    if (userAgent) await userAgent.stop();
+  } catch (error) {
+    console.warn('Nexa phone transport shutdown failed', error);
+  }
+}
+
+function scheduleReconnect(reason = 'connection', immediate = false) {
+  if (state.session || state.reconnectTimer || state.reconnecting) return;
+  clearReconnectTimer();
+  state.reconnectAttempt = immediate ? 0 : Math.min(state.reconnectAttempt + 1, 6);
+  const delay = immediate ? 0 : Math.min(30000, 1000 * (2 ** Math.max(0, state.reconnectAttempt - 1)));
+  state.phoneStatus = 'offline';
+  state.error = immediate ? '' : 'Phone connection lost. Reconnecting automatically...';
+  render();
+  state.reconnectTimer = window.setTimeout(async () => {
+    state.reconnectTimer = null;
+    state.reconnecting = true;
+    try {
+      await stopPhone();
+      await connectPhone();
+    } catch (error) {
+      console.error('Nexa phone reconnect failed', error);
+      state.phoneStatus = 'offline';
+      state.error = 'Phone is offline. Retrying automatically...';
+      state.reconnecting = false;
+      render();
+      scheduleReconnect(reason);
+      return;
+    }
+    state.reconnecting = false;
+  }, delay);
+}
+
 async function connectPhone() {
   state.phoneStatus = 'connecting';
   render();
@@ -413,6 +470,9 @@ async function connectPhone() {
       },
     },
     delegate: {
+      onDisconnect: () => {
+        if (!state.session) scheduleReconnect('transport');
+      },
       onInvite: (invitation) => {
         if (state.session) {
           invitation.reject().catch(() => {});
@@ -439,13 +499,15 @@ async function connectPhone() {
   state.registerer = registerer;
   registerer.stateChange.addListener((newState) => {
     if (newState === RegistererState.Registered && !state.session) {
+      clearReconnectTimer();
+      state.reconnectAttempt = 0;
+      state.reconnecting = false;
       state.phoneStatus = 'online';
       state.error = '';
       render();
     }
     if (newState === RegistererState.Unregistered && !state.session) {
-      state.phoneStatus = 'offline';
-      render();
+      scheduleReconnect('registration');
     }
   });
   await registerer.register();
@@ -461,16 +523,20 @@ async function bootstrap() {
     await Promise.all([connectPhone(), loadLogs()]);
   } catch (error) {
     console.error(error);
-    state.phoneStatus = 'error';
-    state.error = 'Phone setup could not connect. Check the PBX/WebRTC status.';
+    state.phoneStatus = 'offline';
+    state.error = 'Phone setup could not connect. Retrying automatically...';
     render();
+    scheduleReconnect('startup');
   }
 }
 
 window.addEventListener('beforeunload', () => {
+  clearReconnectTimer();
   state.registerer?.unregister().catch(() => {});
   state.userAgent?.stop().catch(() => {});
 });
+
+window.addEventListener('online', () => scheduleReconnect('network', true));
 
 render();
 bootstrap();

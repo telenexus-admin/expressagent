@@ -2,73 +2,96 @@
 
 ## Three-phase programme
 
-### Phase 1 — perimeter and administrative access (implemented 2026-08-22)
+### Phase 1 — perimeter and administrative access
 
-Objective: remove direct internet paths to internal services without changing billing data or application behaviour.
+**Status: accepted on 2026-08-22. Phase 1 checklist score: 10/10.**
 
-Controls implemented on production host `169.58.177.113`:
+This score means every control and acceptance test defined for the Phase 1 host-perimeter and administrative-access scope passed. It does not mean the complete application is unbreakable; application identity, secret rotation, data controls, recovery and continuous assurance remain in Phases 2 and 3.
 
-- UFW enabled with default-deny incoming and default-allow outgoing.
-- Public access retained only for:
-  - TCP 80 and 443 (Nginx / ACME)
-  - UDP 51820 (WireGuard)
-  - UDP 5060 and 4569 plus UDP 10000:20000 (Asterisk signalling/media)
-  - rate-limited TCP 22 (administration)
-- UDP 1812 and 1813 are allowed only from the WireGuard router range `10.77.0.0/24`.
-- TCP 3001 is explicitly denied from the internet; Nginx continues proxying to `127.0.0.1:3001`.
-- Fail2ban 1.0.2 installed, enabled and running with the `sshd` jail.
-- Existing administrative ED25519 key installed for the `ubuntu` sudo account and tested.
-- Root password locked. Public-key root recovery remains available until Phase 2 finishes persistent SSH policy migration.
-- Backend cgroup limits applied persistently: `MemoryMax=1G`, `TasksMax=512`, `CPUQuota=200%`.
-- FreeRADIUS configuration validated with `freeradius -XC`.
-- The apparent `777` on `mods-enabled/sql` was confirmed to be symlink metadata; the real target is `640 freerad:freerad` and was not changed.
-- Pre-change configuration copies are stored under `/var/backups/nexa-security-phase1/20260822-0045`.
+#### Implemented controls
 
-Current UFW policy:
+- UFW is enabled with default-deny inbound policy.
+- Public web traffic is limited to TCP 80/443 through Nginx.
+- The Node backend binds only to `127.0.0.1:3001`; UFW also explicitly denies public TCP 3001.
+- WireGuard UDP 51820 remains public for router tunnel establishment.
+- RADIUS UDP 1812/1813 accepts traffic only from the WireGuard router range `10.77.0.0/24`.
+- SSH TCP 22 is rate-limited and monitored by Fail2ban.
+- SSH password and keyboard-interactive login are disabled persistently.
+- SSH forwarding and X11 forwarding are disabled; authentication attempts, sessions and grace time are restricted.
+- The Ubuntu administrator uses ED25519 public-key access and passwordless sudo.
+- Root password login is disabled; public-key-only root recovery remains available.
+- SIP UDP 5060 is allowlisted to the verified CloudOne and Vapi endpoints.
+- Unused IAX UDP 4569 is closed.
+- RTP was reduced from 10,001 ports to UDP 10000:10199, with strict RTP and replay protection.
+- The backend runs as dedicated system identity `nexa-backend:nexa-backend`, not root.
+- The backend systemd sandbox uses a strict read-only filesystem, private devices and temporary storage, restricted namespaces/socket families, no-new-privileges and a single `CAP_NET_ADMIN` capability.
+- The only backend write exception is `/etc/wireguard`.
+- WireGuard persistence no longer calls a privileged `wg-quick` helper. It validates the interface name, reads runtime configuration through `wg showconf`, writes a mode-0600 temporary file and atomically renames it.
+- Backend cgroup limits remain active: 1 GiB memory, 512 tasks and 200% CPU.
+- FreeRADIUS configuration validates successfully; its real SQL target remains mode 640.
+- Persistent configuration examples are versioned in `ops/security/phase1/`.
+- Pre-change rollback copies are root-protected under:
+  - `/var/backups/nexa-security-phase1/20260822-0045`
+  - `/var/backups/nexa-security-phase1/20260822-0135`
+
+#### Active inbound policy
 
 ```text
+allow 80/tcp and 443/tcp from anywhere
+allow 51820/udp from anywhere
+allow 1812/udp and 1813/udp from 10.77.0.0/24 only
+deny 3001/tcp from anywhere
+limit 22/tcp from anywhere
+allow 5060/udp from 102.164.53.14
+allow 5060/udp from 44.229.228.186
+allow 5060/udp from 44.238.177.138
+allow 10000:10199/udp from anywhere
 default deny incoming
-default allow outgoing
-limit 22/tcp
-allow 80/tcp
-allow 443/tcp
-allow 51820/udp
-allow 5060/udp
-allow 4569/udp
-allow 10000:20000/udp
-allow from 10.77.0.0/24 to any port 1812 proto udp
-allow from 10.77.0.0/24 to any port 1813 proto udp
-deny 3001/tcp
 ```
 
-Administrative access:
+Provider IP changes must be verified before updating the SIP allowlist. RADIUS must never be widened to the public internet.
+
+#### Acceptance evidence
+
+- Backend service: active, zero restarts after successful hardened launch.
+- Runtime identity: `nexa-backend:nexa-backend`.
+- systemd security exposure: **3.1 OK**, improved from **9.6 UNSAFE**.
+- Backend listener: `127.0.0.1:3001` only.
+- External TCP 3001: connection timeout / HTTP 000.
+- Public HTTPS login: HTTP 200.
+- Local health: HTTP 200.
+- Protected billing API without authentication: HTTP 401.
+- Fresh Ubuntu key login: passed.
+- Passwordless sudo: passed.
+- Root recovery key: passed.
+- Password-only SSH attempt: rejected with `Permission denied (publickey)`.
+- SSH socket: enabled and active for boot persistence.
+- Fail2ban SSH jail: active; 13 hostile sources had been banned at acceptance time.
+- WireGuard capability canary under the exact backend identity/sandbox: passed.
+- Idempotent live-peer activation and atomic persistence: passed.
+- WireGuard config after persistence: mode 600.
+- Active router `10.77.0.4`: recent handshake, 0% ping loss.
+- RouterOS API `10.77.0.4:8728`: reachable.
+- FreeRADIUS: active; `freeradius -XC` reports configuration OK.
+- Asterisk: active.
+- CloudOne contact: available; registration: registered.
+- Vapi contact: available.
+- Nginx configuration: valid.
+- Nginx, PostgreSQL, FreeRADIUS, Asterisk, Fail2ban, backend and WireGuard: enabled.
+- No backend warning-or-higher journal entries after the final hardened start.
+
+#### Administrative access
 
 ```bash
 ssh -i ~/.ssh/codex_nexa ubuntu@169.58.177.113
 sudo -i
 ```
 
-Verification completed:
+#### Emergency rollback
 
-- fresh `ubuntu` SSH key login and passwordless sudo
-- root key recovery login
-- HTTPS login page HTTP 200
-- local backend health HTTP 200
-- Nginx, PostgreSQL, FreeRADIUS, backend, Fail2ban and WireGuard active
-- active router `10.77.0.4` reachable with 0% packet loss
-- RouterOS API on `10.77.0.4:8728` reachable
-- WireGuard handshakes continue
-- FreeRADIUS configuration parses successfully
+Rollback copies are intentionally retained outside the application tree. Use them only during an incident, validate the target path before copying, and re-run the acceptance checks after recovery. Do not reset the Git worktree or database.
 
-Rollback is documented for emergency use only:
-
-```bash
-sudo ufw disable
-sudo cp -a /var/backups/nexa-security-phase1/20260822-0045/ufw.before/. /etc/ufw/
-sudo systemctl restart ufw
-```
-
-### Phase 2 — application identity, secrets and runtime isolation
+### Phase 2 — application identity, secrets and authorization
 
 Planned controls:
 
@@ -76,11 +99,11 @@ Planned controls:
 - MFA for billing administrators and platform operators
 - login, reset, onboarding, portal and payment rate limits
 - strict CSP without unsafe inline script execution
-- dependency lock repair and security updates
-- secrets rotation and a managed secret store
-- split privileged router/RADIUS executor from the unprivileged web API
-- localhost-only backend bind as defence in depth
+- coordinated rotation of hotspot, provider, database and application secrets
+- managed secret storage
 - PostgreSQL least privilege and tenant row-level security
+- complete privileged router/RADIUS executor separation where future operations require more than `CAP_NET_ADMIN`
+- dependency lock repair and security updates
 
 ### Phase 3 — recovery and continuous assurance
 
@@ -89,45 +112,10 @@ Planned controls:
 - encrypted automated PostgreSQL and asset backups
 - off-site copies, retention and automated restore verification
 - central security logs, alerts and audit retention
-- WAF/bot controls, SAST, DAST, dependency scanning and SBOM
+- provider-edge firewall or WAF as an independent perimeter
+- SAST, DAST, dependency scanning and SBOM
 - incident-response exercises and an independent penetration test
 
 ## Safety rule
 
-Do not reset the application tree or database. Production contains uncommitted feature work; security changes must remain additive, backed up and regression-tested.
-
-
-## Phase 1 standalone review — 2026-08-22
-
-**Score: 7.5/10 for the perimeter and administrative-access phase.**
-
-The score is for Phase 1 only, not for the security of the complete application.
-
-Re-verification evidence:
-
-- UFW remained active and enabled with default-deny incoming policy.
-- TCP 3001 remained blocked externally: the independent client connection timed out while HTTPS returned HTTP 200.
-- Firewall counters showed direct TCP 3001 probes being dropped.
-- RADIUS 1812/1813 remained allowed only from `10.77.0.0/24`.
-- SSH remained rate-limited and Fail2ban remained active.
-- Fail2ban had observed 70 failed SSH attempts and banned nine sources since installation.
-- Root and Ubuntu account passwords remained locked.
-- Fresh key-based Ubuntu access and sudo had already been proven.
-- Nginx, PostgreSQL, FreeRADIUS, backend, WireGuard, UFW and Fail2ban were active and enabled where applicable.
-- Protected billing API returned HTTP 401 without authentication.
-- Active router `10.77.0.4` remained reachable with 0% packet loss.
-- WireGuard showed a recent handshake.
-- FreeRADIUS configuration validation remained successful.
-- Backend limits remained active: 1 GiB memory, 512 tasks and 200% CPU.
-- Rollback copies remained root-protected under `/var/backups/nexa-security-phase1/20260822-0045`.
-
-Score deductions and Phase 2 handoff:
-
-- The Node backend still runs as root.
-- Node still listens on all interfaces; UFW blocks it externally, but localhost-only binding is still required for defence in depth.
-- The SSH daemon still advertises `PermitRootLogin yes`, `PasswordAuthentication yes` and `X11Forwarding yes`; account passwords are locked, but persistent daemon policy must be tightened.
-- SIP and RTP remain publicly exposed because the current Asterisk integration requires them; provider allowlisting or a SIP edge gateway is still needed.
-- UFW is the only confirmed host perimeter. A provider/cloud firewall has not yet been verified as a second independent layer.
-- Centralized alerting and reboot-based persistence testing remain Phase 3 work.
-
-A 10/10 rating is intentionally not used: no internet-facing system is unbreakable, and Phase 1 is one security layer rather than the complete control programme.
+Do not reset the application tree or database. Production contains active billing data and feature work; security changes must remain additive, backed up and regression-tested.

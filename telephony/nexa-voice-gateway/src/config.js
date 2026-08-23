@@ -8,6 +8,7 @@ export const config = Object.freeze({
   ariUsername: process.env.ARI_USERNAME || '',
   ariPassword: process.env.ARI_PASSWORD || '',
   ariApp: process.env.ARI_APP || 'nexa-voice-gateway',
+  externalMediaHost: process.env.EXTERNAL_MEDIA_HOST || '127.0.0.1:12000',
   mediaCodec: process.env.MEDIA_CODEC || 'ulaw',
   maxCallSeconds: Number(process.env.MAX_CALL_SECONDS || 1800),
 });

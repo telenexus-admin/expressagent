@@ -16,6 +16,12 @@
 - Installer support for deploying that Nginx snippet.
 - Updated backup/restore stream permissions and restore-service repository allowlist (these fixes were deployed and restore-tested).
 
+## Continued hardening completed in repository
+
+- Phase 3 security workflow was moved from `ops/security/phase3/ci/security-phase3.workflow.yml` into `.github/workflows/security-phase3.yml`, so GitHub can execute it as an actual workflow once repository workflow/branch-protection requirements are enabled.
+- The obsolete workflow template was removed from `ops/security/phase3/ci/`.
+- The workflow retains isolated PostgreSQL authentication testing, production dependency auditing, CodeQL, CycloneDX SBOM generation and scheduled/on-demand DAST coverage.
+
 ## Remaining acceptance work
 
 1. Deploy the monitor and Nginx snippet changes, include the snippet in each public Nexa server block, run `nginx -t`, reload Nginx, and rerun the DAST baseline.
@@ -23,7 +29,7 @@
 3. Configure and test an encrypted off-site Restic repository; prove an off-site restore.
 4. Configure a mutually authenticated TLS remote log collector and test alert delivery.
 5. Put `billing.polyizon.tech` behind an independently managed provider WAF/edge policy and verify origin restriction.
-6. Grant a publishing credential GitHub workflow scope, move ops/security/phase3/ci/security-phase3.workflow.yml to .github/workflows/security-phase3.yml, enable branch protection requiring it, and retain SBOM artifacts.
+6. Grant/confirm the repository credential has the required workflow/security permissions, enable branch protection requiring `.github/workflows/security-phase3.yml`, and retain SBOM artifacts.
 7. Complete an independent penetration test and a documented incident-response/restore exercise.
 
-The complete Phase 3 must not be rated 10/10 until every remaining acceptance item has evidence.
+The complete Phase 3 must not be rated 10/10 until every remaining acceptance item has current evidence.

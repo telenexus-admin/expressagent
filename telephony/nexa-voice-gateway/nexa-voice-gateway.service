@@ -1,0 +1,21 @@
+[Unit]
+Description=Nexa Voice Gateway
+After=network.target asterisk.service
+
+[Service]
+Type=simple
+User=nexa-voice
+Group=nexa-voice
+EnvironmentFile=/etc/nexa-voice-gateway.env
+WorkingDirectory=/opt/nexa-voice-gateway
+ExecStart=/usr/bin/node /opt/nexa-voice-gateway/src/server.js
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nexa-voice-gateway
+
+[Install]
+WantedBy=multi-user.target

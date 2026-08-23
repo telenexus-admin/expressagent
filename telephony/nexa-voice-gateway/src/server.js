@@ -1,9 +1,11 @@
 import http from 'node:http';
 import { config, validateConfig } from './config.js';
 import { CallRegistry } from './calls.js';
+import { RtpEchoBridge } from './media.js';
 
 const registry = new CallRegistry();
 const startupErrors = validateConfig();
+const mediaBridge = new RtpEchoBridge({ host: '127.0.0.1', port: Number(process.env.EXTERNAL_MEDIA_PORT || 12000) });
 
 function json(res, status, body) {
   const payload = JSON.stringify(body);
@@ -43,6 +45,7 @@ const server = http.createServer((req, res) => {
       status: startupErrors.length ? 'misconfigured' : 'ok',
       service: 'nexa-voice-gateway',
       calls: registry.list().length,
+      mediaBridge: mediaBridge.started ? 'listening' : 'stopped',
       errors: startupErrors,
     });
   }
@@ -66,10 +69,11 @@ const server = http.createServer((req, res) => {
 });
 
 if (process.argv[1] && process.argv[1].endsWith('server.js')) {
+  mediaBridge.start();
   server.listen(config.port, config.host, () => {
     console.log(`nexa-voice-gateway listening on ${config.host}:${config.port}`);
     if (startupErrors.length) console.error(`configuration errors: ${startupErrors.join('; ')}`);
   });
 }
 
-export { server, registry };
+export { server, registry, mediaBridge };

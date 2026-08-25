@@ -297,7 +297,8 @@ async function finishCall() {
 
 async function placeCall() {
   if (!state.userAgent || state.phoneStatus !== 'online') return;
-  const normalized = normalizeKenyanNumber(state.dialValue);
+  const internalTest = String(state.dialValue).trim() === '7999';
+  const normalized = internalTest ? '7999' : normalizeKenyanNumber(state.dialValue);
   if (!normalized) {
     state.error = 'Enter a valid Kenyan mobile or landline number.';
     render();
@@ -312,7 +313,7 @@ async function placeCall() {
   }
 
   try {
-    const target = UserAgent.makeURI(`sip:${did.dialPrefix}${normalized}@${state.config.sipDomain}`);
+    const destination = internalTest ? normalized : `${did.dialPrefix}${normalized}`;`r`n    const target = UserAgent.makeURI(`sip:${destination}@${state.config.sipDomain}`);
     if (!target) throw new Error('Invalid destination');
 
     const inviter = new Inviter(state.userAgent, target, {

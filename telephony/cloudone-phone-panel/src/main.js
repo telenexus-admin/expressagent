@@ -313,7 +313,8 @@ async function placeCall() {
   }
 
   try {
-    const destination = internalTest ? normalized : `${did.dialPrefix}${normalized}`;`r`n    const target = UserAgent.makeURI(`sip:${destination}@${state.config.sipDomain}`);
+    const destination = internalTest ? normalized : `${did.dialPrefix}${normalized}`;
+    const target = UserAgent.makeURI(`sip:${destination}@${state.config.sipDomain}`);
     if (!target) throw new Error('Invalid destination');
 
     const inviter = new Inviter(state.userAgent, target, {

@@ -1154,7 +1154,7 @@ async function validateRouter(client, config) {
   const validation = {
     wireless: !config.wireless_interface || wireless.some((item) => String(item.name || '') === config.wireless_interface && String(item.ssid || '') === config.wireless_ssid && String(item.mode || '') === 'ap-bridge' && !bool(item.disabled)),
     bridge: bridges.some((item) => item.name === config.subscriber_bridge),
-    ...(hasHotspot ? { hotspot_gateway: addresses.some((item) => item.comment === 'NEXA managed hotspot gateway' || (item.address === config.hotspot_gateway && item.interface === config.subscriber_bridge)), dhcp: dhcp.some((item) => item.name === 'NEXA-HOTSPOT-DHCP'), hotspot: hotspots.some((item) => item.name === 'NEXA-HOTSPOT'), portal: files.some((item) => item.name === 'nexa-hotspot/login.html') } : {}),
+    ...(hasHotspot ? { hotspot_gateway: addresses.some((item) => item.comment === 'NEXA managed hotspot gateway' || (item.address === config.hotspot_gateway && item.interface === config.subscriber_bridge)), dhcp: dhcp.some((item) => item.name === 'NEXA-HOTSPOT-DHCP'), hotspot: hotspots.some((item) => item.name === 'NEXA-HOTSPOT'), portal: files.some((item) => item.name === 'nexa-hotspot/login.html') && files.some((item) => item.name === 'nexa-hotspot/voucher-login.html') } : {}),
     ...(hasPppoe ? { pppoe: pppoe.some((item) => item.comment === 'NEXA managed PPPoE server' || item['service-name'] === config.pppoe_service_name) } : {}),
     radius: radius.some((item) => item.comment === 'NEXA managed RADIUS' || item.address === config.radius_host),
     nat: nat.some((item) => item.comment === 'NEXA managed subscriber NAT' || (item.chain === 'srcnat' && item.action === 'masquerade' && item['out-interface'] === config.wan_interface)),

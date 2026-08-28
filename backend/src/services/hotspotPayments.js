@@ -233,8 +233,8 @@ async function ensureAdditionalDeviceVouchers({
     const code = voucherCode(payment.id);
     const result = await connection.query(
       `INSERT INTO billing_hotspot_vouchers
-         (client_id, plan_id, code, status)
-       VALUES ($1,$2,$3,'available')
+         (client_id, plan_id, code, status, max_devices)
+       VALUES ($1,$2,$3,'available',1)
        RETURNING id`,
       [payment.client_id, plan.id, code]
     );

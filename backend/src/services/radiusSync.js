@@ -767,4 +767,18 @@ async function revokeHotspotRadiusAccess({
   }
 }
 
-module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, registerRouterNas, revokeHotspotRadiusAccess, probeRouterRadius, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotMacRadius, syncHotspotVoucherRadius, syncSubscriberRadius, testRouterNasRegistration, unregisterRouterNas };
+
+async function syncHotspotMemberRadius(member) {
+  if (!radiusEnabled()) return { status: 'not_configured' };
+  const c = await getRadiusPool().connect();
+  try {
+    await c.query('BEGIN'); await c.query('DELETE FROM radcheck WHERE username = $1',[member.username]); await c.query('DELETE FROM radreply WHERE username = $1',[member.username]);
+    if (member.is_active !== false) {
+      await c.query("INSERT INTO radcheck (username,attribute,op,value) VALUES ($1,'Cleartext-Password',':=',$2)",[member.username,member.password]);
+      if(member.router_address) await c.query("INSERT INTO radcheck (username,attribute,op,value) VALUES ($1,'NAS-IP-Address','==',$2)",[member.username,member.router_address]);
+      if(member.rate_limit) await c.query("INSERT INTO radreply (username,attribute,op,value) VALUES ($1,'Mikrotik-Rate-Limit',':=',$2)",[member.username,member.rate_limit]);
+    }
+    await c.query('COMMIT'); return {status:'synced'};
+  } catch(e) { try { await c.query('ROLLBACK'); } catch(_){} throw e; } finally { c.release(); }
+}
+module.exports = { encryptPassword, getOnlineUsernames, getSubscriberUsage, listRecentRadiusSessions, loadSubscriber, radiusEnabled, registerRouterNas, revokeHotspotRadiusAccess, probeRouterRadius, resolveFupRate, scheduleSubscriberRadiusSync, syncHotspotMacRadius, syncHotspotVoucherRadius, syncHotspotMemberRadius, syncSubscriberRadius, testRouterNasRegistration, unregisterRouterNas };

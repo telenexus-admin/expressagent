@@ -29,155 +29,70 @@ function HotspotSubscriberDetail({
   subscriber,
   back,
 }) {
-  const expiry =
-    subscriber.expires_at
-      ? new Date(
-          subscriber.expires_at
-        )
-      : null;
+  const [profile, setProfile] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState('');
 
-  const paidAt =
-    subscriber.last_payment_at
-      ? new Date(
-          subscriber.last_payment_at
-        )
-      : null;
+  useEffect(() => {
+    let mounted = true;
+    setLoading(true);
+    setLoadError('');
+    api.get(`/billing-workspace/hotspot/subscribers/${subscriber.id}/profile`)
+      .then(response => {
+        if (mounted) setProfile(response.data);
+      })
+      .catch(error => {
+        if (mounted) setLoadError(
+          error.response?.data?.error ||
+          'Could not load this hotspot account.'
+        );
+      })
+      .finally(() => {
+        if (mounted) setLoading(false);
+      });
+    return () => { mounted = false; };
+  }, [subscriber.id]);
 
-  return (
-    <div className="mx-auto max-w-5xl space-y-4 px-2 py-2 text-xs">
-      <button
-        type="button"
-        onClick={back}
-        className="font-extrabold text-violet-600"
-      >
-        ← Back to subscribers
-      </button>
+  const account = profile?.subscriber || subscriber;
+  const summary = profile?.summary || {};
+  const devices = profile?.devices || [];
+  const payments = profile?.payments || [];
+  const history = profile?.history || [];
+  const expiry = account.expires_at ? new Date(account.expires_at) : null;
+  const money = value => `KES ${Number(value || 0).toLocaleString()}`;
+  const date = value => value ? new Date(value).toLocaleString() : '—';
+  const Metric = ({ label, value, hint, tone = 'emerald' }) => <div className={`rounded-2xl border p-4 ${tone === 'emerald' ? 'border-emerald-100 bg-emerald-50/70' : tone === 'sky' ? 'border-sky-100 bg-sky-50/70' : tone === 'violet' ? 'border-violet-100 bg-violet-50/70' : 'border-amber-100 bg-amber-50/70'}`}><p className="text-[10px] font-black uppercase tracking-[.14em] text-slate-400">{label}</p><p className="mt-2 text-xl font-black tracking-tight text-slate-900">{value}</p><p className="mt-1 text-[11px] font-medium text-slate-500">{hint}</p></div>;
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <p className="text-[9px] font-black uppercase tracking-[.18em] text-slate-400">
-              Hotspot subscriber
-            </p>
+  return <div className="mx-auto max-w-6xl space-y-4 px-2 py-2 text-xs">
+    <button type="button" onClick={back} className="font-extrabold text-emerald-700">← Back to subscribers</button>
 
-            <h2 className="mt-1 text-lg font-black text-slate-900">
-              {subscriber.mac_address ||
-                subscriber.full_name ||
-                'Hotspot device'}
-            </h2>
+    <section className="overflow-hidden rounded-3xl bg-[linear-gradient(120deg,#06291a,#0b5b39_55%,#12a56b)] p-5 text-white shadow-xl sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div><p className="text-[10px] font-black uppercase tracking-[.22em] text-emerald-100/70">Hotspot customer profile</p><h2 className="mt-2 font-[Georgia,Times,serif] text-2xl font-semibold tracking-[-.03em] sm:text-3xl">{account.customer_phone || account.phone || account.current_mac || 'Hotspot customer'}</h2><p className="mt-2 text-xs text-emerald-50/80">{account.package_name || account.plan_name || 'No active package'} · {account.router_name || 'Router pending'}</p></div>
+        <div className={`rounded-full px-3 py-1.5 text-[10px] font-black uppercase tracking-wide ${summary.online_devices ? 'bg-emerald-300 text-emerald-950' : 'bg-white/15 text-white'}`}>{summary.online_devices ? `${summary.online_devices} device${summary.online_devices === 1 ? '' : 's'} online` : 'Offline'}</div>
+      </div>
+      <div className="mt-6 grid gap-2 sm:grid-cols-4"><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Package expires</p><p className="mt-1 font-bold">{expiry && !Number.isNaN(expiry.getTime()) ? expiry.toLocaleString() : 'No expiry'}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Shared access</p><p className="mt-1 text-lg font-black">{summary.shared_devices || 0}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Current session</p><p className="mt-1 text-lg font-black">{formatBytes(summary.total_bytes)}</p></div><div className="rounded-2xl bg-white/10 p-3"><p className="text-[10px] font-bold uppercase text-emerald-100/75">Lifetime spend</p><p className="mt-1 text-lg font-black">{money(summary.lifetime_spend)}</p></div></div>
+    </section>
 
-            <p className="mt-1 text-xs text-slate-500">
-              {subscriber.phone ||
-                subscriber.account_number ||
-                'No phone'}
-            </p>
-          </div>
+    {loading ? <div className="grid gap-4 sm:grid-cols-4">{[0,1,2,3].map(item => <div key={item} className="h-28 animate-pulse rounded-2xl bg-slate-200" />)}</div> : loadError ? <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 font-bold text-rose-700">{loadError}</div> : <>
+      <section className="grid gap-3 sm:grid-cols-4"><Metric label="Data consumed" value={formatBytes(summary.total_bytes)} hint="Current live session counters" tone="emerald" /><Metric label="Download" value={formatBytes(summary.download_bytes)} hint="Across connected devices" tone="sky" /><Metric label="Upload" value={formatBytes(summary.upload_bytes)} hint="Across connected devices" tone="violet" /><Metric label="Payments" value={money(summary.lifetime_spend)} hint={`${summary.payment_count || 0} confirmed payment${summary.payment_count === 1 ? '' : 's'}`} tone="amber" /></section>
 
-          <span
-            className={`rounded-full px-2.5 py-1 text-[10px] font-black uppercase ${
-              subscriber.is_online
-                ? 'bg-emerald-100 text-emerald-700'
-                : 'bg-slate-100 text-slate-600'
-            }`}
-          >
-            {subscriber.is_online
-              ? 'Online'
-              : 'Offline'}
-          </span>
-        </div>
+      <div className="grid gap-4 lg:grid-cols-[1.25fr_.75fr]">
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div><h3 className="font-black text-slate-900">Shared account access</h3><p className="mt-1 text-[11px] text-slate-500">Every phone unlocked by this package.</p></div><span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[10px] font-black text-emerald-700">{devices.length} devices</span></div><div className="divide-y divide-slate-100">{devices.length ? devices.map((device, index) => <div key={device.id} className="flex flex-wrap items-center justify-between gap-3 px-5 py-4"><div className="flex items-center gap-3"><div className={`flex h-9 w-9 items-center justify-center rounded-xl text-xs font-black ${device.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{index + 1}</div><div><p className="font-bold text-slate-900">{device.mac_address || device.code}</p><p className="mt-0.5 text-[11px] text-slate-500">{device.ip_address || 'Waiting for an IP'} · {device.uptime || 'Not currently active'}</p></div></div><div className="text-right"><span className={`rounded-full px-2 py-1 text-[10px] font-black ${device.is_online ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-500'}`}>{device.is_online ? 'ONLINE' : String(device.status || 'offline').toUpperCase()}</span><p className="mt-1 text-[10px] font-semibold text-slate-500">↓ {formatBytes(device.download_bytes)} · ↑ {formatBytes(device.upload_bytes)}</p></div></div>) : <p className="p-8 text-center text-sm text-slate-400">No devices are linked yet.</p>}</div></section>
+        <section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h3 className="font-black text-slate-900">Account snapshot</h3><p className="mt-1 text-[11px] text-slate-500">The essentials at a glance.</p></div><div className="space-y-4 p-5"><div><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Customer phone</p><p className="mt-1 font-bold text-slate-800">{account.customer_phone || 'Not captured'}</p></div><div><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Router</p><p className="mt-1 font-bold text-slate-800">{account.router_name || 'Unassigned'}</p></div><div><p className="text-[10px] font-black uppercase tracking-wide text-slate-400">Authentication</p><p className="mt-1 font-bold text-emerald-700">{account.device_activation_status || 'Active'}</p></div></div></section>
+      </div>
 
-        <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {[
-            [
-              'Package',
-              subscriber.plan_name ||
-                'No package',
-            ],
-            [
-              'Router',
-              subscriber.router_name ||
-                'Unassigned',
-            ],
-            [
-              'Expires',
-              expiry &&
-              !Number.isNaN(
-                expiry.getTime()
-              )
-                ? expiry.toLocaleString()
-                : 'No expiry',
-            ],
-            [
-              'Last payment',
-              subscriber.last_payment_amount
-                ? `KES ${Number(
-                    subscriber.last_payment_amount
-                  ).toLocaleString()}`
-                : '—',
-            ],
-          ].map(
-            ([label, value]) => (
-              <div
-                key={label}
-                className="rounded-xl bg-slate-50 p-3"
-              >
-                <div className="text-[9px] font-black uppercase tracking-wide text-slate-400">
-                  {label}
-                </div>
-
-                <div className="mt-1 text-xs font-bold text-slate-800">
-                  {value}
-                </div>
-              </div>
-            )
-          )}
-        </div>
-
-        <div className="mt-4 grid gap-3 sm:grid-cols-3">
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-400">
-              MAC
-            </span>
-            <div className="mt-1 font-bold">
-              {subscriber.mac_address ||
-                '—'}
-            </div>
-          </div>
-
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-400">
-              Authentication
-            </span>
-            <div className="mt-1 font-bold">
-              {subscriber.device_activation_status ||
-                '—'}
-            </div>
-          </div>
-
-          <div>
-            <span className="text-[9px] font-black uppercase text-slate-400">
-              Paid at
-            </span>
-            <div className="mt-1 font-bold">
-              {paidAt &&
-              !Number.isNaN(
-                paidAt.getTime()
-              )
-                ? paidAt.toLocaleString()
-                : '—'}
-            </div>
-          </div>
-        </div>
-      </section>
-    </div>
-  );
+      <div className="grid gap-4 lg:grid-cols-2"><section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="flex items-center justify-between border-b border-slate-100 px-5 py-4"><div><h3 className="font-black text-slate-900">Payment history</h3><p className="mt-1 text-[11px] text-slate-500">Confirmed payments for this account.</p></div><span className="font-black text-emerald-700">{money(summary.lifetime_spend)}</span></div>{payments.length ? <div className="divide-y divide-slate-100">{payments.map(payment => <div key={payment.id} className="flex items-center justify-between gap-3 px-5 py-3.5"><div><p className="font-bold text-slate-800">{payment.status === 'paid' ? 'Package payment' : 'Payment pending'}</p><p className="mt-0.5 text-[10px] text-slate-500">{date(payment.updated_at || payment.created_at)} · {payment.external_reference || 'No reference'}</p></div><p className="font-black text-slate-900">{money(payment.amount)}</p></div>)}</div> : <p className="p-8 text-center text-sm text-slate-400">No recorded payments yet.</p>}</section><section className="rounded-2xl border border-slate-200 bg-white shadow-sm"><div className="border-b border-slate-100 px-5 py-4"><h3 className="font-black text-slate-900">Account activity</h3><p className="mt-1 text-[11px] text-slate-500">A concise history of payments and linked devices.</p></div><div className="divide-y divide-slate-100">{history.length ? history.map((item, index) => <div key={`${item.type}-${index}`} className="flex gap-3 px-5 py-3.5"><div className={`mt-0.5 h-2.5 w-2.5 rounded-full ${item.type === 'payment' ? 'bg-emerald-500' : item.type === 'device' ? 'bg-sky-500' : 'bg-amber-500'}`} /><div><p className="font-bold text-slate-800">{item.title}</p><p className="mt-0.5 text-[10px] text-slate-500">{date(item.occurred_at)} · {item.detail}</p></div></div>) : <p className="p-8 text-center text-sm text-slate-400">No account activity yet.</p>}</div></section></div>
+    </>}
+  </div>;
 }
-
 function StatusGlyph({ kind }) { const paths = { online: <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>, offline: <><circle cx="12" cy="9" r="3" /><path d="M6 20a6 6 0 0 1 12 0" /></>, expired: <><circle cx="12" cy="12" r="8" /><path d="M12 8v4l2.5 2" /></> }; return <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-current/10"><svg viewBox="0 0 24 24" className="h-7 w-7 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{paths[kind]}</svg></span>; }
 function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="9" cy="9" r="3" /><path d="M3 20a6 6 0 0 1 12 0" /><circle cx="17" cy="11" r="2" /><path d="M14 20a4 4 0 0 1 7 0" /></> : kind === 'static' ? <><circle cx="12" cy="12" r="2" /><path d="M12 4v6m0 4v6M4 12h6m4 0h6" /></> : <><path d="M5 13.5a10 10 0 0 1 14 0" /><path d="M8 16.5a6 6 0 0 1 8 0" /><path d="M11 19.5a2 2 0 0 1 2 0" /></>; return <svg viewBox="0 0 24 24" className="h-6 w-6 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{content}</svg>; }export default function BillingSubscribers({ subscribers, items: sourceItems, networkClients = [], plans, hotspotPlans = [], routers = [], createOpen, setCreateOpen, search, setSearch, reload, setError, darkMode = false }) {
   const [menuId, setMenuId] = useState(null);
   const [editing, setEditing] = useState(null);
   const [recharging, setRecharging] = useState(null);
+  const [rechargePickerOpen, setRechargePickerOpen] = useState(false);
+  const [rechargeLookup, setRechargeLookup] = useState('');
   const [extending, setExtending] = useState(null);
   const [selectedSubscriber, setSelectedSubscriber] = useState(null);
   const [busyId, setBusyId] = useState(null);
@@ -801,6 +716,44 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
   const items =
     displayedItems;
 
+  // Only managed billing subscribers can be recharged. Attach the most
+  // recent MikroTik MAC where available so staff can search either identity.
+  const rechargeCandidates =
+    (Array.isArray(subscribers) ? subscribers : [])
+      .map(subscriber => {
+        const liveClient = normalizedNetworkClients.find(networkClient =>
+          Number(networkClient.billing_id || 0) === Number(subscriber.id)
+        );
+        return {
+          ...subscriber,
+          mac_address: formatMac(liveClient?.mac_address || subscriber.static_mac || ''),
+          service_type: subscriber.access_mode === 'dhcp_static' ? 'static' : 'pppoe',
+        };
+      });
+
+  const normalizedRechargeLookup = compactIdentity(rechargeLookup);
+  const rechargeMatches = normalizedRechargeLookup
+    ? rechargeCandidates
+      .filter(subscriber => [
+        subscriber.phone,
+        subscriber.mac_address,
+        subscriber.static_mac,
+      ]
+        .map(compactIdentity)
+        .some(identity => identity.includes(normalizedRechargeLookup)))
+      .slice(0, 12)
+    : [];
+
+  const chooseRechargeSubscriber = subscriber => {
+    setRechargePickerOpen(false);
+    setRechargeLookup('');
+    setRecharging({
+      ...subscriber,
+      plan_id: subscriber.plan_id || '',
+      method: 'Recharge',
+      reference: '',
+    });
+  };
 
   const run = async (subscriber, action) => {
     try {
@@ -1030,7 +983,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
         );
   }
   if (createOpen && ['pppoe_static', 'dhcp_static'].includes(creating.access_mode)) return <StaticClientForm value={creating} setValue={setCreating} plans={plans} routers={routers} busy={busyId === 'create'} close={() => { setCreating(emptySubscriber); setCreateOpen(false); }} submit={saveCreate} />;
-  return <div data-subscriber-theme={darkMode ? 'dark' : 'light'} className={`-mx-5 -mt-5 min-h-screen space-y-4 pb-8 sm:-mx-8 sm:-mt-8 ${darkMode ? 'bg-[#0b1020] text-slate-100' : 'bg-[#fbfbff] text-slate-900'}`}><section className="relative isolate overflow-hidden bg-[#07090d] px-5 pb-20 pt-7 text-white sm:px-8 sm:pb-20 sm:pt-7" style={{ backgroundImage: `linear-gradient(115deg, rgba(3,22,13,.64), rgba(9,42,27,.58)), url(${polyizonLoginNetwork})`, backgroundSize: 'cover', backgroundPosition: 'center' }}><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="subscriber-hero-title mt-2 text-[1.65rem] font-semibold tracking-[-.03em] sm:text-[1.95rem]">Subscribers</h2><p className="mt-1.5 text-sm text-violet-100">View and manage all your subscribers</p></div><button type="button" onClick={() => setCreateOpen(true)} className="relative z-10 mt-5 rounded-xl bg-emerald-400 px-3.5 py-2 text-xs sm:text-sm font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:absolute sm:right-8 sm:top-8 sm:mt-0">+ Add a client</button><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill={darkMode ? '#0b1020' : '#fbfbff'} /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
+  return <div data-subscriber-theme={darkMode ? 'dark' : 'light'} className={`-mx-5 -mt-5 min-h-screen space-y-4 pb-8 sm:-mx-8 sm:-mt-8 ${darkMode ? 'bg-[#0b1020] text-slate-100' : 'bg-[#fbfbff] text-slate-900'}`}><section className="relative isolate overflow-hidden bg-[#07090d] px-5 pb-20 pt-7 text-white sm:px-8 sm:pb-20 sm:pt-7" style={{ backgroundImage: `linear-gradient(115deg, rgba(3,22,13,.64), rgba(9,42,27,.58)), url(${polyizonLoginNetwork})`, backgroundSize: 'cover', backgroundPosition: 'center' }}><div className="relative z-10"><p className="text-[11px] font-extrabold uppercase tracking-[0.24em] text-violet-200">Subscriber management</p><h2 className="subscriber-hero-title mt-2 text-[1.65rem] font-semibold tracking-[-.03em] sm:text-[1.95rem]">Subscribers</h2><p className="mt-1.5 text-sm text-violet-100">View and manage all your subscribers</p></div><div className="relative z-10 mt-5 flex flex-col items-start gap-2 sm:absolute sm:right-8 sm:top-8 sm:mt-0 sm:items-end"><button type="button" onClick={() => setCreateOpen(true)} className="rounded-xl bg-emerald-400 px-3.5 py-2 text-xs font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/20 transition hover:bg-emerald-300 sm:text-sm">+ Add a client</button><button type="button" onClick={() => { setRechargeLookup(''); setRechargePickerOpen(true); }} className="inline-flex items-center gap-2 rounded-xl border border-emerald-200/70 bg-white/95 px-3.5 py-2 text-xs font-extrabold text-emerald-950 shadow-lg shadow-emerald-950/10 transition hover:bg-emerald-50 sm:text-sm"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20 7v5h-5"/><path d="M4 17v-5h5"/><path d="M6.2 9A7 7 0 0 1 18 7"/><path d="M17.8 15A7 7 0 0 1 6 17"/></svg>Recharge</button></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 z-0 h-24"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill={darkMode ? '#0b1020' : '#fbfbff'} /></svg></div><div className="pointer-events-none absolute right-[-10%] top-4 h-44 w-3/5 opacity-20"><svg viewBox="0 0 600 180" className="h-full w-full"><path d="M0 120 C120 20 220 180 350 80 S520 20 600 70" fill="none" stroke="white" strokeWidth="2" /><path d="M0 145 C120 45 220 205 350 105 S520 45 600 95" fill="none" stroke="white" strokeWidth="1" /></svg></div></section>
     <style>{`.subscriber-hero-title{font-family:Georgia,Times,"Times New Roman",serif}.subscriber-type-tabs button.bg-violet-600{background:#10231f!important;color:#ecfff8!important;box-shadow:inset 0 0 0 1px rgba(76,214,160,.42)}.client-status-card{min-height:88px}.client-status-card svg{width:1.35rem!important;height:1.35rem!important}@media(min-width:640px){.client-status-card{padding:14px!important}.client-status-card .text-2xl{font-size:1.75rem;line-height:1.85rem}.client-status-card .text-xs{font-size:.72rem}.subscriber-type-tabs button{padding-top:.55rem!important;padding-bottom:.55rem!important}.subscriber-list-panel>div.grid{padding:12px 16px!important}}section > .grid.grid-cols-2.border-b{display:none}@media(max-width:639px){.client-status-meta{display:none}.client-status-card{min-height:92px;padding:10px!important}.client-status-card .text-xs{font-size:10px}.client-status-card .text-2xl{font-size:1.5rem;line-height:2rem}}@media(max-width:639px){table.min-w-\\[700px\\]{min-width:100%!important;table-layout:fixed}table.min-w-\\[700px\\] th,table.min-w-\\[700px\\] td{padding:8px 4px!important;font-size:9px!important;line-height:1.25;overflow-wrap:anywhere}table.min-w-\\[700px\\] th:first-child,table.min-w-\\[700px\\] td:first-child{width:29%;padding-left:8px!important}table.min-w-\\[700px\\] th:nth-child(2),table.min-w-\\[700px\\] td:nth-child(2){width:19%}table.min-w-\\[700px\\] th:nth-child(3),table.min-w-\\[700px\\] td:nth-child(3){width:18%}table.min-w-\\[700px\\] th:nth-child(4),table.min-w-\\[700px\\] td:nth-child(4){width:18%}table.min-w-\\[700px\\] th:last-child,table.min-w-\\[700px\\] td:last-child{width:16%;padding-right:8px!important}.overflow-x-auto:has(table.min-w-\\[700px\\]){overflow-x:visible!important}}`}</style>
 
     <style>{`
@@ -1889,6 +1842,7 @@ function TypeGlyph({ kind }) { const content = kind === 'pppoe' ? <><circle cx="
       </div>
     )}
 
+    {rechargePickerOpen && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><div className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><div><h3 className="text-lg font-black">Find client to recharge</h3><p className="mt-1 text-xs text-slate-500">Search by the client phone number or MikroTik MAC address.</p></div><button type="button" onClick={() => { setRechargePickerOpen(false); setRechargeLookup(''); }} className="text-2xl text-slate-400">×</button></div><label className="mt-4 flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 focus-within:border-emerald-500 focus-within:ring-4 focus-within:ring-emerald-500/10"><svg aria-hidden="true" viewBox="0 0 24 24" className="h-4 w-4 shrink-0 fill-none stroke-slate-400" strokeWidth="2"><circle cx="11" cy="11" r="6"/><path d="m20 20-4.2-4.2"/></svg><input autoFocus value={rechargeLookup} onChange={(event) => setRechargeLookup(event.target.value)} placeholder="e.g. 2547… or AA:BB:CC…" className="h-11 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-slate-400" /></label><div className="mt-3 max-h-72 overflow-y-auto rounded-xl border border-slate-100">{!normalizedRechargeLookup ? <p className="p-4 text-center text-xs text-slate-500">Enter a phone number or MAC address to find a subscriber.</p> : rechargeMatches.length ? rechargeMatches.map((subscriber) => <button key={subscriber.id} type="button" onClick={() => chooseRechargeSubscriber(subscriber)} className="flex w-full items-center justify-between gap-3 border-b border-slate-100 px-3 py-3 text-left last:border-0 hover:bg-emerald-50"><span className="min-w-0"><b className="block truncate text-sm text-slate-900">{subscriber.full_name}</b><span className="mt-0.5 block truncate text-xs text-slate-500">{subscriber.phone || 'No phone'}{subscriber.mac_address ? ` · ${subscriber.mac_address}` : ''}</span></span><span className="shrink-0 rounded-lg bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-600">{subscriber.plan_name || 'No package'}</span></button>) : <p className="p-4 text-center text-xs text-slate-500">No billing subscriber matches that phone or MAC address.</p>}</div></div></div>}
     {recharging && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={recharge} className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><div><h3 className="text-lg font-black">Recharge client</h3><p className="mt-1 text-xs text-slate-500">Choose the package to reactivate {recharging.full_name}.</p></div><button type="button" onClick={() => setRecharging(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><select required className={field} value={recharging.plan_id || ''} onChange={(event) => setRecharging({ ...recharging, plan_id: event.target.value })}><option value="">Select package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name} · {plan.price}</option>)}</select><input className={field} value={recharging.method || ''} onChange={(event) => setRecharging({ ...recharging, method: event.target.value })} placeholder="Payment method" /><input className={field} value={recharging.reference || ''} onChange={(event) => setRecharging({ ...recharging, reference: event.target.value })} placeholder="Payment reference (optional)" /><p className="rounded-xl bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">The selected package will be paid, assigned, and the client reactivated.</p><button disabled={busyId === `recharge-${recharging.id}`} className="w-full rounded-xl bg-emerald-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busyId === `recharge-${recharging.id}` ? 'Recharging…' : 'Recharge client'}</button></div></form></div>}    {editing && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={saveEdit} className="w-full max-w-md rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><h3 className="text-lg font-black">Edit subscriber</h3><button type="button" onClick={() => setEditing(null)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><input required className={field} value={editing.full_name} onChange={(event) => setEditing({ ...editing, full_name: event.target.value })} placeholder="Full name" /><input className={field} value={editing.phone || ''} onChange={(event) => setEditing({ ...editing, phone: event.target.value })} placeholder="Phone" /><input type="email" className={field} value={editing.email || ''} onChange={(event) => setEditing({ ...editing, email: event.target.value })} placeholder="Email" /><select className={field} value={editing.plan_id || ''} onChange={(event) => setEditing({ ...editing, plan_id: event.target.value })}><option value="">No package</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><select className={field} value={editing.router_id || ''} onChange={(event) => setEditing({ ...editing, router_id: event.target.value })}><option value="">No router assigned</option>{routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.last_status ? ` — ${router.last_status}` : ''}</option>)}</select><label className="block text-xs font-bold text-slate-600">VLAN ID (optional)<input type="number" min="1" max="4094" className={field + ' mt-1.5'} value={editing.vlan_id || ''} onChange={(event) => setEditing({ ...editing, vlan_id: event.target.value })} placeholder="Leave blank for no VLAN" /></label><div className="grid grid-cols-3 gap-3"><input type="number" min="0" max="90" className={field} value={editing.grace_period_days || 0} onChange={(event) => setEditing({ ...editing, grace_period_days: event.target.value })} aria-label="Grace period days" /><select className={field} value={editing.service_status} onChange={(event) => setEditing({ ...editing, service_status: event.target.value })}><option value="active">Active</option><option value="suspended">Suspended</option><option value="expired">Expired</option><option value="pending">Pending</option></select></div><button disabled={busyId === editing.id} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">Save changes</button></div></form></div>}
     {createOpen && <div className="fixed inset-0 z-[10000] flex items-end justify-center bg-slate-950/50 sm:items-center sm:p-5"><form onSubmit={saveCreate} className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:rounded-3xl"><div className="flex items-center justify-between"><div><h3 className="text-lg font-black">Add subscriber</h3><p className="mt-1 text-xs text-slate-500">Assign this customer to the MikroTik that serves their connection.</p></div><button type="button" onClick={() => setCreateOpen(false)} className="text-2xl text-slate-400">×</button></div><div className="mt-4 space-y-3"><input required className={field} value={creating.full_name} onChange={(event) => setCreating({ ...creating, full_name: event.target.value })} placeholder="Full name" /><input required className={field} value={creating.account_number} onChange={(event) => setCreating({ ...creating, account_number: event.target.value })} placeholder="Client identifier / account number" /><div className="grid grid-cols-3 gap-3"><input className={field} value={creating.phone} onChange={(event) => setCreating({ ...creating, phone: event.target.value })} placeholder="Phone" /><input type="email" className={field} value={creating.email} onChange={(event) => setCreating({ ...creating, email: event.target.value })} placeholder="Email" /></div><select className={field} value={creating.plan_id} onChange={(event) => setCreating({ ...creating, plan_id: event.target.value })}><option value="">Select package later</option>{plans.map((plan) => <option key={plan.id} value={plan.id}>{plan.name}</option>)}</select><select className={field} value={creating.router_id} onChange={(event) => setCreating({ ...creating, router_id: event.target.value })}><option value="">Select router later</option>{routers.map((router) => <option key={router.id} value={router.id}>{router.name}{router.last_status ? ` — ${router.last_status}` : ''}</option>)}</select><label className="block text-xs font-bold text-slate-600">VLAN ID (optional)<input type="number" min="1" max="4094" className={field + ' mt-1.5'} value={creating.vlan_id} onChange={(event) => setCreating({ ...creating, vlan_id: event.target.value })} placeholder="Leave blank for no VLAN" /></label>{!routers.length && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs font-semibold text-amber-700">No MikroTik has been added to this billing account yet.</p>}<label className="block text-xs font-bold text-slate-600">Grace period days<input type="number" min="0" max="90" className={`${field} mt-1.5`} value={creating.grace_period_days} onChange={(event) => setCreating({ ...creating, grace_period_days: event.target.value })} /></label><button disabled={busyId === 'create'} className="w-full rounded-xl bg-violet-600 py-3 text-sm font-extrabold text-white disabled:opacity-50">{busyId === 'create' ? 'Adding…' : 'Add subscriber'}</button></div></form></div>}
   </div>;

@@ -22,9 +22,7 @@ export class OpenAIRealtimeSession {
   start() {
     if (!config.openaiApiKey) throw new Error('OPENAI_API_KEY is required');
     this.socket = new this.WebSocketImpl(realtimeUrl(), {
-      headers: {
-        Authorization: `Bearer ${config.openaiApiKey}`,
-      },
+      headers: { Authorization: `Bearer ${config.openaiApiKey}` },
     });
 
     this.socket.on('open', () => {
@@ -33,7 +31,6 @@ export class OpenAIRealtimeSession {
         type: 'session.update',
         session: {
           type: 'realtime',
-          model: config.openaiModel,
           instructions: config.agentPrompt,
           output_modalities: ['audio'],
           audio: {
@@ -69,11 +66,7 @@ export class OpenAIRealtimeSession {
 
   handleMessage(data) {
     let event;
-    try {
-      event = JSON.parse(data.toString());
-    } catch {
-      return;
-    }
+    try { event = JSON.parse(data.toString()); } catch { return; }
 
     if (event.type === 'session.updated' && !this.greeted) {
       this.configured = true;

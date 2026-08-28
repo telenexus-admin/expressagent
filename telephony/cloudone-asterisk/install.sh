@@ -6,6 +6,7 @@ CLOUDONE_PORT="${CLOUDONE_PORT:-5060}"
 CLOUDONE_USER="${CLOUDONE_USER:-telenexus}"
 PRIMARY_DID="${PRIMARY_DID:-254207913950}"
 PUBLIC_IP="${PUBLIC_IP:-169.58.177.113}"
+FORWARD_SOURCE_IP="${FORWARD_SOURCE_IP:-149.50.107.52}"
 
 DIDS=("254207913950" "254207913951" "254207913952" "254207913953")
 
@@ -224,6 +225,26 @@ endpoint=cloudone-endpoint
 match=${CLOUDONE_HOST}
 srv_lookups=yes
 
+[forwarding-endpoint]
+type=endpoint
+transport=nexa-cloudone-udp
+context=from-cloudone
+disallow=all
+allow=ulaw
+allow=alaw
+direct_media=no
+rtp_symmetric=yes
+force_rport=yes
+rewrite_contact=yes
+contact_user=\${PRIMARY_DID}
+send_pai=no
+trust_id_inbound=no
+
+[forwarding-identify]
+type=identify
+endpoint=forwarding-endpoint
+match=${FORWARD_SOURCE_IP}/32
+
 [cloudone-registration]
 type=registration
 transport=nexa-cloudone-udp
@@ -284,6 +305,8 @@ exten => _X.,1,Goto(nexa-cloudone-forward,s,1)
 
 [nexa-cloudone-forward]
 exten => s,1,NoOp(Nexa inbound CloudOne call)
+ same => n,Set(CALLERID(num)=${PRIMARY_DID})
+ same => n,Set(CALLERID(name)=Nexa Forwarded)
  same => n,Dial(PJSIP/vapi-endpoint/sip:${VAPI_SIP_USER}@${VAPI_SIP_HOST}:5060,90)
  same => n,Hangup()
 

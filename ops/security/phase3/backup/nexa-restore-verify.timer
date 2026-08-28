@@ -1,0 +1,11 @@
+[Unit]
+Description=Run weekly Nexa disaster-recovery restore proof
+
+[Timer]
+OnCalendar=Sun *-*-* 03:23:00
+RandomizedDelaySec=30m
+Persistent=true
+Unit=nexa-restore-verify.service
+
+[Install]
+WantedBy=timers.target

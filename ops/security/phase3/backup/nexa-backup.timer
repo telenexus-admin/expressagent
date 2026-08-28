@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Nexa encrypted backup every night
+
+[Timer]
+OnCalendar=*-*-* 01:17:00
+RandomizedDelaySec=20m
+Persistent=true
+Unit=nexa-backup.service
+
+[Install]
+WantedBy=timers.target

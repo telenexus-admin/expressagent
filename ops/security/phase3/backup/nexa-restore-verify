@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+umask 077
+
+readonly CONFIG_FILE="/etc/nexa-backup/backup.env"
+readonly OFFSITE_FILE="/etc/nexa-backup/offsite.env"
+readonly STATE_DIR="/var/lib/nexa-backup"
+readonly LOCK_FILE="/run/lock/nexa-phase3-restore-verify.lock"
+
+export RESTIC_CACHE_DIR="${STATE_DIR}/cache"
+mkdir -p "${RESTIC_CACHE_DIR}"
+exec 9>"${LOCK_FILE}"
+flock -n 9 || { logger -t nexa-restore-verify "restore verification already running"; exit 0; }
+
+[[ -r "${CONFIG_FILE}" ]] || { echo "Missing ${CONFIG_FILE}" >&2; exit 1; }
+# shellcheck disable=SC1090
+source "${CONFIG_FILE}"
+[[ -r "${OFFSITE_FILE}" ]] && source "${OFFSITE_FILE}"
+
+verify_repository() {
+  local repository="$1"
+  local password_file="$2"
+  local label="$3"
+  local restore_dir verify_db manifest_dir
+
+  export RESTIC_REPOSITORY="${repository}"
+  export RESTIC_PASSWORD_FILE="${password_file}"
+  restore_dir="$(mktemp -d "${STATE_DIR}/restore.${label}.XXXXXX")"
+  verify_db="nexa_restore_verify_${label}_$(date +%s)_${RANDOM}"
+
+  cleanup_verify() {
+    runuser -u postgres -- dropdb --if-exists "${verify_db}" >/dev/null 2>&1 || true
+    rm -rf -- "${restore_dir}"
+  }
+  trap cleanup_verify RETURN
+
+  restic check --read-data-subset=10%
+  restic restore latest --tag nexa-phase3 --target "${restore_dir}"
+
+  manifest_dir="$(dirname "$(find "${restore_dir}" -type f -name SHA256SUMS -print -quit)")"
+  [[ -n "${manifest_dir}" && -f "${manifest_dir}/SHA256SUMS" ]] || {
+    echo "Backup checksum manifest is missing" >&2
+    return 1
+  }
+  (cd "${manifest_dir}" && sha256sum --check SHA256SUMS)
+
+  for database in nexa_billing radius; do
+    dump_file="$(find "${restore_dir}" -type f -path "*/databases/${database}.dump" -print -quit)"
+    [[ -s "${dump_file}" ]] || { echo "Missing ${database} dump" >&2; return 1; }
+    runuser -u postgres -- pg_restore --list < "${dump_file}" >/dev/null
+
+    runuser -u postgres -- createdb "${verify_db}"
+    runuser -u postgres -- pg_restore \
+      --exit-on-error \
+      --no-owner \
+      --no-privileges \
+      --dbname="${verify_db}" < "${dump_file}"
+    table_count="$(runuser -u postgres -- psql -Atd "${verify_db}" -c "SELECT count(*) FROM pg_catalog.pg_tables WHERE schemaname = 'public'")"
+    [[ "${table_count}" =~ ^[0-9]+$ && "${table_count}" -gt 0 ]] || {
+      echo "${database} restore produced no public tables" >&2
+      return 1
+    }
+    runuser -u postgres -- dropdb "${verify_db}"
+  done
+
+  trap - RETURN
+  cleanup_verify
+}
+
+: "${NEXA_LOCAL_REPOSITORY:?NEXA_LOCAL_REPOSITORY is required}"
+: "${NEXA_LOCAL_PASSWORD_FILE:?NEXA_LOCAL_PASSWORD_FILE is required}"
+verify_repository "${NEXA_LOCAL_REPOSITORY}" "${NEXA_LOCAL_PASSWORD_FILE}" local
+
+if [[ -n "${NEXA_OFFSITE_REPOSITORY:-}" || -n "${NEXA_OFFSITE_PASSWORD_FILE:-}" ]]; then
+  : "${NEXA_OFFSITE_REPOSITORY:?Both off-site settings are required}"
+  : "${NEXA_OFFSITE_PASSWORD_FILE:?Both off-site settings are required}"
+  verify_repository "${NEXA_OFFSITE_REPOSITORY}" "${NEXA_OFFSITE_PASSWORD_FILE}" offsite
+  date -u +%FT%TZ > "${STATE_DIR}/last-offsite-restore-verified"
+fi
+
+date -u +%FT%TZ > "${STATE_DIR}/last-restore-verified"
+logger -p authpriv.info -t nexa-restore-verify "latest encrypted backup restored into disposable databases successfully"

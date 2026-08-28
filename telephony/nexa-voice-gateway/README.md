@@ -10,7 +10,7 @@ CloudOne SIP -> Asterisk -> Nexa Voice Gateway -> OpenAI Realtime
                                       |---- PCMU RTP ---|
 ```
 
-The gateway uses G.711 μ-law/PCMU end-to-end for the first telephony implementation, so the Asterisk External Media channel can exchange 8 kHz telephone audio directly with the OpenAI Realtime session. OpenAI documents PCMU as a supported Realtime input and output format. citeturn1search0turn3search0
+The gateway uses G.711 μ-law/PCMU end-to-end for the first telephony implementation, so the Asterisk External Media channel can exchange 8 kHz telephone audio directly with the OpenAI Realtime session.
 
 ## Current capabilities
 
@@ -45,7 +45,7 @@ NEXA_AGENT_PROMPT=Your Nexa system prompt here
 NEXA_GREETING=Greet the caller as Nexa and ask how you can help.
 ```
 
-The Realtime API accepts session instructions and PCMU audio configuration, and server-side VAD can automatically create responses after the caller finishes speaking. citeturn1search4turn3search0
+The Realtime API accepts session instructions and PCMU audio configuration, and server-side VAD can automatically create responses after the caller finishes speaking.
 
 ## Test locally
 

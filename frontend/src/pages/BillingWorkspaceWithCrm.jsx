@@ -9,22 +9,15 @@ function CrmNavigation() {
 
   return (
     <>
-      <style>{`
-        @media (min-width: 1024px) {
-          /* Reserve one real navigation row between Customers and Services. */
-          aside > div.mt-2 > section:nth-child(3) {
-            margin-top: 44px !important;
-          }
-        }
-      `}</style>
-
+      {/* Keep CRM visible at every viewport size. This sits inside the same
+          left navigation column instead of relying on the desktop breakpoint. */}
       <button
         type="button"
         onClick={() => navigate('/crm/leads')}
-        className={`fixed left-2.5 top-[194px] z-[55] hidden h-[38px] w-[198px] items-center gap-2 rounded-lg px-2 text-left text-[12.35px] font-semibold tracking-[-.015em] transition lg:flex ${
+        className={`fixed left-2.5 top-[194px] z-[100] flex h-[38px] w-[198px] items-center gap-2 rounded-lg border-0 px-2 text-left text-[12.35px] font-semibold tracking-[-.015em] transition ${
           leadsActive
             ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100'
-            : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+            : 'bg-white text-slate-600 shadow-sm hover:bg-slate-50 hover:text-slate-900'
         }`}
         title="CRM Leads"
         aria-label="CRM Leads"
@@ -40,17 +33,6 @@ function CrmNavigation() {
         </span>
         <span className="min-w-0 flex-1 truncate">Leads</span>
         {leadsActive && <span className="h-2 w-2 shrink-0 rounded-full bg-emerald-400" />}
-      </button>
-
-      <button
-        type="button"
-        onClick={() => navigate('/crm/leads')}
-        className="fixed bottom-5 right-5 z-50 flex items-center gap-2 rounded-2xl bg-slate-950 px-4 py-3 text-sm font-black text-white shadow-2xl shadow-slate-900/20 ring-1 ring-white/10 transition hover:-translate-y-0.5 hover:bg-indigo-600 lg:hidden"
-        title="Open CRM Leads"
-        aria-label="Open CRM Leads"
-      >
-        <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-white/10 text-xs">CRM</span>
-        Leads
       </button>
     </>
   );

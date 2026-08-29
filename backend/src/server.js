@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const helmet = require('helmet');
 const db = require('./db');
 const { onboardingLimiter, publicWriteLimiter, portalLoginLimiter } = require('./security/rateLimits');
+const { ensureCrmSchema } = require('./db/crm');
 
 const authRoutes = require('./routes/auth');
 const conversationRoutes = require('./routes/conversations');
@@ -62,6 +63,7 @@ const customerSurveyRoutes = require('./routes/feedbackWebhook');
 const webhookRoutes = require('./routes/webhook');
 const evolutionWebhookRoutes = require('./routes/evolutionWebhook');
 const clientEvolutionWebhookRoutes = require('./routes/clientEvolutionWebhook');
+const crmLeadsRoutes = require('./routes/crmLeads');
 const { startDailyReportScheduler } = require('./services/dailyReports');
 const { startOperatorFollowUpScheduler } = require('./services/evolution');
 const { startHumanTakeoverRecoveryScheduler } = require('./services/humanTakeoverRecovery');
@@ -82,88 +84,35 @@ const { startNetworkExecutorScheduler } = require('./services/networkExecutor');
 const { startNetworkEnrollmentScheduler } = require('./services/networkEnrollment');
 const { ensureEventSchema } = require('./services/events');
 const { openAIModelSummary } = require('./services/openai');
-const {
-  startHotspotSubscriberScheduler,
-} = require('./services/hotspotSubscriberAccess');
+const { startHotspotSubscriberScheduler } = require('./services/hotspotSubscriberAccess');
 
 const app = express();
 app.set('trust proxy', 1);
 app.disable('x-powered-by');
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false,
-  crossOriginResourcePolicy: false,
-  referrerPolicy: { policy: 'no-referrer' },
-  hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
-}));
+app.use(helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false, crossOriginResourcePolicy: false, referrerPolicy: { policy: 'no-referrer' }, hsts: { maxAge: 31536000, includeSubDomains: true, preload: true } }));
 app.use(cookieParser());
-
-const writeOnly = (limiter) => (req, res, next) =>
-  ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : limiter(req, res, next);
-
+const writeOnly = (limiter) => (req, res, next) => ['GET', 'HEAD', 'OPTIONS'].includes(req.method) ? next() : limiter(req, res, next);
 const tenantCorsCache = new Map();
 const TENANT_CORS_CACHE_MS = 60 * 1000;
-
 async function isAllowedCorsOrigin(origin) {
   if (!origin) return true;
-  const allowed = [
-    process.env.FRONTEND_URL || 'http://localhost:5173',
-    'https://neemainternet.co.ke',
-    'https://www.neemainternet.co.ke',
-    'https://neemainternetsolution.co.ke',
-    'https://www.neemainternetsolution.co.ke',
-    'https://billing.polyizon.tech',
-    ...String(process.env.SITE_CHAT_ALLOWED_ORIGINS || '')
-      .split(',')
-      .map((item) => item.trim())
-      .filter(Boolean),
-  ];
+  const allowed = [process.env.FRONTEND_URL || 'http://localhost:5173','https://neemainternet.co.ke','https://www.neemainternet.co.ke','https://neemainternetsolution.co.ke','https://www.neemainternetsolution.co.ke','https://billing.polyizon.tech',...String(process.env.SITE_CHAT_ALLOWED_ORIGINS || '').split(',').map((item) => item.trim()).filter(Boolean)];
   if (allowed.includes(origin)) return true;
-
   try {
-    const url = new URL(origin);
-    const host = url.hostname.toLowerCase();
-    if (
-      host === 'localhost' ||
-      host === 'neemainternet.co.ke' ||
-      host.endsWith('.neemainternet.co.ke') ||
-      host.endsWith('.neemainternetsolution.co.ke') ||
-      ((host.includes('neema') || host.includes('nis')) && host.endsWith('.ondigitalocean.app'))
-    ) return true;
-
+    const url = new URL(origin); const host = url.hostname.toLowerCase();
+    if (host === 'localhost' || host === 'neemainternet.co.ke' || host.endsWith('.neemainternet.co.ke') || host.endsWith('.neemainternetsolution.co.ke') || ((host.includes('neema') || host.includes('nis')) && host.endsWith('.ondigitalocean.app'))) return true;
     if (url.protocol !== 'https:' || !host.endsWith('.polyizon.tech')) return false;
-    const cached = tenantCorsCache.get(host);
-    if (cached && cached.expiresAt > Date.now()) return cached.allowed;
-    const result = await db.query(
-      `SELECT 1 FROM client_domains WHERE LOWER(domain) = $1 AND status = 'active' LIMIT 1`,
-      [host]
-    );
-    const tenantAllowed = Boolean(result.rows[0]);
-    tenantCorsCache.set(host, { allowed: tenantAllowed, expiresAt: Date.now() + TENANT_CORS_CACHE_MS });
-    return tenantAllowed;
-  } catch {
-    return false;
-  }
+    const cached = tenantCorsCache.get(host); if (cached && cached.expiresAt > Date.now()) return cached.allowed;
+    const result = await db.query(`SELECT 1 FROM client_domains WHERE LOWER(domain) = $1 AND status = 'active' LIMIT 1`, [host]);
+    const tenantAllowed = Boolean(result.rows[0]); tenantCorsCache.set(host, { allowed: tenantAllowed, expiresAt: Date.now() + TENANT_CORS_CACHE_MS }); return tenantAllowed;
+  } catch { return false; }
 }
-
 app.use((req, res, next) => {
-  const isPublicApi =
-    req.path.startsWith('/api/public/site-chat') ||
-    req.path.startsWith('/api/public/noc') ||
-    req.path.startsWith('/api/public/hotspot');
-  return cors({
-    origin(origin, callback) {
-      if (isPublicApi) return callback(null, true);
-      isAllowedCorsOrigin(origin)
-        .then((allowed) => callback(null, allowed))
-        .catch((error) => callback(error));
-    },
-    credentials: !isPublicApi,
-  })(req, res, next);
+  const isPublicApi = req.path.startsWith('/api/public/site-chat') || req.path.startsWith('/api/public/noc') || req.path.startsWith('/api/public/hotspot');
+  return cors({ origin(origin, callback) { if (isPublicApi) return callback(null, true); isAllowedCorsOrigin(origin).then((allowed) => callback(null, allowed)).catch((error) => callback(error)); }, credentials: !isPublicApi })(req, res, next);
 });
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
 app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvolutionWebhookRoutes);
-
 app.use(express.json({ limit: '12mb' }));
 app.use('/api/public/evo-onboarding', writeOnly(publicWriteLimiter), evoSelfOnboardingRoutes);
 app.use('/api/public/customer-intake', writeOnly(publicWriteLimiter), customerIntakeRoutes);
@@ -201,6 +150,7 @@ app.use('/api/billing-workspace/pppoe-portal', pppoePortalRoutes.adminRouter);
 app.use('/api/billing-agents', billingAgentRoutes.adminRouter);
 app.use('/api/agent-portal/extensions', billingAgentPortalExtensions);
 app.use('/api/agent-portal', billingAgentRoutes.portalRouter);
+app.use('/api/crm', crmLeadsRoutes);
 app.use('/api/media-library', mediaLibraryRoutes);
 app.use('/api/website-knowledge', websiteKnowledgeRoutes);
 app.use('/api/mikrotik', mikrotikRoutes);
@@ -220,47 +170,16 @@ app.use('/api/push', pushRoutes);
 app.use('/api/operator-agent', operatorAgentRoutes);
 app.use('/api/operator-evolution', operatorEvolutionRoutes);
 app.use('/api/operator-update-contacts', operatorUpdateContactRoutes);
-
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));
-
-app.use((err, _req, res, _next) => {
-  console.error('Unhandled error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
-
-const PORT = process.env.PORT || 3001;
-const HOST = process.env.HOST || '127.0.0.1';
+app.use((err, _req, res, _next) => { console.error('Unhandled error:', err); res.status(500).json({ error: 'Internal server error' }); });
+const PORT = process.env.PORT || 3001; const HOST = process.env.HOST || '127.0.0.1';
 app.listen(PORT, HOST, () => {
   console.log(`WhatsApp Support backend running on ${HOST}:${PORT}`);
   console.log(`OpenAI runtime config: ${JSON.stringify(openAIModelSummary())}`);
-  billingAgentPortalExtensions.ensureSchema()
-    .then(() => console.log('Agent portal extension schema ready.'))
-    .catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
-  pppoePortalRoutes.ensureSchema()
-    .then(() => console.log('PPPoE customer portal schema ready.'))
-    .catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
+  ensureCrmSchema().then(() => console.log('CRM leads schema ready.')).catch((error) => console.error('CRM leads schema initialization failed:', error.message));
+  billingAgentPortalExtensions.ensureSchema().then(() => console.log('Agent portal extension schema ready.')).catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
+  pppoePortalRoutes.ensureSchema().then(() => console.log('PPPoE customer portal schema ready.')).catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
   pppoePortalRoutes.startPppoePortalScheduler();
-  ensureEventSchema()
-    .then(() => console.log('Billing event schema ready.'))
-    .catch((error) => console.error('Billing event schema initialization failed:', error.message));
-  startDailyReportScheduler();
-  startOperatorFollowUpScheduler();
-  startHumanTakeoverRecoveryScheduler();
-  startWebsiteKnowledgeScheduler();
-  startAiTaskScheduler();
-  startMikrotikMonitorScheduler();
-  startHotspotSubscriberScheduler();
-  startRadiusSyncJobScheduler();
-  startRadiusSessionEventScheduler();
-  startKnowledgeProcessorScheduler();
-  startKnowledgeBootstrapScheduler();
-  startKnowledgeLLMScheduler();
-  startDigitalTwinScheduler();
-  tr069Routes.startTr069TelemetryScheduler?.();
-  startTwinStabilitySchedulers();
-  startIncidentCommanderScheduler();
-  startNetworkObservabilityScheduler();
-  startNetworkShadowPlannerScheduler();
-  startNetworkExecutorScheduler();
-  startNetworkEnrollmentScheduler();
+  ensureEventSchema().then(() => console.log('Billing event schema ready.')).catch((error) => console.error('Billing event schema initialization failed:', error.message));
+  startDailyReportScheduler(); startOperatorFollowUpScheduler(); startHumanTakeoverRecoveryScheduler(); startWebsiteKnowledgeScheduler(); startAiTaskScheduler(); startMikrotikMonitorScheduler(); startHotspotSubscriberScheduler(); startRadiusSyncJobScheduler(); startRadiusSessionEventScheduler(); startKnowledgeProcessorScheduler(); startKnowledgeBootstrapScheduler(); startKnowledgeLLMScheduler(); startDigitalTwinScheduler(); tr069Routes.startTr069TelemetryScheduler?.(); startTwinStabilitySchedulers(); startIncidentCommanderScheduler(); startNetworkObservabilityScheduler(); startNetworkShadowPlannerScheduler(); startNetworkExecutorScheduler(); startNetworkEnrollmentScheduler();
 });

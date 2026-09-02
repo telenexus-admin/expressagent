@@ -263,7 +263,8 @@ function trustedOrigin(req) {
   try {
     const url = new URL(origin);
     return url.protocol === 'https:' && (
-      url.hostname === 'billing.polyizon.tech' || url.hostname.endsWith('.billing.polyizon.tech')
+      url.hostname === 'billing.polyizon.tech' ||
+      url.hostname === 'demo.polyizon.tech'
     );
   } catch {
     return false;

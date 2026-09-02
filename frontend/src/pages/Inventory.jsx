@@ -157,12 +157,12 @@ export default function Inventory() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f8faff] p-5 sm:p-8">
-      <div className="mx-auto max-w-7xl">
+    <div className="flex-1 overflow-y-auto bg-[#f7f8f7]"><section className="relative overflow-hidden bg-gradient-to-br from-[#042215] via-[#075232] to-[#0a3623] px-5 py-7 text-white sm:px-8 sm:py-10"><div className="mx-auto max-w-7xl"><p className="text-[10px] font-extrabold uppercase tracking-[.2em] text-emerald-200">Operations stockroom</p><h1 className="mt-2 font-[Georgia,Times,serif] text-[2rem] font-semibold leading-none tracking-[-.04em] sm:text-[2.5rem]">Inventory</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-50/85">Keep installation teams supplied with accurate, accountable stock.</p></div></section>
+      <div className="mx-auto max-w-7xl px-5 py-5 sm:px-8 sm:py-7">
         <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-2xl font-black tracking-normal text-[#101633]">Inventory</h1>
-            <p className="mt-1 text-sm font-medium text-[#657194]">Track routers, cables, ONTs, radios and other stock used by your support and installation teams.</p>
+            <h2 className="text-sm font-black uppercase tracking-[0.14em] text-[#101633]">Stock controls</h2>
+            <p className="mt-1 text-sm font-medium text-[#657194]">Search, update and archive stock records.</p>
           </div>
           <button
             type="button"
@@ -208,7 +208,7 @@ export default function Inventory() {
                     Cancel
                   </button>
                 )}
-                <button type="button" onClick={save} disabled={saving} className="h-11 flex-1 rounded-xl bg-[#4f35f5] text-sm font-black text-white shadow-[0_10px_24px_rgba(79,53,245,0.2)] disabled:opacity-50">
+                <button type="button" onClick={save} disabled={saving} className="h-11 flex-1 rounded-xl bg-emerald-600 text-sm font-black text-white shadow-[0_10px_24px_rgba(5,150,105,0.2)] transition hover:bg-emerald-700 disabled:opacity-50">
                   {saving ? 'Saving...' : editingId ? 'Save Item' : 'Add Item'}
                 </button>
               </div>

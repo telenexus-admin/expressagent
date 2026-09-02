@@ -52,8 +52,8 @@ export default function BillingWorkspaceWithCrm() {
       <CrmNavigationBridge />
       {leadsActive && (
         <main className="absolute inset-x-0 top-[64px] bottom-0 z-10 overflow-y-auto bg-slate-50 lg:left-[218px] lg:top-[76px]">
-          <div className="mx-auto max-w-[1500px] p-3 pb-24 sm:p-8 lg:pb-8">
-            <div className="mb-5 flex items-start justify-between gap-4 border-b border-slate-200 pb-5">
+          <div className="mx-auto max-w-[1500px]">
+            <div className="hidden">
               <div>
                 <div className="text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">CUSTOMERS / CRM</div>
                 <h1 className="mt-1 font-[Georgia,Times,serif] text-[1.7rem] font-semibold tracking-[-.03em] text-slate-950">Leads</h1>

@@ -1,5 +1,5 @@
 import React, { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useLocation, useNavigate } from 'react-router-dom';
 import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import { getStoredTheme, resolveTheme, saveTheme } from '../utils/theme';
@@ -148,6 +148,8 @@ function BillingWorkspaceSkeleton() { return <div className="space-y-5" aria-lab
 
 export default function BillingWorkspace() {
   const { admin, logout } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
   const [tab, setTab] = useState('overview'); const [open, setOpen] = useState(false); const [sidebarCollapsed, setSidebarCollapsed] = useState(false); const [darkMode, setDarkMode] = useState(() => resolveTheme(getStoredTheme()) === 'dark'); const [profileOpen, setProfileOpen] = useState(false); const [mobileExpanded, setMobileExpanded] = useState(false); const [loading, setLoading] = useState(true); const [saving, setSaving] = useState(false); const [error, setError] = useState('');
   const [summary, setSummary] = useState(null); const [employees, setEmployees] = useState([]); const [reportTickets, setReportTickets] = useState([]); const [plans, setPlans] = useState([]); const [subscribers, setSubscribers] = useState([]); const [invoices, setInvoices] = useState([]); const [payments, setPayments] = useState([]); const [radiusStatus, setRadiusStatus] = useState(null); const [routers, setRouters] = useState([]); const [bandwidthHistory, setBandwidthHistory] = useState([]); const [bandwidthTick, setBandwidthTick] = useState(0); const [hotspotPlans, setHotspotPlans] = useState([]); const [vouchers, setVouchers] = useState([]); const [mikrotikClients, setMikrotikClients] = useState([]); const [search, setSearch] = useState(''); const [subscriberView, setSubscriberView] = useState('pppoe'); const [packageView, setPackageView] = useState('pppoe'); const [subscriberCreateOpen, setSubscriberCreateOpen] = useState(false);
   const [planForm, setPlanForm] = useState(emptyPlan); const [subscriberForm, setSubscriberForm] = useState(emptySubscriber); const [invoiceForm, setInvoiceForm] = useState(emptyInvoice); const [paymentForm, setPaymentForm] = useState(emptyPayment); const [radiusForm, setRadiusForm] = useState(emptyRadius); const [routerForm, setRouterForm] = useState({ name: '', password: '' }); const [routerPlan, setRouterPlan] = useState(null); const [routerNotice, setRouterNotice] = useState(''); const [hotspotPlanForm, setHotspotPlanForm] = useState(emptyHotspotPlan); const [voucherForm, setVoucherForm] = useState({ plan_id: '', quantity: '1' });
@@ -596,9 +598,11 @@ export default function BillingWorkspace() {
       );
     }
 
-    setTab(
-      nextTab
-    );
+    if (location.pathname === '/crm/leads') {
+      navigate('/billing', { replace: true });
+    }
+
+    setTab(nextTab);
 
     setOpen(
       false

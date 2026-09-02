@@ -157,7 +157,7 @@ export default function Inventory() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto bg-[#f7f8f7]"><section className="relative overflow-hidden bg-gradient-to-br from-[#042215] via-[#075232] to-[#0a3623] px-5 py-7 text-white sm:px-8 sm:py-10"><div className="mx-auto max-w-7xl"><p className="text-[10px] font-extrabold uppercase tracking-[.2em] text-emerald-200">Operations stockroom</p><h1 className="mt-2 font-[Georgia,Times,serif] text-[2rem] font-semibold leading-none tracking-[-.04em] sm:text-[2.5rem]">Inventory</h1><p className="mt-3 max-w-2xl text-sm leading-6 text-emerald-50/85">Keep installation teams supplied with accurate, accountable stock.</p></div></section>
+    <div className="-mx-3 -mt-3 min-h-screen bg-[#f7f8f7] sm:-mx-8 sm:-mt-8"><section className="relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:px-8"><div className="relative z-10 mx-auto max-w-7xl"><p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Operations stockroom</p><h1 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Inventory</h1><p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">Keep installation teams supplied with accurate, accountable stock.</p></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C210 30 330 178 520 112 C735 36 850 170 1040 70 C1110 34 1165 55 1200 32 L1200 180 L0 180 Z" fill="#f7f8fb" /></svg></div></section>
       <div className="mx-auto max-w-7xl px-5 py-5 sm:px-8 sm:py-7">
         <div className="mb-6 flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>

@@ -1266,7 +1266,7 @@ useEffect(() => {
 
         .hotspot-layout-list
         .hotspot-package-card {
-          width: 75%;
+          width: 100%;
           justify-self: center;
           grid-template-columns:
             72px minmax(0, 1fr) auto !important;
@@ -1813,45 +1813,47 @@ useEffect(() => {
 
         {flashOffer && (
           <section
-            className={`relative z-20 px-3 sm:px-6 ${
+            className={'relative z-20 px-3 sm:px-6 '+(
               campaignEnabled && campaignMessage
                 ? 'mt-4'
                 : '-mt-5 sm:-mt-7'
-            }`}
+            )}
           >
-            <button
-              type="button"
-              onClick={() => choosePlan(flashOffer)}
-              className="hotspot-card-shadow mx-auto flex w-full max-w-[270px] items-center gap-3 rounded-2xl border border-pink-100 bg-white p-2.5 text-left transition hover:-translate-y-0.5"
-            >
-              <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-[#ff0b61] text-[11px] font-black leading-3 text-white shadow-sm shadow-pink-500/25">
-                -{flashDiscount}%
-                <span className="text-[8px] tracking-wide">OFF</span>
-              </span>
-
-              <span className="min-w-0 flex-1">
-                <span className="block text-[8px] font-black uppercase tracking-[.18em] text-pink-500">Flash offer</span>
-                <span className="mt-0.5 block truncate text-sm font-black text-[#111a38]">
-                  {planHeadline(flashOffer)} · {durationParts(flashOffer.duration_minutes).value}{durationParts(flashOffer.duration_minutes).unit}
+            <div className="hotspot-card-shadow mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl border border-pink-100 bg-white">
+              <button
+                type="button"
+                onClick={() => choosePlan(flashOffer)}
+                className="flex w-full items-center gap-3 p-2.5 text-left transition hover:bg-pink-50/30"
+              >
+                <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-[#ff0b61] text-[11px] font-black leading-3 text-white shadow-sm shadow-pink-500/25">
+                  -{flashDiscount}%
+                  <span className="text-[8px] tracking-wide">OFF</span>
                 </span>
-                <span className="mt-0.5 flex items-baseline gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-400 line-through">{money(flashOffer.original_price)}</span>
-                  <span className="text-base font-black text-[#ff0b61]">{money(flashOffer.discount_price)}</span>
+
+                <span className="min-w-0 flex-1">
+                  <span className="block text-[8px] font-black uppercase tracking-[.18em] text-pink-500">Flash offer</span>
+                  <span className="mt-0.5 block truncate text-sm font-black text-[#111a38]">
+                    {planHeadline(flashOffer)} � {durationParts(flashOffer.duration_minutes).value}{durationParts(flashOffer.duration_minutes).unit}
+                  </span>
+                  <span className="mt-0.5 flex items-baseline gap-1.5">
+                    <span className="text-[10px] font-bold text-slate-400 line-through">{money(flashOffer.original_price)}</span>
+                    <span className="text-base font-black text-[#ff0b61]">{money(flashOffer.discount_price)}</span>
+                  </span>
                 </span>
-              </span>
 
-              <Icon name="chevron" className="h-4 w-4 shrink-0 text-pink-500" />
-            </button>
+                <Icon name="chevron" className="h-4 w-4 shrink-0 text-pink-500" />
+              </button>
 
-            <div className="mx-auto mt-2 w-[166px] rounded-2xl border border-pink-100 bg-white/95 px-2 py-1.5 shadow-sm">
-              <CountdownRing
-                offer={
-                  flashOffer
-                }
-                now={
-                  now
-                }
-              />
+              <div className="border-t border-pink-100 bg-pink-50/40 px-2 py-1.5">
+                <CountdownRing
+                  offer={
+                    flashOffer
+                  }
+                  now={
+                    now
+                  }
+                />
+              </div>
             </div>
           </section>
         )}

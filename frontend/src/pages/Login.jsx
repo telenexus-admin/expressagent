@@ -62,8 +62,13 @@ export default function Login({ operatorOnly = false }) {
     try {
       const { data } = await api.post('/auth/mfa/verify', { challenge, code }, { skipAuthRefresh: true });
       finish(data.admin);
-    } catch (err) { setError(err.response?.data?.error || err.message || 'Verification failed.'); }
-    finally { setLoading(false); }
+    } catch (err) {
+      const message = err.response?.data?.error || err.message || 'Verification failed.';
+      if (/verification challenge is invalid or expired/i.test(message)) {
+        setPhase('password'); setChallenge(''); setCode('');
+        setError('Your verification window ended. Sign in again to use a fresh code.');
+      } else { setError(message); }
+    } finally { setLoading(false); }
   };
 
   const confirmSetup = async (event) => {

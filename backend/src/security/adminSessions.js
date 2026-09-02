@@ -366,7 +366,8 @@ async function createChallenge(admin, purpose) {
     { expiresIn: CHALLENGE_TTL, issuer: 'polyizon-billing', audience: 'polyizon-auth' });
 }
 
-async function verifyChallenge(token, expectedPurpose) {
+async function verifyChallenge(token, expectedPurpose, options = {}) {
+  const consume = options.consume !== false;
   const payload = jwt.verify(String(token || ''), requiredSecret('AUTH_CHALLENGE_SECRET'), {
     issuer: 'polyizon-billing', audience: 'polyizon-auth',
   });
@@ -374,11 +375,16 @@ async function verifyChallenge(token, expectedPurpose) {
   const client = await db.connect();
   try {
     await client.query('BEGIN');
-    const consumed = await client.query(`UPDATE admin_auth_challenges
-      SET used_at=NOW() WHERE jti_hash=$1 AND admin_id=$2 AND purpose=$3
-      AND used_at IS NULL AND expires_at > NOW() RETURNING admin_id`,
-      [hash(payload.jti), Number(payload.sub), expectedPurpose]);
-    if (!consumed.rows[0]) throw new Error('Authentication challenge was already used or expired');
+    const challenge = consume
+      ? await client.query(`UPDATE admin_auth_challenges
+          SET used_at=NOW() WHERE jti_hash=$1 AND admin_id=$2 AND purpose=$3
+          AND used_at IS NULL AND expires_at > NOW() RETURNING admin_id`,
+        [hash(payload.jti), Number(payload.sub), expectedPurpose])
+      : await client.query(`SELECT admin_id FROM admin_auth_challenges
+          WHERE jti_hash=$1 AND admin_id=$2 AND purpose=$3
+          AND used_at IS NULL AND expires_at > NOW() FOR SHARE`,
+        [hash(payload.jti), Number(payload.sub), expectedPurpose]);
+    if (!challenge.rows[0]) throw new Error('Authentication challenge was already used or expired');
     const admin = await loadAdmin(Number(payload.sub), client);
     if (!admin || Number(payload.session_version) !== Number(admin.session_version || 1)) throw new Error('Authentication challenge has expired');
     await client.query('COMMIT');

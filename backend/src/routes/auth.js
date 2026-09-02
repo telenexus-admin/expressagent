@@ -314,8 +314,9 @@ router.post('/mfa/setup/confirm', mfaLimiter, async (req, res) => {
 
 router.post('/mfa/verify', mfaLimiter, async (req, res) => {
   try {
+    const candidate = await verifyChallenge(req.body.challenge, 'mfa_login', { consume: false });
+    if (!(await verifyMfa(candidate, req.body.code))) return res.status(401).json({ error: 'The verification code is incorrect.' });
     const admin = await verifyChallenge(req.body.challenge, 'mfa_login');
-    if (!(await verifyMfa(admin, req.body.code))) return res.status(401).json({ error: 'The verification code is incorrect.' });
     await createSession(admin, req, res);
     await successfulLogin(admin);
     return res.json({ admin: publicAdmin(admin) });

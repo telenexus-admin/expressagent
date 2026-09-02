@@ -3792,4 +3792,23 @@ function ensureHotspotMemberSchema(){ if(!hotspotMemberSchemaPromise) hotspotMem
 router.get('/hotspot/members',async(req,res)=>{try{await ensureHotspotMemberSchema();const q=await db.query("SELECT m.id,m.username,m.router_id,m.rate_limit,m.is_active,m.created_at,r.name router_name FROM billing_hotspot_members m LEFT JOIN mikrotik_routers r ON r.id=m.router_id WHERE m.client_id=$1 ORDER BY m.created_at DESC",[req.scope.clientId]);res.json(q.rows)}catch(e){res.status(500).json({error:'Could not load member logins'})}});
 router.post('/hotspot/members',async(req,res)=>{try{await ensureHotspotMemberSchema();const username=String(req.body.username||'').trim(),password=String(req.body.password||''),routerId=Number(req.body.router_id||req.body.routerId),down=Number(req.body.download_mbps||req.body.download||req.body.download_speed_mbps),up=Number(req.body.upload_mbps||req.body.upload||req.body.upload_speed_mbps);const missing=[];if(!/^[A-Za-z0-9._-]{3,48}$/.test(username))missing.push('username');if(password.length<8)missing.push('password (at least 8 characters)');if(!routerId)missing.push('router');if(!(down>0))missing.push('download speed');if(!(up>0))missing.push('upload speed');if(missing.length)return res.status(400).json({error:'Enter: '+missing.join(', ')+'.'});const routerQ=await db.query("SELECT id,COALESCE(wireguard_address,private_tunnel_ip,management_ip) router_address FROM mikrotik_routers WHERE id=$1 AND client_id=$2 LIMIT 1",[routerId,req.scope.clientId]);if(!routerQ.rows[0])return res.status(400).json({error:'Select an onboarded router.'});const rateLimit=up+'M/'+down+'M',hash=await bcrypt.hash(password,12),q=await db.query("INSERT INTO billing_hotspot_members(client_id,router_id,username,password_hash,rate_limit) VALUES($1,$2,$3,$4,$5) RETURNING *",[req.scope.clientId,routerId,username,hash,rateLimit]);const sync=await syncHotspotMemberRadius(Object.assign({},q.rows[0],{password:password,router_address:routerQ.rows[0].router_address}));res.status(201).json({success:true,member:{id:q.rows[0].id,username:q.rows[0].username,router_id:q.rows[0].router_id,rate_limit:q.rows[0].rate_limit,is_active:q.rows[0].is_active},radius_sync:sync})}catch(e){res.status(500).json({error:e.code==='23505'?'That username already exists.':(e.message||'Could not create member')})}});
 
+
+router.get('/settings/profile', async (req, res) => {
+  try {
+    const result = await db.query('SELECT name,business_name,contact_email,support_number,official_contact_name,official_whatsapp_number FROM clients WHERE id=$1 AND account_type=$2 LIMIT 1',[req.scope.clientId,'billing']);
+    if (!result.rows[0]) return res.status(404).json({error:'Billing account not found'});
+    return res.json(result.rows[0]);
+  } catch (error) { console.error('Load billing settings profile error:',error.message); return res.status(500).json({error:'Could not load business profile'}); }
+});
+router.put('/settings/profile', async (req, res) => {
+  try {
+    const clean = (value, max) => String(value || '').trim().slice(0,max);
+    const name=clean(req.body?.name,160), businessName=clean(req.body?.business_name,180), email=clean(req.body?.contact_email,180), support=clean(req.body?.support_number,80), contact=clean(req.body?.official_contact_name,160), whatsapp=clean(req.body?.official_whatsapp_number,80);
+    if (!name) return res.status(400).json({error:'Business account name is required'});
+    const result = await db.query('UPDATE clients SET name=$2,business_name=$3,contact_email=$4,support_number=$5,official_contact_name=$6,official_whatsapp_number=$7 WHERE id=$1 AND account_type=$8 RETURNING name,business_name,contact_email,support_number,official_contact_name,official_whatsapp_number',[req.scope.clientId,name,businessName||null,email||null,support||null,contact||null,whatsapp||null,'billing']);
+    if (!result.rows[0]) return res.status(404).json({error:'Billing account not found'});
+    return res.json(result.rows[0]);
+  } catch (error) { console.error('Save billing settings profile error:',error.message); return res.status(500).json({error:'Could not save business profile'}); }
+});
+
 module.exports = router;

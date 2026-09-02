@@ -303,7 +303,7 @@ function UserMiniIcon() {
 function TicketActions({ ticket, onOpen, onDelete }) {
   return (
     <div className="flex justify-end gap-2">
-      <button onClick={() => onOpen(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-[#4538ff] shadow-sm hover:bg-[#f6f7ff]" title="Open ticket">
+      <button onClick={() => onOpen(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-emerald-700 shadow-sm hover:bg-[#f6f7ff]" title="Open ticket">
         <OpenIcon />
       </button>
       <button onClick={() => onDelete(ticket)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-[#e4e9f4] bg-white text-[#ef4056] shadow-sm hover:bg-red-50" title="Delete ticket">
@@ -555,17 +555,18 @@ export default function Tickets({ detailMode = false }) {
 
   return (
     <div className="min-h-full overflow-y-auto overflow-x-hidden bg-[#f7f9fe] px-3 py-4 text-[#17264d]">
-      <div className="mx-auto w-full max-w-full">
+      <section className="-mx-3 -mt-4 relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:-mx-8 sm:px-8"><div className="relative z-10"><p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Customer support</p><h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Tickets</h2><p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">Track customer issues, coordinate responses, and keep every request moving.</p></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#f7f9fe" /></svg></div></section>
+      <div className="mx-auto w-full max-w-full pt-5">
         <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <MetricCard title="Total Tickets" value={totalTickets} subtitle="All time" Icon={TicketIcon} iconClass="bg-[#eef3ff] text-[#315dff]" lineColor="#7890ff" />
           <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" />
           <MetricCard title="In Progress" value={progressTickets} subtitle={pct(progressTickets, totalTickets)} Icon={HourglassIcon} iconClass="bg-[#fff4df] text-[#ffa51e]" lineColor="#ffb43c" />
-          <MetricCard title="Resolved" value={resolvedTickets} subtitle={pct(resolvedTickets, totalTickets)} Icon={CheckCircleIcon} iconClass="bg-[#f4edff] text-[#6f43ff]" lineColor="#8b6cff" />
+          <MetricCard title="Resolved" value={resolvedTickets} subtitle={pct(resolvedTickets, totalTickets)} Icon={CheckCircleIcon} iconClass="bg-emerald-50 text-emerald-700" lineColor="#34b27b" />
           <MetricCard title="Avg. Resolution Time" value={avgResolutionTime} subtitle={avgResolutionTime === '--' ? 'No resolved tickets yet' : 'Resolved tickets'} Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" />
         </div>
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-gradient-to-r from-[#2f72ff] to-[#8028ff] px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(73,85,255,0.26)] hover:brightness-105">
+          <button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-emerald-500 px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(16,185,129,0.22)] hover:brightness-105">
             <span className="text-xl leading-none">+</span>
             Add Ticket
           </button>
@@ -585,8 +586,8 @@ export default function Tickets({ detailMode = false }) {
             <div className="flex flex-col gap-1.5 text-[10px] font-black text-[#6d7891]">
               View
               <div className="flex h-11 items-center gap-1 rounded-xl border border-[#e1e8f5] bg-white p-1 shadow-[0_10px_25px_rgba(41,57,95,0.06)]">
-                <button onClick={() => setViewMode('list')} className={`flex h-8 w-10 items-center justify-center rounded-lg ${viewMode === 'list' ? 'bg-[#eef2ff] text-[#4538ff]' : 'text-[#7e8aa2]'}`} title="List view"><ListIcon /></button>
-                <button onClick={() => setViewMode('grid')} className={`flex h-8 w-10 items-center justify-center rounded-lg ${viewMode === 'grid' ? 'bg-[#eef2ff] text-[#4538ff]' : 'text-[#7e8aa2]'}`} title="Grid view"><GridIcon /></button>
+                <button onClick={() => setViewMode('list')} className={`flex h-8 w-10 items-center justify-center rounded-lg ${viewMode === 'list' ? 'bg-emerald-50 text-emerald-700' : 'text-[#7e8aa2]'}`} title="List view"><ListIcon /></button>
+                <button onClick={() => setViewMode('grid')} className={`flex h-8 w-10 items-center justify-center rounded-lg ${viewMode === 'grid' ? 'bg-emerald-50 text-emerald-700' : 'text-[#7e8aa2]'}`} title="Grid view"><GridIcon /></button>
               </div>
             </div>
           </div>
@@ -598,7 +599,7 @@ export default function Tickets({ detailMode = false }) {
           <div className="mb-3 flex items-center justify-between">
             <div className="flex items-center gap-3">
               <h2 className="text-xl font-black text-[#17264d]">Latest Tickets</h2>
-              <span className="rounded-full bg-[#eef2ff] px-3 py-1 text-xs font-black text-[#4538ff]">{Math.min(tickets.length, 8)} of {totalTickets || tickets.length}</span>
+              <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{Math.min(tickets.length, 8)} of {totalTickets || tickets.length}</span>
             </div>
           </div>
 
@@ -637,7 +638,7 @@ export default function Tickets({ detailMode = false }) {
                       <td className="border-b border-[#edf2f8] px-2 py-3 align-middle text-base">#{ticket.id}</td>
                       <td className="border-b border-[#edf2f8] px-2 py-3 align-middle">
                         <div className="flex items-center gap-2">
-                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#f0eaff] text-xs font-black text-[#4538ff]">{initials(requester)}</div>
+                          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-black text-emerald-700">{initials(requester)}</div>
                           <div className="min-w-0">
                             <div className="truncate text-sm font-black text-[#17264d]">{requester}</div>
                             <div className="mt-1 text-xs font-bold text-[#9aa7bb]">{ticket.customer_name ? 'Customer' : 'Phone'}</div>
@@ -689,7 +690,7 @@ export default function Tickets({ detailMode = false }) {
                   <article key={ticket.id} className="rounded-2xl border border-[#e8eef8] bg-white p-4 shadow-[0_10px_24px_rgba(31,45,78,0.06)]">
                     <div className="flex items-start justify-between gap-3">
                       <div className="flex min-w-0 items-center gap-3">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#f0eaff] text-xs font-black text-[#4538ff]">{initials(requester)}</div>
+                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-emerald-50 text-xs font-black text-emerald-700">{initials(requester)}</div>
                         <div className="min-w-0">
                           <div className="truncate text-sm font-black text-[#17264d]">{requester}</div>
                           <div className="text-xs font-bold text-[#9aa7bb]">Ticket #{ticket.id}</div>

@@ -265,22 +265,10 @@ function Select({ value, onChange, options, label }) {
   );
 }
 
-function MetricCard({ title, value, subtitle, Icon, iconClass, lineColor }) {
-  return (
-    <div className="flex min-h-[92px] items-center justify-between rounded-2xl border border-[#e7edf8] bg-white px-4 shadow-[0_16px_36px_rgba(33,51,88,0.08)]">
-      <div className="flex items-center gap-4">
-        <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded-full ${iconClass}`}>
-          <Icon className="h-5 w-5" />
-        </div>
-        <div>
-          <div className="text-[11px] font-black text-[#64708c]">{title}</div>
-          <div className="mt-1 text-2xl font-black leading-none text-[#17264d]">{value}</div>
-          <div className="mt-2 text-[11px] font-bold text-[#9aa7bb]">{subtitle}</div>
-        </div>
-      </div>
-      <SparkLine color={lineColor} />
-    </div>
-  );
+function MetricCard({ title, value, subtitle, Icon, iconClass, lineColor, onClick, active }) {
+  const content = <><div className="flex items-center gap-4"><div className={'flex h-12 w-12 shrink-0 items-center justify-center rounded-full '+iconClass}><Icon className="h-5 w-5" /></div><div><div className="text-[11px] font-black text-[#64708c]">{title}</div><div className="mt-1 text-2xl font-black leading-none text-[#17264d]">{value}</div><div className="mt-2 text-[11px] font-bold text-[#9aa7bb]">{subtitle}</div></div></div><SparkLine color={lineColor} /></>;
+  const className = 'flex min-h-[92px] items-center justify-between rounded-2xl border bg-white px-4 text-left shadow-[0_16px_36px_rgba(33,51,88,0.08)] transition '+(active?'border-emerald-400 ring-4 ring-emerald-500/10':'border-[#e7edf8]')+(onClick?' cursor-pointer hover:-translate-y-0.5 hover:border-emerald-300 hover:shadow-[0_18px_40px_rgba(33,51,88,0.12)]':'');
+  return onClick ? <button type="button" onClick={onClick} className={className} aria-pressed={Boolean(active)}>{content}</button> : <div className={className}>{content}</div>;
 }
 
 function TicketSubjectIcon({ ticket }) {
@@ -555,14 +543,14 @@ export default function Tickets({ detailMode = false }) {
 
   return (
     <div className="-mx-3 -mt-3 min-h-full overflow-y-auto overflow-x-hidden bg-[#f7f9fe] pb-20 text-[#17264d] sm:-mx-8 sm:-mt-8">
-      <section className="-mx-3 -mt-4 relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:-mx-8 sm:px-8"><div className="relative z-10 flex items-start justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Customer support</p><h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Tickets</h2><p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">Track customer issues, coordinate responses, and keep every request moving.</p></div><button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-black text-emerald-950 shadow-sm transition hover:bg-emerald-300"><span className="text-lg leading-none">+</span>Add Ticket</button></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#f7f9fe" /></svg></div></section>
+      <section className="-mx-3 -mt-4 relative overflow-hidden billing-network-hero bg-[#0a2417] px-7 pb-14 pt-6 text-white sm:-mx-8 sm:px-10"><div className="relative z-10 flex items-start justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Customer support</p><h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Tickets</h2><p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">Track customer issues, coordinate responses, and keep every request moving.</p></div><button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-black text-emerald-950 shadow-sm transition hover:bg-emerald-300"><span className="text-lg leading-none">+</span>Add Ticket</button></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#f7f9fe" /></svg></div></section>
       <div className="mx-auto w-full max-w-[1500px] px-3 pt-5 sm:px-8">
         <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
-          <MetricCard title="Total Tickets" value={totalTickets} subtitle="All time" Icon={TicketIcon} iconClass="bg-[#eef3ff] text-[#315dff]" lineColor="#7890ff" />
-          <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" />
-          <MetricCard title="In Progress" value={progressTickets} subtitle={pct(progressTickets, totalTickets)} Icon={HourglassIcon} iconClass="bg-[#fff4df] text-[#ffa51e]" lineColor="#ffb43c" />
-          <MetricCard title="Resolved" value={resolvedTickets} subtitle={pct(resolvedTickets, totalTickets)} Icon={CheckCircleIcon} iconClass="bg-emerald-50 text-emerald-700" lineColor="#34b27b" />
-          <MetricCard title="Avg. Resolution Time" value={avgResolutionTime} subtitle={avgResolutionTime === '--' ? 'No resolved tickets yet' : 'Resolved tickets'} Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" />
+          <MetricCard title="Total Tickets" value={totalTickets} subtitle="All time" Icon={TicketIcon} iconClass="bg-[#eef3ff] text-[#315dff]" lineColor="#7890ff" onClick={()=>setStatus('all')} active={status==='all'} />
+          <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" onClick={()=>setStatus('open')} active={status==='open'} />
+          <MetricCard title="In Progress" value={progressTickets} subtitle={pct(progressTickets, totalTickets)} Icon={HourglassIcon} iconClass="bg-[#fff4df] text-[#ffa51e]" lineColor="#ffb43c" onClick={()=>setStatus('in_progress')} active={status==='in_progress'} />
+          <MetricCard title="Resolved" value={resolvedTickets} subtitle={pct(resolvedTickets, totalTickets)} Icon={CheckCircleIcon} iconClass="bg-emerald-50 text-emerald-700" lineColor="#34b27b" onClick={()=>setStatus('resolved')} active={status==='resolved'} />
+          <MetricCard title="Avg. Resolution Time" value={avgResolutionTime} subtitle={avgResolutionTime === '--' ? 'No resolved tickets yet' : 'Resolved tickets'} Icon={TimerIcon} iconClass="bg-[#fff0f1] text-[#ff4d6a]" lineColor="#ff7d93" onClick={()=>setStatus('resolved')} active={status==='resolved'} />
         </div>
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">

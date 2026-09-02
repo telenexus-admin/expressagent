@@ -411,6 +411,22 @@ function Icon({
         <path d="M15 11h7v4h-7a2 2 0 1 1 0-4Z" />
       </>
     ),
+
+    pause: (
+      <>
+        <path d="M8 5v14M16 5v14" />
+      </>
+    ),
+
+    play: (
+      <path d="m8 5 11 7-11 7V5Z" />
+    ),
+
+    trash: (
+      <>
+        <path d="M4 7h16M10 11v6M14 11v6M9 7V4h6v3M6 7l1 13h10l1-13" />
+      </>
+    ),
   };
 
   return (
@@ -424,6 +440,123 @@ function Icon({
     >
       {paths[name]}
     </svg>
+  );
+}
+
+
+
+function FlashCountdown({
+  startsAt,
+  endsAt,
+}) {
+  const [
+    now,
+    setNow,
+  ] = useState(
+    () =>
+      Date.now()
+  );
+
+  useEffect(
+    () => {
+      const timer =
+        window.setInterval(
+          () =>
+            setNow(
+              Date.now()
+            ),
+          1000
+        );
+
+      return () =>
+        window.clearInterval(
+          timer
+        );
+    },
+    []
+  );
+
+  const start =
+    Date.parse(
+      startsAt ||
+      ''
+    );
+  const end =
+    Date.parse(
+      endsAt ||
+      ''
+    );
+
+  if (
+    !Number.isFinite(
+      end
+    ) ||
+    now >= end
+  ) {
+    return null;
+  }
+
+  const scheduled =
+    Number.isFinite(
+      start
+    ) &&
+    now < start;
+  const seconds =
+    Math.max(
+      0,
+      Math.floor(
+        (
+          (scheduled
+            ? start
+            : end) -
+          now
+        ) /
+        1000
+      )
+    );
+  const hours =
+    Math.floor(
+      seconds /
+      3600
+    );
+  const minutes =
+    Math.floor(
+      (
+        seconds %
+        3600
+      ) /
+      60
+    );
+  const remainingSeconds =
+    seconds %
+    60;
+  const pad =
+    value =>
+      String(
+        value
+      )
+        .padStart(
+          2,
+          '0'
+        );
+
+  return (
+    <div className="mt-2 flex items-center gap-2 text-[9px] font-black uppercase tracking-wide text-pink-600">
+      <span className="flex h-5 w-5 items-center justify-center rounded-md bg-pink-100 text-pink-600">
+        <Icon
+          name="bolt"
+          className="h-3 w-3"
+        />
+      </span>
+      <span>
+        {scheduled
+          ? 'Starts in'
+          : 'Ends in'}
+      </span>
+      <strong className="font-mono text-[11px] tracking-normal text-slate-800">
+        {pad(hours)}:{pad(minutes)}:{pad(remainingSeconds)}
+      </strong>
+    </div>
   );
 }
 
@@ -1973,12 +2106,14 @@ export default function HotspotControlCenter({
                           plan
                         )
                       }
-                      className="rounded-lg bg-slate-100 px-2 py-1.5 text-[8px] font-black text-slate-600"
+                      aria-label={plan.is_active === false ? 'Resume package' : 'Pause package'}
+                      title={plan.is_active === false ? 'Resume package' : 'Pause package'}
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-50 text-amber-600 transition hover:bg-amber-100 disabled:opacity-50"
                     >
-                      {plan.is_active ===
-                      false
-                        ? 'Enable'
-                        : 'Disable'}
+                      <Icon
+                        name={plan.is_active === false ? 'play' : 'pause'}
+                        className="h-3.5 w-3.5"
+                      />
                     </button>
 
                     <button
@@ -1991,9 +2126,14 @@ export default function HotspotControlCenter({
                           plan
                         )
                       }
-                      className="hidden rounded-lg bg-rose-50 px-2 py-1.5 text-[8px] font-black text-rose-600 sm:block"
+                      aria-label={'Delete '+plan.name}
+                      title="Delete package"
+                      className="flex h-8 w-8 items-center justify-center rounded-lg bg-rose-50 text-rose-600 transition hover:bg-rose-100 disabled:opacity-50"
                     >
-                      Delete
+                      <Icon
+                        name="trash"
+                        className="h-3.5 w-3.5"
+                      />
                     </button>
                   </div>
                 </article>
@@ -2086,7 +2226,18 @@ export default function HotspotControlCenter({
               </div>
             </div>
           )}
-        </section>
+
+          {settings.flash_enabled && flashPlan && (
+            <FlashCountdown
+              startsAt={
+                settings.flash_starts_at
+              }
+              endsAt={
+                settings.flash_ends_at
+              }
+            />
+          )}
+</section>
 
 
         {/* PROMO SLIDES */}

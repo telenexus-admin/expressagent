@@ -1842,6 +1842,17 @@ useEffect(() => {
 
               <Icon name="chevron" className="h-4 w-4 shrink-0 text-pink-500" />
             </button>
+
+            <div className="mx-auto mt-2 w-[166px] rounded-2xl border border-pink-100 bg-white/95 px-2 py-1.5 shadow-sm">
+              <CountdownRing
+                offer={
+                  flashOffer
+                }
+                now={
+                  now
+                }
+              />
+            </div>
           </section>
         )}
 

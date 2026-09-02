@@ -554,9 +554,9 @@ export default function Tickets({ detailMode = false }) {
   const avgResolutionTime = formatDuration(summary.avg_resolution_seconds);
 
   return (
-    <div className="min-h-full overflow-y-auto overflow-x-hidden bg-[#f7f9fe] px-3 py-4 text-[#17264d]">
-      <section className="-mx-3 -mt-4 relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:-mx-8 sm:px-8"><div className="relative z-10"><p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Customer support</p><h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Tickets</h2><p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">Track customer issues, coordinate responses, and keep every request moving.</p></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#f7f9fe" /></svg></div></section>
-      <div className="mx-auto w-full max-w-full pt-5">
+    <div className="-mx-3 -mt-3 min-h-full overflow-y-auto overflow-x-hidden bg-[#f7f9fe] pb-20 text-[#17264d] sm:-mx-8 sm:-mt-8">
+      <section className="-mx-3 -mt-4 relative overflow-hidden billing-network-hero bg-[#0a2417] px-5 pb-14 pt-6 text-white sm:-mx-8 sm:px-8"><div className="relative z-10 flex items-start justify-between gap-4"><div><p className="text-[9px] font-black uppercase tracking-[.2em] text-emerald-200">Customer support</p><h2 className="mt-1.5 text-2xl font-black tracking-tight sm:text-3xl">Tickets</h2><p className="mt-1.5 max-w-xl text-xs leading-5 text-emerald-100 sm:text-sm">Track customer issues, coordinate responses, and keep every request moving.</p></div><button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="inline-flex shrink-0 items-center gap-2 rounded-xl bg-emerald-400 px-4 py-2.5 text-xs font-black text-emerald-950 shadow-sm transition hover:bg-emerald-300"><span className="text-lg leading-none">+</span>Add Ticket</button></div><div className="pointer-events-none absolute -bottom-1 left-0 right-0 h-9"><svg viewBox="0 0 1200 180" preserveAspectRatio="none" className="h-full w-full"><path d="M0 100 C180 20 300 190 510 115 C720 40 780 175 1000 70 C1090 28 1140 65 1200 25 L1200 180 L0 180 Z" fill="#f7f9fe" /></svg></div></section>
+      <div className="mx-auto w-full max-w-[1500px] px-3 pt-5 sm:px-8">
         <div className="mb-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-5">
           <MetricCard title="Total Tickets" value={totalTickets} subtitle="All time" Icon={TicketIcon} iconClass="bg-[#eef3ff] text-[#315dff]" lineColor="#7890ff" />
           <MetricCard title="Open Tickets" value={openTickets} subtitle={pct(openTickets, totalTickets)} Icon={ActivityIcon} iconClass="bg-[#eafff6] text-[#17c98f]" lineColor="#38cfa1" />
@@ -566,7 +566,7 @@ export default function Tickets({ detailMode = false }) {
         </div>
 
         <div className="mb-4 flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
-          <button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="flex h-12 w-fit items-center gap-3 rounded-xl bg-emerald-500 px-6 text-sm font-black text-white shadow-[0_14px_28px_rgba(16,185,129,0.22)] hover:brightness-105">
+          <button onClick={() => { setTicketForm(EMPTY_TICKET); setFormError(''); setShowTicketModal(true); }} className="hidden">
             <span className="text-xl leading-none">+</span>
             Add Ticket
           </button>

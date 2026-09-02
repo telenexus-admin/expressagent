@@ -51,7 +51,7 @@ export default function BillingWorkspaceWithCrm() {
       <BillingWorkspace />
       <CrmNavigationBridge />
       {leadsActive && (
-        <main className="fixed inset-y-0 left-0 z-10 overflow-y-auto bg-slate-50 lg:left-[218px]">
+        <main className="fixed inset-y-0 inset-x-0 z-10 overflow-y-auto bg-slate-50 lg:left-[218px]">
           <div className="mx-auto max-w-[1500px]">
             <div className="hidden">
               <div>

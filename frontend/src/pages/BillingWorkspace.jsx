@@ -16,6 +16,7 @@ const BillingNoc = lazy(() => import('./BillingNoc'));
 const BillingTopology = lazy(() => import('./BillingTopology'));
 const BillingFibreGis = lazy(() => import('./BillingFibreGis'));
 const Inventory = lazy(() => import('./Inventory'));
+const Tickets = lazy(() => import('./Tickets'));
 
 const emptyPlan = { name: '', price: '', validity_days: '30', download_speed_mbps: '', upload_speed_mbps: '', radius_profile: '', router_id: '', fup_enabled: false, fup_threshold_mb: '', fup_download_speed_mbps: '', fup_upload_speed_mbps: '' };
 const emptyHotspotPlan = { name: '', price: '', duration_minutes: '60', data_limit_mb: '', mikrotik_rate_limit: '', router_id: '', fup_enabled: false, fup_threshold_mb: '', fup_download_speed_mbps: '', fup_upload_speed_mbps: '' };
@@ -27,6 +28,7 @@ const input = 'w-full rounded-xl border border-slate-200 bg-white px-3.5 py-2.5 
 const nav = [
   ['overview', 'Overview', 'dashboard'],
   ['subscribers', 'Subscribers', 'users'],
+  ['tickets', 'Tickets', 'ticket'],
   ['services', 'PPPoE', 'broadband'],
   ['hotspot', 'Hotspot', 'hotspot'],
   ['agents', 'Agents', 'bot'],
@@ -60,6 +62,7 @@ const navGroups = [
 
     keys: [
       'subscribers',
+      'tickets',
       'communication',
     ],
   },
@@ -876,6 +879,7 @@ export default function BillingWorkspace() {
         {tab === 'payments' && <Payments payments={payments} invoices={invoices} form={paymentForm} setForm={setPaymentForm} save={savePayment} saving={saving} />}
         {tab === 'hotspot' && <HotspotControlCenter plans={hotspotPlans} routers={routers} reload={loadDetails} setWorkspaceError={setError} />}
         {tab === 'inventory' && <Suspense fallback={<BillingWorkspaceSkeleton />}><Inventory /></Suspense>}
+        {tab === 'tickets' && <Suspense fallback={<BillingWorkspaceSkeleton />}><Tickets /></Suspense>}
         {tab === 'vouchers' && <Vouchers plans={hotspotPlans} vouchers={vouchers} form={voucherForm} setForm={setVoucherForm} generate={generateVouchers} simulate={simulateVoucher} saving={saving} reload={load} setError={setError} />}
         {tab === 'noc' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingNoc onOpenRouters={() => go('routers')} /></Suspense>}
         {tab === 'topology' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingTopology /></Suspense>}

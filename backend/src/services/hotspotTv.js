@@ -1,5 +1,6 @@
 const db = require('../db');
 const { ensurePayHeroSchema } = require('./payhero');
+const { ensureMikrotikTables } = require('./mikrotik');
 const {
   activatePaidHotspotDevice,
   normalizeMac,
@@ -30,6 +31,7 @@ function tvPaymentMetadata(payment) {
 async function ensureHotspotTvSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
+      await ensureMikrotikTables();
       await ensurePayHeroSchema();
 
       await db.query(`

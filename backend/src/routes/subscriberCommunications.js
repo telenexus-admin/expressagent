@@ -8,6 +8,7 @@ const { sendClientText } = require('../services/clientEvolution');
 const { ensureSmsSchema, hasSMSConfig, sendSMS } = require('../services/sms');
 
 const router = express.Router();
+let communicationSchemaPromise = null;
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -20,9 +21,17 @@ function normalizePhone(value) {
 }
 
 async function ensureCommunicationSchema() {
-  await ensureSmsSchema();
-  await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_instance_name VARCHAR(120)`);
-  await db.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel VARCHAR(20) NOT NULL DEFAULT 'whatsapp'`);
+  if (!communicationSchemaPromise) {
+    communicationSchemaPromise = (async () => {
+      await ensureSmsSchema();
+      await db.query(`ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source_instance_name VARCHAR(120)`);
+      await db.query(`ALTER TABLE messages ADD COLUMN IF NOT EXISTS channel VARCHAR(20) NOT NULL DEFAULT 'whatsapp'`);
+    })().catch((error) => {
+      communicationSchemaPromise = null;
+      throw error;
+    });
+  }
+  return communicationSchemaPromise;
 }
 
 async function loadBillingClient(clientId) {
@@ -63,7 +72,7 @@ async function findOrCreateConversation(client, phone, customerName) {
     `SELECT *
      FROM conversations
      WHERE client_id = $1
-       AND regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g') = $2
+       AND RIGHT(regexp_replace(COALESCE(customer_phone, ''), '[^0-9]', '', 'g'), 9) = RIGHT($2, 9)
        AND status <> 'resolved'
      ORDER BY
        CASE
@@ -82,8 +91,7 @@ async function findOrCreateConversation(client, phone, customerName) {
       `UPDATE conversations
        SET customer_phone = $1,
            customer_name = COALESCE(NULLIF($2, ''), customer_name),
-           source_instance_name = COALESCE(source_instance_name, $3),
-           updated_at = NOW()
+           source_instance_name = COALESCE(source_instance_name, $3)
        WHERE id = $4
        RETURNING *`,
       [phone, customerName || '', sourceInstance, existing.rows[0].id]

@@ -80,6 +80,10 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
+      - name: Install dependencies for SBOM
+        run: |
+          npm ci --prefix backend
+          npm ci --prefix frontend
       - name: Generate CycloneDX SBOMs
         run: |
           npm sbom --prefix backend --sbom-format cyclonedx > backend.cdx.json

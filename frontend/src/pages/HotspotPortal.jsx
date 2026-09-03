@@ -362,7 +362,7 @@ function CountdownRing({ offer, now }) {
       <p className="text-[10px] font-black uppercase tracking-[.06em] text-slate-700">
         {scheduled ? 'Starts in' : 'Time remaining'}
       </p>
-      <div className="relative mx-auto mt-2 h-[126px] w-[126px]">
+      <div className="relative mx-auto mt-1 h-[76px] w-[76px]">
         <svg className="-rotate-90" viewBox="0 0 120 120" aria-hidden="true">
           <circle cx="60" cy="60" r="52" fill="none" stroke="#e5e7eb" strokeWidth="9" />
           <circle
@@ -379,10 +379,10 @@ function CountdownRing({ offer, now }) {
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <div className="font-mono text-[19px] font-black tracking-tight text-[#101938]">
+          <div className="font-mono text-[11px] font-black tracking-tight text-[#101938]">
             {pad(hours)}:{pad(minutes)}:{pad(seconds)}
           </div>
-          <div className="mt-1 grid grid-cols-3 gap-2 text-[7px] font-black uppercase text-slate-500">
+          <div className="mt-0.5 grid grid-cols-3 gap-1 text-[4px] font-black uppercase text-slate-500">
             <span>HRS</span><span>MIN</span><span>SEC</span>
           </div>
         </div>
@@ -898,7 +898,7 @@ useEffect(() => {
         backgroundAttachment: 'fixed',
       }
     : {
-        backgroundColor: theme.page,
+        backgroundColor: designTemplate === 'green_portrait' ? '#06180d' : theme.page,
       };
 
   const pageStyle = backgroundImageUrl
@@ -1819,32 +1819,32 @@ useEffect(() => {
                 : '-mt-5 sm:-mt-7'
             )}
           >
-            <div className="hotspot-card-shadow mx-auto w-full max-w-[300px] overflow-hidden rounded-2xl border border-pink-100 bg-white">
+            <div className="hotspot-card-shadow mx-auto w-full max-w-[180px] overflow-hidden rounded-xl border border-pink-100 bg-white">
               <button
                 type="button"
                 onClick={() => choosePlan(flashOffer)}
-                className="flex w-full items-center gap-3 p-2.5 text-left transition hover:bg-pink-50/30"
+                className="flex w-full items-center gap-1.5 p-1.5 text-left transition hover:bg-pink-50/30"
               >
-                <span className="flex h-11 w-11 shrink-0 flex-col items-center justify-center rounded-xl bg-[#ff0b61] text-[11px] font-black leading-3 text-white shadow-sm shadow-pink-500/25">
+                <span className="flex h-7 w-7 shrink-0 flex-col items-center justify-center rounded-lg bg-[#ff0b61] text-[7px] font-black leading-tight text-white shadow-sm shadow-pink-500/25">
                   -{flashDiscount}%
-                  <span className="text-[8px] tracking-wide">OFF</span>
+                  <span className="text-[5px] tracking-wide">OFF</span>
                 </span>
 
                 <span className="min-w-0 flex-1">
-                  <span className="block text-[8px] font-black uppercase tracking-[.18em] text-pink-500">Flash offer</span>
-                  <span className="mt-0.5 block truncate text-sm font-black text-[#111a38]">
+                  <span className="block text-[6px] font-black uppercase tracking-[.15em] text-pink-500">Flash offer</span>
+                  <span className="mt-px block truncate text-[10px] font-black text-[#111a38]">
                     {planHeadline(flashOffer)} � {durationParts(flashOffer.duration_minutes).value}{durationParts(flashOffer.duration_minutes).unit}
                   </span>
-                  <span className="mt-0.5 flex items-baseline gap-1.5">
-                    <span className="text-[10px] font-bold text-slate-400 line-through">{money(flashOffer.original_price)}</span>
-                    <span className="text-base font-black text-[#ff0b61]">{money(flashOffer.discount_price)}</span>
+                  <span className="mt-px flex items-baseline gap-1">
+                    <span className="text-[7px] font-bold text-slate-400 line-through">{money(flashOffer.original_price)}</span>
+                    <span className="text-[11px] font-black text-[#ff0b61]">{money(flashOffer.discount_price)}</span>
                   </span>
                 </span>
 
-                <Icon name="chevron" className="h-4 w-4 shrink-0 text-pink-500" />
+                <Icon name="chevron" className="h-3 w-3 shrink-0 text-pink-500" />
               </button>
 
-              <div className="border-t border-pink-100 bg-pink-50/40 px-2 py-1.5">
+              <div className="border-t border-pink-100 bg-pink-50/40 px-1 py-1">
                 <CountdownRing
                   offer={
                     flashOffer

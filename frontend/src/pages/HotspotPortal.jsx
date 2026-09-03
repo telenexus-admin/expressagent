@@ -1604,11 +1604,6 @@ useEffect(() => {
                       selectedCheckoutPrice
                     )}
                   </p>
-                  {Number(selectedPlan.max_devices || 1) > 1 && (
-                    <p className="mt-3 max-w-xs text-xs font-bold leading-5 text-violet-700">
-                      Covers {Number(selectedPlan.max_devices)} devices. After payment, this device connects automatically and voucher codes for the other {Number(selectedPlan.max_devices) - 1} device{Number(selectedPlan.max_devices) - 1 === 1 ? '' : 's'} are sent to this phone by SMS.
-                    </p>
-                  )}
                 </div>
 
                 <button
@@ -1685,9 +1680,7 @@ useEffect(() => {
                 </button>
               </form>
 
-              <p className="mt-4 text-center text-xs font-semibold text-slate-500">
-                Pay securely through PayHero channel 9010.
-              </p>
+
             </div>
           </div>
         )}
@@ -1928,60 +1921,44 @@ useEffect(() => {
         {showVoucherLogin && (
         <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
           <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
-            <h2 className="text-center text-lg font-black">Reconnect account</h2><p className="mt-1 text-center text-xs text-slate-500">Enter your M-Pesa transaction or access reference.</p>
-            <form onSubmit={submitReconnect} className="mt-4 flex gap-2"><input value={reconnectReference} onChange={e=>setReconnectReference(e.target.value.toUpperCase())} placeholder="M-Pesa / voucher reference" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/><button disabled={busy} className="rounded-xl px-4 text-sm font-black text-white disabled:opacity-60" style={{backgroundColor:accentColor}}>Reconnect</button></form>
-            <div className="mt-5 grid grid-cols-2 gap-2 rounded-2xl bg-slate-100 p-1.5"><button type="button" onClick={()=>setPortalLoginMode('voucher')} className="rounded-xl px-3 py-3 text-sm font-black" style={portalLoginMode==='voucher'?{backgroundColor:accentColor,color:'#fff'}:{}}>Voucher</button><button type="button" onClick={()=>setPortalLoginMode('member')} className="rounded-xl px-3 py-3 text-sm font-black" style={portalLoginMode==='member'?{backgroundColor:accentColor,color:'#fff'}:{}}>Member</button></div>
-            {portalLoginMode==='member' && <form onSubmit={submitMemberLogin} className="mt-4 space-y-3"><input value={memberUsername} onChange={e=>setMemberUsername(e.target.value)} placeholder="Member username" autoComplete="username" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/><input type="password" value={memberPassword} onChange={e=>setMemberPassword(e.target.value)} placeholder="Password" autoComplete="current-password" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/><button disabled={busy||Boolean(login)} className="w-full rounded-xl py-3 text-sm font-black text-white disabled:opacity-60" style={{backgroundColor:accentColor}}>{busy?'Connecting...':'Member login'}</button></form>}
-          </div>
-        </section>)}
-        {showVoucherLogin && portalLoginMode==='voucher' && (
-        <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
-          <div className="hotspot-card-shadow rounded-[24px] border border-white/10 bg-[#171717] p-5 text-white sm:p-7">
-            <h2 className="text-center text-lg font-black">Voucher Login</h2>
-            <p className="mt-1 text-center text-xs text-white/55">Enter your voucher code to connect</p>
+            <h2 className="text-center text-lg font-black">Reconnect account</h2>
+            <p className="mt-1 text-center text-xs text-slate-500">Enter your M-Pesa transaction or access reference.</p>
+            <form onSubmit={submitReconnect} className="mt-4 flex gap-2">
+              <input value={reconnectReference} onChange={e=>setReconnectReference(e.target.value.toUpperCase())} placeholder="M-Pesa / voucher reference" className="min-w-0 flex-1 rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/>
+              <button disabled={busy} className="rounded-xl px-4 text-sm font-black text-white disabled:opacity-60" style={{backgroundColor:accentColor}}>Reconnect</button>
+            </form>
 
-            {selectedPlan && (
-              <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-xs font-bold text-white/75">
-                Selected: {selectedPlan.name} - {money(selectedPlan.price)}
-              </p>
+            <div className="mt-5 grid grid-cols-2 gap-1.5 rounded-2xl bg-slate-100 p-[5px]">
+              <button type="button" onClick={()=>setPortalLoginMode('voucher')} className="rounded-xl px-2.5 py-2.5 text-sm font-black" style={portalLoginMode==='voucher'?{backgroundColor:accentColor,color:'#fff'}:{}}>Voucher</button>
+              <button type="button" onClick={()=>setPortalLoginMode('member')} className="rounded-xl px-2.5 py-2.5 text-sm font-black" style={portalLoginMode==='member'?{backgroundColor:accentColor,color:'#fff'}:{}}>Member</button>
+            </div>
+
+            {portalLoginMode==='voucher' && (
+              <div className="mt-4">
+                <h2 className="text-center text-lg font-black">Voucher Login</h2>
+                <p className="mt-1 text-center text-xs text-slate-500">Enter your voucher code to connect</p>
+                {selectedPlan && <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-center text-xs font-bold text-blue-700">Selected: {selectedPlan.name} - {money(selectedPlan.price)}</p>}
+                <form onSubmit={submit} className="mt-4 space-y-3">
+                  <input required type="text" value={voucherCode} onChange={(event) => updateVoucherCode(event.target.value)} placeholder="Voucher Code" autoComplete="one-time-code" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-center font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400" style={{ caretColor: accentColor }} />
+                  {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</p>}
+                  {login && <MikroTikLogin login={login} />}
+                  {active && !login && <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700"><b>Voucher activated.</b><br />Valid until {new Date(active.expires_at).toLocaleString()}.</div>}
+                  <button disabled={busy || Boolean(login)} className="w-full rounded-xl py-3 text-sm font-black text-white disabled:opacity-60" style={{ backgroundColor: accentColor }}>{busy ? 'Checking voucher...' : login ? 'Connecting...' : 'Activate Voucher'}</button>
+                </form>
+              </div>
             )}
 
-            <form onSubmit={submit} className="mt-5 space-y-4">
-              <input
-                required
-                type="text"
-                value={voucherCode}
-                onChange={(event) => updateVoucherCode(event.target.value)}
-                placeholder="Voucher Code"
-                autoComplete="one-time-code"
-                className="w-full rounded-[20px] border border-white/10 bg-black/35 px-4 py-4 text-center font-mono text-sm font-bold uppercase tracking-wider text-white outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-white/45"
-                style={{ caretColor: accentColor }}
-              />
-
-              {error && (
-                <p className="rounded-xl bg-rose-950/55 px-4 py-3 text-sm font-bold text-rose-200">
-                  {error}
-                </p>
-              )}
-
-              {login && <MikroTikLogin login={login} />}
-
-              {active && !login && (
-                <div className="rounded-xl bg-emerald-950/55 px-4 py-3 text-sm text-emerald-100">
-                  <b>Voucher activated.</b>
-                  <br />
-                  Valid until {new Date(active.expires_at).toLocaleString()}.
-                </div>
-              )}
-
-              <button
-                disabled={busy || Boolean(login)}
-                className="w-full rounded-[20px] py-4 text-sm font-black uppercase tracking-[.16em] text-[#071012] shadow-lg disabled:opacity-60"
-                style={{ backgroundColor: accentColor, boxShadow: '0 10px 24px rgba(0,0,0,.28)' }}
-              >
-                {busy ? 'Checking voucher...' : login ? 'Connecting...' : 'Activate Voucher'}
-              </button>
-            </form>
+            {portalLoginMode==='member' && (
+              <div className="mt-4">
+                <h2 className="text-center text-lg font-black">Member Login</h2>
+                <p className="mt-1 text-center text-xs text-slate-500">Enter your username and password</p>
+                <form onSubmit={submitMemberLogin} className="mt-4 space-y-3">
+                  <input value={memberUsername} onChange={e=>setMemberUsername(e.target.value)} placeholder="Member username" autoComplete="username" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/>
+                  <input type="password" value={memberPassword} onChange={e=>setMemberPassword(e.target.value)} placeholder="Password" autoComplete="current-password" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm outline-none"/>
+                  <button disabled={busy||Boolean(login)} className="w-full rounded-xl py-3 text-sm font-black text-white disabled:opacity-60" style={{backgroundColor:accentColor}}>{busy?'Connecting...':'Member login'}</button>
+                </form>
+              </div>
+            )}
           </div>
         </section>
         )}

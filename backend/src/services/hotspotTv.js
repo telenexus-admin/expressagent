@@ -1,4 +1,5 @@
 const db = require('../db');
+const { ensurePayHeroSchema } = require('./payhero');
 const {
   activatePaidHotspotDevice,
   normalizeMac,
@@ -29,6 +30,10 @@ function tvPaymentMetadata(payment) {
 async function ensureHotspotTvSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
+      // TV fulfillments reference PayHero payment rows. Make that schema ready
+      // first so this feature is safe on a newly initialized Polyizon install.
+      await ensurePayHeroSchema();
+
       await db.query(`
         CREATE TABLE IF NOT EXISTS billing_hotspot_tv_plans (
           id BIGSERIAL PRIMARY KEY,
@@ -354,10 +359,37 @@ async function reconcileTvSubscriptions({ limit = 100 } = {}) {
   await ensureHotspotTvSchema();
   if (schedulerRunning) return { skipped: true };
   schedulerRunning = true;
+  let paid = 0;
   let expired = 0;
   let retried = 0;
   let failed = 0;
   try {
+    // Payment callbacks are authoritative, but a customer's browser may close
+    // before it polls the status endpoint. Claim any confirmed TV payment that
+    // does not yet have a fulfillment, so paid access is never browser-dependent.
+    const orphanPaidRows = (await db.query(
+      `SELECT p.*
+       FROM payhero_payment_requests p
+       LEFT JOIN hotspot_tv_payment_fulfillments f ON f.payment_request_id=p.id
+       WHERE p.status='paid'
+         AND p.metadata->>'purpose'='hotspot_tv'
+         AND f.id IS NULL
+       ORDER BY p.updated_at ASC
+       LIMIT $1`,
+      [limit]
+    )).rows;
+
+    for (const payment of orphanPaidRows) {
+      try {
+        const result = await fulfillHotspotTvPayment(payment);
+        if (result?.status === 'active' || result?.status === 'activating') paid += 1;
+        else if (result?.status === 'failed') failed += 1;
+      } catch (error) {
+        console.error('Hotspot TV paid fulfillment retry failed:', error.message);
+        failed += 1;
+      }
+    }
+
     const expiredRows = (await db.query(
       `SELECT s.* FROM billing_hotspot_tv_subscribers s
        WHERE s.expires_at <= NOW()
@@ -418,7 +450,7 @@ async function reconcileTvSubscriptions({ limit = 100 } = {}) {
         failed += 1;
       }
     }
-    return { expired, retried, failed };
+    return { paid, expired, retried, failed };
   } finally {
     schedulerRunning = false;
   }

@@ -32,6 +32,7 @@ const billingAgentRoutes = require('./routes/billingAgents');
 const billingAgentPortalExtensions = require('./routes/billingAgentPortalExtensions');
 const pppoePortalRoutes = require('./routes/pppoePortal');
 const hotspotPortalRoutes = require('./routes/hotspotPortal');
+const hotspotTvRoutes = require('./routes/hotspotTv');
 const mediaLibraryRoutes = require('./routes/mediaLibrary');
 const websiteKnowledgeRoutes = require('./routes/websiteKnowledge');
 const mikrotikRoutes = require('./routes/mikrotik');
@@ -87,6 +88,7 @@ const { startNetworkEnrollmentScheduler } = require('./services/networkEnrollmen
 const { ensureEventSchema } = require('./services/events');
 const { openAIModelSummary } = require('./services/openai');
 const { startHotspotSubscriberScheduler } = require('./services/hotspotSubscriberAccess');
+const { startHotspotTvScheduler } = require('./services/hotspotTv');
 
 const app = express();
 app.set('trust proxy', 1);
@@ -124,6 +126,7 @@ app.use('/api/public/payhero', payheroRoutes);
 app.use('/api/public/site-chat', siteChatRoutes);
 app.use('/api/public/noc', publicNocRoutes);
 app.use('/api/public/mikrotik', onboardingLimiter, mikrotikOnboardingPublicRoutes);
+app.use('/api/public/hotspot/tv', writeOnly(portalLoginLimiter), hotspotTvRoutes.publicRouter);
 app.use('/api/public/hotspot', writeOnly(portalLoginLimiter), hotspotPortalRoutes);
 app.use('/api/pppoe-portal', writeOnly(portalLoginLimiter), pppoePortalRoutes.portalRouter);
 app.get('/api/public/invoices/:token', invoiceRoutes.publicInvoiceHandler);
@@ -149,6 +152,7 @@ app.use('/api/tickets', ticketRoutes);
 app.use('/api/billing', billingRoutes);
 app.use('/api/billing-workspace/pppoe-subscribers', pppoeSubscriberRoutes);
 app.use('/api/billing-workspace/subscriber-communications', subscriberCommunicationRoutes);
+app.use('/api/billing-workspace/hotspot/tv', hotspotTvRoutes.adminRouter);
 app.use('/api/billing-workspace', billingWorkspaceRoutes);
 app.use('/api/billing-workspace/pppoe-portal', pppoePortalRoutes.adminRouter);
 app.use('/api/billing-agents', billingAgentRoutes.adminRouter);
@@ -185,5 +189,5 @@ app.listen(PORT, HOST, () => {
   pppoePortalRoutes.ensureSchema().then(() => console.log('PPPoE customer portal schema ready.')).catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
   pppoePortalRoutes.startPppoePortalScheduler();
   ensureEventSchema().then(() => console.log('Billing event schema ready.')).catch((error) => console.error('Billing event schema initialization failed:', error.message));
-  startDailyReportScheduler(); startOperatorFollowUpScheduler(); startHumanTakeoverRecoveryScheduler(); startWebsiteKnowledgeScheduler(); startAiTaskScheduler(); startMikrotikMonitorScheduler(); startHotspotSubscriberScheduler(); startRadiusSyncJobScheduler(); startRadiusSessionEventScheduler(); startKnowledgeProcessorScheduler(); startKnowledgeBootstrapScheduler(); startKnowledgeLLMScheduler(); startDigitalTwinScheduler(); tr069Routes.startTr069TelemetryScheduler?.(); startTwinStabilitySchedulers(); startIncidentCommanderScheduler(); startNetworkObservabilityScheduler(); startNetworkShadowPlannerScheduler(); startNetworkExecutorScheduler(); startNetworkEnrollmentScheduler();
+  startDailyReportScheduler(); startOperatorFollowUpScheduler(); startHumanTakeoverRecoveryScheduler(); startWebsiteKnowledgeScheduler(); startAiTaskScheduler(); startMikrotikMonitorScheduler(); startHotspotSubscriberScheduler(); startHotspotTvScheduler(); startRadiusSyncJobScheduler(); startRadiusSessionEventScheduler(); startKnowledgeProcessorScheduler(); startKnowledgeBootstrapScheduler(); startKnowledgeLLMScheduler(); startDigitalTwinScheduler(); tr069Routes.startTr069TelemetryScheduler?.(); startTwinStabilitySchedulers(); startIncidentCommanderScheduler(); startNetworkObservabilityScheduler(); startNetworkShadowPlannerScheduler(); startNetworkExecutorScheduler(); startNetworkEnrollmentScheduler();
 });

@@ -26,6 +26,12 @@ const durationText = (minutes) => {
   return `${value} min`;
 };
 const toMinutes = (value, unit) => Math.round(Number(value || 0) * ({ minutes: 1, hours: 60, days: 1440, weeks: 10080, months: 43200 }[unit] || 1));
+const readStoredPhone = () => {
+  try { return window.localStorage.getItem('polyizon-tv-mpesa-phone') || ''; } catch (_) { return ''; }
+};
+const storePhone = (value) => {
+  try { window.localStorage.setItem('polyizon-tv-mpesa-phone', value); } catch (_) {}
+};
 
 function TvIcon({ className = 'h-5 w-5' }) {
   return <svg viewBox="0 0 24 24" className={`${className} fill-none stroke-current`} strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m8 2 4 3 4-3M8 22h8"/><path d="M7 9h10v6H7z"/></svg>;
@@ -134,9 +140,9 @@ function PublicTvPanel() {
   const detectedMac = normalizeMac(params.get('mac') || '');
   const [config, setConfig] = useState(null);
   const [open, setOpen] = useState(false);
-  const [mac, setMac] = useState(detectedMac);
+  const [mac, setMac] = useState('');
   const [selectedPlanId, setSelectedPlanId] = useState('');
-  const [phone, setPhone] = useState(() => window.localStorage.getItem('polyizon-tv-mpesa-phone') || '');
+  const [phone, setPhone] = useState(readStoredPhone);
   const [lookup, setLookup] = useState(null);
   const [reference, setReference] = useState('');
   const [status, setStatus] = useState('idle');
@@ -172,7 +178,7 @@ function PublicTvPanel() {
     if (!selectedPlan) { setError('Choose a TV package.'); return; }
     if (!/^254[17]\d{8}$/.test(normalizedPhone)) { setError('Enter a valid Safaricom M-Pesa number.'); return; }
     try {
-      setStatus('sending'); window.localStorage.setItem('polyizon-tv-mpesa-phone', normalizedPhone);
+      setStatus('sending'); storePhone(normalizedPhone);
       const response = await fetch('/api/public/hotspot/tv/checkout', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({ portal_token:token, plan_id:selectedPlan.id, phone:normalizedPhone, mac:normalizedMac }) });
       const data = await response.json(); if (!response.ok) throw new Error(data.error || 'Could not send M-Pesa prompt');
       setPhone(normalizedPhone); setMac(normalizedMac); setReference(data.reference); setStatus('pending');
@@ -206,7 +212,7 @@ function PublicTvPanel() {
 
     {open && <div className="fixed inset-0 z-[16000] flex items-end justify-center bg-slate-950/65 p-0 backdrop-blur-sm sm:items-center sm:p-4" onClick={close}><section onClick={(e) => e.stopPropagation()} className="max-h-[92vh] w-full max-w-md overflow-y-auto rounded-t-[28px] bg-[#f7faf8] shadow-2xl sm:rounded-[28px]"><header className="sticky top-0 z-10 flex items-center justify-between bg-[#082c20] px-5 py-4 text-white"><div className="flex items-center gap-3"><span className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/10"><TvIcon/></span><div><p className="text-[8px] font-black uppercase tracking-[.18em] text-emerald-300">Smart TV internet</p><h2 className="text-lg font-black">TV Packages</h2></div></div><button disabled={['sending','pending'].includes(status)} onClick={close} className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/10 disabled:opacity-40"><CloseIcon/></button></header>
       {status === 'active' && result ? <div className="p-6 text-center"><span className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-emerald-100 text-emerald-700"><TvIcon className="h-8 w-8"/></span><p className="mt-4 text-[9px] font-black uppercase tracking-[.18em] text-emerald-600">Payment confirmed</p><h3 className="mt-1 text-2xl font-black text-slate-950">Your TV is ready</h3><p className="mt-2 text-xs leading-5 text-slate-500">No hotspot login is required. If the TV was already connected, reconnect its Wi-Fi or Ethernet once.</p><div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50 p-4 text-left text-xs"><div className="flex justify-between gap-3"><span className="text-slate-500">TV MAC</span><b className="font-mono">{result.mac_address}</b></div><div className="mt-2 flex justify-between gap-3"><span className="text-slate-500">Package</span><b>{result.plan_name}</b></div><div className="mt-2 flex justify-between gap-3"><span className="text-slate-500">Valid until</span><b>{result.expires_at ? new Date(result.expires_at).toLocaleString() : 'Active'}</b></div></div><button onClick={close} className="mt-5 w-full rounded-xl bg-emerald-600 py-3 text-xs font-black text-white">Done</button></div>
-      : <form onSubmit={pay} className="space-y-4 p-5"><div><label className="text-[10px] font-black uppercase tracking-wide text-slate-500">TV MAC address</label><div className="mt-2 flex gap-2"><input required value={mac} disabled={['sending','pending'].includes(status)} onChange={(e)=>{setMac(e.target.value.toUpperCase());setLookup(null);setError('');}} onBlur={() => mac && void checkMac()} placeholder="AA:BB:CC:DD:EE:FF" className="h-12 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 font-mono text-sm font-bold outline-none focus:border-emerald-400"/><button type="button" onClick={checkMac} className="rounded-xl bg-slate-900 px-3 text-[9px] font-black text-white">CHECK</button></div>{detectedMac && detectedMac !== normalizeMac(mac) && <button type="button" onClick={()=>{setMac(detectedMac);setLookup(null);}} className="mt-2 text-[9px] font-black text-emerald-700">Use this device: {detectedMac}</button>}<p className="mt-2 text-[9px] leading-4 text-slate-400">Use the Wi-Fi MAC when the TV connects wirelessly, or Ethernet MAC when it uses a cable. The MAC identifies the TV; it is not a password.</p></div>
+      : <form onSubmit={pay} className="space-y-4 p-5"><div><label className="text-[10px] font-black uppercase tracking-wide text-slate-500">TV MAC address</label><div className="mt-2 flex gap-2"><input required value={mac} disabled={['sending','pending'].includes(status)} onChange={(e)=>{setMac(e.target.value.toUpperCase());setLookup(null);setError('');}} onBlur={() => mac && void checkMac()} placeholder="AA:BB:CC:DD:EE:FF" className="h-12 min-w-0 flex-1 rounded-xl border border-slate-200 bg-white px-3 font-mono text-sm font-bold outline-none focus:border-emerald-400"/><button type="button" onClick={checkMac} className="rounded-xl bg-slate-900 px-3 text-[9px] font-black text-white">CHECK</button></div>{detectedMac && detectedMac !== normalizeMac(mac) && <div className="mt-2 rounded-xl border border-sky-100 bg-sky-50 p-2.5"><p className="text-[8px] font-bold text-sky-700">Current hotspot device detected: <span className="font-mono">{detectedMac}</span></p><button type="button" onClick={()=>{setMac(detectedMac);setLookup(null);setError('');}} className="mt-1 text-[9px] font-black text-sky-800">Use this device</button></div>}<p className="mt-2 text-[9px] leading-4 text-slate-400">Enter the TV's Wi-Fi MAC when it connects wirelessly, or Ethernet MAC when it uses a cable. The detected device may be your phone, so Polyizon never selects it automatically.</p></div>
       {lookup?.found && <div className={`rounded-2xl border p-3 text-[10px] ${lookup.subscription?.status === 'active' ? 'border-emerald-100 bg-emerald-50 text-emerald-800' : 'border-amber-100 bg-amber-50 text-amber-800'}`}><b className="block">{lookup.subscription?.status === 'active' ? 'This TV already has internet' : 'This TV is already registered'}</b><span className="mt-1 block">{lookup.subscription?.plan_name || 'TV package'}{lookup.subscription?.expires_at ? ` · expires ${new Date(lookup.subscription.expires_at).toLocaleString()}` : ''}. A new payment will renew it and can change its package.</span></div>}
       <div><p className="text-[10px] font-black uppercase tracking-wide text-slate-500">Choose TV package</p><div className="mt-2 grid gap-2">{plans.map((plan) => <button type="button" key={plan.id} disabled={['sending','pending'].includes(status)} onClick={()=>{setSelectedPlanId(plan.id);setError('');}} className={`flex items-center justify-between rounded-2xl border p-3 text-left transition ${Number(selectedPlanId)===Number(plan.id)?'border-emerald-500 bg-emerald-50 ring-2 ring-emerald-100':'border-slate-200 bg-white'}`}><span><b className="block text-xs text-slate-900">{plan.name}</b><span className="mt-1 block text-[9px] text-slate-400">{durationText(plan.duration_minutes)} · {plan.mikrotik_rate_limit || 'Unlimited'}</span></span><strong className="text-sm text-emerald-700">{money(plan.price)}</strong></button>)}</div></div>
       <label className="block"><span className="text-[10px] font-black uppercase tracking-wide text-slate-500">M-Pesa phone</span><input required type="tel" inputMode="numeric" disabled={['sending','pending'].includes(status)} value={phone} onChange={(e)=>{setPhone(e.target.value);setError('');}} placeholder="0712 345 678" className="mt-2 h-12 w-full rounded-xl border border-slate-200 bg-white px-3 text-sm font-bold outline-none focus:border-emerald-400"/></label>
@@ -226,7 +232,8 @@ function HotspotTvEnhancer() {
     const scan = () => {
       let anchor = null;
       if (publicPortal) {
-        anchor = document.querySelector('.hotspot-packages')?.closest('section') || null;
+        anchor = document.querySelector('.hotspot-packages')?.closest('section') ||
+          [...document.querySelectorAll('h2')].find((node) => node.textContent?.trim() === 'Packages')?.closest('section') || null;
       } else {
         const heading = [...document.querySelectorAll('h3')].find((node) => node.textContent?.trim() === 'Hotspot Packages');
         anchor = heading?.closest('section') || null;

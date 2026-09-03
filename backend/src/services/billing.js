@@ -591,6 +591,26 @@ function importRowsForUpload({ fileName, csvText, fileBuffer }) {
   return parseCsv(csvText);
 }
 
+function parseBillingImportUpload({ fileName, csvText, fileBuffer, billingSystem = 'wispman', columnMap = {} }) {
+  const system = String(billingSystem || 'wispman').trim().toLowerCase();
+  if (!['wispman', 'billnasi', 'generic'].includes(system)) throw new Error('Choose a supported billing system before uploading.');
+  const rows = importRowsForUpload({ fileName, csvText, fileBuffer });
+  if (rows.length < 2) throw new Error('The file must include a header row and at least one client row.');
+  const headers = rows[0].map((header) => String(header || '').trim());
+  const mappedHeaders = [...headers];
+  for (const [field, sourceHeader] of Object.entries(columnMap || {})) {
+    if (!IMPORT_FIELD_ALIASES[field] || !sourceHeader) continue;
+    const index = headers.findIndex((header) => normalizeHeader(header) === normalizeHeader(sourceHeader));
+    if (index >= 0) mappedHeaders[index] = IMPORT_FIELD_ALIASES[field][0];
+  }
+  const accounts = rows.slice(1).map((row, index) => ({
+    row_number: index + 2,
+    ...mapImportedRow(mappedHeaders, row, system === 'generic' ? 'wispman' : system),
+  })).filter((account) => account.full_name || account.username || account.account_number || account.phone_normalized);
+  if (!accounts.length) throw new Error('No usable client accounts were found in the file.');
+  return { headers, accounts };
+}
+
 async function importBillingCsv({ clientId, fileName, csvText, fileBuffer, billingSystem = 'wispman' }) {
   if (!clientId) throw new Error('Client is required');
   const system = String(billingSystem || 'wispman').trim().toLowerCase();
@@ -1440,5 +1460,6 @@ module.exports = {
   lookupInvoiceCustomer,
   lookupPaymentAccount,
   looksLikeBillingQuestion,
+  parseBillingImportUpload,
   testBillingConnection,
 };

@@ -26,6 +26,15 @@ const {
   eventActorFromRequest,
   recordRequestEvent,
 } = require('../services/events');
+const {
+  activateHandover,
+  applyMigration,
+  getBatch: getMigrationBatch,
+  listBatches: listMigrationBatches,
+  prepareHandover,
+  previewMigration,
+  rollbackHandover,
+} = require('../services/subscriberMigration');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -3809,6 +3818,95 @@ router.put('/settings/profile', async (req, res) => {
     if (!result.rows[0]) return res.status(404).json({error:'Billing account not found'});
     return res.json(result.rows[0]);
   } catch (error) { console.error('Save billing settings profile error:',error.message); return res.status(500).json({error:'Could not save business profile'}); }
+});
+
+
+router.get('/subscriber-migrations', async (req, res) => {
+  try {
+    return res.json(await listMigrationBatches(req.scope.clientId));
+  } catch (error) {
+    console.error('List subscriber migrations:', error.message);
+    return res.status(500).json({ error: 'Could not load migration batches.' });
+  }
+});
+
+router.get('/subscriber-migrations/:id', async (req, res) => {
+  try {
+    const batch = await getMigrationBatch(req.scope.clientId, req.params.id);
+    if (!batch) return res.status(404).json({ error: 'Migration batch not found.' });
+    return res.json(batch);
+  } catch (error) {
+    console.error('Load subscriber migration:', error.message);
+    return res.status(500).json({ error: 'Could not load migration batch.' });
+  }
+});
+
+router.post('/subscriber-migrations/preview', async (req, res) => {
+  try {
+    const encoded = String(req.body?.file_data || '').replace(/^data:[^,]+,/, '');
+    if (!encoded || !/^[A-Za-z0-9+/=\r\n]+$/.test(encoded)) return res.status(400).json({ error: 'Choose a valid CSV or XLSX file.' });
+    const result = await previewMigration({
+      clientId: req.scope.clientId,
+      adminId: Number(req.user?.id) || null,
+      routerId: Number(req.body?.router_id),
+      serviceType: String(req.body?.service_type || 'pppoe'),
+      sourceSystem: String(req.body?.source_system || 'generic'),
+      fileName: String(req.body?.file_name || 'client-migration.csv'),
+      fileBuffer: Buffer.from(encoded, 'base64'),
+      columnMap: req.body?.column_map || {},
+      packageMap: req.body?.package_map || {},
+    });
+    return res.status(201).json(result);
+  } catch (error) {
+    console.error('Preview subscriber migration:', error.message);
+    return res.status(400).json({ error: error.message || 'Could not preview migration.' });
+  }
+});
+
+router.post('/subscriber-migrations/:id/apply', async (req, res) => {
+  try {
+    return res.json(await applyMigration({
+      clientId: req.scope.clientId,
+      adminId: Number(req.user?.id) || null,
+      batchId: req.params.id,
+      confirmation: req.body?.confirmation,
+    }));
+  } catch (error) {
+    console.error('Apply subscriber migration:', error.message);
+    return res.status(400).json({ error: error.message || 'Could not apply migration.' });
+  }
+});
+
+router.post('/subscriber-migrations/:id/handover/prepare', async (req, res) => {
+  try {
+    return res.json(await prepareHandover({ clientId: req.scope.clientId, batchId: req.params.id }));
+  } catch (error) {
+    console.error('Prepare subscriber handover:', error.message);
+    return res.status(400).json({ error: error.message || 'Could not prepare handover.' });
+  }
+});
+
+router.post('/subscriber-migrations/:id/handover/activate', async (req, res) => {
+  try {
+    return res.json(await activateHandover({
+      clientId: req.scope.clientId,
+      adminId: Number(req.user?.id) || null,
+      batchId: req.params.id,
+      confirmation: req.body?.confirmation,
+    }));
+  } catch (error) {
+    console.error('Activate subscriber handover:', error.message);
+    return res.status(400).json({ error: error.message || 'Could not activate handover.' });
+  }
+});
+
+router.post('/subscriber-migrations/:id/handover/rollback', async (req, res) => {
+  try {
+    return res.json(await rollbackHandover({ clientId: req.scope.clientId, batchId: req.params.id }));
+  } catch (error) {
+    console.error('Rollback subscriber handover:', error.message);
+    return res.status(400).json({ error: error.message || 'Could not roll back handover.' });
+  }
 });
 
 module.exports = router;

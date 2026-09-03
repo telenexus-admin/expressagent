@@ -62,6 +62,10 @@ jobs:
       - if: matrix.project == 'backend'
         run: node test/subscriberCommunications.test.js
       - if: matrix.project == 'backend'
+        run: node test/hotspotTv.test.js
+      - if: matrix.project == 'backend'
+        run: node test/hotspotTvSchema.integration.js
+      - if: matrix.project == 'backend'
         run: node test/phase2Auth.integration.js
       - if: matrix.project == 'frontend'
         run: npm run build

@@ -232,7 +232,11 @@ adminRouter.delete('/subscribers/:id', async (req, res) => {
   if (!subscriber) return res.status(404).json({ error: 'TV subscription not found' });
   try {
     await revokeHotspotDeviceAccess({ clientId: subscriber.client_id, routerId: subscriber.router_id, macAddress: subscriber.mac_address, ipAddress: '' });
-  } catch (_) {}
+  } catch (error) {
+    return res.status(409).json({
+      error: `Polyizon could not confirm that ${subscriber.mac_address} was removed from MikroTik. The TV record was kept for safety. ${error.message || ''}`.trim(),
+    });
+  }
   await db.query(`DELETE FROM billing_hotspot_tv_subscribers WHERE id=$1 AND client_id=$2`, [subscriber.id, req.scope.clientId]);
   return res.json({ success: true });
 });
@@ -264,7 +268,7 @@ publicRouter.get('/config', async (req, res) => {
   const result = await db.query(
     `SELECT id,name,price,duration_minutes,mikrotik_rate_limit,data_limit_mb,router_id
      FROM billing_hotspot_tv_plans
-     WHERE client_id=$1 AND is_active=TRUE AND (router_id IS NULL OR router_id=$2)
+     WHERE client_id=$1 AND is_active=TRUE AND ($2::int IS NULL OR router_id IS NULL OR router_id=$2)
      ORDER BY price ASC,duration_minutes ASC`,
     [client.id, routerId]
   );

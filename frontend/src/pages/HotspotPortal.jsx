@@ -1920,7 +1920,7 @@ useEffect(() => {
 
         {showVoucherLogin && (
         <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
-          <div className="hotspot-card-shadow mx-auto w-[80%] rounded-[16px] border border-slate-200 bg-white p-4 sm:p-5">
+          <div className="hotspot-card-shadow w-full rounded-[16px] border border-slate-200 bg-white p-4 sm:p-5">
             <h2 className="text-center text-lg font-black">Reconnect account</h2>
             <p className="mt-1 text-center text-xs text-slate-500">Enter your M-Pesa transaction or access reference.</p>
             <form onSubmit={submitReconnect} className="mt-4 flex gap-2">
@@ -2046,7 +2046,8 @@ useEffect(() => {
             )}
           </footer>
         )}
-      \n      </div>
+      <div className="px-4 pb-5 pt-2 text-center text-[10px] font-bold uppercase tracking-[.18em] text-slate-400">&copy; 2026 Polyizon</div>
+      </div>
     </main>
   );
 }

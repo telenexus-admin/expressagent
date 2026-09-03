@@ -151,7 +151,6 @@ function Icon({ name, className = 'h-5 w-5' }) {
       </>
     ),
     menu: <path d="M4 7h16M4 12h16M4 17h16" />,
-    home: <path d="m3 11 9-8 9 8v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z" />,
     wallet: (
       <>
         <path d="M5 7.5h13a2 2 0 0 1 2 2v8H5a3 3 0 0 1-3-3v-9a3 3 0 0 1 3-3h11v5" />
@@ -557,7 +556,6 @@ export default function HotspotPortal() {
   );
   const [menuOpen, setMenuOpen] = useState(false);
   const [activeHeroSlide, setActiveHeroSlide] = useState(0);
-  const [portalAppView, setPortalAppView] = useState('home');
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [paymentPhone, setPaymentPhone] = useState(
     () => window.localStorage.getItem(
@@ -1578,7 +1576,7 @@ useEffect(() => {
       `}</style>
 
       <div
-        className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden pb-24 shadow-2xl shadow-slate-900/10"
+        className="hotspot-page mx-auto min-h-screen w-full max-w-[760px] overflow-hidden shadow-2xl shadow-slate-900/10"
         style={{
           ...pageStyle,
 
@@ -1922,7 +1920,7 @@ useEffect(() => {
 
         {showVoucherLogin && (
         <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
-          <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
+          <div className="hotspot-card-shadow mx-auto w-[80%] rounded-[16px] border border-slate-200 bg-white p-4 sm:p-5">
             <h2 className="text-center text-lg font-black">Reconnect account</h2>
             <p className="mt-1 text-center text-xs text-slate-500">Enter your M-Pesa transaction or access reference.</p>
             <form onSubmit={submitReconnect} className="mt-4 flex gap-2">
@@ -1939,7 +1937,7 @@ useEffect(() => {
               <div className="mt-4">
                 <h2 className="text-center text-lg font-black">Voucher Login</h2>
                 <p className="mt-1 text-center text-xs text-slate-500">Enter your voucher code to connect</p>
-                {selectedPlan && <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-center text-xs font-bold text-blue-700">Selected: {selectedPlan.name} - {money(selectedPlan.price)}</p>}
+
                 <form onSubmit={submit} className="mt-4 space-y-3">
                   <input required type="text" value={voucherCode} onChange={(event) => updateVoucherCode(event.target.value)} placeholder="Voucher Code" autoComplete="one-time-code" className="w-full rounded-xl border border-slate-200 px-4 py-3 text-center font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400" style={{ caretColor: accentColor }} />
                   {error && <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">{error}</p>}
@@ -1965,7 +1963,7 @@ useEffect(() => {
         </section>
         )}
 
-        {portalAppView !== 'home' && <section className="px-3 pb-5 pt-4 sm:px-6"><div className="hotspot-card-shadow rounded-[22px] border border-slate-200 bg-white p-5">{portalAppView === 'wallet' ? <><div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-slate-500">Your wallet</p><h2 className="mt-1 text-2xl font-black text-[#101938]">{money(walletBalance)}</h2></div><span className="flex h-11 w-11 items-center justify-center rounded-2xl text-white" style={{backgroundColor:accentColor}}><Icon name="wallet" className="h-6 w-6"/></span></div><p className="mt-3 text-xs text-slate-500">Keep your balance ready for quick hotspot access.</p><button type="button" onClick={scrollToPackages} className="mt-4 w-full rounded-xl py-3 text-sm font-black text-white" style={{backgroundColor:accentColor}}>Buy a package</button></> : <><div className="flex items-center justify-between"><div><p className="text-[10px] font-black uppercase tracking-[.16em] text-slate-500">My account</p><h2 className="mt-1 text-xl font-black text-[#101938]">Connection overview</h2></div><span className="flex h-11 w-11 items-center justify-center rounded-2xl text-white" style={{backgroundColor:accentColor}}><Icon name="user" className="h-6 w-6"/></span></div><div className="mt-4 grid grid-cols-2 gap-3"><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[9px] font-black uppercase text-slate-400">Current plan</p><p className="mt-1 truncate text-sm font-black">{active?.plan_name || selectedPlan?.name || 'No active plan'}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[9px] font-black uppercase text-slate-400">Status</p><p className="mt-1 text-sm font-black" style={{color:active?'#059669':'#64748b'}}>{active?'Connected':'Not connected'}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[9px] font-black uppercase text-slate-400">Data usage</p><p className="mt-1 text-sm font-black">{Number(active?.data_used_mb||0)>0?Number(active.data_used_mb).toLocaleString()+' MB used':active?'Usage updating':'Connect to view'}</p></div><div className="rounded-2xl bg-slate-50 p-3"><p className="text-[9px] font-black uppercase text-slate-400">Latest payment</p><p className="mt-1 text-sm font-black">{paymentStatus==='active'?money(paymentAmount??selectedCheckoutPrice)+' confirmed':'No payment this visit'}</p></div></div><p className="mt-4 border-t border-slate-100 pt-3 text-xs text-slate-500">{paymentReference?'Reference: '+paymentReference:'Confirmed payment history will appear here.'}</p></>}</div></section>}\n\n        {(showSupport ||
+        {(showSupport ||
           showWhatsApp) && (
           <footer
             className={`grid ${
@@ -2048,7 +2046,7 @@ useEffect(() => {
             )}
           </footer>
         )}
-      <nav className="fixed bottom-3 left-1/2 z-50 flex w-[calc(100%-24px)] max-w-[736px] -translate-x-1/2 items-center justify-around rounded-[22px] border border-white/15 bg-[#101820]/95 px-2 py-2 shadow-2xl shadow-black/35 backdrop-blur"><button type="button" onClick={()=>{setPortalAppView('home');window.scrollTo({top:0,behavior:'smooth'});}} className={'flex min-w-[76px] flex-col items-center gap-1 rounded-2xl py-2 text-[10px] font-black '+(portalAppView==='home'?'text-white':'text-white/55')}><span className="flex h-8 w-8 items-center justify-center rounded-xl" style={portalAppView==='home'?{backgroundColor:accentColor}:undefined}><Icon name="home" className="h-5 w-5"/></span>Home</button><button type="button" onClick={()=>{setPortalAppView('wallet');window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});}} className={'flex min-w-[76px] flex-col items-center gap-1 rounded-2xl py-2 text-[10px] font-black '+(portalAppView==='wallet'?'text-white':'text-white/55')}><span className="flex h-8 w-8 items-center justify-center rounded-xl" style={portalAppView==='wallet'?{backgroundColor:accentColor}:undefined}><Icon name="wallet" className="h-5 w-5"/></span>Wallet</button><button type="button" onClick={()=>{setPortalAppView('account');window.scrollTo({top:document.body.scrollHeight,behavior:'smooth'});}} className={'flex min-w-[76px] flex-col items-center gap-1 rounded-2xl py-2 text-[10px] font-black '+(portalAppView==='account'?'text-white':'text-white/55')}><span className="flex h-8 w-8 items-center justify-center rounded-xl" style={portalAppView==='account'?{backgroundColor:accentColor}:undefined}><Icon name="user" className="h-5 w-5"/></span>Account</button></nav>\n      </div>
+      \n      </div>
     </main>
   );
 }

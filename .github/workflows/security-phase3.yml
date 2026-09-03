@@ -54,6 +54,8 @@ jobs:
       - if: matrix.project == 'backend'
         run: node test/subscriberMigrationRadius.test.js
       - if: matrix.project == 'backend'
+        run: node test/subscriberMigrationWispman.test.js
+      - if: matrix.project == 'backend'
         run: node test/subscriberMigrationSchema.integration.js
       - if: matrix.project == 'backend'
         run: node test/phase2Auth.integration.js

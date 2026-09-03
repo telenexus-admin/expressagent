@@ -80,11 +80,31 @@ ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS radius_sync_status 
 ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS radius_sync_error TEXT;
 ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS radius_last_synced_at TIMESTAMPTZ;
 ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS mikrotik_local_id TEXT;
+ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS mikrotik_local_profile TEXT;
+ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS local_api_sync_status TEXT NOT NULL DEFAULT 'not_configured';
+ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS local_api_sync_error TEXT;
+ALTER TABLE billing_hotspot_members ADD COLUMN IF NOT EXISTS local_api_last_synced_at TIMESTAMPTZ;
 CREATE INDEX IF NOT EXISTS idx_hotspot_members_migration_batch
   ON billing_hotspot_members(client_id,source_migration_batch_id);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_hotspot_members_account_unique
   ON billing_hotspot_members(client_id,LOWER(account_number))
   WHERE account_number IS NOT NULL AND account_number <> '';
+
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS control_mode TEXT NOT NULL DEFAULT 'radius';
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS legacy_source TEXT;
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS source_migration_batch_id UUID;
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS mikrotik_local_id TEXT;
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS mikrotik_local_profile TEXT;
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS local_api_sync_status TEXT NOT NULL DEFAULT 'not_configured';
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS local_api_sync_error TEXT;
+ALTER TABLE billing_subscribers ADD COLUMN IF NOT EXISTS local_api_last_synced_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS idx_billing_subscribers_local_api
+  ON billing_subscribers(client_id,router_id,control_mode)
+  WHERE control_mode='mikrotik_local_api';
+CREATE INDEX IF NOT EXISTS idx_billing_subscribers_migration_batch
+  ON billing_subscribers(client_id,source_migration_batch_id)
+  WHERE source_migration_batch_id IS NOT NULL;
 `;
 
 async function ensureMigrationSchema() {

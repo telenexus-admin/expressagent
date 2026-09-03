@@ -13,10 +13,6 @@ function compact(value) {
     .replace(/[^A-Z0-9]/g, '');
 }
 
-function phoneDigits(value) {
-  return String(value || '').replace(/\D/g, '');
-}
-
 function MessageIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4 fill-none stroke-current" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -122,13 +118,14 @@ function CommunicationPopup({ subscriber, channel, close }) {
     void firstLoad();
 
     const interval = window.setInterval(() => {
-      if (active && isWhatsApp && configured) void loadThread({ quiet: true });
+      if (active && isWhatsApp) void loadThread({ quiet: true });
     }, 5000);
 
     return () => {
       active = false;
       window.clearInterval(interval);
     };
+    // The payload keys intentionally define the lifecycle of this popup thread.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [payload.phone, payload.customer_name, payload.channel]);
 
@@ -342,7 +339,6 @@ export default function BillingSubscribers(props) {
       observer.disconnect();
       window.cancelAnimationFrame(frame);
     };
-    // candidates are intentionally included so edited phone/account data rebinds the row actions.
   }, [candidates, legacyKey]);
 
   const interceptSubscriberActions = (event) => {

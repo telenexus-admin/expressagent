@@ -2,6 +2,7 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 
 import HotspotPortal from './pages/HotspotPortal.jsx';
+import { mountHotspotTvEnhancer } from './hotspotTvEnhancer.jsx';
 import './index.css';
 
 const rootElement =
@@ -184,14 +185,6 @@ function preloadHotspotHero() {
   document.head.appendChild(preload);
 }
 
-function showHotspotLoader() {
-  rootElement.innerHTML = `
-    <main style="min-height:100vh;display:grid;place-items:center;background:#06140e;color:#d8f7e4;font:600 15px system-ui,sans-serif">
-      Opening hotspot portal…
-    </main>
-  `;
-}
-
 async function mountDashboard() {
   showDashboardLoader();
 
@@ -219,6 +212,7 @@ async function mountDashboard() {
       </React.StrictMode>
     );
 
+  mountHotspotTvEnhancer();
   void cleanupLegacyRuntime();
 }
 
@@ -230,6 +224,7 @@ try {
       .render(
         <HotspotPortal />
       );
+    mountHotspotTvEnhancer();
   } else {
     void mountDashboard()
       .catch(showFatalError);

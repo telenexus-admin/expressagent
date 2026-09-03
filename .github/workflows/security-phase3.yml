@@ -30,6 +30,7 @@ jobs:
           --health-retries 5
     env:
       DATABASE_URL: postgres://nexa_app:phase3-ci-only@127.0.0.1:5432/nexa_billing
+      RADIUS_CREDENTIAL_ENCRYPTION_KEY: 1111111111111111111111111111111111111111111111111111111111111111
     strategy:
       fail-fast: false
       matrix:
@@ -48,6 +49,12 @@ jobs:
       - run: npm audit --omit=dev --audit-level=high
       - if: matrix.project == 'backend'
         run: node src/db/init.js
+      - if: matrix.project == 'backend'
+        run: node test/subscriberMigrationPolicy.test.js
+      - if: matrix.project == 'backend'
+        run: node test/subscriberMigrationRadius.test.js
+      - if: matrix.project == 'backend'
+        run: node test/subscriberMigrationSchema.integration.js
       - if: matrix.project == 'backend'
         run: node test/phase2Auth.integration.js
       - if: matrix.project == 'frontend'

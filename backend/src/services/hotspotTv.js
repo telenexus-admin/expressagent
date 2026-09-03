@@ -30,8 +30,6 @@ function tvPaymentMetadata(payment) {
 async function ensureHotspotTvSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
-      // TV fulfillments reference PayHero payment rows. Make that schema ready
-      // first so this feature is safe on a newly initialized Polyizon install.
       await ensurePayHeroSchema();
 
       await db.query(`
@@ -144,8 +142,6 @@ async function activateSubscription(subscription, plan) {
     dataLimitMb: plan?.data_limit_mb || null,
   });
 
-  // A TV may be switched off during purchase. `login_required` means the MAC
-  // user was provisioned but no live session appeared during the short probe.
   const ready = ['active', 'login_required'].includes(result?.status);
   if (!ready) throw new Error('MikroTik did not provision TV MAC access');
 
@@ -180,6 +176,9 @@ async function fulfillHotspotTvPayment(suppliedPayment) {
   try {
     await connection.query('BEGIN');
     await connection.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [`hotspot-tv-payment:${suppliedPayment.id}`]);
+    await connection.query(`SELECT pg_advisory_xact_lock(hashtext($1))`, [
+      `hotspot-tv-subscription:${suppliedPayment.client_id}:${metadata.router_id}:${metadata.mac}`,
+    ]);
 
     const paymentResult = await connection.query(
       `SELECT * FROM payhero_payment_requests WHERE id = $1 AND client_id = $2 FOR UPDATE`,
@@ -364,9 +363,6 @@ async function reconcileTvSubscriptions({ limit = 100 } = {}) {
   let retried = 0;
   let failed = 0;
   try {
-    // Payment callbacks are authoritative, but a customer's browser may close
-    // before it polls the status endpoint. Claim any confirmed TV payment that
-    // does not yet have a fulfillment, so paid access is never browser-dependent.
     const orphanPaidRows = (await db.query(
       `SELECT p.*
        FROM payhero_payment_requests p

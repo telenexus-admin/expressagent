@@ -58,7 +58,11 @@ async function loadBillingClient(clientId) {
 
 function whatsappConfigured(client) {
   if (client?.connection_provider === 'evolution') {
-    return Boolean(String(client.evolution_instance_name || '').trim());
+    return Boolean(
+      String(client.evolution_instance_name || '').trim() &&
+      String(process.env.EVOLUTION_API_URL || '').trim() &&
+      String(process.env.EVOLUTION_API_KEY || '').trim()
+    );
   }
   return Boolean(client?.meta_phone_number_id && client?.meta_access_token);
 }
@@ -253,5 +257,10 @@ router.post('/send', [
     return res.status(500).json({ error: error.message || 'Could not send message' });
   }
 });
+
+router._test = {
+  normalizePhone,
+  whatsappConfigured,
+};
 
 module.exports = router;

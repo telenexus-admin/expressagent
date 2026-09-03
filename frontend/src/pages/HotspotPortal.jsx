@@ -1935,39 +1935,31 @@ useEffect(() => {
           </div>
         </section>)}
         {showVoucherLogin && portalLoginMode==='voucher' && (
-        <section ref={voucherRef}
- className="px-3 pb-4 pt-4 sm:px-6">
-          <div className="hotspot-card-shadow rounded-[20px] border border-slate-200 bg-white p-5 sm:p-7">
-            <div className="flex items-center gap-3" style={{ color: accentColor }}>
-              <Icon name="ticket" className="h-7 w-7" />
-              <h2 className="text-lg font-black uppercase tracking-wide">Voucher login</h2>
-            </div>
+        <section ref={voucherRef} className="px-3 pb-4 pt-4 sm:px-6">
+          <div className="hotspot-card-shadow rounded-[24px] border border-white/10 bg-[#171717] p-5 text-white sm:p-7">
+            <h2 className="text-center text-lg font-black">Voucher Login</h2>
+            <p className="mt-1 text-center text-xs text-white/55">Enter your voucher code to connect</p>
 
             {selectedPlan && (
-              <p className="mt-4 rounded-xl bg-blue-50 px-4 py-3 text-xs font-bold text-blue-700">
+              <p className="mt-4 rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-center text-xs font-bold text-white/75">
                 Selected: {selectedPlan.name} - {money(selectedPlan.price)}
               </p>
             )}
 
             <form onSubmit={submit} className="mt-5 space-y-4">
-              <label className="relative block">
-                <span className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2" style={{ color: accentColor }}>
-                  <Icon name="ticket" className="h-6 w-6" />
-                </span>
-                <input
-                  required
-                  type="text"
-                  value={voucherCode}
-                  onChange={(event) => updateVoucherCode(event.target.value)}
-                  placeholder="Voucher Code"
-                  autoComplete="one-time-code"
-                  className="w-full rounded-xl border border-[#b9c9e7] bg-white py-4 pl-[52px] pr-4 font-mono text-sm font-bold uppercase tracking-wider outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-slate-400"
-                  style={{ caretColor: accentColor }}
-                />
-              </label>
+              <input
+                required
+                type="text"
+                value={voucherCode}
+                onChange={(event) => updateVoucherCode(event.target.value)}
+                placeholder="Voucher Code"
+                autoComplete="one-time-code"
+                className="w-full rounded-[20px] border border-white/10 bg-black/35 px-4 py-4 text-center font-mono text-sm font-bold uppercase tracking-wider text-white outline-none transition placeholder:font-sans placeholder:font-medium placeholder:normal-case placeholder:tracking-normal placeholder:text-white/45"
+                style={{ caretColor: accentColor }}
+              />
 
               {error && (
-                <p className="rounded-xl bg-rose-50 px-4 py-3 text-sm font-bold text-rose-700">
+                <p className="rounded-xl bg-rose-950/55 px-4 py-3 text-sm font-bold text-rose-200">
                   {error}
                 </p>
               )}
@@ -1975,7 +1967,7 @@ useEffect(() => {
               {login && <MikroTikLogin login={login} />}
 
               {active && !login && (
-                <div className="rounded-xl bg-emerald-50 px-4 py-3 text-sm text-emerald-700">
+                <div className="rounded-xl bg-emerald-950/55 px-4 py-3 text-sm text-emerald-100">
                   <b>Voucher activated.</b>
                   <br />
                   Valid until {new Date(active.expires_at).toLocaleString()}.
@@ -1984,14 +1976,14 @@ useEffect(() => {
 
               <button
                 disabled={busy || Boolean(login)}
-                className="w-full rounded-xl py-4 text-sm font-black uppercase tracking-wide text-white shadow-lg disabled:opacity-60" style={{ backgroundColor: accentColor, boxShadow: `0 10px 24px ${accentColor}2b` }}
+                className="w-full rounded-[20px] py-4 text-sm font-black uppercase tracking-[.16em] text-[#071012] shadow-lg disabled:opacity-60"
+                style={{ backgroundColor: accentColor, boxShadow: '0 10px 24px rgba(0,0,0,.28)' }}
               >
-                {busy ? 'Checking voucher...' : login ? 'Connecting...' : 'Login'}
+                {busy ? 'Checking voucher...' : login ? 'Connecting...' : 'Activate Voucher'}
               </button>
             </form>
           </div>
         </section>
-
         )}
 
         {(showSupport ||

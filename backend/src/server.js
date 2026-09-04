@@ -50,6 +50,7 @@ const networkEnrollmentRoutes = require('./routes/networkEnrollment');
 const helpBotRoutes = require('./routes/helpBot');
 const pushRoutes = require('./routes/pushNotifications');
 const customerIntakeRoutes = require('./routes/customerIntake');
+const polyizonSignupRoutes = require('./routes/polyizonSignup');
 const relocationRequestRoutes = require('./routes/relocationRequests');
 const installationWorkOrderRoutes = require('./routes/installationWorkOrders');
 const payheroRoutes = require('./routes/payhero');
@@ -120,6 +121,7 @@ app.use('/webhook/evolution', express.json(), evolutionWebhookRoutes, clientEvol
 app.use(express.json({ limit: '12mb' }));
 app.use('/api/public/evo-onboarding', writeOnly(publicWriteLimiter), evoSelfOnboardingRoutes);
 app.use('/api/public/customer-intake', writeOnly(publicWriteLimiter), customerIntakeRoutes);
+app.use('/api/public/polyizon-signup', writeOnly(publicWriteLimiter), polyizonSignupRoutes);
 app.use('/api/public/relocation-request', writeOnly(publicWriteLimiter), relocationRequestRoutes);
 app.use('/api/public/installation-work-orders', writeOnly(publicWriteLimiter), installationWorkOrderRoutes);
 app.use('/api/public/payhero', payheroRoutes);
@@ -185,6 +187,7 @@ app.listen(PORT, HOST, () => {
   console.log(`WhatsApp Support backend running on ${HOST}:${PORT}`);
   console.log(`OpenAI runtime config: ${JSON.stringify(openAIModelSummary())}`);
   ensureCrmSchema().then(() => console.log('CRM leads schema ready.')).catch((error) => console.error('CRM leads schema initialization failed:', error.message));
+  polyizonSignupRoutes.ensureSchema().then(() => console.log('Polyizon signup schema ready.')).catch((error) => console.error('Polyizon signup schema initialization failed:', error.message));
   billingAgentPortalExtensions.ensureSchema().then(() => console.log('Agent portal extension schema ready.')).catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
   pppoePortalRoutes.ensureSchema().then(() => console.log('PPPoE customer portal schema ready.')).catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
   pppoePortalRoutes.startPppoePortalScheduler();

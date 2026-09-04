@@ -254,6 +254,71 @@ router.post('/reset-password', resetPasswordLimiter, [
   }
 });
 
+
+let publicSignupSchemaPromise;
+function cleanSignupText(value, max = 255) { return String(value || '').trim().slice(0, max); }
+async function ensurePublicSignupSchema() {
+  if (!publicSignupSchemaPromise) publicSignupSchemaPromise = db.query(`
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_account_status VARCHAR(20) NOT NULL DEFAULT 'active';
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_plan VARCHAR(80) NOT NULL DEFAULT 'Starter';
+    ALTER TABLE clients ADD COLUMN IF NOT EXISTS billing_trial_ends_at TIMESTAMP WITH TIME ZONE;
+    CREATE TABLE IF NOT EXISTS billing_public_signups (
+      id BIGSERIAL PRIMARY KEY, client_id INTEGER NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
+      admin_id INTEGER NOT NULL UNIQUE REFERENCES admins(id) ON DELETE CASCADE,
+      provider VARCHAR(20) NOT NULL, google_subject VARCHAR(255), phone VARCHAR(80) NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+  return publicSignupSchemaPromise;
+}
+async function sendSignupEmail({ name, email, ispName }) {
+  if (!process.env.RESEND_API_KEY) return;
+  try {
+    await axios.post('https://api.resend.com/emails', {
+      from: process.env.RESEND_FROM || 'POLYIZON Billing <no-reply@polyizon.tech>', to: [email],
+      subject: 'Your POLYIZON Billing account is ready',
+      html: `<div style="font-family:Arial,sans-serif;max-width:560px;margin:auto;padding:28px;color:#151a33"><h1 style="margin:0 0 14px;color:#173b2d">POLYIZON BILLING</h1><p>Hello ${escapeHtml(name)},</p><p>Your account for <strong>${escapeHtml(ispName)}</strong> is ready. You now have a 14-day Starter trial to explore your billing workspace.</p><p style="margin:26px 0"><a href="https://billing.polyizon.tech/login" style="display:inline-block;background:#173b2d;color:#fff;text-decoration:none;padding:13px 20px;border-radius:10px;font-weight:700">Sign in to Billing</a></p><p>Your first sign-in will ask you to set up multi-factor authentication. Our support team will be available if you need help getting started.</p><p>Regards,<br><strong>Polyizon Support</strong></p></div>`,
+    }, { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 15000 });
+  } catch (error) { console.error('Billing signup email failed:', error.response?.status || error.message); }
+}
+async function createPublicBillingAccount({ ispName, ownerName, email, phone, password, provider, googleSubject, req }) {
+  await ensurePasswordSchema(); await ensurePublicSignupSchema();
+  const existing = await findAdminByEmail(email);
+  if (existing) { const error = new Error('An account already exists for this email. Please sign in instead.'); error.statusCode = 409; throw error; }
+  const client = await db.connect();
+  try {
+    await client.query('BEGIN');
+    const createdClient = await client.query(`INSERT INTO clients (name,business_name,contact_email,status,account_type,connection_provider,billing_account_status,billing_plan,billing_trial_ends_at,system_prompt)
+      VALUES ($1,$2,$3,'active','billing','website','trial','Starter',NOW()+INTERVAL '14 days',$4) RETURNING id,name,billing_trial_ends_at`, [ispName, ispName, email, 'You are Nexa, the billing assistant for this ISP account.']);
+    const passwordHash = await bcrypt.hash(password || crypto.randomBytes(48).toString('base64url'), 12);
+    const createdAdmin = await client.query(`INSERT INTO admins (name,email,password_hash,role,client_id) VALUES ($1,$2,$3,'admin',$4) RETURNING id,name,email,client_id`, [ownerName, email, passwordHash, createdClient.rows[0].id]);
+    await client.query(`INSERT INTO billing_public_signups (client_id,admin_id,provider,google_subject,phone) VALUES ($1,$2,$3,$4,$5)`, [createdClient.rows[0].id, createdAdmin.rows[0].id, provider, googleSubject || null, phone]);
+    await client.query('COMMIT');
+    await logActivity({ req: { ...req, user: { id: createdAdmin.rows[0].id, name: ownerName, client_id: createdClient.rows[0].id } }, action: 'billing_public_account_created', module: 'billing_signup', entityType: 'client', entityId: createdClient.rows[0].id, description: `${ownerName} created a self-service billing account for ${ispName}.`, metadata: { provider, billing_plan: 'Starter', trial_days: 14 } });
+    return { client: createdClient.rows[0], admin: createdAdmin.rows[0] };
+  } catch (error) { await client.query('ROLLBACK'); throw error; } finally { client.release(); }
+}
+
+router.post('/signup', loginLimiter, [
+  body('isp_name').trim().isLength({ min: 2, max: 255 }).withMessage('Enter your ISP or business name.'),
+  body('owner_name').trim().isLength({ min: 2, max: 255 }).withMessage('Enter your full name.'),
+  body('email').isEmail().normalizeEmail().withMessage('Enter a valid business email.'),
+  body('phone').trim().isLength({ min: 9, max: 80 }).withMessage('Enter a valid phone number.'),
+], async (req, res) => {
+  const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+  try {
+    let provider = 'password'; let googleSubject = null; let password = cleanSignupText(req.body.password, 256);
+    if (req.body.google_signup_token) {
+      const profile = jwt.verify(String(req.body.google_signup_token), oauthSecret(), { issuer: 'polyizon-billing', audience: 'google-signup' });
+      if (cleanEmail(profile.email) !== cleanEmail(req.body.email)) throw new Error('Google email verification does not match this signup.');
+      provider = 'google'; googleSubject = cleanSignupText(profile.sub, 255); password = null;
+    } else if (!strongPassword(password)) return res.status(400).json({ error: 'Use 12–128 characters and at least three of: uppercase, lowercase, number and symbol.' });
+    const result = await createPublicBillingAccount({ ispName: cleanSignupText(req.body.isp_name), ownerName: cleanSignupText(req.body.owner_name), email: cleanEmail(req.body.email), phone: cleanSignupText(req.body.phone, 80), password, provider, googleSubject, req });
+    await sendSignupEmail({ name: result.admin.name, email: result.admin.email, ispName: result.client.name });
+    return res.status(201).json({ message: 'Your billing account is ready.', provider, trial_ends_at: result.client.billing_trial_ends_at });
+  } catch (error) { if (error.statusCode === 409 || /Google email verification/.test(error.message)) return res.status(error.statusCode || 400).json({ error: error.message }); if (error.code === '23505') return res.status(409).json({ error: 'An account already exists for this email. Please sign in instead.' }); console.error('Public billing signup failed:', error.message); return res.status(500).json({ error: 'We could not create your billing account. Please try again.' }); }
+});
+
 router.post('/login', loginLimiter, [
   body('email').isEmail().normalizeEmail(),
   body('password').isString().isLength({ min: 1, max: 256 }),
@@ -367,7 +432,8 @@ function oauthSecret() {
 router.get('/google/start', loginLimiter, (req, res) => {
   const returnTo = googleReturnTo(req.query.return_to);
   if (!returnTo || !process.env.GOOGLE_OAUTH_CLIENT_ID) return res.status(400).send('Google sign-in is unavailable.');
-  const state = jwt.sign({ return_to: returnTo, nonce: crypto.randomBytes(16).toString('hex') }, oauthSecret(), {
+  const mode = String(req.query.mode || '') === 'signup' ? 'signup' : 'login';
+  const state = jwt.sign({ return_to: returnTo, mode, nonce: crypto.randomBytes(16).toString('hex') }, oauthSecret(), {
     expiresIn: '5m', issuer: 'polyizon-billing', audience: 'google-oauth',
   });
   const query = new URLSearchParams({
@@ -395,6 +461,10 @@ router.get('/google/callback', async (req, res) => {
       headers: { Authorization: `Bearer ${token.data.access_token}` }, timeout: 15000,
     })).data;
     if (!profile.email_verified) throw new Error('Google email is not verified.');
+    if (state.mode === 'signup') {
+      const signupToken = jwt.sign({ email: cleanEmail(profile.email), name: cleanSignupText(profile.name || ''), sub: cleanSignupText(profile.sub || '', 255) }, oauthSecret(), { expiresIn: '10m', issuer: 'polyizon-billing', audience: 'google-signup' });
+      return res.redirect(`${returnTo}/signup#google_signup_token=${encodeURIComponent(signupToken)}`);
+    }
     const admin = await findAdminByEmail(profile.email);
     if (!admin || (admin.role !== 'superadmin' && admin.client_status === 'suspended')) {
       throw new Error('This Google account is not authorized.');

@@ -26,6 +26,7 @@ DID_951="254207913951"
 DID_952="254207913952"
 DID_953="254207913953"
 
+VAPI_951_HOST=159d05a6-196a-4c7b-99ce-cfb92594cbbd.sip.vapi.ai
 log(){ printf '\n[%s] %s\n' "$(date '+%H:%M:%S')" "$*"; }
 die(){ echo "ERROR: $*" >&2; exit 1; }
 
@@ -193,7 +194,9 @@ cat > "$EXT_PHONE" <<EOF
 [nexa-phone-inbound]
 exten => ${DID_951},1,NoOp(Nexa Phone incoming ${DID_951})
  same => n,Set(CDR(userfield)=INDID:${DID_951})
- same => n,Dial(PJSIP/${PHONE_EXTENSION},45)
+ same => n,Answer()
+ same => n,NoOp(Forwarding 0207913951 to its dedicated Vapi inbound assistant)
+ same => n,Dial(PJSIP/vapi-951-endpoint/sip:+254207913951@159d05a6-196a-4c7b-99ce-cfb92594cbbd.sip.vapi.ai:5060,90)
  same => n,Hangup()
 
 exten => ${DID_952},1,NoOp(Nexa Phone incoming ${DID_952})
@@ -233,7 +236,7 @@ chmod 640 "$EXT_PHONE"
 
 grep -Fqx '#include extensions_nexa_phone.conf' "$EXT_MAIN" || printf '\n#include extensions_nexa_phone.conf\n' >> "$EXT_MAIN"
 
-log "Routing CloudOne DIDs 951-953 to the web phone; DID 950 stays on Nexa AI"
+log "Routing DID 951 to Nexa AI and DIDs 952-953 to the web phone"
 python3 - "$EXT_CLOUDONE" <<'PY'
 from pathlib import Path
 import re

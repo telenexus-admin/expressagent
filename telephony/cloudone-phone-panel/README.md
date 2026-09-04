@@ -5,7 +5,7 @@ A deliberately small browser softphone for the existing CloudOne -> Asterisk dep
 ## Number allocation
 
 - `254207913950` remains dedicated to Nexa AI.
-- `254207913951` routes to the browser phone.
+- 254207913951 routes to its dedicated Nexa Vapi assistant SIP address.
 - `254207913952` routes to the browser phone.
 - `254207913953` routes to the browser phone.
 
@@ -79,8 +79,8 @@ sudo CERTBOT_EMAIL='your-email@example.com' bash telephony/cloudone-phone-panel/
 The installer does not modify the Nexa billing backend, FreeRADIUS, MikroTik, WireGuard, NOC, TR-069, or the Vapi Nexa tool bridge. It only:
 
 1. adds an Asterisk WebRTC extension and WS transport,
-2. changes DIDs 951-953 from the Nexa-AI forwarding context to the browser phone context,
-3. leaves DID 950 on Nexa AI,
+2. pins DID 951 to its dedicated Nexa Vapi assistant route,
+3. routes DIDs 952-953 to the browser phone while leaving DID 950 on Nexa AI,
 4. adds a small standalone Node service,
 5. adds an Nginx virtual host for `phone.polyizon.tech`, and
 6. enables Asterisk CSV CDR history for the call-log screen.

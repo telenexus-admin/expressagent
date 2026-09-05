@@ -169,15 +169,30 @@ async function saveSettlementProfile({ clientId, institutionCode, accountName, a
   const selected = institution(institutionCode);
   if (!selected) throw new Error('Unsupported settlement institution');
 
+  const existing = await getSettlementProfile(clientId);
   const cleanAccountName = String(accountName || '').trim();
   const cleanAccountNumber = String(accountNumber || '').trim();
   const cleanBranch = String(branchName || '').trim();
   const cleanReference = String(collectionReference || '').trim();
 
   if (!cleanAccountName || cleanAccountName.length > 200) throw new Error('A valid bank account name is required');
-  if (!/^[A-Za-z0-9.\-\/ ]{4,40}$/.test(cleanAccountNumber)) throw new Error('Enter a valid bank account number');
   if (cleanBranch.length > 160) throw new Error('Branch name is too long');
   if (cleanReference.length > 120) throw new Error('Collection reference is too long');
+
+  const sameInstitution = existing && existing.institution_code === selected.code;
+  if (!cleanAccountNumber && !sameInstitution) {
+    throw new Error('Enter a valid bank account number');
+  }
+  if (cleanAccountNumber && !/^[A-Za-z0-9.\-\/ ]{4,40}$/.test(cleanAccountNumber)) {
+    throw new Error('Enter a valid bank account number');
+  }
+
+  const accountCiphertext = cleanAccountNumber
+    ? encryptValue(cleanAccountNumber)
+    : existing.account_number_ciphertext;
+  const accountLast4 = cleanAccountNumber
+    ? last4(cleanAccountNumber)
+    : existing.account_number_last4;
 
   const result = await db.query(
     `INSERT INTO billing_settlement_profiles (
@@ -213,8 +228,8 @@ async function saveSettlementProfile({ clientId, institutionCode, accountName, a
       selected.name,
       selected.type,
       cleanAccountName,
-      encryptValue(cleanAccountNumber),
-      last4(cleanAccountNumber),
+      accountCiphertext,
+      accountLast4,
       cleanBranch || null,
       cleanReference ? encryptValue(cleanReference) : null,
       cleanReference ? last4(cleanReference) : null,

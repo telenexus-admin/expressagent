@@ -89,6 +89,7 @@ async function run() {
     axios.post = originalPost;
   }
 
+  require('./darajaBankSettlement.test');
   console.log('KCB Buni adapter tests passed');
 }
 

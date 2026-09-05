@@ -251,10 +251,10 @@ async function markPaymentCollectionStatus({ clientId, paymentRequestId, status,
   await assertPaymentOwnership(tenantId, paymentRequestId);
   const result = await db.query(
     `UPDATE billing_payment_routes
-     SET collection_status=$3,
-         provider_collection_reference=COALESCE(NULLIF($4,''),provider_collection_reference),
-         last_error=CASE WHEN $3='failed' THEN NULLIF($5,'') ELSE last_error END,
-         collected_at=CASE WHEN $3='paid' THEN COALESCE(collected_at,NOW()) ELSE collected_at END,
+     SET collection_status=$3::varchar,
+         provider_collection_reference=COALESCE(NULLIF($4::varchar,''),provider_collection_reference),
+         last_error=CASE WHEN $3::text='failed' THEN NULLIF($5::text,'') ELSE last_error END,
+         collected_at=CASE WHEN $3::text='paid' THEN COALESCE(collected_at,NOW()) ELSE collected_at END,
          updated_at=NOW()
      WHERE client_id=$1 AND payment_request_id=$2
      RETURNING *`,

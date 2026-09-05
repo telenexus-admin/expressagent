@@ -3,6 +3,11 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { getSettlementProfile, safeProfile } = require('../services/settlementProfiles');
 const {
+  loadKcbBuniConfig,
+  publicKcbBuniStatus,
+  testKcbBuniConnection,
+} = require('../services/kcbBuni');
+const {
   ADAPTERS,
   decisionForProfile,
   ensurePaymentRouterSchema,
@@ -14,8 +19,16 @@ const {
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
 
+function requireOperator(req, res) {
+  if (!req.scope?.isSuperadmin) {
+    res.status(403).json({ error: 'Polyizon operator access is required' });
+    return false;
+  }
+  return true;
+}
+
 function scopedClientId(req, res) {
-  const clientId = req.scope.isSuperadmin ? req.scope.clientId : req.scope.clientId;
+  const clientId = req.scope.clientId;
   if (!clientId) {
     res.status(400).json({ error: 'Select a billing account before inspecting its payment router' });
     return null;
@@ -32,6 +45,30 @@ async function requireBillingClient(clientId) {
   if (!client || client.account_type !== 'billing') return null;
   return client;
 }
+
+router.get('/adapters/kcb/status', (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    return res.json(publicKcbBuniStatus(loadKcbBuniConfig()));
+  } catch (error) {
+    console.error('KCB Buni adapter status failed:', error.message);
+    return res.status(500).json({ error: 'Could not load KCB Buni adapter status' });
+  }
+});
+
+router.post('/adapters/kcb/test', async (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    return res.json(await testKcbBuniConnection());
+  } catch (error) {
+    console.error('KCB Buni OAuth test failed:', error.response?.data || error.message);
+    return res.status(400).json({
+      success: false,
+      bank: 'kcb',
+      error: error.response?.data?.error_description || error.response?.data?.error || error.message || 'KCB Buni connection failed',
+    });
+  }
+});
 
 router.get('/status', async (req, res) => {
   const clientId = scopedClientId(req, res);

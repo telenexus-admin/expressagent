@@ -73,6 +73,10 @@ jobs:
       - if: matrix.project == 'backend'
         run: node test/settlementProfiles.integration.js
       - if: matrix.project == 'backend'
+        run: node test/paymentRouter.test.js
+      - if: matrix.project == 'backend'
+        run: node test/paymentRouter.integration.js
+      - if: matrix.project == 'backend'
         run: node test/subscriberCommunications.test.js
       - if: matrix.project == 'backend'
         run: node test/hotspotTv.test.js

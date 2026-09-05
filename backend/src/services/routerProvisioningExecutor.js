@@ -216,6 +216,14 @@ async function verifyApplied(client, plan) {
       const rows = await client.command(printPath(operation.path));
       checks.push({ path: operation.path, present: rows.some((row) => rowMatches(row, selectorFor(operation))) });
     }
+    if (operation.path === '/radius/incoming/set') {
+      const incoming = (await client.command('/radius/incoming/print'))[0];
+      checks.push({
+        path: operation.path,
+        present: String(incoming?.accept || '') === String(operation.args.accept)
+          && String(incoming?.port || '') === String(operation.args.port),
+      });
+    }
   }
   const identity = await client.command('/system/identity/print');
   const passed = Boolean(identity[0]?.name) && checks.every((item) => item.present);
@@ -240,6 +248,15 @@ async function rollback(client, context) {
   const aaa = context.snapshots['/ppp/aaa/print']?.[0];
   if (aaa) {
     try { await client.command('/ppp/aaa/set', { 'use-radius': aaa['use-radius'], accounting: aaa.accounting, 'interim-update': aaa['interim-update'] }); } catch (error) { errors.push(error.message); }
+  }
+  const radiusIncoming = context.snapshots['/radius/incoming/print']?.[0];
+  if (radiusIncoming) {
+    try {
+      await client.command('/radius/incoming/set', {
+        accept: radiusIncoming.accept,
+        port: radiusIncoming.port,
+      });
+    } catch (error) { errors.push(error.message); }
   }
   if (context.radiusRegistered) {
     try {

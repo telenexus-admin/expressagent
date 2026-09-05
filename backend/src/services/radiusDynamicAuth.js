@@ -211,6 +211,21 @@ async function resolveNasSecret(nasIpAddress, queryable = getRadiusPool()) {
   return result.rows[0] || null;
 }
 
+async function currentSubscriberRate(username, queryable = getRadiusPool()) {
+  const cleanUsername = String(username || '').trim();
+  if (!cleanUsername) return null;
+  const result = await queryable.query(
+    `SELECT value
+     FROM radreply
+     WHERE LOWER(username) = LOWER($1)
+       AND attribute = 'Mikrotik-Rate-Limit'
+     ORDER BY id DESC
+     LIMIT 1`,
+    [cleanUsername]
+  );
+  return result.rows[0]?.value || null;
+}
+
 function sessionIdentityAttributes(session) {
   const attrs = [textAttribute(ATTR.USER_NAME, session.username)];
   if (session.acctsessionid) attrs.push(textAttribute(ATTR.ACCT_SESSION_ID, session.acctsessionid));
@@ -324,6 +339,7 @@ module.exports = {
   RADIUS_CODES,
   activeRadiusSessions,
   buildDynamicAuthorizationPacket,
+  currentSubscriberRate,
   disconnectSubscriberSessions,
   dynamicAuthEnabled,
   dynamicAuthPort,

@@ -7,6 +7,7 @@ const {
   publicKcbBuniStatus,
   testKcbBuniConnection,
 } = require('../services/kcbBuni');
+const { publicDarajaB2BStatus } = require('../services/darajaBankSettlement');
 const {
   ADAPTERS,
   decisionForProfile,
@@ -45,6 +46,16 @@ async function requireBillingClient(clientId) {
   if (!client || client.account_type !== 'billing') return null;
   return client;
 }
+
+router.get('/bank-rail/status', (req, res) => {
+  if (!requireOperator(req, res)) return;
+  try {
+    return res.json(publicDarajaB2BStatus());
+  } catch (error) {
+    console.error('Daraja B2B bank rail status failed:', error.message);
+    return res.status(500).json({ error: 'Could not load Daraja B2B bank rail status' });
+  }
+});
 
 router.get('/adapters/kcb/status', (req, res) => {
   if (!requireOperator(req, res)) return;
@@ -87,6 +98,7 @@ router.get('/status', async (req, res) => {
         route_status: decision.routeStatus,
         block_reason: decision.blockReason,
       },
+      bank_rail: publicDarajaB2BStatus(),
       adapters: Object.values(ADAPTERS).map((adapter) => ({
         code: adapter.code,
         name: adapter.name,

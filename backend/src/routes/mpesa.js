@@ -215,7 +215,7 @@ async function processCallback(req) {
          payment_provider='daraja',
          raw_response=$5::jsonb,
          updated_at=NOW()
-     WHERE id=$6
+     WHERE id=$6 AND status <> 'paid'
      RETURNING *`,
     [
       status,
@@ -227,7 +227,21 @@ async function processCallback(req) {
     ]
   );
   const payment = updated.rows[0];
-  if (!payment) return;
+  if (!payment) {
+    const alreadyPaid = (await db.query(
+      `SELECT * FROM payhero_payment_requests WHERE id=$1 AND client_id=$2 AND status='paid' LIMIT 1`,
+      [existing.id, clientId]
+    )).rows[0];
+    if (alreadyPaid) {
+      await capturePaymentRoute({
+        clientId,
+        payment: alreadyPaid,
+        status: 'paid',
+        providerReference: alreadyPaid.mpesa_receipt_number || callback.receipt || null,
+      });
+    }
+    return;
+  }
 
   await capturePaymentRoute({
     clientId,

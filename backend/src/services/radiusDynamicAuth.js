@@ -17,6 +17,7 @@ const ATTR = Object.freeze({
   USER_NAME: 1,
   NAS_IP_ADDRESS: 4,
   FRAMED_IP_ADDRESS: 8,
+  SESSION_TIMEOUT: 27,
   CALLING_STATION_ID: 31,
   ACCT_SESSION_ID: 44,
   VENDOR_SPECIFIC: 26,
@@ -65,6 +66,16 @@ function textAttribute(type, value) {
   const payload = Buffer.from(String(value ?? ''), 'utf8');
   if (payload.length > 253) throw new Error('RADIUS attribute is too large');
   return Buffer.concat([Buffer.from([type, payload.length + 2]), payload]);
+}
+
+function integerAttribute(type, value) {
+  const number = Number(value);
+  if (!Number.isInteger(number) || number < 0 || number > 0xffffffff) {
+    throw new Error(`Invalid integer RADIUS attribute: ${value}`);
+  }
+  const payload = Buffer.alloc(4);
+  payload.writeUInt32BE(number >>> 0, 0);
+  return Buffer.concat([Buffer.from([type, 6]), payload]);
 }
 
 function ipv4Attribute(type, value) {
@@ -283,15 +294,27 @@ async function disconnectSubscriberSessions(username, options = {}) {
   });
 }
 
-async function updateSubscriberRate(username, rateLimit, options = {}) {
+async function updateSubscriberPolicy(username, { rateLimit = null, sessionTimeout = null } = {}, options = {}) {
+  const attributes = [];
   const cleanRate = String(rateLimit || '').trim();
-  if (!cleanRate) throw new Error('A MikroTik rate limit is required for CoA');
+  if (cleanRate) {
+    attributes.push(vendorStringAttribute(MIKROTIK_VENDOR_ID, MIKROTIK_RATE_LIMIT, cleanRate));
+  }
+  if (sessionTimeout != null) {
+    const seconds = Math.max(1, Math.ceil(Number(sessionTimeout)));
+    attributes.push(integerAttribute(ATTR.SESSION_TIMEOUT, seconds));
+  }
+  if (!attributes.length) throw new Error('At least one live RADIUS policy value is required for CoA');
   return applyToSessions({
     username,
     code: RADIUS_CODES.COA_REQUEST,
-    extraAttributes: [vendorStringAttribute(MIKROTIK_VENDOR_ID, MIKROTIK_RATE_LIMIT, cleanRate)],
+    extraAttributes: attributes,
     ...options,
   });
+}
+
+async function updateSubscriberRate(username, rateLimit, options = {}) {
+  return updateSubscriberPolicy(username, { rateLimit }, options);
 }
 
 module.exports = {
@@ -304,7 +327,9 @@ module.exports = {
   disconnectSubscriberSessions,
   dynamicAuthEnabled,
   dynamicAuthPort,
+  integerAttribute,
   sessionIdentityAttributes,
+  updateSubscriberPolicy,
   updateSubscriberRate,
   vendorStringAttribute,
   verifyResponse,

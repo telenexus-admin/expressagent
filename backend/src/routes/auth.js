@@ -6,6 +6,7 @@ const jwt = require('jsonwebtoken');
 const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { logActivity } = require('../services/audit');
+const { callBillingWelcome } = require('../services/vapiAlerts');
 const { authMiddleware } = require('../middleware/auth');
 const {
   ensureSecuritySchema,
@@ -266,8 +267,12 @@ async function ensurePublicSignupSchema() {
       id BIGSERIAL PRIMARY KEY, client_id INTEGER NOT NULL UNIQUE REFERENCES clients(id) ON DELETE CASCADE,
       admin_id INTEGER NOT NULL UNIQUE REFERENCES admins(id) ON DELETE CASCADE,
       provider VARCHAR(20) NOT NULL, google_subject VARCHAR(255), phone VARCHAR(80) NOT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      welcome_call_status VARCHAR(30) NOT NULL DEFAULT 'pending', welcome_call_id VARCHAR(255), welcome_call_error TEXT
     );
+    ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS welcome_call_status VARCHAR(30) NOT NULL DEFAULT 'pending';
+    ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS welcome_call_id VARCHAR(255);
+    ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS welcome_call_error TEXT;
   `);
   return publicSignupSchemaPromise;
 }
@@ -304,6 +309,7 @@ router.post('/signup', loginLimiter, [
   body('owner_name').trim().isLength({ min: 2, max: 255 }).withMessage('Enter your full name.'),
   body('email').isEmail().normalizeEmail().withMessage('Enter a valid business email.'),
   body('phone').trim().isLength({ min: 9, max: 80 }).withMessage('Enter a valid phone number.'),
+  body('welcome_call_consent').equals('yes').withMessage('Please agree to receive the Polyizon welcome call.'),
 ], async (req, res) => {
   const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
@@ -315,7 +321,9 @@ router.post('/signup', loginLimiter, [
     } else if (!strongPassword(password)) return res.status(400).json({ error: 'Use 12–128 characters and at least three of: uppercase, lowercase, number and symbol.' });
     const result = await createPublicBillingAccount({ ispName: cleanSignupText(req.body.isp_name), ownerName: cleanSignupText(req.body.owner_name), email: cleanEmail(req.body.email), phone: cleanSignupText(req.body.phone, 80), password, provider, googleSubject, req });
     await sendSignupEmail({ name: result.admin.name, email: result.admin.email, ispName: result.client.name });
-    return res.status(201).json({ message: 'Your billing account is ready.', provider, trial_ends_at: result.client.billing_trial_ends_at });
+    const callResult = await callBillingWelcome({ contactName: result.admin.name, phone: cleanSignupText(req.body.phone, 80) });
+    await db.query(`UPDATE billing_public_signups SET welcome_call_status=$2, welcome_call_id=$3, welcome_call_error=$4 WHERE admin_id=$1`, [result.admin.id, callResult.success ? (callResult.status || 'created') : 'failed', callResult.callId || null, callResult.error || null]);
+    return res.status(201).json({ message: 'Your billing account is ready.', provider, trial_ends_at: result.client.billing_trial_ends_at, welcome_call_status: callResult.success ? (callResult.status || 'created') : 'failed' });
   } catch (error) { if (error.statusCode === 409 || /Google email verification/.test(error.message)) return res.status(error.statusCode || 400).json({ error: error.message }); if (error.code === '23505') return res.status(409).json({ error: 'An account already exists for this email. Please sign in instead.' }); console.error('Public billing signup failed:', error.message); return res.status(500).json({ error: 'We could not create your billing account. Please try again.' }); }
 });
 

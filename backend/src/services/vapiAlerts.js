@@ -492,6 +492,43 @@ async function callRouterOfflineAlert({
 }
 
 
+function normalizeWelcomePhone(value) {
+  const raw = cleanVoiceText(value, '').replace(/[\s()\-]/g, '');
+  if (/^\+\d{8,15}$/.test(raw)) return raw;
+  const digits = raw.replace(/\D/g, '');
+  if (/^0\d{9}$/.test(digits)) return `+254${digits.slice(1)}`;
+  if (/^254\d{9}$/.test(digits)) return `+${digits}`;
+  return null;
+}
+
+async function callBillingWelcome({ contactName, phone }) {
+  const privateKey = cleanVoiceText(process.env.VAPI_PRIVATE_API_KEY);
+  const assistantId = cleanVoiceText(process.env.VAPI_ALERT_ASSISTANT_ID);
+  const phoneNumberId = cleanVoiceText(process.env.VAPI_ALERT_PHONE_NUMBER_ID);
+  const destination = normalizeWelcomePhone(phone);
+  if (!privateKey || !assistantId || !phoneNumberId) throw new Error('Vapi welcome-call configuration is incomplete');
+  if (!destination) throw new Error('The welcome-call phone number must include a valid country code or Kenyan mobile format');
+  const firstName = cleanVoiceText(contactName, 'there').split(' ')[0] || 'there';
+  const payload = {
+    assistantId, phoneNumberId, customer: { number: destination },
+    assistantOverrides: {
+      firstMessage: `Hello ${firstName}, welcome to the Polyizon Billing System. Your billing workspace is ready, and we are excited to have you with us. Our team is here if you need any help getting started.`,
+      firstMessageMode: 'assistant-speaks-first', firstMessageInterruptionsEnabled: true,
+      variableValues: { call_type: 'polyizon_billing_welcome', customer_name: firstName, customer_phone: destination },
+    },
+  };
+  const apiBase = String(process.env.VAPI_API_BASE || 'https://api.vapi.ai').replace(/\/+$/, '');
+  try {
+    const response = await postJson(`${apiBase}/call`, payload, { Authorization: `Bearer ${privateKey}` });
+    console.log('[Nexa Vapi] Polyizon billing welcome call created', { callId: response.data?.id || null, status: response.data?.status || null });
+    return { success: true, callId: response.data?.id || null, status: response.data?.status || null, destination };
+  } catch (error) {
+    console.error('[Nexa Vapi] Polyizon billing welcome call failed', { error: error.message || 'Unknown Vapi error' });
+    return { success: false, error: error.message || 'Vapi call failed', destination };
+  }
+}
+
 module.exports = {
   callRouterOfflineAlert,
+  callBillingWelcome,
 };

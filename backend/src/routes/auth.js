@@ -309,7 +309,7 @@ router.post('/signup', loginLimiter, [
   body('owner_name').trim().isLength({ min: 2, max: 255 }).withMessage('Enter your full name.'),
   body('email').isEmail().normalizeEmail().withMessage('Enter a valid business email.'),
   body('phone').trim().isLength({ min: 9, max: 80 }).withMessage('Enter a valid phone number.'),
-  body('welcome_call_consent').equals('yes').withMessage('Please agree to receive the Polyizon welcome call.'),
+  body('welcome_call_consent').equals('yes').withMessage('Please confirm your Polyizon updates subscription and welcome call.'),
 ], async (req, res) => {
   const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {

@@ -3,6 +3,7 @@ const { loadSubscriber, syncHotspotVoucherRadius, syncSubscriberRadius } = requi
 const { connectRouter, getRouter, syncStaticDhcpLease } = require('./mikrotik');
 const { recordBillingEvent } = require('./events');
 const { startPppoeLifecycleController } = require('./pppoeLifecycleController');
+const { currentSubscriberRate, updateSubscriberPolicy } = require('./radiusDynamicAuth');
 
 let running = false;
 let timer;
@@ -31,6 +32,21 @@ async function ensureRadiusSyncJobSchema() {
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_radius_sync_jobs_pending
                   ON billing_radius_sync_jobs(next_attempt_at, id)
                   WHERE status IN ('pending','processing')`);
+
+  // Older packages may have speed fields but no explicit MikroTik rate string.
+  // Backfill only blank values so all future RADIUS resyncs preserve the plan speed.
+  await db.query(`
+    UPDATE billing_plans
+    SET radius_profile =
+          TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM upload_speed_mbps::text)) || 'M/' ||
+          TRIM(TRAILING '.' FROM TRIM(TRAILING '0' FROM download_speed_mbps::text)) || 'M',
+        updated_at = NOW()
+    WHERE (radius_profile IS NULL OR BTRIM(radius_profile) = '')
+      AND upload_speed_mbps IS NOT NULL
+      AND download_speed_mbps IS NOT NULL
+      AND upload_speed_mbps > 0
+      AND download_speed_mbps > 0
+  `);
 }
 
 async function enqueueRadiusSyncJob(queryable, clientId, subscriberId, reason = 'billing_update') {
@@ -79,6 +95,31 @@ async function reconnectFupSubscriber(subscriber) {
   }
 }
 
+async function applyLiveFupRate(subscriber, previousRate, effectiveRate) {
+  if (String(previousRate || '') === String(effectiveRate || '')) {
+    return { status: 'unchanged', rate_limit: effectiveRate || null };
+  }
+
+  if (effectiveRate) {
+    try {
+      const live = await updateSubscriberPolicy(
+        subscriber.radius_username,
+        { rateLimit: effectiveRate }
+      );
+      if (['applied', 'no_active_session'].includes(live.status)) {
+        return { status: 'coa', rate_limit: effectiveRate, live };
+      }
+    } catch (error) {
+      console.error(`FUP CoA failed for subscriber ${subscriber.id}:`, error.message);
+    }
+  }
+
+  // A disconnect is also the correct fallback when removing a previous rate
+  // entirely, because MikroTik cannot clear that VSA with our current CoA.
+  const fallback = await reconnectFupSubscriber(subscriber);
+  return { status: 'reauth', rate_limit: effectiveRate || null, fallback };
+}
+
 async function reconnectFupHotspotVoucher(voucher) {
   if (!voucher.router_id || !voucher.code) return { status: 'router_not_assigned' };
   const router = await getRouter(voucher.client_id, voucher.router_id, { includePassword: true });
@@ -102,8 +143,43 @@ async function processJob(job) {
     if (subscriber.access_mode === 'dhcp_static') await syncStaticDhcpLease(subscriber);
     else {
       if (!subscriber.radius_username) throw new Error('Subscriber RADIUS credentials are not configured');
+
+      let previousRate = null;
+      if (job.reason === 'fup_usage_check') {
+        previousRate = await currentSubscriberRate(subscriber.radius_username).catch(() => null);
+      }
+
       const sync = await syncSubscriberRadius(subscriber);
-      if (sync.fup?.rate_changed) {
+
+      if (job.reason === 'fup_usage_check') {
+        const effectiveRate = sync.fup?.rate_limit || subscriber.radius_profile || null;
+        try {
+          const live = await applyLiveFupRate(subscriber, previousRate, effectiveRate);
+          if (live.status !== 'unchanged') {
+            await recordBillingEvent({
+              clientId: subscriber.client_id,
+              eventType: sync.fup?.applied ? 'radius.fup_applied' : 'radius.fup_restored',
+              category: 'radius',
+              source: 'radius_sync_worker',
+              entityType: 'subscriber',
+              entityId: subscriber.id,
+              actorType: 'system',
+              title: sync.fup?.applied ? 'FUP speed applied' : 'Normal package speed restored',
+              payload: {
+                previous_rate: previousRate,
+                effective_rate: effectiveRate,
+                usage_bytes: sync.fup?.usage_bytes || 0,
+                threshold_bytes: sync.fup?.threshold_bytes || 0,
+                live_method: live.status,
+              },
+              deduplicationKey: `fup-rate:${subscriber.id}:${effectiveRate || 'none'}:${Date.now()}`,
+              sensitivity: 'restricted',
+            }).catch(() => {});
+          }
+        } catch (error) {
+          console.error(`FUP live policy failed for subscriber ${subscriber.id}:`, error.message);
+        }
+      } else if (sync.fup?.rate_changed) {
         try { await reconnectFupSubscriber(subscriber); }
         catch (error) { console.error(`FUP session reconnect failed for subscriber ${subscriber.id}:`, error.message); }
       }
@@ -242,4 +318,9 @@ function startRadiusSyncJobScheduler() {
   fupTimer.unref?.();
 }
 
-module.exports = { enqueueRadiusSyncJob, processRadiusSyncJobs, startRadiusSyncJobScheduler };
+module.exports = {
+  applyLiveFupRate,
+  enqueueRadiusSyncJob,
+  processRadiusSyncJobs,
+  startRadiusSyncJobScheduler,
+};

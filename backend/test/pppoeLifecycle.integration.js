@@ -37,7 +37,8 @@ assert.strictEqual(
   const names = new Set(columns.rows.map((row) => row.column_name));
   for (const required of [
     'subscriber_id', 'client_id', 'router_id', 'radius_username', 'plan_id',
-    'rate_limit', 'access_active', 'effective_expires_at', 'last_action', 'last_error',
+    'plan_updated_at', 'rate_limit', 'access_active', 'effective_expires_at',
+    'last_action', 'last_error',
   ]) {
     assert(names.has(required), `Missing lifecycle state column: ${required}`);
   }

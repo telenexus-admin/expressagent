@@ -158,17 +158,23 @@ async function processCallback(req) {
     console.warn(`[client ${clientId}] Daraja callback did not match a payment request: ${callback.checkoutRequestId}`);
     return;
   }
+  // Safaricom may retry callbacks. A previously fulfilled payment is immutable and must not notify or fulfill twice.
+  if (existing.status === 'paid') return;
 
+  const missingSuccessMetadata = callback.successful && (!Number.isFinite(callback.amount) || !callback.receipt);
   const amountMismatch = callback.successful && Number.isFinite(callback.amount) && Number(existing.amount) !== callback.amount;
-  const successful = callback.successful && !amountMismatch;
+  const successful = callback.successful && !missingSuccessMetadata && !amountMismatch;
   const status = successful ? 'paid' : 'failed';
-  const description = amountMismatch
-    ? `Daraja callback amount mismatch: expected KES ${existing.amount}, received KES ${callback.amount}`
-    : callback.resultDescription;
+  let description = callback.resultDescription;
+  if (amountMismatch) {
+    description = `Daraja callback amount mismatch: expected KES ${existing.amount}, received KES ${callback.amount}`;
+  } else if (missingSuccessMetadata) {
+    description = 'Daraja success callback was missing the expected amount or M-Pesa receipt';
+  }
 
   const updated = await db.query(
     `UPDATE payhero_payment_requests
-     SET status=CASE WHEN status='paid' THEN 'paid' ELSE $1 END,
+     SET status=$1,
          result_description=COALESCE(NULLIF($2,''),result_description),
          mpesa_receipt_number=COALESCE(NULLIF($3,''),mpesa_receipt_number),
          merchant_request_id=COALESCE(NULLIF($4,''),merchant_request_id),

@@ -74,6 +74,10 @@ function compileBillingBlueprint(input = {}) {
   const portalDomain = cleanDomain(desired.hotspot_dns_name, 'login.nexa.telenexustechnologies.com');
   const portalHost = cleanDomain(desired.portal_host, 'nexa.telenexustechnologies.com');
   const radiusHost = String(input.radius_host || '10.78.0.2').trim();
+  const radiusDynamicAuthPort = Number(input.radius_dynamic_auth_port || 1700);
+  if (!Number.isInteger(radiusDynamicAuthPort) || radiusDynamicAuthPort < 1 || radiusDynamicAuthPort > 65535) {
+    throw new Error('Invalid RADIUS dynamic authorization port');
+  }
   const conflicts = resourceConflicts(input.current_config || {});
   if (discoveredInterfaces.length && !discoveredInterfaces.some((row) => row.name === serviceInterface)) conflicts.push({ type: 'interface', name: serviceInterface, reason: 'Subscriber service interface was not discovered on this router' });
   const interfaceLists = input.current_config?.interface_lists || [];
@@ -99,7 +103,7 @@ function compileBillingBlueprint(input = {}) {
         paths: ['/ip/dns/print', '/ppp/aaa/print', '/ip/address/print', '/ip/pool/print',
           '/ip/dhcp-server/print', '/ip/dhcp-server/network/print', '/ppp/profile/print',
           '/interface/pppoe-server/server/print', '/ip/hotspot/profile/print', '/ip/hotspot/print',
-          '/radius/print', '/ip/firewall/filter/print', '/ip/firewall/nat/print', '/file/print'],
+          '/radius/print', '/radius/incoming/print', '/ip/firewall/filter/print', '/ip/firewall/nat/print', '/file/print'],
       }, 'Capture structured pre-change state'),
     ],
   }];
@@ -233,6 +237,13 @@ function compileBillingBlueprint(input = {}) {
       }, 'Configure private RADIUS authentication and accounting', {
         secret_ref: 'router-radius-secret', ensure: 'managed',
       }),
+      operation('radius_on_router', '/ip/firewall/filter/add', {
+        chain: 'input', action: 'accept', protocol: 'udp', 'dst-port': String(radiusDynamicAuthPort),
+        'src-address': radiusHost, 'place-before': '0', comment: 'NEXA allow RADIUS dynamic auth',
+      }, 'Allow RADIUS Disconnect and CoA only from the Polyizon RADIUS host', { ensure: 'managed' }),
+      operation('radius_on_router', '/radius/incoming/set', {
+        accept: 'yes', port: String(radiusDynamicAuthPort),
+      }, 'Enable RADIUS Disconnect and CoA from Polyizon'),
       ...(desired.pppoe ? [operation('radius_on_router', '/ppp/aaa/set', {
         'use-radius': 'yes', accounting: 'yes', 'interim-update': '1m',
       }, 'Enable PPPoE authentication and accounting through RADIUS')] : []),
@@ -265,6 +276,7 @@ function compileBillingBlueprint(input = {}) {
   const verification = [
     { type: 'management', path: '/system/resource/print', expect: 'one_row' },
     { type: 'radius_udp', host: radiusHost, ports: [1812, 1813], expect: 'reachable' },
+    { type: 'radius_dynamic_authorization', host: radiusHost, port: radiusDynamicAuthPort, expect: 'incoming_enabled' },
     { type: 'internet', target: '1.1.1.1', expect: 'reply' },
     ...(desired.pppoe ? [
       { type: 'pppoe_server', name: 'NEXA-PPPoE', expect: 'enabled' },
@@ -287,7 +299,7 @@ function compileBillingBlueprint(input = {}) {
       name: 'structured_rollback',
       operations: [
         operation('rollback', 'nexa://managed-resources/remove', { comment_prefix: 'NEXA managed' }, 'Remove only resources created by this run'),
-        operation('rollback', 'nexa://snapshot/restore', {}, 'Restore DNS and PPP AAA settings from the checkpoint'),
+        operation('rollback', 'nexa://snapshot/restore', {}, 'Restore DNS, PPP AAA, and RADIUS incoming settings from the checkpoint'),
         operation('rollback', 'nexa://radius/unregister-nas', { nas_identifier: input.nas_identifier }, 'Remove tenant NAS registration'),
       ],
     }],

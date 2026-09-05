@@ -1,5 +1,6 @@
 const assert = require('assert');
 const db = require('../src/db');
+const { ensurePppoeDeletionCapture } = require('../src/services/pppoeDeletionCapture');
 const {
   accessIsActive,
   effectiveExpiry,
@@ -26,6 +27,8 @@ assert.strictEqual(
 
 (async () => {
   await ensurePppoeLifecycleSchema();
+  await ensurePppoeDeletionCapture();
+
   const table = await db.query("SELECT to_regclass('public.billing_pppoe_lifecycle_state') AS name");
   assert.strictEqual(table.rows[0]?.name, 'billing_pppoe_lifecycle_state');
 
@@ -43,7 +46,15 @@ assert.strictEqual(
     assert(names.has(required), `Missing lifecycle state column: ${required}`);
   }
 
-  console.log('PPPoE lifecycle policy and schema tests passed.');
+  const trigger = await db.query(`
+    SELECT tgname
+    FROM pg_trigger
+    WHERE tgname = 'billing_subscribers_capture_pppoe_delete'
+      AND NOT tgisinternal
+  `);
+  assert.strictEqual(trigger.rows[0]?.tgname, 'billing_subscribers_capture_pppoe_delete');
+
+  console.log('PPPoE lifecycle policy, schema and deletion capture tests passed.');
   await db.end();
 })().catch(async (error) => {
   console.error(error);

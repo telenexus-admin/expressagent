@@ -268,11 +268,13 @@ async function ensurePublicSignupSchema() {
       admin_id INTEGER NOT NULL UNIQUE REFERENCES admins(id) ON DELETE CASCADE,
       provider VARCHAR(20) NOT NULL, google_subject VARCHAR(255), phone VARCHAR(80) NOT NULL,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      welcome_call_status VARCHAR(30) NOT NULL DEFAULT 'pending', welcome_call_id VARCHAR(255), welcome_call_error TEXT
+      welcome_call_status VARCHAR(30) NOT NULL DEFAULT 'pending', welcome_call_id VARCHAR(255), welcome_call_error TEXT,
+      newsletter_subscribed BOOLEAN NOT NULL DEFAULT FALSE
     );
     ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS welcome_call_status VARCHAR(30) NOT NULL DEFAULT 'pending';
     ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS welcome_call_id VARCHAR(255);
     ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS welcome_call_error TEXT;
+    ALTER TABLE billing_public_signups ADD COLUMN IF NOT EXISTS newsletter_subscribed BOOLEAN NOT NULL DEFAULT FALSE;
   `);
   return publicSignupSchemaPromise;
 }
@@ -286,7 +288,7 @@ async function sendSignupEmail({ name, email, ispName }) {
     }, { headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 15000 });
   } catch (error) { console.error('Billing signup email failed:', error.response?.status || error.message); }
 }
-async function createPublicBillingAccount({ ispName, ownerName, email, phone, password, provider, googleSubject, req }) {
+async function createPublicBillingAccount({ ispName, ownerName, email, phone, password, provider, googleSubject, newsletterSubscribed, req }) {
   await ensurePasswordSchema(); await ensurePublicSignupSchema();
   const existing = await findAdminByEmail(email);
   if (existing) { const error = new Error('An account already exists for this email. Please sign in instead.'); error.statusCode = 409; throw error; }
@@ -297,7 +299,7 @@ async function createPublicBillingAccount({ ispName, ownerName, email, phone, pa
       VALUES ($1,$2,$3,'active','billing','website','trial','Starter',NOW()+INTERVAL '14 days',$4) RETURNING id,name,billing_trial_ends_at`, [ispName, ispName, email, 'You are Nexa, the billing assistant for this ISP account.']);
     const passwordHash = await bcrypt.hash(password || crypto.randomBytes(48).toString('base64url'), 12);
     const createdAdmin = await client.query(`INSERT INTO admins (name,email,password_hash,role,client_id) VALUES ($1,$2,$3,'admin',$4) RETURNING id,name,email,client_id`, [ownerName, email, passwordHash, createdClient.rows[0].id]);
-    await client.query(`INSERT INTO billing_public_signups (client_id,admin_id,provider,google_subject,phone) VALUES ($1,$2,$3,$4,$5)`, [createdClient.rows[0].id, createdAdmin.rows[0].id, provider, googleSubject || null, phone]);
+    await client.query(`INSERT INTO billing_public_signups (client_id,admin_id,provider,google_subject,phone,newsletter_subscribed) VALUES ($1,$2,$3,$4,$5,$6)`, [createdClient.rows[0].id, createdAdmin.rows[0].id, provider, googleSubject || null, phone, Boolean(newsletterSubscribed)]);
     await client.query('COMMIT');
     await logActivity({ req: { ...req, user: { id: createdAdmin.rows[0].id, name: ownerName, client_id: createdClient.rows[0].id } }, action: 'billing_public_account_created', module: 'billing_signup', entityType: 'client', entityId: createdClient.rows[0].id, description: `${ownerName} created a self-service billing account for ${ispName}.`, metadata: { provider, billing_plan: 'Starter', trial_days: 14 } });
     return { client: createdClient.rows[0], admin: createdAdmin.rows[0] };
@@ -309,18 +311,19 @@ router.post('/signup', loginLimiter, [
   body('owner_name').trim().isLength({ min: 2, max: 255 }).withMessage('Enter your full name.'),
   body('email').isEmail().normalizeEmail().withMessage('Enter a valid business email.'),
   body('phone').trim().isLength({ min: 9, max: 80 }).withMessage('Enter a valid phone number.'),
-  body('welcome_call_consent').equals('yes').withMessage('Please confirm your Polyizon updates subscription and welcome call.'),
 ], async (req, res) => {
   const errors = validationResult(req); if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
   try {
     let provider = 'password'; let googleSubject = null; let password = cleanSignupText(req.body.password, 256);
+    const newsletterSubscribed = String(req.body.newsletter_subscribed || '') === 'yes';
     if (req.body.google_signup_token) {
       const profile = jwt.verify(String(req.body.google_signup_token), oauthSecret(), { issuer: 'polyizon-billing', audience: 'google-signup' });
       if (cleanEmail(profile.email) !== cleanEmail(req.body.email)) throw new Error('Google email verification does not match this signup.');
       provider = 'google'; googleSubject = cleanSignupText(profile.sub, 255); password = null;
     } else if (!strongPassword(password)) return res.status(400).json({ error: 'Use 12–128 characters and at least three of: uppercase, lowercase, number and symbol.' });
-    const result = await createPublicBillingAccount({ ispName: cleanSignupText(req.body.isp_name), ownerName: cleanSignupText(req.body.owner_name), email: cleanEmail(req.body.email), phone: cleanSignupText(req.body.phone, 80), password, provider, googleSubject, req });
+    const result = await createPublicBillingAccount({ ispName: cleanSignupText(req.body.isp_name), ownerName: cleanSignupText(req.body.owner_name), email: cleanEmail(req.body.email), phone: cleanSignupText(req.body.phone, 80), password, provider, googleSubject, newsletterSubscribed, req });
     await sendSignupEmail({ name: result.admin.name, email: result.admin.email, ispName: result.client.name });
+    await new Promise((resolve) => setTimeout(resolve, 7000));
     const callResult = await callBillingWelcome({ contactName: result.admin.name, phone: cleanSignupText(req.body.phone, 80) });
     await db.query(`UPDATE billing_public_signups SET welcome_call_status=$2, welcome_call_id=$3, welcome_call_error=$4 WHERE admin_id=$1`, [result.admin.id, callResult.success ? (callResult.status || 'created') : 'failed', callResult.callId || null, callResult.error || null]);
     return res.status(201).json({ message: 'Your billing account is ready.', provider, trial_ends_at: result.client.billing_trial_ends_at, welcome_call_status: callResult.success ? (callResult.status || 'created') : 'failed' });

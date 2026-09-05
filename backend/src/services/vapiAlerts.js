@@ -502,9 +502,9 @@ function normalizeWelcomePhone(value) {
 }
 
 async function callBillingWelcome({ contactName, phone }) {
-  const privateKey = cleanVoiceText(process.env.VAPI_PRIVATE_API_KEY);
-  const assistantId = cleanVoiceText(process.env.VAPI_ALERT_ASSISTANT_ID);
-  const phoneNumberId = cleanVoiceText(process.env.VAPI_ALERT_PHONE_NUMBER_ID);
+  const privateKey = cleanVoiceText(process.env.VAPI_BILLING_PRIVATE_API_KEY || process.env.VAPI_PRIVATE_API_KEY);
+  const assistantId = cleanVoiceText(process.env.VAPI_BILLING_ASSISTANT_ID || process.env.VAPI_ALERT_ASSISTANT_ID);
+  const phoneNumberId = cleanVoiceText(process.env.VAPI_BILLING_PHONE_NUMBER_ID || process.env.VAPI_ALERT_PHONE_NUMBER_ID);
   const destination = normalizeWelcomePhone(phone);
   if (!privateKey || !assistantId || !phoneNumberId) throw new Error('Vapi welcome-call configuration is incomplete');
   if (!destination) throw new Error('The welcome-call phone number must include a valid country code or Kenyan mobile format');
@@ -517,7 +517,7 @@ async function callBillingWelcome({ contactName, phone }) {
       variableValues: { call_type: 'polyizon_billing_welcome', customer_name: firstName, customer_phone: destination },
     },
   };
-  const apiBase = String(process.env.VAPI_API_BASE || 'https://api.vapi.ai').replace(/\/+$/, '');
+  const apiBase = String(process.env.VAPI_BILLING_API_BASE || process.env.VAPI_API_BASE || 'https://api.vapi.ai').replace(/\/+$/, '');
   try {
     const response = await postJson(`${apiBase}/call`, payload, { Authorization: `Bearer ${privateKey}` });
     console.log('[Nexa Vapi] Polyizon billing welcome call created', { callId: response.data?.id || null, status: response.data?.status || null });

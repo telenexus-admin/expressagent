@@ -4,7 +4,9 @@ const {
   confirmationPhrase,
   portalContent,
   provisioningFeatureState,
+  rollback,
   selectorFor,
+  verifyApplied,
 } = require('../src/services/routerProvisioningExecutor');
 
 assert.strictEqual(confirmationPhrase('abcdef1234567890'), 'EXECUTE ABCDEF123456');
@@ -26,4 +28,66 @@ assert.strictEqual(state.approval_required, true);
 assert.strictEqual(state.plan_seal_required, true);
 assert.strictEqual(state.pre_activation_radius_probe, true);
 assert.strictEqual(state.structured_rollback, true);
-console.log('Guarded RouterOS provisioning executor tests passed.');
+
+(async () => {
+  const rollbackCommands = [];
+  const rollbackClient = {
+    async command(path, args = {}) {
+      rollbackCommands.push({ path, args });
+      return [];
+    },
+  };
+  const rollbackResult = await rollback(rollbackClient, {
+    created: [],
+    updated: [],
+    fileSnapshots: [],
+    snapshots: {
+      '/ip/dns/print': [{ 'allow-remote-requests': 'no', servers: '1.1.1.1' }],
+      '/ppp/aaa/print': [{ 'use-radius': 'no', accounting: 'no', 'interim-update': '0s' }],
+      '/radius/incoming/print': [{ accept: 'no', port: '1700' }],
+    },
+    radiusRegistered: false,
+  });
+  assert.strictEqual(rollbackResult.passed, true);
+  const restoreIncoming = rollbackCommands.find((item) => item.path === '/radius/incoming/set');
+  assert(restoreIncoming, 'RADIUS incoming settings must be restored during rollback');
+  assert.deepStrictEqual(restoreIncoming.args, { accept: 'no', port: '1700' });
+
+  const verificationCommands = [];
+  const verificationClient = {
+    async command(path) {
+      verificationCommands.push(path);
+      if (path === '/radius/incoming/print') return [{ accept: 'yes', port: '1700' }];
+      if (path === '/system/identity/print') return [{ name: 'edge-1' }];
+      if (path === '/ip/firewall/filter/print') {
+        return [{
+          '.id': '*1', chain: 'input', action: 'accept', protocol: 'udp',
+          'dst-port': '1700', 'src-address': '10.78.0.2', comment: 'NEXA allow RADIUS dynamic auth',
+        }];
+      }
+      return [];
+    },
+  };
+  const verification = await verifyApplied(verificationClient, {
+    stages: [{ operations: [
+      {
+        path: '/radius/incoming/set',
+        args: { accept: 'yes', port: '1700' },
+      },
+      {
+        path: '/ip/firewall/filter/add',
+        args: {
+          chain: 'input', action: 'accept', protocol: 'udp', 'dst-port': '1700',
+          'src-address': '10.78.0.2', comment: 'NEXA allow RADIUS dynamic auth',
+        },
+      },
+    ] }],
+  });
+  assert.strictEqual(verification.passed, true);
+  assert(verificationCommands.includes('/radius/incoming/print'));
+
+  console.log('Guarded RouterOS provisioning executor tests passed.');
+})().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

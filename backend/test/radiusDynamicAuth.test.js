@@ -6,12 +6,13 @@ const {
   MIKROTIK_VENDOR_ID,
   RADIUS_CODES,
   buildDynamicAuthorizationPacket,
+  currentSubscriberRate,
   disconnectSubscriberSessions,
   integerAttribute,
   updateSubscriberPolicy,
 } = require('../src/services/radiusDynamicAuth');
 
-function fakeQueryable({ sessions = null, nas = null } = {}) {
+function fakeQueryable({ sessions = null, nas = null, rate = '10M/20M' } = {}) {
   return {
     async query(sql) {
       if (sql.includes('FROM radacct')) {
@@ -28,6 +29,9 @@ function fakeQueryable({ sessions = null, nas = null } = {}) {
       }
       if (sql.includes('FROM nas')) {
         return { rows: nas === null ? [{ nasname: '10.78.0.11', shortname: 'ccr-1', secret: 'test-radius-secret-123456789' }] : nas };
+      }
+      if (sql.includes('FROM radreply')) {
+        return { rows: rate ? [{ value: rate }] : [] };
       }
       throw new Error(`Unexpected test query: ${sql}`);
     },
@@ -58,6 +62,9 @@ assert.deepStrictEqual(requestOne.packet, requestTwo.packet);
 assert.notDeepStrictEqual(requestOne.authenticator, Buffer.alloc(16));
 
 (async () => {
+  assert.strictEqual(await currentSubscriberRate('john.1024', fakeQueryable({ rate: '3M/5M' })), '3M/5M');
+  assert.strictEqual(await currentSubscriberRate('john.1024', fakeQueryable({ rate: null })), null);
+
   let coaCall;
   const coa = await updateSubscriberPolicy(
     'john.1024',

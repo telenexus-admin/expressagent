@@ -39,6 +39,7 @@ async function ensurePppoeLifecycleSchema() {
       router_id INTEGER,
       radius_username TEXT NOT NULL,
       plan_id BIGINT,
+      plan_updated_at TIMESTAMPTZ,
       rate_limit TEXT,
       access_active BOOLEAN NOT NULL DEFAULT FALSE,
       service_status TEXT,
@@ -50,13 +51,22 @@ async function ensurePppoeLifecycleSchema() {
       updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `);
+  await db.query('ALTER TABLE billing_pppoe_lifecycle_state ADD COLUMN IF NOT EXISTS plan_updated_at TIMESTAMPTZ');
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_pppoe_lifecycle_client
                   ON billing_pppoe_lifecycle_state(client_id, subscriber_id)`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_billing_pppoe_lifecycle_seen
                   ON billing_pppoe_lifecycle_state(last_seen_at)`);
 }
 
-async function loadNativePppoeSubscribers() {
+function nativeSubscriberPredicate(alias = 's') {
+  return `${alias}.radius_username IS NOT NULL
+      AND ${alias}.radius_username <> ''
+      AND ${alias}.radius_password_ciphertext IS NOT NULL
+      AND ${alias}.radius_password_ciphertext <> ''
+      AND COALESCE(${alias}.access_mode, 'pppoe') IN ('pppoe', 'pppoe_static')`;
+}
+
+async function loadLifecycleCandidates(limit = 500) {
   const result = await db.query(`
     SELECT s.*,
            p.radius_profile,
@@ -66,19 +76,39 @@ async function loadNativePppoeSubscribers() {
            p.fup_threshold_mb,
            p.fup_download_speed_mbps,
            p.fup_upload_speed_mbps,
-           p.validity_days
+           p.validity_days,
+           p.updated_at AS plan_updated_at
     FROM billing_subscribers s
     LEFT JOIN billing_plans p
       ON p.id = s.plan_id
      AND p.client_id = s.client_id
-    WHERE s.radius_username IS NOT NULL
-      AND s.radius_username <> ''
-      AND s.radius_password_ciphertext IS NOT NULL
-      AND s.radius_password_ciphertext <> ''
-      AND COALESCE(s.access_mode, 'pppoe') IN ('pppoe', 'pppoe_static')
-    ORDER BY s.id
-    LIMIT 5000
-  `);
+    LEFT JOIN billing_pppoe_lifecycle_state state
+      ON state.subscriber_id = s.id
+    WHERE ${nativeSubscriberPredicate('s')}
+      AND (
+        state.subscriber_id IS NULL
+        OR state.router_id IS DISTINCT FROM s.router_id
+        OR state.radius_username IS DISTINCT FROM s.radius_username
+        OR state.plan_id IS DISTINCT FROM s.plan_id
+        OR state.plan_updated_at IS DISTINCT FROM p.updated_at
+        OR state.service_status IS DISTINCT FROM s.service_status
+        OR state.radius_status IS DISTINCT FROM s.radius_status
+        OR state.effective_expires_at IS DISTINCT FROM
+             CASE WHEN s.expires_at IS NULL THEN NULL
+                  ELSE s.expires_at + (COALESCE(s.grace_period_days, 0) * INTERVAL '1 day') END
+        OR (
+          state.access_active = TRUE
+          AND s.expires_at IS NOT NULL
+          AND s.expires_at + (COALESCE(s.grace_period_days, 0) * INTERVAL '1 day') <= NOW()
+        )
+        OR s.radius_sync_status = 'failed'
+      )
+    ORDER BY
+      CASE WHEN state.subscriber_id IS NULL THEN 0 ELSE 1 END,
+      s.updated_at,
+      s.id
+    LIMIT $1
+  `, [limit]);
   return result.rows;
 }
 
@@ -94,15 +124,16 @@ async function saveState(subscriber, { accessActive, rateLimit, action = 'observ
   const expiry = effectiveExpiry(subscriber);
   await db.query(
     `INSERT INTO billing_pppoe_lifecycle_state (
-       subscriber_id, client_id, router_id, radius_username, plan_id, rate_limit,
-       access_active, service_status, radius_status, effective_expires_at,
+       subscriber_id, client_id, router_id, radius_username, plan_id, plan_updated_at,
+       rate_limit, access_active, service_status, radius_status, effective_expires_at,
        last_action, last_error, last_seen_at, updated_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,NOW(),NOW())
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,NOW(),NOW())
      ON CONFLICT (subscriber_id) DO UPDATE SET
        client_id=EXCLUDED.client_id,
        router_id=EXCLUDED.router_id,
        radius_username=EXCLUDED.radius_username,
        plan_id=EXCLUDED.plan_id,
+       plan_updated_at=EXCLUDED.plan_updated_at,
        rate_limit=EXCLUDED.rate_limit,
        access_active=EXCLUDED.access_active,
        service_status=EXCLUDED.service_status,
@@ -118,6 +149,7 @@ async function saveState(subscriber, { accessActive, rateLimit, action = 'observ
       subscriber.router_id || null,
       subscriber.radius_username,
       subscriber.plan_id || null,
+      subscriber.plan_updated_at || null,
       rateLimit || null,
       Boolean(accessActive),
       subscriber.service_status || null,
@@ -136,6 +168,22 @@ async function markStateError(subscriberId, error, action) {
      WHERE subscriber_id=$1`,
     [subscriberId, action, String(error?.message || error).slice(0, 1000)]
   );
+}
+
+async function syncAndMark(subscriber, rateLimit) {
+  const result = await syncSubscriberRadius({
+    ...subscriber,
+    radius_profile: rateLimit || subscriber.radius_profile || null,
+  });
+  await db.query(
+    `UPDATE billing_subscribers
+     SET radius_sync_status='synced', radius_sync_error=NULL,
+         radius_last_synced_at=NOW(), updated_at=NOW()
+     WHERE id=$1 AND client_id=$2`,
+    [subscriber.id, subscriber.client_id]
+  );
+  subscriber.radius_sync_status = 'synced';
+  return result;
 }
 
 async function disconnectViaRouterApi({ client_id: clientId, router_id: routerId, radius_username: username }) {
@@ -231,6 +279,9 @@ async function enforceSubscriber(subscriber, now = new Date()) {
     && String(previousExpiry?.toISOString() || '') !== String(expiry?.toISOString() || '');
   const rateChanged = Boolean(state) && String(state.rate_limit || '') !== String(rateLimit || '');
   const planChanged = Boolean(state) && Number(state.plan_id || 0) !== Number(subscriber.plan_id || 0);
+  const planUpdated = Boolean(state)
+    && String(state.plan_updated_at ? new Date(state.plan_updated_at).toISOString() : '')
+      !== String(subscriber.plan_updated_at ? new Date(subscriber.plan_updated_at).toISOString() : '');
   const routerChanged = Boolean(state) && Number(state.router_id || 0) !== Number(subscriber.router_id || 0);
   const usernameChanged = Boolean(state) && String(state.radius_username) !== String(subscriber.radius_username);
   const accessChanged = Boolean(state) && Boolean(state.access_active) !== currentActive;
@@ -238,7 +289,7 @@ async function enforceSubscriber(subscriber, now = new Date()) {
   try {
     if (!state) {
       if (!currentActive || subscriber.radius_sync_status === 'failed') {
-        await syncSubscriberRadius(subscriber);
+        await syncAndMark(subscriber, rateLimit);
         if (!currentActive) await disconnectWithFallback(subscriber);
       }
       await saveState(subscriber, { accessActive: currentActive, rateLimit, action: currentActive ? 'baseline' : 'inactive_enforced' });
@@ -252,45 +303,41 @@ async function enforceSubscriber(subscriber, now = new Date()) {
         radius_username: state.radius_username,
         router_id: state.router_id || subscriber.router_id,
       });
-      await syncSubscriberRadius(subscriber);
+      await syncAndMark(subscriber, rateLimit);
       await saveState(subscriber, { accessActive: currentActive, rateLimit, action: 'username_changed' });
       await recordLifecycleEvent(subscriber, 'pppoe.username_changed', 'PPPoE username synchronized');
       return;
     }
 
     if (!currentActive) {
-      if (accessChanged || subscriber.radius_sync_status !== 'synced' || state.last_action !== 'inactive_enforced') {
-        await syncSubscriberRadius(subscriber);
-        const sessionControl = await disconnectWithFallback(subscriber);
-        if (expiry && expiry <= now && subscriber.service_status === 'active') {
-          await db.query(
-            `UPDATE billing_subscribers
-             SET service_status='expired', updated_at=NOW()
-             WHERE id=$1 AND client_id=$2 AND service_status='active'`,
-            [subscriber.id, subscriber.client_id]
-          );
-          subscriber.service_status = 'expired';
-        }
-        await saveState(subscriber, { accessActive: false, rateLimit, action: 'inactive_enforced' });
-        await recordLifecycleEvent(
-          subscriber,
-          expiry && expiry <= now ? 'pppoe.expired_enforced' : 'pppoe.access_revoked',
-          expiry && expiry <= now ? 'PPPoE expiry enforced' : 'PPPoE access revoked',
-          { session_control: sessionControl.method }
+      await syncAndMark(subscriber, rateLimit);
+      const sessionControl = await disconnectWithFallback(subscriber);
+      if (expiry && expiry <= now && subscriber.service_status === 'active') {
+        await db.query(
+          `UPDATE billing_subscribers
+           SET service_status='expired', updated_at=NOW()
+           WHERE id=$1 AND client_id=$2 AND service_status='active'`,
+          [subscriber.id, subscriber.client_id]
         );
-      } else {
-        await saveState(subscriber, { accessActive: false, rateLimit, action: 'inactive_enforced' });
+        subscriber.service_status = 'expired';
       }
+      await saveState(subscriber, { accessActive: false, rateLimit, action: 'inactive_enforced' });
+      await recordLifecycleEvent(
+        subscriber,
+        expiry && expiry <= now ? 'pppoe.expired_enforced' : 'pppoe.access_revoked',
+        expiry && expiry <= now ? 'PPPoE expiry enforced' : 'PPPoE access revoked',
+        { session_control: sessionControl.method }
+      );
       return;
     }
 
-    if (accessChanged || rateChanged || planChanged || expiryChanged || routerChanged || subscriber.radius_sync_status === 'failed') {
-      const sync = await syncSubscriberRadius(subscriber);
+    if (accessChanged || rateChanged || planChanged || planUpdated || expiryChanged || routerChanged || subscriber.radius_sync_status === 'failed') {
+      const sync = await syncAndMark(subscriber, rateLimit);
       let sessionControl = null;
 
       if (routerChanged) {
         sessionControl = await disconnectWithFallback(subscriber);
-      } else if (rateChanged || planChanged || expiryChanged) {
+      } else if (rateChanged || planChanged || planUpdated || expiryChanged) {
         sessionControl = await coaWithFallback(subscriber, {
           rateLimit: sync.fup?.rate_limit || rateLimit || null,
           sessionTimeout: secondsUntilExpiry(subscriber, now),
@@ -329,17 +376,17 @@ async function enforceSubscriber(subscriber, now = new Date()) {
   }
 }
 
-async function cleanupDeletedSubscribers(currentIds) {
-  const ids = Array.from(currentIds);
-  const result = ids.length
-    ? await db.query(
-      `SELECT * FROM billing_pppoe_lifecycle_state
-       WHERE NOT (subscriber_id = ANY($1::bigint[]))
-       ORDER BY subscriber_id
-       LIMIT 100`,
-      [ids]
-    )
-    : await db.query('SELECT * FROM billing_pppoe_lifecycle_state ORDER BY subscriber_id LIMIT 100');
+async function cleanupDeletedSubscribers(limit = 100) {
+  const result = await db.query(
+    `SELECT state.*
+     FROM billing_pppoe_lifecycle_state state
+     LEFT JOIN billing_subscribers subscriber
+       ON subscriber.id = state.subscriber_id
+     WHERE subscriber.id IS NULL
+     ORDER BY state.updated_at
+     LIMIT $1`,
+    [limit]
+  );
 
   for (const state of result.rows) {
     const ghost = {
@@ -376,8 +423,8 @@ async function processPppoeLifecycle() {
     locked = Boolean(lock.rows[0]?.locked);
     if (!locked) return;
 
-    const subscribers = await loadNativePppoeSubscribers();
-    const currentIds = new Set(subscribers.map((subscriber) => Number(subscriber.id)));
+    const batchSize = Math.min(2000, Math.max(50, Number(process.env.PPPOE_LIFECYCLE_BATCH_SIZE || 500)));
+    const subscribers = await loadLifecycleCandidates(batchSize);
     for (const subscriber of subscribers) {
       try {
         await enforceSubscriber(subscriber);
@@ -385,7 +432,7 @@ async function processPppoeLifecycle() {
         console.error(`PPPoE lifecycle enforcement failed for subscriber ${subscriber.id}:`, error.message);
       }
     }
-    await cleanupDeletedSubscribers(currentIds);
+    await cleanupDeletedSubscribers(Math.min(500, batchSize));
   } catch (error) {
     console.error('PPPoE lifecycle controller failed:', error.message);
   } finally {
@@ -399,6 +446,7 @@ async function processPppoeLifecycle() {
 
 function startPppoeLifecycleController() {
   if (String(process.env.PPPOE_LIFECYCLE_ENABLED || 'true').toLowerCase() === 'false') return;
+  if (String(process.env.RADIUS_SYNC_ENABLED || '').toLowerCase() !== 'true') return;
   ensurePppoeLifecycleSchema()
     .then(() => processPppoeLifecycle())
     .catch((error) => console.error('PPPoE lifecycle schema failed:', error.message));
@@ -409,10 +457,12 @@ function startPppoeLifecycleController() {
 
 module.exports = {
   accessIsActive,
+  cleanupDeletedSubscribers,
   disconnectViaRouterApi,
   effectiveExpiry,
   ensurePppoeLifecycleSchema,
   enforceSubscriber,
+  loadLifecycleCandidates,
   processPppoeLifecycle,
   secondsUntilExpiry,
   startPppoeLifecycleController,

@@ -3,7 +3,6 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { recordRequestEvent } = require('../services/events');
 const {
-  activateSettlementProfile,
   ensureSettlementSchema,
   getSettlementProfile,
   publicInstitutions,
@@ -142,38 +141,12 @@ router.post('/operator/:clientId/review', async (req, res) => {
   }
 });
 
-router.post('/operator/:clientId/activate', async (req, res) => {
-  if (!req.scope.isSuperadmin) return res.status(403).json({ error: 'Superadmin access required' });
-  const clientId = Number(req.params.clientId);
-  if (!Number.isInteger(clientId) || clientId < 1) return res.status(400).json({ error: 'Invalid client id' });
-  try {
-    const activated = await activateSettlementProfile({
-      clientId,
-      adminId: req.user.id,
-      railReference: req.body.rail_reference,
-    });
-    if (!activated) {
-      return res.status(409).json({
-        error: 'Settlement profile must be verified and ready before activation',
-      });
-    }
-    await recordRequestEvent(req, {
-      eventType: 'settlement.routing_activated',
-      category: 'payment',
-      source: 'settlement_operator',
-      entityType: 'settlement_profile',
-      entityId: activated.id,
-      title: 'Settlement routing activated',
-      description: `${activated.institution_name} routing enabled`,
-      newState: safeProfile(activated),
-      payload: { rail_reference: activated.rail_reference },
-      deduplicationKey: `settlement:${clientId}:active:${Date.now()}`,
-      sensitivity: 'confidential',
-    }).catch((error) => console.error('Settlement activation audit failed:', error.message));
-    return res.json({ success: true, profile: safeProfile(activated) });
-  } catch (error) {
-    return res.status(400).json({ error: String(error.message || 'Could not activate settlement routing') });
-  }
+// Live bank routing is intentionally unavailable in phase 1. Verification only moves a profile to "ready".
+// A bank/Safaricom adapter must prove the commercial rail before any profile can become "active".
+router.post('/operator/:clientId/activate', (_req, res) => {
+  return res.status(409).json({
+    error: 'Live settlement activation is locked until the bank/Safaricom routing adapter is connected and verified',
+  });
 });
 
 module.exports = router;

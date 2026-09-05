@@ -7,6 +7,7 @@ const { fulfillPppoePortalPayment } = require('./pppoePortal');
 const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendClientText } = require('../services/clientEvolution');
 const { sendSMS } = require('../services/sms');
+const { recordPaymentRouteIntent, markPaymentCollectionStatus } = require('../services/paymentRouter');
 
 const router = express.Router();
 
@@ -129,6 +130,30 @@ async function fulfillSuccessfulPayment(payment) {
   }
 }
 
+async function capturePaymentRoute({ clientId, payment, status, providerReference = null, errorMessage = null }) {
+  try {
+    const route = await recordPaymentRouteIntent({
+      clientId,
+      paymentRequestId: payment.id,
+      externalReference: payment.external_reference,
+      amount: Number(payment.amount),
+      collectionProvider: payment.payment_provider || 'daraja',
+      collectionStatus: status,
+    });
+    if (!route) return;
+    await markPaymentCollectionStatus({
+      clientId,
+      paymentRequestId: payment.id,
+      status,
+      providerReference,
+      errorMessage,
+    });
+  } catch (error) {
+    // Settlement capture must never turn a valid M-Pesa callback into a failed customer payment.
+    console.error(`[client ${clientId}] Payment router capture failed:`, error.message);
+  }
+}
+
 async function processCallback(req) {
   await ensureDarajaSchema();
   const clientId = Number(req.params.clientId);
@@ -158,8 +183,16 @@ async function processCallback(req) {
     console.warn(`[client ${clientId}] Daraja callback did not match a payment request: ${callback.checkoutRequestId}`);
     return;
   }
-  // Safaricom may retry callbacks. A previously fulfilled payment is immutable and must not notify or fulfill twice.
-  if (existing.status === 'paid') return;
+  // Safaricom may retry callbacks. Re-capture the route idempotently, but never fulfill or notify twice.
+  if (existing.status === 'paid') {
+    await capturePaymentRoute({
+      clientId,
+      payment: existing,
+      status: 'paid',
+      providerReference: existing.mpesa_receipt_number || callback.receipt || null,
+    });
+    return;
+  }
 
   const missingSuccessMetadata = callback.successful && (!Number.isFinite(callback.amount) || !callback.receipt);
   const amountMismatch = callback.successful && Number.isFinite(callback.amount) && Number(existing.amount) !== callback.amount;
@@ -195,6 +228,14 @@ async function processCallback(req) {
   );
   const payment = updated.rows[0];
   if (!payment) return;
+
+  await capturePaymentRoute({
+    clientId,
+    payment,
+    status,
+    providerReference: callback.receipt || null,
+    errorMessage: successful ? null : description,
+  });
 
   if (successful) await fulfillSuccessfulPayment(payment);
 

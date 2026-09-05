@@ -244,14 +244,14 @@ async function reviewSettlementProfile({ clientId, adminId, decision, notes, rai
   const routingStatus = decision === 'verified' ? 'ready' : 'disabled';
   const result = await db.query(
     `UPDATE billing_settlement_profiles
-     SET verification_status=$2,
-         routing_status=$3,
-         verification_notes=$4,
-         verified_at=CASE WHEN $2='verified' THEN NOW() ELSE NULL END,
-         verified_by_admin_id=$5,
-         rail_reference=CASE WHEN $2='verified' THEN NULLIF($6,'') ELSE NULL END,
+     SET verification_status=$2::varchar,
+         routing_status=$3::varchar,
+         verification_notes=$4::text,
+         verified_at=CASE WHEN $2::text='verified' THEN NOW() ELSE NULL END,
+         verified_by_admin_id=$5::integer,
+         rail_reference=CASE WHEN $2::text='verified' THEN NULLIF($6::text,'') ELSE NULL END,
          updated_at=NOW()
-     WHERE client_id=$1
+     WHERE client_id=$1::integer
      RETURNING *`,
     [clientId, decision, routingStatus, String(notes || '').trim() || null, adminId || null, String(railReference || '').trim()]
   );

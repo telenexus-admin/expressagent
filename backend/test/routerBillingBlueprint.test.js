@@ -15,6 +15,7 @@ const plan = compileBillingBlueprint({
   nas_identifier: 'nexa-1-2-edge',
   nas_ip: '10.77.0.2',
   radius_host: '10.78.0.2',
+  radius_dynamic_auth_port: 1700,
 });
 assert.strictEqual(plan.execution_ready, true);
 assert.deepStrictEqual(plan.stages.map((stage) => stage.name), [
@@ -28,7 +29,7 @@ for (const path of [
   '/ip/dhcp-server/add', '/ip/dns/set', '/ip/firewall/filter/add',
   'nexa://file/ensure-directory', 'nexa://file/write', '/ip/hotspot/profile/add', '/ip/hotspot/add',
   '/ip/hotspot/walled-garden/add', '/ppp/profile/add',
-  '/interface/pppoe-server/server/add', '/radius/add', '/ppp/aaa/set',
+  '/interface/pppoe-server/server/add', '/radius/add', '/radius/incoming/set', '/ppp/aaa/set',
   '/ip/firewall/nat/add',
 ]) assert.ok(operations.some((item) => item.path === path), 'missing ' + path);
 assert.strictEqual(operations.filter((item) => item.path === 'nexa://file/write').length, 3);
@@ -45,8 +46,47 @@ assert.ok(dnsRules.every((item) => item.args['src-address'] === '10.20.0.0/24'))
 const publicDnsDrops = operations.filter((item) => item.args?.['in-interface-list'] === 'WAN' && item.args?.action === 'drop');
 assert.strictEqual(publicDnsDrops.length, 2);
 assert.ok(operations.filter((item) => ['/ip/hotspot/add', '/interface/pppoe-server/server/add'].includes(item.path)).every((item) => item.args.interface === 'nexa-subscriber-vlan-220'));
+
+const incoming = operations.find((item) => item.path === '/radius/incoming/set');
+assert.deepStrictEqual(incoming.args, { accept: 'yes', port: '1700' });
+const dynamicAuthFirewall = operations.find((item) =>
+  item.path === '/ip/firewall/filter/add' && item.args.comment === 'NEXA allow RADIUS dynamic auth'
+);
+assert(dynamicAuthFirewall, 'RADIUS dynamic authorization firewall rule is required');
+assert.strictEqual(dynamicAuthFirewall.args.chain, 'input');
+assert.strictEqual(dynamicAuthFirewall.args.action, 'accept');
+assert.strictEqual(dynamicAuthFirewall.args.protocol, 'udp');
+assert.strictEqual(dynamicAuthFirewall.args['src-address'], '10.78.0.2');
+assert.strictEqual(dynamicAuthFirewall.args['dst-port'], '1700');
+assert.strictEqual(dynamicAuthFirewall.args['place-before'], '0');
+
+const checkpoint = plan.stages.find((stage) => stage.name === 'checkpoint');
+const snapshot = checkpoint.operations.find((item) => item.path === 'nexa://snapshot/capture');
+assert(snapshot.args.paths.includes('/radius/incoming/print'));
+assert(plan.verification_probes.some((probe) =>
+  probe.type === 'radius_dynamic_authorization' && probe.port === 1700 && probe.expect === 'incoming_enabled'
+));
 assert.ok(plan.rollback_stages[0].operations.some((item) => item.args.comment_prefix === 'NEXA managed'));
 assert.strictEqual(networkFromGateway('10.40.0.1/24'), '10.40.0.0/24');
+
+const customDynamicPort = compileBillingBlueprint({
+  desired_services: { hotspot: false, pppoe: true },
+  capability_profile: capability,
+  current_config: {},
+  nas_identifier: 'nexa-1-3-edge',
+  nas_ip: '10.77.0.3',
+  radius_host: '10.78.0.2',
+  radius_dynamic_auth_port: 3799,
+});
+const customIncoming = customDynamicPort.stages.flatMap((stage) => stage.operations)
+  .find((item) => item.path === '/radius/incoming/set');
+assert.strictEqual(customIncoming.args.port, '3799');
+assert.throws(() => compileBillingBlueprint({
+  desired_services: { hotspot: false, pppoe: true },
+  capability_profile: capability,
+  current_config: {},
+  radius_dynamic_auth_port: 70000,
+}), /Invalid RADIUS dynamic authorization port/);
 
 const current = { pools: [{ name: 'NEXA-HOTSPOT-POOL', comment: 'customer resource' }] };
 assert.strictEqual(resourceConflicts(current).length, 1);

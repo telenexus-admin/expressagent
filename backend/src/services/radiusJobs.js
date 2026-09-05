@@ -2,11 +2,13 @@ const db = require('../db');
 const { loadSubscriber, syncHotspotVoucherRadius, syncSubscriberRadius } = require('./radiusSync');
 const { connectRouter, getRouter, syncStaticDhcpLease } = require('./mikrotik');
 const { recordBillingEvent } = require('./events');
+const { startPppoeLifecycleController } = require('./pppoeLifecycleController');
 
 let running = false;
 let timer;
 let fupTimer;
 let hotspotFupRunning = false;
+let pppoeLifecycleStarted = false;
 
 async function ensureRadiusSyncJobSchema() {
   await db.query(`
@@ -223,6 +225,12 @@ function startRadiusSyncJobScheduler() {
   ensureRadiusSyncJobSchema()
     .then(() => processRadiusSyncJobs())
     .catch((error) => console.error('RADIUS sync job schema failed:', error.message));
+
+  if (!pppoeLifecycleStarted) {
+    pppoeLifecycleStarted = true;
+    startPppoeLifecycleController();
+  }
+
   timer = setInterval(processRadiusSyncJobs, 5000);
   timer.unref?.();
   enqueueFupChecks().then(() => processRadiusSyncJobs()).catch(() => {});

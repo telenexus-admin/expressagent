@@ -60,6 +60,10 @@ jobs:
       - if: matrix.project == 'backend'
         run: node test/pppoeProvisioning.test.js
       - if: matrix.project == 'backend'
+        run: node test/radiusDynamicAuth.test.js
+      - if: matrix.project == 'backend'
+        run: node test/pppoeLifecycle.integration.js
+      - if: matrix.project == 'backend'
         run: node test/subscriberCommunications.test.js
       - if: matrix.project == 'backend'
         run: node test/hotspotTv.test.js

@@ -3,6 +3,7 @@ const { loadSubscriber, syncHotspotVoucherRadius, syncSubscriberRadius } = requi
 const { connectRouter, getRouter, syncStaticDhcpLease } = require('./mikrotik');
 const { recordBillingEvent } = require('./events');
 const { startPppoeLifecycleController } = require('./pppoeLifecycleController');
+const { ensurePppoeDeletionCapture } = require('./pppoeDeletionCapture');
 const { currentSubscriberRate, updateSubscriberPolicy } = require('./radiusDynamicAuth');
 
 let running = false;
@@ -299,7 +300,10 @@ async function processHotspotFupChecks() {
 
 function startRadiusSyncJobScheduler() {
   ensureRadiusSyncJobSchema()
-    .then(() => processRadiusSyncJobs())
+    .then(async () => {
+      await ensurePppoeDeletionCapture();
+      await processRadiusSyncJobs();
+    })
     .catch((error) => console.error('RADIUS sync job schema failed:', error.message));
 
   if (!pppoeLifecycleStarted) {

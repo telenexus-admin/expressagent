@@ -13,13 +13,13 @@ router.use(authMiddleware, scopeMiddleware);
 
 function targetClientId(req, res) {
   if (!req.scope?.isSuperadmin) {
-    if (!req.scope?.clientId) {
-      res.status(403).json({ error: 'Billing account access required' });
-      return null;
-    }
-    return Number(req.scope.clientId);
+    res.status(403).json({ error: 'Only the Polyizon operator can configure Daraja credentials' });
+    return null;
   }
-  const requested = Number(req.query.clientId || req.body?.client_id || process.env.DEFAULT_CLIENT_ID || process.env.EXPRESSNET_CLIENT_ID || 0);
+  const requested = Number(
+    req.scope?.clientId || req.query.clientId || req.body?.client_id ||
+    process.env.DEFAULT_CLIENT_ID || process.env.EXPRESSNET_CLIENT_ID || 0
+  );
   if (!Number.isInteger(requested) || requested < 1) {
     res.status(400).json({ error: 'clientId is required for operator Daraja configuration' });
     return null;
@@ -42,12 +42,12 @@ function safeConfig(config) {
   };
 }
 
-function normalizeEnvironment(value) {
-  return String(value || 'production').trim().toLowerCase() === 'sandbox' ? 'sandbox' : 'production';
+function normalizeEnvironment(value, fallback = 'production') {
+  return String(value || fallback || 'production').trim().toLowerCase() === 'sandbox' ? 'sandbox' : 'production';
 }
 
-function normalizeTransactionType(value) {
-  const selected = String(value || 'CustomerPayBillOnline').trim();
+function normalizeTransactionType(value, fallback = 'CustomerPayBillOnline') {
+  const selected = String(value || fallback || 'CustomerPayBillOnline').trim();
   const allowed = new Set(['CustomerPayBillOnline', 'CustomerBuyGoodsOnline']);
   return allowed.has(selected) ? selected : null;
 }
@@ -82,8 +82,8 @@ router.put('/', async (req, res) => {
     const consumerSecret = String(req.body.consumer_secret || req.body.mpesa_consumer_secret || '').trim();
     const shortcode = String(req.body.shortcode || req.body.mpesa_shortcode || row.mpesa_shortcode || '').replace(/\D/g, '');
     const passkey = String(req.body.passkey || req.body.mpesa_passkey || '').trim();
-    const environment = normalizeEnvironment(req.body.environment || req.body.mpesa_environment || row.mpesa_environment);
-    const transactionType = normalizeTransactionType(req.body.transaction_type || req.body.mpesa_transaction_type || row.mpesa_transaction_type);
+    const environment = normalizeEnvironment(req.body.environment || req.body.mpesa_environment, row.mpesa_environment);
+    const transactionType = normalizeTransactionType(req.body.transaction_type || req.body.mpesa_transaction_type, row.mpesa_transaction_type);
     if (!transactionType) return res.status(400).json({ error: 'Unsupported M-Pesa transaction type' });
     if (shortcode && !/^\d{5,12}$/.test(shortcode)) return res.status(400).json({ error: 'Enter a valid M-Pesa shortcode' });
 
@@ -126,13 +126,14 @@ router.post('/test', async (req, res) => {
   const clientId = targetClientId(req, res);
   if (!clientId) return;
   try {
+    const saved = await loadDarajaConfig(clientId);
     const result = await testDarajaConnection(clientId, {
       consumerKey: String(req.body.consumer_key || '').trim(),
       consumerSecret: String(req.body.consumer_secret || '').trim(),
       shortcode: String(req.body.shortcode || '').replace(/\D/g, ''),
       passkey: String(req.body.passkey || '').trim(),
-      environment: normalizeEnvironment(req.body.environment),
-      transactionType: normalizeTransactionType(req.body.transaction_type) || 'CustomerPayBillOnline',
+      environment: normalizeEnvironment(req.body.environment, saved.environment),
+      transactionType: normalizeTransactionType(req.body.transaction_type, saved.transactionType) || 'CustomerPayBillOnline',
     });
     return res.json(result);
   } catch (error) {

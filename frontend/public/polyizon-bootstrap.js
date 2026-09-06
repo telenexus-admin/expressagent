@@ -57,8 +57,11 @@
   // Preview mode is excluded because its configuration is supplied locally.
   if (isHotspot && !isHotspotPreview) {
     var coverId = 'polyizon-hotspot-bootstrap-cover';
+    document.documentElement.classList.add('polyizon-hotspot-booting');
+
     var coverStyle = document.createElement('style');
     coverStyle.textContent =
+      '.polyizon-hotspot-booting #root{visibility:hidden!important}' +
       '#' + coverId + '{position:fixed;inset:0;z-index:2147483647;display:flex;align-items:center;justify-content:center;background:#f8fafc;color:#0f172a;font-family:Arial,Helvetica,sans-serif;transition:opacity .14s ease}' +
       '#' + coverId + '.is-ready{opacity:0;pointer-events:none}' +
       '#' + coverId + ' .pzb-ring{width:30px;height:30px;border:3px solid #dbe4e8;border-top-color:#059669;border-radius:999px;animation:pzb-spin .75s linear infinite}' +
@@ -77,9 +80,13 @@
 
     var revealHotspot = function revealHotspot() {
       var cover = document.getElementById(coverId);
-      if (!cover) return;
       window.requestAnimationFrame(function () {
         window.requestAnimationFrame(function () {
+          document.documentElement.classList.remove('polyizon-hotspot-booting');
+          if (!cover) {
+            if (coverStyle.parentNode) coverStyle.parentNode.removeChild(coverStyle);
+            return;
+          }
           cover.classList.add('is-ready');
           window.setTimeout(function () {
             if (cover.parentNode) cover.parentNode.removeChild(cover);

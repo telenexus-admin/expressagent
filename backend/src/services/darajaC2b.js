@@ -95,32 +95,18 @@ async function validateC2bPayment(body = {}) {
   const payment = normalizeC2bPayload(body);
 
   if (!config.shortcode) {
-    return { accepted: false, code: 1, description: 'Polyizon Paybill is not configured' };
+    return { accepted: false, code: 1, description: 'Polyizon central collection Paybill is disabled' };
   }
 
   if (payment.shortcode && payment.shortcode !== config.shortcode) {
     return { accepted: false, code: 1, description: 'Business shortcode does not match Polyizon Paybill' };
   }
 
-  if (!payment.accountNumber) {
-    return { accepted: false, code: 1, description: 'Enter the PPPoE account number provided by your ISP' };
-  }
-
-  const subscriber = await resolvePppoePaymentAccount(payment.accountNumber);
-  if (!subscriber) {
-    return { accepted: false, code: 1, description: 'The PPPoE account number was not found' };
-  }
-
   return {
     accepted: false,
     code: 1,
-    description: 'Do not pay this PPPoE account to the Polyizon Paybill. Use the ISP direct-bank STK or the ISP bank Paybill instructions instead.',
+    description: 'Polyizon central Paybill collections are disabled. Pay the ISP configured bank account directly using the bank Paybill or direct-bank STK.',
     directBankRequired: true,
-    subscriber: {
-      id: subscriber.id,
-      client_id: subscriber.client_id,
-      account_number: subscriber.account_number,
-    },
   };
 }
 
@@ -129,32 +115,28 @@ async function processC2bConfirmation(body = {}) {
   const config = centralDarajaConfig();
 
   if (!payment.transactionId) throw new Error('C2B confirmation did not include TransID');
-  if (!payment.accountNumber) throw new Error('C2B confirmation did not include BillRefNumber');
   if (!Number.isFinite(payment.amount) || payment.amount <= 0) throw new Error('C2B confirmation did not include a valid TransAmount');
   if (payment.shortcode && config.shortcode && payment.shortcode !== config.shortcode) {
     throw new Error('C2B confirmation shortcode does not match the configured Polyizon Paybill');
   }
 
-  const subscriber = await resolvePppoePaymentAccount(payment.accountNumber);
-  if (subscriber) {
-    console.error(
-      `[DIRECT-BANK POLICY] Unexpected central C2B confirmation ${payment.transactionId} for PPPoE account ${payment.accountNumber}; subscriber was NOT activated.`
-    );
-    return {
-      status: 'central_collection_blocked',
-      idempotent: false,
-      directBankRequired: true,
-      subscriber: {
-        id: subscriber.id,
-        client_id: subscriber.client_id,
-        account_number: subscriber.account_number,
-      },
-    };
-  }
+  const subscriber = payment.accountNumber
+    ? await resolvePppoePaymentAccount(payment.accountNumber)
+    : null;
+
+  console.error(
+    `[DIRECT-BANK POLICY] Unexpected central C2B confirmation ${payment.transactionId} for account ${payment.accountNumber || '(none)'}; no subscriber was activated and no Polyizon collection workflow was applied.`
+  );
 
   return {
-    status: 'unmatched',
+    status: 'central_collection_blocked',
     idempotent: false,
+    directBankRequired: true,
+    subscriber: subscriber ? {
+      id: subscriber.id,
+      client_id: subscriber.client_id,
+      account_number: subscriber.account_number,
+    } : null,
   };
 }
 

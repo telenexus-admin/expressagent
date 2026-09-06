@@ -4,8 +4,6 @@ const {
   getDarajaAccessToken,
 } = require('./daraja');
 const {
-  applyPppoeSubscriptionPayment,
-  moneyCents,
   resolvePppoePaymentAccount,
 } = require('./pppoePayments');
 
@@ -108,40 +106,20 @@ async function validateC2bPayment(body = {}) {
     return { accepted: false, code: 1, description: 'Enter the PPPoE account number provided by your ISP' };
   }
 
-  if (!Number.isFinite(payment.amount) || payment.amount <= 0) {
-    return { accepted: false, code: 1, description: 'Enter a valid payment amount' };
-  }
-
   const subscriber = await resolvePppoePaymentAccount(payment.accountNumber);
   if (!subscriber) {
     return { accepted: false, code: 1, description: 'The PPPoE account number was not found' };
   }
 
-  const expected = moneyCents(subscriber.plan_price);
-  const received = moneyCents(payment.amount);
-  if (!subscriber.plan_id || subscriber.plan_is_active !== true || !Number.isInteger(expected) || expected <= 0) {
-    return { accepted: false, code: 1, description: 'This account does not have an active payable package' };
-  }
-
-  if (received !== expected) {
-    return {
-      accepted: false,
-      code: 1,
-      description: `Pay exactly KES ${Number(subscriber.plan_price)} for ${subscriber.plan_name || 'the linked package'}`,
-    };
-  }
-
   return {
-    accepted: true,
-    code: 0,
-    description: 'Accepted',
+    accepted: false,
+    code: 1,
+    description: 'This account accepts direct-to-bank M-Pesa STK only. Contact your ISP to request a payment prompt.',
+    directBankRequired: true,
     subscriber: {
       id: subscriber.id,
       client_id: subscriber.client_id,
       account_number: subscriber.account_number,
-      plan_id: subscriber.plan_id,
-      plan_name: subscriber.plan_name,
-      amount: Number(subscriber.plan_price),
     },
   };
 }
@@ -157,16 +135,27 @@ async function processC2bConfirmation(body = {}) {
     throw new Error('C2B confirmation shortcode does not match the configured Polyizon Paybill');
   }
 
-  return applyPppoeSubscriptionPayment({
-    transactionId: payment.transactionId,
-    accountNumber: payment.accountNumber,
-    amount: payment.amount,
-    payerPhone: payment.payerPhone || null,
-    paidAt: payment.paidAt,
-    source: 'c2b',
-    shortcode: payment.shortcode || config.shortcode || null,
-    rawPayload: payment.raw,
-  });
+  const subscriber = await resolvePppoePaymentAccount(payment.accountNumber);
+  if (subscriber) {
+    console.error(
+      `[DIRECT-BANK POLICY] Unexpected central C2B confirmation ${payment.transactionId} for PPPoE account ${payment.accountNumber}; subscriber was NOT activated.`
+    );
+    return {
+      status: 'central_collection_blocked',
+      idempotent: false,
+      directBankRequired: true,
+      subscriber: {
+        id: subscriber.id,
+        client_id: subscriber.client_id,
+        account_number: subscriber.account_number,
+      },
+    };
+  }
+
+  return {
+    status: 'unmatched',
+    idempotent: false,
+  };
 }
 
 async function registerC2bUrls() {

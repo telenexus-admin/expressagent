@@ -10,6 +10,11 @@ const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendClientText } = require('../services/clientEvolution');
 const { appendRequestEvent, ensureEventSchema } = require('../services/events');
 const {
+  cleanPhone,
+  initiateDarajaPayment,
+  paymentConfiguration,
+} = require('../services/daraja');
+const {
   normalizePppoeUsername,
   rateLimitFromPlan,
 } = require('../services/pppoeProvisioning');
@@ -20,12 +25,40 @@ const {
 
 const router = express.Router();
 
-function paymentInstructions(_client, accountNumber) {
-  const shortcode = String(process.env.DARAJA_SHORTCODE || '').trim();
-  if (shortcode) {
-    return `Pay via M-Pesa PayBill ${shortcode}. Use ${accountNumber} as the account number/reference.`;
+async function directBankPaymentDetails(clientId, accountNumber, amount) {
+  const readiness = await paymentConfiguration(clientId);
+  const destination = readiness?.destination || null;
+
+  if (!readiness?.ready || !destination) {
+    return {
+      method: 'direct_bank_stk',
+      ready: false,
+      holds_funds: false,
+      account_number: accountNumber,
+      amount: Number(amount),
+      error: readiness?.error || 'Direct-to-bank M-Pesa settlement is not configured for this ISP',
+    };
   }
-  return `Use account number ${accountNumber} as your payment reference. Contact support for the available M-Pesa payment method.`;
+
+  return {
+    method: 'direct_bank_stk',
+    ready: true,
+    holds_funds: false,
+    account_number: accountNumber,
+    amount: Number(amount),
+    institution_code: destination.institutionCode,
+    institution_name: destination.institutionName,
+    bank_paybill: destination.paybill,
+    bank_account_last4: destination.accountLast4,
+    purpose: `M-Pesa is collected directly into ${destination.institutionName} account ending ${destination.accountLast4}. Polyizon never receives or holds the subscription funds.`,
+  };
+}
+
+function paymentInstructions(payment, accountNumber) {
+  if (payment?.ready) {
+    return `Your Polyizon subscriber reference is ${accountNumber}. Request an M-Pesa payment prompt from your ISP; the money is deposited directly into ${payment.institution_name} account ending ${payment.bank_account_last4}.`;
+  }
+  return `Your Polyizon subscriber reference is ${accountNumber}. Direct-to-bank M-Pesa payment is not ready yet; contact your ISP before paying.`;
 }
 
 function escapeHtml(value) {
@@ -37,17 +70,17 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
-async function deliverWelcomeNotice({ client, subscriber, plan }) {
+async function deliverWelcomeNotice({ client, subscriber, plan, payment }) {
   const businessName = String(client?.business_name || client?.name || 'Polyizon').trim();
   const firstName = String(subscriber.full_name || '').trim().split(/\s+/)[0] || 'there';
   const packagePrice = Number(plan.price || 0).toLocaleString('en-KE');
-  const instructions = paymentInstructions(client, subscriber.account_number);
+  const instructions = paymentInstructions(payment, subscriber.account_number);
   const message = [
     `Welcome to ${businessName}, ${firstName}.`,
-    `Your PPPoE account number is ${subscriber.account_number}.`,
+    `Your PPPoE account reference is ${subscriber.account_number}.`,
     `Package: ${plan.name} — KES ${packagePrice} for ${plan.validity_days} days.`,
     instructions,
-    'Your internet will activate after payment is confirmed.',
+    'Your internet will activate after the direct-bank M-Pesa payment is confirmed.',
   ].join('\n');
 
   const results = [];
@@ -90,7 +123,7 @@ async function deliverWelcomeNotice({ client, subscriber, plan }) {
         reply_to: client.email_reply_to || fromAddress,
         subject: `Welcome to ${businessName} — payment details`,
         text: message,
-        html: `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE account has been created and is waiting for payment.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Account number: ${escapeHtml(subscriber.account_number)}</strong><br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><p>${escapeHtml(instructions)}</p><p>Your internet will activate after payment is confirmed.</p></div>`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE account has been created and is waiting for payment.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Subscriber reference: ${escapeHtml(subscriber.account_number)}</strong><br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><p>${escapeHtml(instructions)}</p><p>Polyizon does not receive or hold your subscription funds. Internet activates after the direct-bank payment is confirmed.</p></div>`,
       }));
     }
   } else {
@@ -263,8 +296,8 @@ router.post('/', [
         source: 'billing_workspace',
         entityType: 'subscriber',
         entityId: subscriber.id,
-        title: 'PPPoE subscriber created pending payment',
-        description: `${subscriber.full_name} was created pending payment; RADIUS access is disabled until payment is confirmed`,
+        title: 'PPPoE subscriber created pending direct-bank payment',
+        description: `${subscriber.full_name} was created pending direct-bank payment; RADIUS access is disabled until payment is confirmed`,
         payload: {
           account_number: subscriber.account_number,
           account_prefix: accountAllocation.prefix,
@@ -276,6 +309,8 @@ router.post('/', [
           router_name: subscriber.router_name,
           expires_at: subscriber.expires_at,
           payment_required: true,
+          payment_model: 'direct_bank_stk',
+          polyizon_holds_funds: false,
           radius_rate_limit: rateLimit,
         },
         newState: {
@@ -300,7 +335,25 @@ router.post('/', [
       client.release();
     }
 
-    const welcome = await deliverWelcomeNotice({ client: billingClient, subscriber, plan });
+    const payment = await directBankPaymentDetails(
+      clientId,
+      subscriber.account_number,
+      Number(plan.price)
+    ).catch((error) => ({
+      method: 'direct_bank_stk',
+      ready: false,
+      holds_funds: false,
+      account_number: subscriber.account_number,
+      amount: Number(plan.price),
+      error: error.message || 'Direct-to-bank payment readiness could not be checked',
+    }));
+
+    const welcome = await deliverWelcomeNotice({
+      client: billingClient,
+      subscriber,
+      plan,
+      payment,
+    });
 
     return res.status(201).json({
       subscriber: {
@@ -324,11 +377,8 @@ router.post('/', [
         rate_limit: rateLimit,
       },
       payment: {
-        account_number: subscriber.account_number,
-        account_prefix: accountAllocation.prefix,
-        paybill: String(process.env.DARAJA_SHORTCODE || '').trim() || null,
-        amount: Number(plan.price),
-        purpose: paymentInstructions(billingClient, subscriber.account_number),
+        ...payment,
+        purpose: paymentInstructions(payment, subscriber.account_number),
       },
       notifications: welcome.deliveries,
     });
@@ -347,6 +397,126 @@ router.post('/', [
 
     console.error('Create native PPPoE subscriber error:', error.message);
     return res.status(500).json({ error: error.message || 'Could not create the PPPoE subscriber' });
+  }
+});
+
+router.post('/:id/payments/initiate', [
+  body('phone').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 80 }),
+], async (req, res) => {
+  const errors = validationResult(req);
+  if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
+
+  const clientId = req.scope.clientId;
+  const subscriberId = Number(req.params.id);
+  if (!Number.isInteger(subscriberId) || subscriberId < 1) {
+    return res.status(400).json({ error: 'Invalid PPPoE subscriber id' });
+  }
+
+  try {
+    const [subscriberResult, clientResult] = await Promise.all([
+      db.query(
+        `SELECT s.*, p.name AS plan_name, p.price AS plan_price,
+                p.validity_days AS plan_validity_days, p.is_active AS plan_is_active
+         FROM billing_subscribers s
+         JOIN billing_plans p ON p.id=s.plan_id AND p.client_id=s.client_id
+         WHERE s.id=$1 AND s.client_id=$2
+           AND COALESCE(s.access_mode,'pppoe') IN ('pppoe','pppoe_static')
+         LIMIT 1`,
+        [subscriberId, clientId]
+      ),
+      db.query(
+        `SELECT * FROM clients WHERE id=$1 AND account_type='billing' LIMIT 1`,
+        [clientId]
+      ),
+    ]);
+
+    const subscriber = subscriberResult.rows[0];
+    const billingClient = clientResult.rows[0];
+    if (!subscriber || !billingClient) {
+      return res.status(404).json({ error: 'PPPoE subscriber not found' });
+    }
+    if (subscriber.plan_is_active !== true) {
+      return res.status(400).json({ error: 'This subscriber package is no longer active' });
+    }
+
+    const rawAmount = Number(subscriber.plan_price);
+    const amount = Math.round(rawAmount);
+    if (!Number.isFinite(rawAmount) || rawAmount < 10 || Math.abs(rawAmount - amount) > 0.0001) {
+      return res.status(400).json({ error: 'Direct M-Pesa payment requires a whole-KES package price of at least KES 10' });
+    }
+
+    const phone = cleanPhone(req.body.phone || subscriber.phone || '');
+    if (!/^254[17]\d{8}$/.test(phone)) {
+      return res.status(400).json({ error: 'Enter a valid Safaricom M-Pesa phone number' });
+    }
+
+    const payment = await directBankPaymentDetails(
+      clientId,
+      subscriber.account_number,
+      amount
+    );
+    if (!payment.ready) {
+      return res.status(409).json({
+        error: payment.error || 'Direct-to-bank payment is not ready for this ISP',
+        payment,
+      });
+    }
+
+    const result = await initiateDarajaPayment({
+      client: billingClient,
+      conversationId: null,
+      customerPhone: phone,
+      customerName: subscriber.full_name,
+      amount,
+      metadata: {
+        purpose: 'pppoe_portal',
+        version: 2,
+        payment_origin: 'billing_workspace_direct_bank',
+        direct_bank_required: true,
+        subscriber_id: Number(subscriber.id),
+        account_number: subscriber.account_number,
+        current_plan_id: subscriber.plan_id ? Number(subscriber.plan_id) : null,
+        target_plan_id: Number(subscriber.plan_id),
+        plan_name_snapshot: subscriber.plan_name,
+        amount_snapshot: amount,
+        action: 'renew',
+      },
+    });
+
+    if (!result.success) {
+      return res.status(400).json({
+        error: result.error || 'Could not send the direct-bank M-Pesa prompt',
+      });
+    }
+
+    if (!result.settlement || result.settlement.mode !== 'direct_bank_stk') {
+      console.error(`Direct-bank safety invariant failed after initiating PPPoE payment ${result.externalReference || ''}`);
+      return res.status(500).json({
+        error: 'Payment was not confirmed as direct-to-bank; contact support before retrying',
+      });
+    }
+
+    return res.status(201).json({
+      success: true,
+      reference: result.externalReference,
+      status: result.status,
+      checkout_request_id: result.checkoutRequestId || null,
+      subscriber: {
+        id: subscriber.id,
+        account_number: subscriber.account_number,
+        full_name: subscriber.full_name,
+      },
+      amount,
+      phone,
+      settlement: result.settlement,
+      holds_funds: false,
+      message: `M-Pesa prompt sent. KES ${amount} will be deposited directly into ${result.settlement.institutionName} account ending ${result.settlement.accountLast4}. Polyizon does not receive or hold the funds.`,
+    });
+  } catch (error) {
+    console.error('Initiate direct-bank PPPoE payment error:', error.response?.data || error.message);
+    return res.status(500).json({
+      error: error.message || 'Could not start the direct-bank M-Pesa payment',
+    });
   }
 });
 

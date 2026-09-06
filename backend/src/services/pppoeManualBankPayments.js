@@ -4,7 +4,11 @@ const {
   DIRECT_BANK_STK_RAILS,
   validateDirectBankAccount,
 } = require('./directBankStk');
-const { applyPppoeSubscriptionPayment, moneyCents } = require('./pppoePayments');
+const {
+  applyPppoeSubscriptionPayment,
+  ensurePppoePaymentSchema,
+  moneyCents,
+} = require('./pppoePayments');
 
 let schemaPromise = null;
 
@@ -15,6 +19,7 @@ function normalizeReceipt(value) {
 async function ensureManualBankPaymentSchema() {
   if (!schemaPromise) {
     schemaPromise = (async () => {
+      await ensurePppoePaymentSchema();
       await db.query(`
         CREATE TABLE IF NOT EXISTS billing_pppoe_manual_bank_claims (
           id BIGSERIAL PRIMARY KEY,

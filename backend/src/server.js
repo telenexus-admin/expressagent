@@ -130,6 +130,9 @@ app.use('/api/public/polyizon-signup', writeOnly(publicWriteLimiter), polyizonSi
 app.use('/api/public/relocation-request', writeOnly(publicWriteLimiter), relocationRequestRoutes);
 app.use('/api/public/installation-work-orders', writeOnly(publicWriteLimiter), installationWorkOrderRoutes);
 app.use('/api/public/mpesa', mpesaRoutes);
+// Safaricom C2B URL validation rejects callback URLs containing the word "mpesa".
+// Keep the existing STK namespace and expose a neutral alias for C2B registration.
+app.use('/api/public/payments', mpesaRoutes);
 // Temporary direct-Daraja callback alias for STK requests created before the namespace cutover.
 app.use('/api/public/payhero', mpesaRoutes);
 app.use('/api/public/site-chat', siteChatRoutes);

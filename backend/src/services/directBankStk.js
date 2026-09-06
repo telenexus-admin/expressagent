@@ -13,12 +13,29 @@ const DIRECT_BANK_STK_RAILS = Object.freeze({
   }),
 });
 
+const CENTRAL_DARAJA_ENV = Object.freeze([
+  'DARAJA_CONSUMER_KEY',
+  'DARAJA_CONSUMER_SECRET',
+  'DARAJA_SHORTCODE',
+  'DARAJA_PASSKEY',
+]);
+
 function envTrue(value) {
   return /^(1|true|yes|on)$/i.test(String(value || '').trim());
 }
 
 function directBankStkEnabled() {
   return envTrue(process.env.DARAJA_DIRECT_BANK_ENABLED);
+}
+
+function assertCentralDarajaConfigured() {
+  const missing = CENTRAL_DARAJA_ENV.filter((name) => !String(process.env[name] || '').trim());
+  if (missing.length) {
+    const error = new Error(`Polyizon central Daraja configuration is incomplete: ${missing.join(', ')}`);
+    error.code = 'DIRECT_BANK_STK_CENTRAL_DARAJA_INCOMPLETE';
+    throw error;
+  }
+  return true;
 }
 
 function railForInstitution(code) {
@@ -50,6 +67,7 @@ async function resolveDirectBankStkDestination(clientId) {
     error.code = 'DIRECT_BANK_STK_DISABLED';
     throw error;
   }
+  assertCentralDarajaConfigured();
 
   const profile = await resolveActiveSettlement(clientId);
   const rail = railForInstitution(profile.institution_code);
@@ -77,7 +95,9 @@ async function resolveDirectBankStkDestination(clientId) {
 }
 
 module.exports = {
+  CENTRAL_DARAJA_ENV,
   DIRECT_BANK_STK_RAILS,
+  assertCentralDarajaConfigured,
   directBankStkEnabled,
   normalizeBankAccount,
   railForInstitution,

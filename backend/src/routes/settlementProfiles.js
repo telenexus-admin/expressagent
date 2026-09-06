@@ -40,6 +40,10 @@ function selfClientId(req, res) {
   return req.scope.clientId;
 }
 
+function canManageBankDestination(req) {
+  return Array.isArray(req.user?.permissions) && req.user.permissions.includes('admins');
+}
+
 function directInstitutions() {
   return publicInstitutions()
     .filter((item) => DIRECT_BANK_STK_RAILS[item.code])
@@ -64,7 +68,11 @@ router.get('/profile', async (req, res) => {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(403).json({ error: 'Billing workspace access required' });
     const row = await getSettlementProfile(clientId);
-    return res.json({ client: { id: client.id, name: client.business_name || client.name }, profile: safeProfile(row) });
+    return res.json({
+      client: { id: client.id, name: client.business_name || client.name },
+      profile: safeProfile(row),
+      can_manage: canManageBankDestination(req),
+    });
   } catch (error) {
     console.error('GET /settlements/profile error:', error.message);
     return res.status(500).json({ error: 'Could not load settlement profile' });
@@ -74,6 +82,9 @@ router.get('/profile', async (req, res) => {
 router.put('/profile', async (req, res) => {
   const clientId = selfClientId(req, res);
   if (!clientId) return;
+  if (!canManageBankDestination(req)) {
+    return res.status(403).json({ error: 'Bank destination changes require ISP administrator permission' });
+  }
   try {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(403).json({ error: 'Billing workspace access required' });
@@ -87,16 +98,18 @@ router.put('/profile', async (req, res) => {
     const before = await getSettlementProfile(clientId);
     const incomingAccount = String(req.body.account_number || '').trim();
     const keepingExistingAccount = !incomingAccount && before?.institution_code === institutionCode;
+    let accountNumber = incomingAccount;
     if (!keepingExistingAccount) {
       const validation = validateDirectBankAccount(institutionCode, incomingAccount);
       if (!validation.valid) return res.status(400).json({ error: validation.error });
+      accountNumber = validation.account;
     }
 
-    const saved = await saveSettlementProfile({
+    await saveSettlementProfile({
       clientId,
       institutionCode,
       accountName: req.body.account_name,
-      accountNumber: incomingAccount,
+      accountNumber,
       branchName: req.body.branch_name,
       collectionReference: '',
     });
@@ -104,14 +117,14 @@ router.put('/profile', async (req, res) => {
     const railReference = `daraja-direct-stk:${rail.paybill}`;
     await reviewSettlementProfile({
       clientId,
-      adminId: null,
+      adminId: req.user.id,
       decision: 'verified',
       notes: `Self-configured Polyizon direct bank STK destination via M-PESA Paybill ${rail.paybill}`,
       railReference,
     });
     const activated = await activateSettlementProfile({
       clientId,
-      adminId: null,
+      adminId: req.user.id,
       railReference,
     });
     if (!activated) throw new Error('Could not activate direct bank STK routing');

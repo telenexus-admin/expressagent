@@ -29,12 +29,9 @@ function Icon({ name, className = 'h-5 w-5' }) {
     user: <><circle cx="12" cy="8" r="3"/><path d="M5.5 20a6.5 6.5 0 0 1 13 0"/></>,
     card: <><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18"/><path d="M7 15h3"/></>,
     pin: <><path d="M20 10c0 5-8 11-8 11S4 15 4 10a8 8 0 1 1 16 0Z"/><circle cx="12" cy="10" r="2.5"/></>,
-    shield: <><path d="M12 3 5 6v5c0 4.8 2.9 8.2 7 10 4.1-1.8 7-5.2 7-10V6l-7-3Z"/><path d="m9.3 12 1.8 1.8 3.8-4"/></>,
     clock: <><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></>,
     send: <><path d="m22 2-7 20-4-9-9-4 20-7Z"/><path d="M22 2 11 13"/></>,
     check: <><circle cx="12" cy="12" r="9"/><path d="m8.5 12.2 2.2 2.2 4.8-5"/></>,
-    info: <><circle cx="12" cy="12" r="9"/><path d="M12 11v5"/><path d="M12 8h.01"/></>,
-    lock: <><rect x="5" y="10" width="14" height="10" rx="2"/><path d="M8 10V7a4 4 0 0 1 8 0v3"/></>,
     chevron: <path d="m9 18 6-6-6-6"/>,
     close: <><path d="m6 6 12 12"/><path d="m18 6-12 12"/></>,
   };
@@ -45,22 +42,22 @@ function Icon({ name, className = 'h-5 w-5' }) {
 function BankIdentity({ code, compact = false }) {
   if (code === 'coop') {
     return (
-      <div className={`flex items-center justify-center rounded-2xl border border-sky-100 bg-white shadow-sm ${compact ? 'h-10 w-10' : 'h-16 w-16'}`}>
+      <div className={`flex items-center justify-center rounded-xl border border-sky-100 bg-white shadow-sm ${compact ? 'h-9 w-9' : 'h-12 w-12'}`}>
         <div className="text-center leading-none">
-          <div className={`${compact ? 'text-[9px]' : 'text-[11px]'} font-black tracking-tight text-sky-800`}>CO-OP</div>
-          <div className={`${compact ? 'text-[6px]' : 'text-[7px]'} mt-0.5 font-black uppercase tracking-[.14em] text-emerald-600`}>BANK</div>
+          <div className={`${compact ? 'text-[8px]' : 'text-[9px]'} font-black tracking-tight text-sky-800`}>CO-OP</div>
+          <div className={`${compact ? 'text-[5px]' : 'text-[6px]'} mt-0.5 font-black uppercase tracking-[.14em] text-emerald-600`}>BANK</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`flex items-center justify-center rounded-2xl border border-rose-100 bg-white shadow-sm ${compact ? 'h-10 w-10' : 'h-16 w-16'}`}>
+    <div className={`flex items-center justify-center rounded-xl border border-rose-100 bg-white shadow-sm ${compact ? 'h-9 w-9' : 'h-12 w-12'}`}>
       <div className="text-center leading-none">
-        <svg viewBox="0 0 54 28" className={`${compact ? 'h-4 w-8' : 'h-6 w-11'} mx-auto`} aria-hidden="true">
+        <svg viewBox="0 0 54 28" className={`${compact ? 'h-3.5 w-7' : 'h-5 w-9'} mx-auto`} aria-hidden="true">
           <path d="M3 24 25 5l10 9 6-5 10 15H39l-5-7-9-8-17 15Z" fill="currentColor" className="text-rose-700"/>
         </svg>
-        <div className={`${compact ? 'text-[6px]' : 'text-[8px]'} mt-0.5 font-black tracking-[.08em] text-slate-900`}>EQUITY</div>
+        <div className={`${compact ? 'text-[5px]' : 'text-[7px]'} mt-0.5 font-black tracking-[.08em] text-slate-900`}>EQUITY</div>
       </div>
     </div>
   );
@@ -68,9 +65,9 @@ function BankIdentity({ code, compact = false }) {
 
 function InputShell({ icon, children }) {
   return (
-    <div className="relative mt-2">
-      <div className="pointer-events-none absolute inset-y-0 left-0 flex w-12 items-center justify-center text-slate-400">
-        <Icon name={icon} className="h-[19px] w-[19px]" />
+    <div className="relative mt-1.5">
+      <div className="pointer-events-none absolute inset-y-0 left-0 flex w-10 items-center justify-center text-slate-400">
+        <Icon name={icon} className="h-[17px] w-[17px]" />
       </div>
       {children}
     </div>
@@ -90,7 +87,6 @@ export default function BillingSettings() {
   const [settlementProfile, setSettlementProfile] = useState(null);
   const [settlementSaving, setSettlementSaving] = useState(false);
   const [settlementMsg, setSettlementMsg] = useState('');
-  const [canManageSettlement, setCanManageSettlement] = useState(false);
 
   const load = async () => {
     try {
@@ -106,7 +102,6 @@ export default function BillingSettings() {
       setInstitutions(available);
       const saved = settlementResult.data?.profile || null;
       setSettlementProfile(saved);
-      setCanManageSettlement(Boolean(settlementResult.data?.can_manage));
       const fallback = available[0]?.code || 'equity';
       setSettlement(saved ? {
         institution_code: available.some((x) => x.code === saved.institution_code) ? saved.institution_code : fallback,
@@ -155,7 +150,7 @@ export default function BillingSettings() {
       const { data } = await api.put('/settlements/profile', settlement);
       setSettlementProfile(data.profile);
       setSettlement((v) => ({ ...v, account_number: '', collection_reference: '' }));
-      setSettlementMsg('Your bank destination request has been received and will be reviewed within 24 hours. You will be notified once it has been approved and activated.');
+      setSettlementMsg('Request received. Review may take up to 24 hours.');
     } catch (e) {
       setSettlementMsg(e.response?.data?.error || 'Could not submit the bank destination request.');
     } finally {
@@ -238,45 +233,38 @@ export default function BillingSettings() {
           </section>
         </div>
 
-        <form onSubmit={saveSettlement} className="mt-5 overflow-hidden rounded-[26px] border border-slate-200 bg-white shadow-[0_14px_45px_rgba(15,23,42,.06)]">
-          <div className="flex flex-col gap-4 border-b border-slate-100 px-5 py-6 sm:px-7 lg:flex-row lg:items-start lg:justify-between">
-            <div className="max-w-4xl">
-              <p className="text-[10px] font-black uppercase tracking-[.19em] text-emerald-600">Polyizon M-PESA Gateway</p>
-              <h3 className="mt-1.5 text-xl font-black tracking-tight text-slate-950 sm:text-2xl">Configure your direct bank destination</h3>
-              <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-500">Add the bank account where you want your customer payments to be deposited. The account should belong to you or your registered ISP/business. Polyizon securely initiates the M-PESA STK, while your bank details remain encrypted and masked after submission.</p>
-            </div>
-            <div className="flex items-center gap-3 rounded-2xl bg-emerald-50 px-4 py-3 text-emerald-800">
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white shadow-sm"><Icon name="shield" className="h-5 w-5" /></div>
-              <div><p className="text-[10px] font-black uppercase tracking-wider">Secure payments</p><p className="mt-0.5 text-xs font-semibold text-emerald-700">Encrypted bank details</p></div>
-            </div>
+        <form onSubmit={saveSettlement} className="mx-auto mt-5 max-w-[1200px] overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+          <div className="border-b border-slate-100 px-4 py-4 sm:px-5">
+            <h3 className="text-lg font-black tracking-tight text-slate-950">Direct bank destination</h3>
+            <p className="mt-1 text-xs text-slate-500">Choose the bank account that should receive customer payments. Changes are reviewed before activation.</p>
           </div>
 
           {settlementMsg && (
-            <div className="mx-5 mt-5 flex items-start gap-3 rounded-2xl border border-emerald-200 bg-gradient-to-r from-emerald-50 to-teal-50 px-4 py-4 sm:mx-7">
-              <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white shadow-sm"><Icon name="check" className="h-5 w-5" /></div>
-              <div className="min-w-0"><p className="text-sm font-black text-emerald-900">Request received successfully</p><p className="mt-1 text-xs leading-5 text-emerald-800 sm:text-sm">{settlementMsg}</p></div>
+            <div className="mx-4 mt-4 flex items-center gap-2.5 rounded-xl border border-emerald-200 bg-emerald-50 px-3.5 py-3 sm:mx-5">
+              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-white"><Icon name="check" className="h-4 w-4" /></div>
+              <p className="text-xs font-bold text-emerald-800">{settlementMsg}</p>
             </div>
           )}
 
-          <div className="grid gap-5 p-5 sm:p-7 lg:grid-cols-[minmax(0,1fr)_360px]">
-            <section className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
-              <div className="flex items-center gap-3 border-b border-slate-100 pb-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-sky-50 text-sky-600"><Icon name="bank" className="h-5 w-5" /></div>
-                <div><h4 className="text-sm font-black text-slate-950">Bank account details</h4><p className="mt-0.5 text-xs text-slate-500">Provide the account that should receive your customer payments.</p></div>
+          <div className="grid gap-4 p-4 sm:p-5 lg:grid-cols-[minmax(0,1fr)_300px]">
+            <section className="rounded-xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2.5 border-b border-slate-100 pb-3">
+                <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sky-50 text-sky-600"><Icon name="bank" className="h-4 w-4" /></div>
+                <h4 className="text-sm font-black text-slate-950">Bank account details</h4>
               </div>
 
-              <div className="mt-5 grid gap-5 sm:grid-cols-2">
+              <div className="mt-4 grid gap-3.5 sm:grid-cols-2">
                 <label className="block text-xs font-black text-slate-700">
                   Bank
-                  <div className="relative mt-2">
-                    <div className="pointer-events-none absolute inset-y-0 left-3 flex items-center"><BankIdentity code={settlement.institution_code} compact /></div>
+                  <div className="relative mt-1.5">
+                    <div className="pointer-events-none absolute inset-y-0 left-2.5 flex items-center"><BankIdentity code={settlement.institution_code} compact /></div>
                     <select
                       value={settlement.institution_code}
                       onChange={(e) => {
                         const code = e.target.value;
                         setSettlement((v) => ({ ...v, institution_code: code, account_number: settlementProfile?.institution_code === code ? '' : v.account_number }));
                       }}
-                      className="h-[54px] w-full appearance-none rounded-2xl border border-slate-200 bg-white pl-16 pr-10 text-sm font-bold text-slate-900 outline-none transition hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
+                      className="h-[46px] w-full appearance-none rounded-xl border border-slate-200 bg-white pl-14 pr-9 text-sm font-bold text-slate-900 outline-none transition hover:border-slate-300 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
                     >
                       {institutions.map((bank) => <option key={bank.code} value={bank.code}>{bank.name}</option>)}
                     </select>
@@ -291,8 +279,8 @@ export default function BillingSettings() {
                       required
                       value={settlement.account_name}
                       onChange={(e) => setSettlement({ ...settlement, account_name: e.target.value })}
-                      placeholder="Your name or registered business name"
-                      className="h-[54px] w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-sm font-bold text-slate-900 outline-none transition placeholder:font-medium placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
+                      placeholder="Name or registered business"
+                      className="h-[46px] w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-bold text-slate-900 outline-none transition placeholder:font-medium placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
                     />
                   </InputShell>
                 </label>
@@ -305,73 +293,49 @@ export default function BillingSettings() {
                       onChange={(e) => setSettlement({ ...settlement, account_number: e.target.value.replace(/\s/g, '') })}
                       inputMode="numeric"
                       placeholder={settlementProfile?.institution_code === settlement.institution_code && settlementProfile?.account_number_masked ? `Saved ${settlementProfile.account_number_masked} — leave blank to keep` : 'Enter your bank account number'}
-                      className="h-[54px] w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-sm font-bold tracking-[.02em] text-slate-900 outline-none transition placeholder:font-medium placeholder:tracking-normal placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
+                      className="h-[46px] w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-bold tracking-[.02em] text-slate-900 outline-none transition placeholder:font-medium placeholder:tracking-normal placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
                     />
                   </InputShell>
                 </label>
 
                 <label className="block text-xs font-black text-slate-700 sm:col-span-2">
-                  Branch / relationship branch <span className="font-semibold text-slate-400">(optional)</span>
+                  Branch <span className="font-semibold text-slate-400">(optional)</span>
                   <InputShell icon="pin">
                     <input
                       value={settlement.branch_name}
                       onChange={(e) => setSettlement({ ...settlement, branch_name: e.target.value })}
-                      placeholder="e.g. Westlands, Moi Avenue"
-                      className="h-[54px] w-full rounded-2xl border border-slate-200 bg-white pl-12 pr-4 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
+                      placeholder="e.g. Westlands"
+                      className="h-[46px] w-full rounded-xl border border-slate-200 bg-white pl-10 pr-3 text-sm font-semibold text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-emerald-500 focus:ring-4 focus:ring-emerald-500/5"
                     />
                   </InputShell>
                 </label>
               </div>
             </section>
 
-            <aside className="relative overflow-hidden rounded-[24px] border border-slate-200 bg-gradient-to-br from-slate-50 via-white to-emerald-50/40 p-5">
-              <div className="absolute -right-12 -top-12 h-36 w-36 rounded-full bg-emerald-100/50 blur-2xl" />
-              <div className="relative">
-                <p className="text-[10px] font-black uppercase tracking-[.16em] text-slate-400">Selected payment route</p>
-                <div className="mt-4 flex items-center justify-between gap-4">
-                  <div><p className="text-base font-black text-slate-950">{selectedInstitution?.name || 'Choose a bank'}</p><p className="mt-1 text-sm font-black text-emerald-700">{selectedInstitution?.mpesa_paybill ? `M-PESA Paybill ${selectedInstitution.mpesa_paybill}` : ''}</p></div>
-                  <BankIdentity code={settlement.institution_code} />
-                </div>
-
-                <div className="my-5 h-px bg-slate-200" />
-
-                <div className="flex gap-3 text-slate-600">
-                  <div className="mt-0.5 text-sky-500"><Icon name="info" className="h-5 w-5" /></div>
-                  <p className="text-xs leading-5">Once approved, customer M-PESA STKs initiated by Polyizon will be deposited directly into your registered {selectedInstitution?.name || 'bank'} account.</p>
-                </div>
-
-                <div className="mt-5 rounded-2xl border border-emerald-100 bg-emerald-50/80 p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white text-emerald-700 shadow-sm"><Icon name="lock" className="h-[18px] w-[18px]" /></div>
-                    <div><p className="text-xs font-black text-emerald-900">Secure and encrypted</p><p className="mt-1 text-[11px] leading-5 text-emerald-800/80">Your account details are encrypted and only masked values are displayed after submission.</p></div>
-                  </div>
-                </div>
-
-                {settlementProfile && (
-                  <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 text-xs">
-                    <div className="flex items-center justify-between gap-4"><span className="text-slate-500">Saved account</span><b className="text-slate-900">{settlementProfile.account_number_masked || '—'}</b></div>
-                    <div className="mt-3 flex items-center justify-between gap-4"><span className="text-slate-500">Status</span><span className={`rounded-full border px-2.5 py-1 text-[9px] font-black uppercase tracking-wider ${settlementStatus === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : statusClass[settlementProfile.verification_status] || statusClass.pending}`}>{settlementStatus === 'active' ? 'Active' : settlementStatus === 'pending' ? 'Review pending' : settlementStatus}</span></div>
-                  </div>
-                )}
+            <aside className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <p className="text-[9px] font-black uppercase tracking-[.14em] text-slate-400">Selected route</p>
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <div className="min-w-0"><p className="truncate text-sm font-black text-slate-950">{selectedInstitution?.name || 'Choose a bank'}</p><p className="mt-0.5 text-xs font-black text-emerald-700">{selectedInstitution?.mpesa_paybill ? `Paybill ${selectedInstitution.mpesa_paybill}` : ''}</p></div>
+                <BankIdentity code={settlement.institution_code} />
               </div>
+
+              {settlementProfile && (
+                <div className="mt-4 border-t border-slate-200 pt-3 text-xs">
+                  <div className="flex items-center justify-between gap-3"><span className="text-slate-500">Saved account</span><b className="text-slate-900">{settlementProfile.account_number_masked || '—'}</b></div>
+                  <div className="mt-2.5 flex items-center justify-between gap-3"><span className="text-slate-500">Status</span><span className={`rounded-full border px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${settlementStatus === 'active' ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : statusClass[settlementProfile.verification_status] || statusClass.pending}`}>{settlementStatus === 'active' ? 'Active' : settlementStatus === 'pending' ? 'Review pending' : settlementStatus}</span></div>
+                </div>
+              )}
             </aside>
           </div>
 
-          <div className="flex flex-col gap-4 border-t border-slate-100 bg-slate-50/60 px-5 py-5 sm:px-7 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-amber-50 text-amber-600"><Icon name="clock" className="h-5 w-5" /></div>
-              <div>
-                <p className="text-xs font-black text-slate-900">Bank destination requests are reviewed before activation</p>
-                <p className="mt-1 max-w-3xl text-[11px] leading-5 text-slate-500">Please confirm the account holder name and bank account number carefully. After submission, our team will review your request within 24 hours and notify you when the destination is approved.</p>
-                {!canManageSettlement && <p className="mt-1 text-[11px] font-bold text-amber-700">Only an ISP administrator with account-management permission can submit or change this bank destination.</p>}
-              </div>
-            </div>
+          <div className="flex flex-col gap-3 border-t border-slate-100 bg-slate-50/60 px-4 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:px-5">
+            <div className="flex items-center gap-2 text-xs font-semibold text-slate-500"><Icon name="clock" className="h-4 w-4 text-amber-600" /> Requests are reviewed within 24 hours.</div>
             <button
-              disabled={settlementSaving || !institutions.length || !canManageSettlement}
-              className="inline-flex min-h-[48px] shrink-0 items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-emerald-700 to-emerald-600 px-6 text-sm font-black text-white shadow-[0_10px_28px_rgba(5,150,105,.22)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_30px_rgba(5,150,105,.28)] disabled:cursor-not-allowed disabled:opacity-45 disabled:hover:translate-y-0"
+              disabled={settlementSaving || !institutions.length}
+              className="inline-flex min-h-[44px] shrink-0 items-center justify-center gap-2 rounded-xl bg-emerald-700 px-5 text-xs font-black text-white shadow-sm transition hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-45"
             >
-              <Icon name="send" className="h-[18px] w-[18px]" />
-              {settlementSaving ? 'Submitting request...' : 'Submit bank destination request'}
+              <Icon name="send" className="h-4 w-4" />
+              {settlementSaving ? 'Submitting...' : 'Submit bank destination'}
             </button>
           </div>
         </form>

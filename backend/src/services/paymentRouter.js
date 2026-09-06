@@ -13,6 +13,7 @@ const ADAPTERS = Object.freeze({
   equity: { code: 'equity', implemented: false, name: 'Equity settlement adapter' },
 });
 
+const DIRECT_BANK_CODES = new Set(['coop', 'equity']);
 const COLLECTION_STATUSES = new Set(['initiated', 'queued', 'paid', 'failed']);
 let schemaPromise;
 
@@ -45,13 +46,26 @@ function normalizeCurrency(value) {
   return currency;
 }
 
-function decisionForProfile(profile) {
+function isDirectBankProfile(profile) {
+  return Boolean(
+    profile &&
+    DIRECT_BANK_CODES.has(String(profile.institution_code || '').toLowerCase()) &&
+    /^daraja-direct-stk:\d+$/.test(String(profile.rail_reference || '').trim())
+  );
+}
+
+function decisionForProfile(profile, collectionStatus = 'initiated') {
   if (!profile) return { routeStatus: 'blocked', blockReason: 'settlement_profile_missing' };
   if (profile.verification_status !== 'verified') {
     return { routeStatus: 'blocked', blockReason: `settlement_${profile.verification_status || 'unverified'}` };
   }
   if (profile.routing_status !== 'active') {
     return { routeStatus: 'blocked', blockReason: `settlement_routing_${profile.routing_status || 'disabled'}` };
+  }
+  if (isDirectBankProfile(profile)) {
+    if (collectionStatus === 'paid') return { routeStatus: 'settled', blockReason: null };
+    if (collectionStatus === 'failed') return { routeStatus: 'failed', blockReason: 'collection_failed' };
+    return { routeStatus: 'dispatched', blockReason: null };
   }
   const adapter = adapterFor(profile.institution_code);
   if (!adapter?.implemented) return { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' };
@@ -185,16 +199,21 @@ async function recordPaymentRouteIntent({
   }
 
   const profile = await getSettlementProfile(tenantId);
-  const decision = decisionForProfile(profile);
+  const decision = decisionForProfile(profile, collectionStatus);
   const snapshot = safeProfile(profile) || {};
   const key = idempotencyKey(tenantId, reference);
+  const directBankPaid = decision.routeStatus === 'settled' && collectionStatus === 'paid';
 
   const result = await db.query(
     `INSERT INTO billing_payment_routes (
        client_id,payment_request_id,external_reference,amount,currency,
        collection_provider,collection_status,settlement_profile_id,institution_code,
-       route_status,block_reason,settlement_snapshot,idempotency_key,updated_at
-     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,NOW())
+       route_status,block_reason,settlement_snapshot,idempotency_key,
+       collected_at,dispatched_at,settled_at,updated_at
+     ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12::jsonb,$13,
+               CASE WHEN $14::boolean THEN NOW() ELSE NULL END,
+               CASE WHEN $14::boolean THEN NOW() ELSE NULL END,
+               CASE WHEN $14::boolean THEN NOW() ELSE NULL END,NOW())
      ON CONFLICT (idempotency_key) DO UPDATE SET
        payment_request_id=COALESCE(billing_payment_routes.payment_request_id,EXCLUDED.payment_request_id),
        collection_status=CASE
@@ -204,17 +223,20 @@ async function recordPaymentRouteIntent({
        settlement_profile_id=EXCLUDED.settlement_profile_id,
        institution_code=EXCLUDED.institution_code,
        route_status=CASE
-         WHEN billing_payment_routes.route_status IN ('dispatched','settled') THEN billing_payment_routes.route_status
+         WHEN billing_payment_routes.route_status='settled' THEN 'settled'
          ELSE EXCLUDED.route_status
        END,
        block_reason=CASE
-         WHEN billing_payment_routes.route_status IN ('dispatched','settled') THEN billing_payment_routes.block_reason
+         WHEN billing_payment_routes.route_status='settled' THEN billing_payment_routes.block_reason
          ELSE EXCLUDED.block_reason
        END,
        settlement_snapshot=CASE
-         WHEN billing_payment_routes.route_status IN ('dispatched','settled') THEN billing_payment_routes.settlement_snapshot
+         WHEN billing_payment_routes.route_status='settled' THEN billing_payment_routes.settlement_snapshot
          ELSE EXCLUDED.settlement_snapshot
        END,
+       collected_at=COALESCE(billing_payment_routes.collected_at,EXCLUDED.collected_at),
+       dispatched_at=COALESCE(billing_payment_routes.dispatched_at,EXCLUDED.dispatched_at),
+       settled_at=COALESCE(billing_payment_routes.settled_at,EXCLUDED.settled_at),
        updated_at=NOW()
      WHERE billing_payment_routes.client_id=EXCLUDED.client_id
        AND billing_payment_routes.external_reference=EXCLUDED.external_reference
@@ -233,6 +255,7 @@ async function recordPaymentRouteIntent({
       decision.blockReason,
       JSON.stringify(snapshot),
       key,
+      directBankPaid,
     ]
   );
   if (!result.rows[0]) {
@@ -253,8 +276,15 @@ async function markPaymentCollectionStatus({ clientId, paymentRequestId, status,
     `UPDATE billing_payment_routes
      SET collection_status=$3::varchar,
          provider_collection_reference=COALESCE(NULLIF($4::varchar,''),provider_collection_reference),
+         provider_settlement_reference=CASE
+           WHEN $3::text='paid' AND route_status='settled'
+           THEN COALESCE(NULLIF($4::varchar,''),provider_settlement_reference)
+           ELSE provider_settlement_reference
+         END,
          last_error=CASE WHEN $3::text='failed' THEN NULLIF($5::text,'') ELSE last_error END,
          collected_at=CASE WHEN $3::text='paid' THEN COALESCE(collected_at,NOW()) ELSE collected_at END,
+         dispatched_at=CASE WHEN $3::text='paid' AND route_status='settled' THEN COALESCE(dispatched_at,NOW()) ELSE dispatched_at END,
+         settled_at=CASE WHEN $3::text='paid' AND route_status='settled' THEN COALESCE(settled_at,NOW()) ELSE settled_at END,
          updated_at=NOW()
      WHERE client_id=$1 AND payment_request_id=$2
      RETURNING *`,
@@ -286,17 +316,22 @@ async function prepareSettlementDispatch({ clientId, routeId }) {
     error.code = 'PAYMENT_ROUTE_NOT_FOUND';
     throw error;
   }
+  if (route.route_status === 'settled') {
+    const error = new Error('This payment was settled directly to the ISP bank account during M-PESA collection');
+    error.code = 'DIRECT_BANK_STK_ALREADY_SETTLED';
+    throw error;
+  }
   if (route.collection_status !== 'paid') {
     const error = new Error('Payment has not been confirmed as collected');
     error.code = 'PAYMENT_NOT_COLLECTED';
     throw error;
   }
   const profile = await getSettlementProfile(tenantId);
-  const decision = decisionForProfile(profile);
+  const decision = decisionForProfile(profile, route.collection_status);
   if (decision.routeStatus !== 'dispatch_pending') {
-    const error = new Error(`Settlement dispatch is blocked: ${decision.blockReason}`);
+    const error = new Error(`Settlement dispatch is blocked: ${decision.blockReason || decision.routeStatus}`);
     error.code = 'SETTLEMENT_DISPATCH_BLOCKED';
-    error.reason = decision.blockReason;
+    error.reason = decision.blockReason || decision.routeStatus;
     throw error;
   }
   const adapter = adapterFor(profile.institution_code);
@@ -330,6 +365,7 @@ module.exports = {
   ensurePaymentRouterSchema,
   getPaymentRoute,
   idempotencyKey,
+  isDirectBankProfile,
   markPaymentCollectionStatus,
   prepareSettlementDispatch,
   recordPaymentRouteIntent,

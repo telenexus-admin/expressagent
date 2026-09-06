@@ -1,6 +1,10 @@
 const db = require('../db');
 
 let schemaPromise = null;
+const GENERIC_WORDS = new Set([
+  'ISP', 'INTERNET', 'NETWORK', 'NETWORKS', 'TECH', 'TECHNOLOGY', 'TECHNOLOGIES',
+  'SOLUTION', 'SOLUTIONS', 'COMMUNICATION', 'COMMUNICATIONS', 'LIMITED', 'LTD', 'KENYA',
+]);
 
 function normalizePrefix(value) {
   return String(value || '')
@@ -15,11 +19,13 @@ function derivePrefix(client = {}) {
     .trim()
     .toUpperCase();
   const words = source.match(/[A-Z0-9]+/g) || [];
-  const firstWord = words[0] || '';
+  const meaningful = words.filter((word) => !GENERIC_WORDS.has(word));
+  const selectedWords = meaningful.length ? meaningful : words;
+  const firstWord = selectedWords[0] || '';
   let base = firstWord.replace(/[^A-Z0-9]/g, '').slice(0, 3);
 
   if (base.length < 3) {
-    const compact = words.join('').replace(/[^A-Z0-9]/g, '');
+    const compact = selectedWords.join('').replace(/[^A-Z0-9]/g, '');
     base = `${base}${compact}`.slice(0, 3);
   }
 

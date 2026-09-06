@@ -52,7 +52,7 @@ function directInstitutions() {
       direct_stk: true,
       mpesa_paybill: DIRECT_BANK_STK_RAILS[item.code].paybill,
       collection_model: `Direct M-PESA STK to ${DIRECT_BANK_STK_RAILS[item.code].paybill}`,
-      public_notes: `Customer STK payments are initiated by Polyizon and deposited directly into this ISP's ${item.name} account.`,
+      public_notes: `Once approved, customer STK payments initiated by Polyizon are deposited directly into this ISP's ${item.name} account.`,
     }));
 }
 
@@ -72,6 +72,7 @@ router.get('/profile', async (req, res) => {
       client: { id: client.id, name: client.business_name || client.name },
       profile: safeProfile(row),
       can_manage: canManageBankDestination(req),
+      review_window_hours: 24,
     });
   } catch (error) {
     console.error('GET /settlements/profile error:', error.message);
@@ -85,6 +86,7 @@ router.put('/profile', async (req, res) => {
   if (!canManageBankDestination(req)) {
     return res.status(403).json({ error: 'Bank destination changes require ISP administrator permission' });
   }
+
   try {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(403).json({ error: 'Billing workspace access required' });
@@ -99,13 +101,14 @@ router.put('/profile', async (req, res) => {
     const incomingAccount = String(req.body.account_number || '').trim();
     const keepingExistingAccount = !incomingAccount && before?.institution_code === institutionCode;
     let accountNumber = incomingAccount;
+
     if (!keepingExistingAccount) {
       const validation = validateDirectBankAccount(institutionCode, incomingAccount);
       if (!validation.valid) return res.status(400).json({ error: validation.error });
       accountNumber = validation.account;
     }
 
-    await saveSettlementProfile({
+    const requested = await saveSettlementProfile({
       clientId,
       institutionCode,
       accountName: req.body.account_name,
@@ -114,51 +117,41 @@ router.put('/profile', async (req, res) => {
       collectionReference: '',
     });
 
-    const railReference = `daraja-direct-stk:${rail.paybill}`;
-    await reviewSettlementProfile({
-      clientId,
-      adminId: req.user.id,
-      decision: 'verified',
-      notes: `Self-configured Polyizon direct bank STK destination via M-PESA Paybill ${rail.paybill}`,
-      railReference,
-    });
-    const activated = await activateSettlementProfile({
-      clientId,
-      adminId: req.user.id,
-      railReference,
-    });
-    if (!activated) throw new Error('Could not activate direct bank STK routing');
-
     await recordRequestEvent(req, {
-      eventType: 'settlement.direct_stk_configured',
+      eventType: 'settlement.direct_stk_requested',
       category: 'payment',
       source: 'billing_settings',
       entityType: 'settlement_profile',
-      entityId: activated.id,
-      title: 'Direct bank STK destination configured',
-      description: `${client.business_name || client.name} selected ${activated.institution_name} via Paybill ${rail.paybill}`,
+      entityId: requested.id,
+      title: 'Direct bank destination review requested',
+      description: `${client.business_name || client.name} requested ${requested.institution_name} via Paybill ${rail.paybill}`,
       previousState: safeProfile(before),
-      newState: safeProfile(activated),
+      newState: safeProfile(requested),
       payload: {
-        institution_code: activated.institution_code,
+        institution_code: requested.institution_code,
         mpesa_paybill: rail.paybill,
         routing_mode: 'direct_bank_stk',
-        verification_status: activated.verification_status,
-        routing_status: activated.routing_status,
+        verification_status: requested.verification_status,
+        routing_status: requested.routing_status,
+        review_window_hours: 24,
       },
-      deduplicationKey: `settlement:${clientId}:direct-stk:${Date.now()}`,
+      deduplicationKey: `settlement:${clientId}:direct-stk-request:${Date.now()}`,
       sensitivity: 'confidential',
-    }).catch((error) => console.error('Direct bank STK settlement audit failed:', error.message));
+    }).catch((error) => console.error('Direct bank STK request audit failed:', error.message));
 
     return res.json({
       success: true,
-      profile: safeProfile(activated),
+      request_received: true,
+      review_window_hours: 24,
+      profile: safeProfile(requested),
       direct_stk: {
         institution_code: rail.code,
         institution_name: rail.name,
         mpesa_paybill: rail.paybill,
-        active: true,
+        active: false,
+        status: 'pending_review',
       },
+      message: 'Your bank destination request has been received and will be reviewed within 24 hours. You will be notified once it has been approved and activated.',
     });
   } catch (error) {
     const message = String(error.message || 'Could not save settlement profile');
@@ -172,11 +165,12 @@ router.get('/operator/:clientId', async (req, res) => {
   if (!req.scope.isSuperadmin) return res.status(403).json({ error: 'Superadmin access required' });
   const clientId = Number(req.params.clientId);
   if (!Number.isInteger(clientId) || clientId < 1) return res.status(400).json({ error: 'Invalid client id' });
+
   try {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(404).json({ error: 'Billing account not found' });
     const row = await getSettlementProfile(clientId);
-    return res.json({ client, profile: safeProfile(row) });
+    return res.json({ client, profile: safeProfile(row), review_window_hours: 24 });
   } catch (error) {
     return res.status(500).json({ error: 'Could not load settlement profile' });
   }
@@ -187,42 +181,75 @@ router.post('/operator/:clientId/review', async (req, res) => {
   const clientId = Number(req.params.clientId);
   if (!Number.isInteger(clientId) || clientId < 1) return res.status(400).json({ error: 'Invalid client id' });
   const decision = String(req.body.decision || '').trim().toLowerCase();
+
   try {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(404).json({ error: 'Billing account not found' });
+
+    const current = await getSettlementProfile(clientId);
+    if (!current) return res.status(404).json({ error: 'Settlement profile not found' });
+
+    let railReference = '';
+    if (decision === 'verified') {
+      const rail = railForInstitution(current.institution_code);
+      if (!rail) return res.status(400).json({ error: 'Only Equity and Co-operative Bank direct STK requests can be approved' });
+      railReference = `daraja-direct-stk:${rail.paybill}`;
+    }
+
     const reviewed = await reviewSettlementProfile({
       clientId,
       adminId: req.user.id,
       decision,
       notes: req.body.notes,
-      railReference: req.body.rail_reference,
+      railReference,
     });
     if (!reviewed) return res.status(404).json({ error: 'Settlement profile not found' });
+
+    let finalProfile = reviewed;
+    if (decision === 'verified') {
+      const activated = await activateSettlementProfile({
+        clientId,
+        adminId: req.user.id,
+        railReference,
+      });
+      if (!activated) throw new Error('Could not activate approved direct bank STK routing');
+      finalProfile = activated;
+    }
+
     await recordRequestEvent(req, {
       eventType: `settlement.profile_${decision}`,
       category: 'payment',
       source: 'settlement_operator',
       entityType: 'settlement_profile',
-      entityId: reviewed.id,
-      title: `Settlement profile ${decision}`,
-      description: `${client.business_name || client.name}: ${reviewed.institution_name}`,
-      newState: safeProfile(reviewed),
-      payload: { decision, rail_reference: reviewed.rail_reference || null },
+      entityId: finalProfile.id,
+      title: decision === 'verified' ? 'Direct bank destination approved and activated' : `Settlement profile ${decision}`,
+      description: `${client.business_name || client.name}: ${finalProfile.institution_name}`,
+      newState: safeProfile(finalProfile),
+      payload: {
+        decision,
+        rail_reference: finalProfile.rail_reference || null,
+        routing_status: finalProfile.routing_status,
+      },
       deduplicationKey: `settlement:${clientId}:${decision}:${Date.now()}`,
       sensitivity: 'confidential',
     }).catch((error) => console.error('Settlement review audit failed:', error.message));
-    return res.json({ success: true, profile: safeProfile(reviewed) });
+
+    return res.json({
+      success: true,
+      profile: safeProfile(finalProfile),
+      activated: decision === 'verified' && finalProfile.routing_status === 'active',
+    });
   } catch (error) {
     const message = String(error.message || 'Could not review settlement profile');
-    return res.status(/unsupported/i.test(message) ? 400 : 500).json({ error: message });
+    return res.status(/unsupported|only/i.test(message) ? 400 : 500).json({ error: message });
   }
 });
 
-// Direct-bank STK activation is performed only by the guarded self-service profile endpoint above.
-// Keep arbitrary operator activation locked so unsupported rails cannot be enabled accidentally.
+// Approval of a supported direct-bank request activates it atomically in the review endpoint above.
+// Keep arbitrary activation locked so unsupported or unreviewed destinations cannot be enabled.
 router.post('/operator/:clientId/activate', (_req, res) => {
   return res.status(409).json({
-    error: 'Use the ISP Billing Settings direct-bank configuration for Equity or Co-operative Bank',
+    error: 'Approve the pending Equity or Co-operative Bank request through the settlement review workflow',
   });
 });
 

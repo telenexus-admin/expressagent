@@ -28,7 +28,9 @@ assert.strictEqual(validateDirectBankAccount('kcb', '1234567890').valid, false);
 
 const root = path.resolve(__dirname, '..');
 const daraja = fs.readFileSync(path.join(root, 'src/services/daraja.js'), 'utf8');
+const payheroCompat = fs.readFileSync(path.join(root, 'src/services/payhero.js'), 'utf8');
 const settlementsRoute = fs.readFileSync(path.join(root, 'src/routes/settlementProfiles.js'), 'utf8');
+const hotspotBootstrap = fs.readFileSync(path.resolve(root, '../frontend/public/polyizon-bootstrap.js'), 'utf8');
 
 assert.ok(
   daraja.includes('PartyB: destination ? destination.paybill : config.shortcode'),
@@ -41,6 +43,26 @@ assert.ok(
 assert.ok(
   daraja.includes("mode: 'direct_bank_stk'"),
   'Payment request metadata must record direct-bank routing without storing the full account number'
+);
+assert.ok(
+  payheroCompat.includes('daraja.paymentConfiguration(clientId)'),
+  'Legacy hotspot payment readiness must use the real Daraja/direct-bank payment configuration'
+);
+assert.ok(
+  payheroCompat.includes("basicAuth: 'daraja-native-ready'"),
+  'Legacy hotspot readiness must not require retired PayHero credentials'
+);
+assert.ok(
+  !payheroCompat.includes('process.env.PAYHERO_BASIC_AUTH'),
+  'Hotspot compatibility must not revive PayHero credentials'
+);
+assert.ok(
+  hotspotBootstrap.includes("var coverId = 'polyizon-hotspot-bootstrap-cover'"),
+  'Hotspot bootstrap must cover the legacy/default theme until tenant config is ready'
+);
+assert.ok(
+  hotspotBootstrap.includes("requestUrl.indexOf('/api/public/hotspot/config?')"),
+  'Hotspot bootstrap cover must be released by the live tenant config request'
 );
 assert.ok(
   settlementsRoute.includes('DIRECT_BANK_STK_RAILS'),

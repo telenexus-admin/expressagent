@@ -5,6 +5,7 @@ const {
   getSettlementProfile,
   safeProfile,
 } = require('./settlementProfiles');
+const { DIRECT_BANK_STK_RAILS } = require('./directBankStk');
 
 const ADAPTERS = Object.freeze({
   ncba: { code: 'ncba', implemented: false, name: 'NCBA settlement adapter' },
@@ -54,6 +55,31 @@ function isDirectBankProfile(profile) {
   );
 }
 
+function directBankPaymentSnapshot(payment) {
+  const settlement = payment?.metadata?.settlement;
+  if (!settlement || settlement.mode !== 'direct_bank_stk') return null;
+  const code = String(settlement.institution_code || '').trim().toLowerCase();
+  const rail = DIRECT_BANK_STK_RAILS[code];
+  const paybill = String(settlement.mpesa_paybill || '').trim();
+  const accountLast4 = String(settlement.account_last4 || '').replace(/\D/g, '').slice(-4);
+  const profileId = Number(settlement.profile_id);
+  if (!rail || paybill !== rail.paybill || accountLast4.length !== 4) return null;
+  return {
+    mode: 'direct_bank_stk',
+    profile_id: Number.isInteger(profileId) && profileId > 0 ? profileId : null,
+    institution_code: rail.code,
+    institution_name: rail.name,
+    mpesa_paybill: rail.paybill,
+    account_last4: accountLast4,
+  };
+}
+
+function directBankCollectionDecision(collectionStatus) {
+  if (collectionStatus === 'paid') return { routeStatus: 'settled', blockReason: null };
+  if (collectionStatus === 'failed') return { routeStatus: 'failed', blockReason: 'collection_failed' };
+  return { routeStatus: 'dispatched', blockReason: null };
+}
+
 function decisionForProfile(profile, collectionStatus = 'initiated') {
   if (!profile) return { routeStatus: 'blocked', blockReason: 'settlement_profile_missing' };
   if (profile.verification_status !== 'verified') {
@@ -62,11 +88,7 @@ function decisionForProfile(profile, collectionStatus = 'initiated') {
   if (profile.routing_status !== 'active') {
     return { routeStatus: 'blocked', blockReason: `settlement_routing_${profile.routing_status || 'disabled'}` };
   }
-  if (isDirectBankProfile(profile)) {
-    if (collectionStatus === 'paid') return { routeStatus: 'settled', blockReason: null };
-    if (collectionStatus === 'failed') return { routeStatus: 'failed', blockReason: 'collection_failed' };
-    return { routeStatus: 'dispatched', blockReason: null };
-  }
+  if (isDirectBankProfile(profile)) return directBankCollectionDecision(collectionStatus);
   const adapter = adapterFor(profile.institution_code);
   if (!adapter?.implemented) return { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' };
   return { routeStatus: 'dispatch_pending', blockReason: null };
@@ -147,7 +169,7 @@ async function ensurePaymentRouterSchema() {
 async function assertPaymentOwnership(clientId, paymentRequestId, externalReference) {
   if (!paymentRequestId) return null;
   const result = await db.query(
-    `SELECT id,client_id,external_reference,amount,status,payment_provider
+    `SELECT id,client_id,external_reference,amount,status,payment_provider,metadata
      FROM payhero_payment_requests WHERE id=$1 LIMIT 1`,
     [paymentRequestId]
   );
@@ -198,9 +220,26 @@ async function recordPaymentRouteIntent({
     throw error;
   }
 
-  const profile = await getSettlementProfile(tenantId);
-  const decision = decisionForProfile(profile, collectionStatus);
-  const snapshot = safeProfile(profile) || {};
+  const initiatedDirectBank = directBankPaymentSnapshot(payment);
+  let profile = null;
+  let decision;
+  let snapshot;
+  let settlementProfileId = null;
+  let institutionCode = null;
+
+  if (initiatedDirectBank) {
+    decision = directBankCollectionDecision(collectionStatus);
+    snapshot = initiatedDirectBank;
+    settlementProfileId = initiatedDirectBank.profile_id;
+    institutionCode = initiatedDirectBank.institution_code;
+  } else {
+    profile = await getSettlementProfile(tenantId);
+    decision = decisionForProfile(profile, collectionStatus);
+    snapshot = safeProfile(profile) || {};
+    settlementProfileId = profile?.id || null;
+    institutionCode = profile?.institution_code || null;
+  }
+
   const key = idempotencyKey(tenantId, reference);
   const directBankPaid = decision.routeStatus === 'settled' && collectionStatus === 'paid';
 
@@ -220,8 +259,8 @@ async function recordPaymentRouteIntent({
          WHEN billing_payment_routes.collection_status='paid' THEN 'paid'
          ELSE EXCLUDED.collection_status
        END,
-       settlement_profile_id=EXCLUDED.settlement_profile_id,
-       institution_code=EXCLUDED.institution_code,
+       settlement_profile_id=COALESCE(billing_payment_routes.settlement_profile_id,EXCLUDED.settlement_profile_id),
+       institution_code=COALESCE(billing_payment_routes.institution_code,EXCLUDED.institution_code),
        route_status=CASE
          WHEN billing_payment_routes.route_status='settled' THEN 'settled'
          ELSE EXCLUDED.route_status
@@ -231,7 +270,7 @@ async function recordPaymentRouteIntent({
          ELSE EXCLUDED.block_reason
        END,
        settlement_snapshot=CASE
-         WHEN billing_payment_routes.route_status='settled' THEN billing_payment_routes.settlement_snapshot
+         WHEN billing_payment_routes.settlement_snapshot <> '{}'::jsonb THEN billing_payment_routes.settlement_snapshot
          ELSE EXCLUDED.settlement_snapshot
        END,
        collected_at=COALESCE(billing_payment_routes.collected_at,EXCLUDED.collected_at),
@@ -249,8 +288,8 @@ async function recordPaymentRouteIntent({
       normalizedCurrency,
       provider,
       collectionStatus,
-      profile?.id || null,
-      profile?.institution_code || null,
+      settlementProfileId,
+      institutionCode,
       decision.routeStatus,
       decision.blockReason,
       JSON.stringify(snapshot),
@@ -362,6 +401,8 @@ module.exports = {
   ADAPTERS,
   adapterFor,
   decisionForProfile,
+  directBankCollectionDecision,
+  directBankPaymentSnapshot,
   ensurePaymentRouterSchema,
   getPaymentRoute,
   idempotencyKey,

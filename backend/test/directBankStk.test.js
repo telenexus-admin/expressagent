@@ -47,8 +47,28 @@ assert.ok(
   'Settlement settings must expose only proven direct-STK rails'
 );
 assert.ok(
-  !settlementsRoute.includes("DIRECT_BANK_STK_RAILS.kcb"),
+  !settlementsRoute.includes('DIRECT_BANK_STK_RAILS.kcb'),
   'KCB must not be enabled before it is live-tested'
+);
+assert.ok(
+  settlementsRoute.includes("eventType: 'settlement.direct_stk_requested'"),
+  'ISP bank changes must be recorded as review requests, not immediate activations'
+);
+assert.ok(
+  settlementsRoute.includes('review_window_hours: 24'),
+  'Bank destination requests must expose the 24-hour review window'
+);
+assert.ok(
+  settlementsRoute.includes("status: 'pending_review'"),
+  'Self-service submissions must remain pending until operator review'
+);
+assert.ok(
+  settlementsRoute.includes("if (decision === 'verified')"),
+  'Approved direct-bank requests must use the operator verification workflow'
+);
+assert.ok(
+  settlementsRoute.includes('activateSettlementProfile({'),
+  'Approved direct-bank requests must be activated only after verification'
 );
 
 console.log('Direct bank STK tests passed');

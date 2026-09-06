@@ -4,6 +4,7 @@ const {
   ADAPTERS,
   decisionForProfile,
   idempotencyKey,
+  isDirectBankProfile,
 } = require('../src/services/paymentRouter');
 
 assert.deepStrictEqual(Object.keys(ADAPTERS).sort(), ['coop', 'equity', 'kcb', 'ncba']);
@@ -23,6 +24,33 @@ assert.deepStrictEqual(
 );
 assert.deepStrictEqual(
   decisionForProfile({ verification_status: 'verified', routing_status: 'active', institution_code: 'equity' }),
+  { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' }
+);
+
+const directEquity = {
+  verification_status: 'verified',
+  routing_status: 'active',
+  institution_code: 'equity',
+  rail_reference: 'daraja-direct-stk:247247',
+};
+const directCoop = {
+  verification_status: 'verified',
+  routing_status: 'active',
+  institution_code: 'coop',
+  rail_reference: 'daraja-direct-stk:400200',
+};
+assert.strictEqual(isDirectBankProfile(directEquity), true);
+assert.strictEqual(isDirectBankProfile(directCoop), true);
+assert.deepStrictEqual(
+  decisionForProfile(directEquity, 'paid'),
+  { routeStatus: 'settled', blockReason: null }
+);
+assert.deepStrictEqual(
+  decisionForProfile(directCoop, 'failed'),
+  { routeStatus: 'failed', blockReason: 'collection_failed' }
+);
+assert.deepStrictEqual(
+  decisionForProfile({ ...directEquity, institution_code: 'kcb' }, 'paid'),
   { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' }
 );
 

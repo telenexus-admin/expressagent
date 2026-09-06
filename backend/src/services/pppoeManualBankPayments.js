@@ -152,12 +152,64 @@ async function manualBankInstructions({ clientId, subscriberId }) {
   };
 }
 
+async function existingClaimForReceipt(receipt) {
+  const result = await db.query(
+    `SELECT * FROM billing_pppoe_manual_bank_claims
+     WHERE UPPER(receipt_number)=UPPER($1)
+     LIMIT 1`,
+    [receipt]
+  );
+  return result.rows[0] || null;
+}
+
+async function processedReceiptElsewhere(receipt) {
+  const result = await db.query(
+    `SELECT source,id,client_id,subscriber_id FROM (
+       SELECT 'pppoe_payment'::text AS source,id,client_id,subscriber_id
+       FROM billing_pppoe_mpesa_payments
+       WHERE UPPER(transaction_id)=UPPER($1)
+
+       UNION ALL
+
+       SELECT 'direct_bank_stk'::text AS source,id,client_id,NULL::bigint AS subscriber_id
+       FROM payhero_payment_requests
+       WHERE status='paid' AND UPPER(COALESCE(mpesa_receipt_number,''))=UPPER($1)
+
+       UNION ALL
+
+       SELECT 'billing_payment'::text AS source,id,client_id,subscriber_id
+       FROM billing_payments
+       WHERE status='completed' AND UPPER(COALESCE(reference,''))=UPPER($1)
+     ) used
+     LIMIT 1`,
+    [receipt]
+  );
+  return result.rows[0] || null;
+}
+
 async function createManualBankClaim({ clientId, subscriberId, receiptNumber, payerPhone = null }) {
   await ensureManualBankPaymentSchema();
   const receipt = normalizeReceipt(receiptNumber);
   if (!/^[A-Z0-9]{6,32}$/.test(receipt)) {
     const error = new Error('Enter a valid M-Pesa receipt number');
     error.code = 'MANUAL_BANK_RECEIPT_INVALID';
+    throw error;
+  }
+
+  const previousClaim = await existingClaimForReceipt(receipt);
+  if (previousClaim) {
+    if (Number(previousClaim.client_id) === Number(clientId) && Number(previousClaim.subscriber_id) === Number(subscriberId)) {
+      return previousClaim;
+    }
+    const error = new Error('That M-Pesa receipt is already linked to another payment claim');
+    error.code = 'MANUAL_BANK_RECEIPT_EXISTS';
+    throw error;
+  }
+
+  const alreadyProcessed = await processedReceiptElsewhere(receipt);
+  if (alreadyProcessed) {
+    const error = new Error('That M-Pesa receipt has already been processed by another Polyizon payment flow');
+    error.code = 'MANUAL_BANK_RECEIPT_ALREADY_PROCESSED';
     throw error;
   }
 
@@ -188,13 +240,9 @@ async function createManualBankClaim({ clientId, subscriberId, receiptNumber, pa
     return result.rows[0];
   } catch (error) {
     if (error.code !== '23505') throw error;
-    const existing = await db.query(
-      `SELECT * FROM billing_pppoe_manual_bank_claims WHERE UPPER(receipt_number)=UPPER($1) LIMIT 1`,
-      [receipt]
-    );
-    const row = existing.rows[0];
-    if (row && Number(row.client_id) === Number(clientId) && Number(row.subscriber_id) === Number(subscriberId)) {
-      return row;
+    const existing = await existingClaimForReceipt(receipt);
+    if (existing && Number(existing.client_id) === Number(clientId) && Number(existing.subscriber_id) === Number(subscriberId)) {
+      return existing;
     }
     const conflict = new Error('That M-Pesa receipt is already linked to another payment claim');
     conflict.code = 'MANUAL_BANK_RECEIPT_EXISTS';
@@ -262,6 +310,18 @@ async function verifyManualBankClaim({ clientId, subscriberId, claimId, confirme
     throw error;
   }
 
+  const stkReuse = await db.query(
+    `SELECT id,client_id FROM payhero_payment_requests
+     WHERE status='paid' AND UPPER(COALESCE(mpesa_receipt_number,''))=UPPER($1)
+     LIMIT 1`,
+    [claim.receipt_number]
+  );
+  if (stkReuse.rows[0]) {
+    const error = new Error('This M-Pesa receipt was already processed through a direct-bank STK payment and cannot be applied again manually');
+    error.code = 'MANUAL_BANK_RECEIPT_ALREADY_PROCESSED';
+    throw error;
+  }
+
   const applied = await applyPppoeSubscriptionPayment({
     transactionId: claim.receipt_number,
     accountNumber: claim.account_number,
@@ -281,7 +341,20 @@ async function verifyManualBankClaim({ clientId, subscriberId, claimId, confirme
   });
 
   const payment = applied.payment || null;
-  const successful = applied.status === 'applied' || (applied.idempotent && payment?.status === 'applied');
+  const samePayment = payment &&
+    String(payment.account_number || '').toUpperCase() === String(claim.account_number || '').toUpperCase() &&
+    Number(payment.client_id || clientId) === Number(clientId) &&
+    Number(payment.subscriber_id || subscriberId) === Number(subscriberId);
+  const successful = applied.status === 'applied'
+    ? samePayment
+    : Boolean(applied.idempotent && payment?.status === 'applied' && samePayment);
+
+  if (applied.idempotent && !samePayment) {
+    const error = new Error('This M-Pesa receipt is already attached to a different PPPoE payment and cannot be reused');
+    error.code = 'MANUAL_BANK_RECEIPT_ALREADY_PROCESSED';
+    throw error;
+  }
+
   const result = await db.query(
     `UPDATE billing_pppoe_manual_bank_claims
      SET status=$2,

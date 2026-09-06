@@ -47,16 +47,16 @@ function c2bUrls() {
   }
   const query = `?token=${encodeURIComponent(token)}`;
   return {
-    validation: `${base}/api/public/mpesa/c2b/validation${query}`,
-    confirmation: `${base}/api/public/mpesa/c2b/confirmation${query}`,
+    validation: `${base}/api/public/payments/c2b/validation${query}`,
+    confirmation: `${base}/api/public/payments/c2b/confirmation${query}`,
   };
 }
 
 function safeC2bUrls() {
   const base = publicBackendUrl();
   return {
-    validation: `${base}/api/public/mpesa/c2b/validation?token=***`,
-    confirmation: `${base}/api/public/mpesa/c2b/confirmation?token=***`,
+    validation: `${base}/api/public/payments/c2b/validation?token=***`,
+    confirmation: `${base}/api/public/payments/c2b/confirmation?token=***`,
   };
 }
 

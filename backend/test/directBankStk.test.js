@@ -76,14 +76,14 @@ assert.ok(
 );
 assert.ok(
   settlementsRoute.includes("const contactEmail = String(client.contact_email || '').trim()"),
-  'Receipt emails must prefer the email linked to the billing account'
+  'Bank emails must prefer the email linked to the billing account'
 );
 assert.ok(
   settlementsRoute.includes("sendEmail({}, {"),
-  'Receipt emails must use Polyizon central email transport instead of ISP email credentials'
+  'Bank emails must use Polyizon central email transport instead of ISP email credentials'
 );
 assert.ok(
-  settlementsRoute.includes("subject = 'Bank Destination Request Received — Polyizon'"),
+  settlementsRoute.includes("const subject = 'Bank Destination Request Received — Polyizon'"),
   'Receipt email subject must identify the Polyizon bank destination request'
 );
 assert.ok(
@@ -92,11 +92,39 @@ assert.ok(
 );
 assert.ok(
   settlementsRoute.includes('account_number_masked'),
-  'Receipt email must use the masked account number rather than exposing the full bank account'
+  'Bank emails must use the masked account number rather than exposing the full bank account'
 );
 assert.ok(
   settlementsRoute.includes("eventType: 'settlement.direct_stk_request_email'"),
   'Receipt email delivery outcome must be auditable'
+);
+assert.ok(
+  settlementsRoute.includes("router.get('/operator/requests'"),
+  'Operator console must have a bank destination request queue endpoint'
+);
+assert.ok(
+  settlementsRoute.indexOf("router.get('/operator/requests'") < settlementsRoute.indexOf("router.get('/operator/:clientId'"),
+  'Fixed operator request queue route must be declared before the clientId parameter route'
+);
+assert.ok(
+  settlementsRoute.includes("permissions.length === 0 || permissions.includes('admins')"),
+  'Legacy billing account owners without an explicit permissions array must be able to submit bank requests'
+);
+assert.ok(
+  settlementsRoute.includes("current.verification_status !== 'pending'"),
+  'Operator must not approve a bank destination request twice'
+);
+assert.ok(
+  settlementsRoute.includes('expected_updated_at'),
+  'Operator approvals must protect against approving a stale bank destination request'
+);
+assert.ok(
+  settlementsRoute.includes("const subject = 'Bank Destination Approved — Polyizon'"),
+  'Approved bank destination requests must trigger a Polyizon approval email'
+);
+assert.ok(
+  settlementsRoute.includes("eventType: 'settlement.direct_stk_approval_email'"),
+  'Approval email delivery outcome must be auditable'
 );
 
 console.log('Direct bank STK tests passed');

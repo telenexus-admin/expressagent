@@ -3,6 +3,7 @@ const assert = require('assert');
 const {
   ADAPTERS,
   decisionForProfile,
+  directBankPaymentSnapshot,
   idempotencyKey,
   isDirectBankProfile,
 } = require('../src/services/paymentRouter');
@@ -52,6 +53,31 @@ assert.deepStrictEqual(
 assert.deepStrictEqual(
   decisionForProfile({ ...directEquity, institution_code: 'kcb' }, 'paid'),
   { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' }
+);
+
+const initiatedSnapshot = directBankPaymentSnapshot({
+  metadata: {
+    settlement: {
+      mode: 'direct_bank_stk',
+      profile_id: 91,
+      institution_code: 'coop',
+      institution_name: 'client supplied name must be ignored',
+      mpesa_paybill: '400200',
+      account_last4: '6001',
+    },
+  },
+});
+assert.deepStrictEqual(initiatedSnapshot, {
+  mode: 'direct_bank_stk',
+  profile_id: 91,
+  institution_code: 'coop',
+  institution_name: 'Co-operative Bank of Kenya',
+  mpesa_paybill: '400200',
+  account_last4: '6001',
+});
+assert.strictEqual(
+  directBankPaymentSnapshot({ metadata: { settlement: { mode: 'direct_bank_stk', institution_code: 'coop', mpesa_paybill: '999999', account_last4: '6001' } } }),
+  null
 );
 
 const first = idempotencyKey(42, 'MPESA-42-ABC');

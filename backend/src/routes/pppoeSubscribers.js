@@ -1,4 +1,3 @@
-const crypto = require('crypto');
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 
@@ -11,42 +10,93 @@ const { sendWhatsAppMessage } = require('../services/whatsapp');
 const { sendClientText } = require('../services/clientEvolution');
 const { appendRequestEvent, ensureEventSchema } = require('../services/events');
 const {
-  normalizeAccountNumber,
   normalizePppoeUsername,
   rateLimitFromPlan,
 } = require('../services/pppoeProvisioning');
-
+const {
+  allocatePppoeAccountNumber,
+  ensurePppoeAccountNumberSchema,
+} = require('../services/pppoeAccountNumbers');
 
 const router = express.Router();
-function generateAccountNumber(clientId) { return normalizeAccountNumber(`PZ-${clientId}-${crypto.randomBytes(5).toString('hex').toUpperCase()}`); }
-function paymentInstructions(client, accountNumber) {
-  const shortcode = String(client?.mpesa_shortcode || '').trim();
-  if (client?.mpesa_enabled && shortcode) return `Pay via M-Pesa PayBill ${shortcode}. Use ${accountNumber} as the account number/reference.`;
+
+function paymentInstructions(_client, accountNumber) {
+  const shortcode = String(process.env.DARAJA_SHORTCODE || '').trim();
+  if (shortcode) {
+    return `Pay via M-Pesa PayBill ${shortcode}. Use ${accountNumber} as the account number/reference.`;
+  }
   return `Use account number ${accountNumber} as your payment reference. Contact support for the available M-Pesa payment method.`;
 }
-function escapeHtml(value) { return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 async function deliverWelcomeNotice({ client, subscriber, plan }) {
   const businessName = String(client?.business_name || client?.name || 'Polyizon').trim();
   const firstName = String(subscriber.full_name || '').trim().split(/\s+/)[0] || 'there';
   const packagePrice = Number(plan.price || 0).toLocaleString('en-KE');
   const instructions = paymentInstructions(client, subscriber.account_number);
-  const message = [`Welcome to ${businessName}, ${firstName}.`, `Your PPPoE account number is ${subscriber.account_number}.`, `Package: ${plan.name} — KES ${packagePrice} for ${plan.validity_days} days.`, instructions, 'Your internet will activate after payment is confirmed.'].join('\n');
+  const message = [
+    `Welcome to ${businessName}, ${firstName}.`,
+    `Your PPPoE account number is ${subscriber.account_number}.`,
+    `Package: ${plan.name} — KES ${packagePrice} for ${plan.validity_days} days.`,
+    instructions,
+    'Your internet will activate after payment is confirmed.',
+  ].join('\n');
+
   const results = [];
-  const add = async (channel, task) => { try { const result = await task(); results.push({ channel, status: result?.status || 'sent', error: result?.error || null }); } catch (error) { results.push({ channel, status: 'failed', error: error.message || 'Delivery failed' }); } };
+  const add = async (channel, task) => {
+    try {
+      const result = await task();
+      results.push({ channel, status: result?.status || 'sent', error: result?.error || null });
+    } catch (error) {
+      results.push({ channel, status: 'failed', error: error.message || 'Delivery failed' });
+    }
+  };
+
   if (subscriber.phone) {
-    if (client?.connection_provider === 'evolution') await add('whatsapp', () => sendClientText(client, subscriber.phone, message));
-    else if (client?.meta_phone_number_id && client?.meta_access_token) await add('whatsapp', () => sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, subscriber.phone, message));
-    else results.push({ channel: 'whatsapp', status: 'skipped', error: 'WhatsApp is not configured' });
+    if (client?.connection_provider === 'evolution') {
+      await add('whatsapp', () => sendClientText(client, subscriber.phone, message));
+    } else if (client?.meta_phone_number_id && client?.meta_access_token) {
+      await add('whatsapp', () => sendWhatsAppMessage(
+        client.meta_phone_number_id,
+        client.meta_access_token,
+        subscriber.phone,
+        message
+      ));
+    } else {
+      results.push({ channel: 'whatsapp', status: 'skipped', error: 'WhatsApp is not configured' });
+    }
     await add('sms', () => sendSMS(subscriber.phone, message, { client }));
-  } else results.push({ channel: 'message', status: 'skipped', error: 'Customer phone is not set' });
+  } else {
+    results.push({ channel: 'message', status: 'skipped', error: 'Customer phone is not set' });
+  }
+
   if (subscriber.email) {
-    if (!isEmailConfigured(client)) results.push({ channel: 'email', status: 'skipped', error: 'Email is not configured' });
-    else {
+    if (!isEmailConfigured(client)) {
+      results.push({ channel: 'email', status: 'skipped', error: 'Email is not configured' });
+    } else {
       const fromName = String(client.email_from_name || client.business_name || client.name || 'Polyizon').trim();
       const fromAddress = String(client.email_from_address || process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_FROM_EMAIL || '').trim();
-      await add('email', () => sendEmail(client, { from: `${fromName} <${fromAddress}>`, to: [subscriber.email], reply_to: client.email_reply_to || fromAddress, subject: `Welcome to ${businessName} — payment details`, text: message, html: `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE account has been created and is waiting for payment.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Account number: ${escapeHtml(subscriber.account_number)}</strong><br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><p>${escapeHtml(instructions)}</p><p>Your internet will activate after payment is confirmed.</p></div>` }));
+      await add('email', () => sendEmail(client, {
+        from: `${fromName} <${fromAddress}>`,
+        to: [subscriber.email],
+        reply_to: client.email_reply_to || fromAddress,
+        subject: `Welcome to ${businessName} — payment details`,
+        text: message,
+        html: `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE account has been created and is waiting for payment.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Account number: ${escapeHtml(subscriber.account_number)}</strong><br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><p>${escapeHtml(instructions)}</p><p>Your internet will activate after payment is confirmed.</p></div>`,
+      }));
     }
-  } else results.push({ channel: 'email', status: 'skipped', error: 'Customer email is not set' });
+  } else {
+    results.push({ channel: 'email', status: 'skipped', error: 'Customer email is not set' });
+  }
+
   return { message, deliveries: results };
 }
 
@@ -94,9 +144,11 @@ router.post('/', [
   const routerId = Number(req.body.router_id);
 
   try {
+    await ensurePppoeAccountNumberSchema();
+
     const [planResult, routerResult, duplicateResult, clientSettingsResult] = await Promise.all([
       db.query(
-        `SELECT id, name, validity_days, router_id, radius_profile,
+        `SELECT id, name, price, validity_days, router_id, radius_profile,
                 download_speed_mbps, upload_speed_mbps
          FROM billing_plans
          WHERE id = $1 AND client_id = $2 AND is_active = TRUE
@@ -130,10 +182,13 @@ router.post('/', [
       return res.status(400).json({ error: 'That package is assigned to a different MikroTik router' });
     }
 
-    if (duplicateResult.rows[0]) return res.status(409).json({ error: 'That PPPoE username is already used by another Polyizon subscriber' });
-    const billingClient = clientSettingsResult.rows[0] || {};
+    if (duplicateResult.rows[0]) {
+      return res.status(409).json({ error: 'That PPPoE username is already used by another Polyizon subscriber' });
+    }
 
+    const billingClient = clientSettingsResult.rows[0] || {};
     const rateLimit = rateLimitFromPlan(plan);
+
     if (!rateLimit) {
       return res.status(400).json({
         error: 'This package has no RADIUS speed profile. Set upload/download speeds or a RADIUS rate-limit first.',
@@ -143,6 +198,10 @@ router.post('/', [
     const validityDays = Number(plan.validity_days || 0);
     if (!(validityDays > 0)) {
       return res.status(400).json({ error: 'This package has no valid subscription duration' });
+    }
+
+    if (!(Number(plan.price) > 0)) {
+      return res.status(400).json({ error: 'This package has no valid M-Pesa price' });
     }
 
     let encryptedPassword;
@@ -156,16 +215,11 @@ router.post('/', [
 
     const client = await db.connect();
     let subscriber = null;
-    let accountNumber = null;
+    let accountAllocation = null;
 
     try {
       await client.query('BEGIN');
-      for (let attempt = 0; attempt < 8; attempt += 1) {
-        const candidate = generateAccountNumber(clientId);
-        const existing = await client.query('SELECT 1 FROM billing_subscribers WHERE client_id = $1 AND UPPER(account_number) = UPPER($2) LIMIT 1', [clientId, candidate]);
-        if (!existing.rows.length) { accountNumber = candidate; break; }
-      }
-      if (!accountNumber) throw new Error('Could not allocate a unique account number');
+      accountAllocation = await allocatePppoeAccountNumber(client, clientId);
 
       if (!String(plan.radius_profile || '').trim()) {
         await client.query(
@@ -193,7 +247,7 @@ router.post('/', [
           String(req.body.full_name).trim(),
           req.body.phone ? String(req.body.phone).trim() : null,
           req.body.email ? String(req.body.email).trim().toLowerCase() : null,
-          accountNumber,
+          accountAllocation.accountNumber,
           radiusUsername,
           encryptedPassword,
           selectedRouter.id,
@@ -213,9 +267,11 @@ router.post('/', [
         description: `${subscriber.full_name} was created pending payment; RADIUS access is disabled until payment is confirmed`,
         payload: {
           account_number: subscriber.account_number,
+          account_prefix: accountAllocation.prefix,
           pppoe_username: subscriber.radius_username,
           package_id: subscriber.plan_id,
           package_name: plan.name,
+          package_price: Number(plan.price),
           router_id: subscriber.router_id,
           router_name: subscriber.router_name,
           expires_at: subscriber.expires_at,
@@ -239,7 +295,6 @@ router.post('/', [
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
-
       throw error;
     } finally {
       client.release();
@@ -254,6 +309,7 @@ router.post('/', [
         phone: subscriber.phone,
         email: subscriber.email,
         account_number: subscriber.account_number,
+        account_prefix: accountAllocation.prefix,
         plan_id: subscriber.plan_id,
         router_id: subscriber.router_id,
         router_name: subscriber.router_name,
@@ -268,8 +324,11 @@ router.post('/', [
         rate_limit: rateLimit,
       },
       payment: {
-        account_number: accountNumber,
-        purpose: paymentInstructions(billingClient, accountNumber),
+        account_number: subscriber.account_number,
+        account_prefix: accountAllocation.prefix,
+        paybill: String(process.env.DARAJA_SHORTCODE || '').trim() || null,
+        amount: Number(plan.price),
+        purpose: paymentInstructions(billingClient, subscriber.account_number),
       },
       notifications: welcome.deliveries,
     });

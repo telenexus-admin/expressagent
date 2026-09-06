@@ -30,11 +30,7 @@ function rateLimitFromPlan(plan = {}) {
 function formatRadiusExpiration(date) {
   const value = date instanceof Date ? date : new Date(date);
   if (!Number.isFinite(value.getTime())) throw new Error('A valid PPPoE expiry time is required');
-
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const pad = (part) => String(part).padStart(2, '0');
-
-  return `${pad(value.getUTCDate())} ${months[value.getUTCMonth()]} ${value.getUTCFullYear()} ${pad(value.getUTCHours())}:${pad(value.getUTCMinutes())}:${pad(value.getUTCSeconds())}`;
+  return String(Math.floor(value.getTime() / 1000));
 }
 
 function getRadiusPool() {

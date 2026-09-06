@@ -41,12 +41,17 @@ function maskedEmail(value) {
   return `${email.slice(0, 1)}***${email.slice(at)}`;
 }
 
-async function sendBankDestinationRequestReceivedEmail({ client, requesterEmail, profile }) {
+function bankEmailRecipient(client, fallbackEmail = '') {
   const contactEmail = String(client.contact_email || '').trim();
-  const fallbackEmail = String(requesterEmail || '').trim();
-  const recipient = contactEmail || fallbackEmail;
-  const recipientSource = contactEmail ? 'account_contact_email' : (fallbackEmail ? 'requesting_admin_email' : 'none');
+  const fallback = String(fallbackEmail || '').trim();
+  return {
+    recipient: contactEmail || fallback,
+    recipientSource: contactEmail ? 'account_contact_email' : (fallback ? 'requesting_admin_email' : 'none'),
+  };
+}
 
+async function sendPolyizonBankEmail({ client, fallbackEmail, subject, text, html }) {
+  const { recipient, recipientSource } = bankEmailRecipient(client, fallbackEmail);
   if (!recipient) {
     return { status: 'skipped', error: 'Billing account has no linked email address', recipientSource };
   }
@@ -56,6 +61,19 @@ async function sendBankDestinationRequestReceivedEmail({ client, requesterEmail,
     return { status: 'skipped', error: 'Polyizon central email is not configured', recipientSource };
   }
 
+  const result = await sendEmail({}, {
+    from: `Polyizon <${fromAddress}>`,
+    to: [recipient],
+    reply_to: fromAddress,
+    subject,
+    text,
+    html,
+  });
+
+  return { ...result, recipientSource, recipientMasked: maskedEmail(recipient) };
+}
+
+async function sendBankDestinationRequestReceivedEmail({ client, requesterEmail, profile }) {
   const view = safeProfile(profile) || {};
   const businessName = String(client.business_name || client.name || 'your Polyizon account').trim();
   const contactName = String(client.official_contact_name || '').trim();
@@ -86,8 +104,7 @@ async function sendBankDestinationRequestReceivedEmail({ client, requesterEmail,
     <div style="margin:0;padding:32px 16px;background:#f5f7f8;font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">
       <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;overflow:hidden;box-shadow:0 8px 30px rgba(15,23,42,.06)">
         <div style="padding:24px 28px;background:#052e25;color:#ffffff">
-          <div style="font-size:12px;font-weight:800;letter-spacing:.16em;text-transform:uppercase;color:#6ee7b7">Polyizon M-PESA Gateway</div>
-          <h1 style="margin:8px 0 0;font-size:24px;line-height:1.25">Bank destination request received</h1>
+          <h1 style="margin:0;font-size:24px;line-height:1.25">Bank destination request received</h1>
         </div>
         <div style="padding:28px">
           <p style="margin:0 0 16px">Hello ${escapeHtml(firstName)},</p>
@@ -102,23 +119,61 @@ async function sendBankDestinationRequestReceivedEmail({ client, requesterEmail,
             <strong>Review time</strong><br>
             Your request is now under review. The review may take up to <strong>24 hours</strong>.
           </div>
-          <p style="margin:18px 0">For your security, the requested bank destination will not become active until it has been reviewed and approved by Polyizon.</p>
-          <p style="margin:18px 0">We will notify you once the review is complete.</p>
+          <p style="margin:18px 0">The requested bank destination will remain inactive until Polyizon completes the review.</p>
           <p style="margin:28px 0 0;color:#475569">Regards,<br><strong style="color:#0f172a">Polyizon Support</strong><br>Polyizon</p>
         </div>
       </div>
     </div>`;
 
-  const result = await sendEmail({}, {
-    from: `Polyizon <${fromAddress}>`,
-    to: [recipient],
-    reply_to: fromAddress,
-    subject,
-    text,
-    html,
-  });
+  return sendPolyizonBankEmail({ client, fallbackEmail: requesterEmail, subject, text, html });
+}
 
-  return { ...result, recipientSource, recipientMasked: maskedEmail(recipient) };
+async function sendBankDestinationApprovedEmail({ client, profile }) {
+  const view = safeProfile(profile) || {};
+  const businessName = String(client.business_name || client.name || 'your Polyizon account').trim();
+  const contactName = String(client.official_contact_name || '').trim();
+  const firstName = contactName.split(/\s+/)[0] || 'there';
+  const bankName = String(view.institution_name || 'your selected bank').trim();
+  const accountMasked = String(view.account_number_masked || 'masked for security').trim();
+  const subject = 'Bank Destination Approved — Polyizon';
+
+  const text = [
+    `Hello ${firstName},`,
+    '',
+    `Your bank destination request for ${businessName} has been approved.`,
+    '',
+    `Bank: ${bankName}`,
+    `Account: ${accountMasked}`,
+    'Status: Active',
+    '',
+    'Your approved bank destination is now active on your Polyizon account.',
+    '',
+    'Regards,',
+    'Polyizon Support',
+    'Polyizon',
+  ].join('\n');
+
+  const html = `
+    <div style="margin:0;padding:32px 16px;background:#f5f7f8;font-family:Arial,Helvetica,sans-serif;color:#0f172a;line-height:1.6">
+      <div style="max-width:620px;margin:0 auto;background:#ffffff;border:1px solid #e2e8f0;border-radius:20px;overflow:hidden;box-shadow:0 8px 30px rgba(15,23,42,.06)">
+        <div style="padding:24px 28px;background:#052e25;color:#ffffff">
+          <h1 style="margin:0;font-size:24px;line-height:1.25">Bank destination approved</h1>
+        </div>
+        <div style="padding:28px">
+          <p style="margin:0 0 16px">Hello ${escapeHtml(firstName)},</p>
+          <p style="margin:0 0 18px">Your bank destination request for <strong>${escapeHtml(businessName)}</strong> has been approved.</p>
+          <div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:14px;padding:16px 18px;margin:18px 0;color:#065f46">
+            <div><strong>Bank:</strong> ${escapeHtml(bankName)}</div>
+            <div style="margin-top:4px"><strong>Account:</strong> ${escapeHtml(accountMasked)}</div>
+            <div style="margin-top:4px"><strong>Status:</strong> Active</div>
+          </div>
+          <p style="margin:18px 0">Your approved bank destination is now active on your Polyizon account.</p>
+          <p style="margin:28px 0 0;color:#475569">Regards,<br><strong style="color:#0f172a">Polyizon Support</strong><br>Polyizon</p>
+        </div>
+      </div>
+    </div>`;
+
+  return sendPolyizonBankEmail({ client, subject, text, html });
 }
 
 async function requireBillingClient(clientId) {
@@ -142,7 +197,9 @@ function selfClientId(req, res) {
 }
 
 function canManageBankDestination(req) {
-  return Array.isArray(req.user?.permissions) && req.user.permissions.includes('admins');
+  if (req.user?.role !== 'admin') return false;
+  const permissions = req.user?.permissions;
+  return !Array.isArray(permissions) || permissions.length === 0 || permissions.includes('admins');
 }
 
 function directInstitutions() {
@@ -302,6 +359,40 @@ router.put('/profile', async (req, res) => {
   }
 });
 
+router.get('/operator/requests', async (req, res) => {
+  if (!req.scope.isSuperadmin) return res.status(403).json({ error: 'Superadmin access required' });
+  try {
+    await ensureSettlementSchema();
+    const result = await db.query(`
+      SELECT p.*, c.name AS client_name, c.business_name AS client_business_name
+      FROM billing_settlement_profiles p
+      JOIN clients c ON c.id = p.client_id
+      WHERE c.account_type = 'billing'
+      ORDER BY CASE WHEN p.verification_status = 'pending' THEN 0 ELSE 1 END, p.updated_at DESC
+      LIMIT 250
+    `);
+    const requests = result.rows.map((row) => {
+      const rail = railForInstitution(row.institution_code);
+      return {
+        request_id: row.id,
+        client: {
+          id: row.client_id,
+          name: row.client_business_name || row.client_name,
+        },
+        profile: safeProfile(row),
+        direct_stk: {
+          mpesa_paybill: rail?.paybill || null,
+          supported: Boolean(rail),
+        },
+      };
+    });
+    return res.json({ requests });
+  } catch (error) {
+    console.error('GET /settlements/operator/requests error:', error.message);
+    return res.status(500).json({ error: 'Could not load bank destination requests' });
+  }
+});
+
 router.get('/operator/:clientId', async (req, res) => {
   if (!req.scope.isSuperadmin) return res.status(403).json({ error: 'Superadmin access required' });
   const clientId = Number(req.params.clientId);
@@ -322,6 +413,11 @@ router.post('/operator/:clientId/review', async (req, res) => {
   const clientId = Number(req.params.clientId);
   if (!Number.isInteger(clientId) || clientId < 1) return res.status(400).json({ error: 'Invalid client id' });
   const decision = String(req.body.decision || '').trim().toLowerCase();
+  const expectedUpdatedAt = String(req.body.expected_updated_at || '').trim();
+
+  if (!['verified', 'rejected'].includes(decision)) {
+    return res.status(400).json({ error: 'Decision must be verified or rejected' });
+  }
 
   try {
     const client = await requireBillingClient(clientId);
@@ -329,6 +425,17 @@ router.post('/operator/:clientId/review', async (req, res) => {
 
     const current = await getSettlementProfile(clientId);
     if (!current) return res.status(404).json({ error: 'Settlement profile not found' });
+    if (current.verification_status !== 'pending') {
+      return res.status(409).json({ error: 'This bank destination request has already been reviewed. Refresh the payment requests list.' });
+    }
+
+    if (expectedUpdatedAt) {
+      const expected = new Date(expectedUpdatedAt);
+      const actual = new Date(current.updated_at);
+      if (Number.isNaN(expected.getTime()) || expected.toISOString() !== actual.toISOString()) {
+        return res.status(409).json({ error: 'This bank destination request changed after you opened it. Refresh before reviewing it.' });
+      }
+    }
 
     let railReference = '';
     if (decision === 'verified') {
@@ -363,7 +470,7 @@ router.post('/operator/:clientId/review', async (req, res) => {
       source: 'settlement_operator',
       entityType: 'settlement_profile',
       entityId: finalProfile.id,
-      title: decision === 'verified' ? 'Direct bank destination approved and activated' : `Settlement profile ${decision}`,
+      title: decision === 'verified' ? 'Direct bank destination approved and activated' : 'Direct bank destination rejected',
       description: `${client.business_name || client.name}: ${finalProfile.institution_name}`,
       newState: safeProfile(finalProfile),
       payload: {
@@ -375,10 +482,48 @@ router.post('/operator/:clientId/review', async (req, res) => {
       sensitivity: 'confidential',
     }).catch((error) => console.error('Settlement review audit failed:', error.message));
 
+    let emailNotification = { status: 'not_applicable', recipientMasked: null };
+    if (decision === 'verified') {
+      try {
+        emailNotification = await sendBankDestinationApprovedEmail({ client, profile: finalProfile });
+      } catch (error) {
+        emailNotification = { status: 'failed', error: error.message || 'Email delivery failed', recipientSource: 'account_contact_email' };
+      }
+
+      if (emailNotification.status !== 'sent') {
+        console.error(`Bank destination approval email ${emailNotification.status}:`, emailNotification.error || 'unknown error');
+      }
+
+      await recordRequestEvent(req, {
+        eventType: 'settlement.direct_stk_approval_email',
+        category: 'communication',
+        source: 'settlement_operator',
+        entityType: 'settlement_profile',
+        entityId: finalProfile.id,
+        title: 'Bank destination approval email processed',
+        description: `Polyizon bank destination approval email status: ${emailNotification.status}`,
+        newState: {
+          delivery_status: emailNotification.status,
+          recipient_source: emailNotification.recipientSource || null,
+        },
+        payload: {
+          delivery_status: emailNotification.status,
+          recipient_source: emailNotification.recipientSource || null,
+          recipient_masked: emailNotification.recipientMasked || null,
+        },
+        deduplicationKey: `settlement:${clientId}:direct-stk-approval-email:${finalProfile.id}:${Date.now()}`,
+        sensitivity: 'confidential',
+      }).catch((error) => console.error('Direct bank STK approval email audit failed:', error.message));
+    }
+
     return res.json({
       success: true,
       profile: safeProfile(finalProfile),
       activated: decision === 'verified' && finalProfile.routing_status === 'active',
+      email_notification: decision === 'verified' ? {
+        status: emailNotification.status,
+        recipient: emailNotification.recipientMasked || null,
+      } : null,
     });
   } catch (error) {
     const message = String(error.message || 'Could not review settlement profile');

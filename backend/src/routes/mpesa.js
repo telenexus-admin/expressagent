@@ -1,6 +1,11 @@
 const express = require('express');
 const db = require('../db');
 const { ensureDarajaSchema, loadDarajaConfig } = require('../services/daraja');
+const {
+  processC2bConfirmation,
+  validateC2bPayment,
+  verifyC2bToken,
+} = require('../services/darajaC2b');
 const { fulfillHotspotPayment } = require('../services/hotspotPayments');
 const { fulfillAgentWalletPayment } = require('./billingAgents');
 const { fulfillPppoePortalPayment } = require('./pppoePortal');
@@ -149,7 +154,6 @@ async function capturePaymentRoute({ clientId, payment, status, providerReferenc
       errorMessage,
     });
   } catch (error) {
-    // Settlement capture must never turn a valid M-Pesa callback into a failed customer payment.
     console.error(`[client ${clientId}] Payment router capture failed:`, error.message);
   }
 }
@@ -183,7 +187,6 @@ async function processCallback(req) {
     console.warn(`[client ${clientId}] Daraja callback did not match a payment request: ${callback.checkoutRequestId}`);
     return;
   }
-  // Safaricom may retry callbacks. Re-capture the route idempotently, but never fulfill or notify twice.
   if (existing.status === 'paid') {
     await capturePaymentRoute({
       clientId,
@@ -262,7 +265,6 @@ async function processCallback(req) {
 }
 
 function callbackHandler(req, res) {
-  // Safaricom should receive an acknowledgement quickly; processing is idempotent and continues after ACK.
   res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
   setImmediate(() => {
     processCallback(req).catch((error) => {
@@ -271,8 +273,43 @@ function callbackHandler(req, res) {
   });
 }
 
+router.post('/c2b/validation', async (req, res) => {
+  if (!verifyC2bToken(req)) {
+    return res.status(403).json({ ResultCode: 1, ResultDesc: 'Invalid callback token' });
+  }
+
+  try {
+    const validation = await validateC2bPayment(req.body || {});
+    return res.status(200).json({
+      ResultCode: validation.code,
+      ResultDesc: validation.description,
+    });
+  } catch (error) {
+    console.error('Daraja C2B validation failed:', error.message);
+    return res.status(500).json({ ResultCode: 1, ResultDesc: 'Validation temporarily unavailable' });
+  }
+});
+
+router.post('/c2b/confirmation', async (req, res) => {
+  if (!verifyC2bToken(req)) {
+    return res.status(403).json({ ResultCode: 1, ResultDesc: 'Invalid callback token' });
+  }
+
+  try {
+    const result = await processC2bConfirmation(req.body || {});
+    if (result?.status === 'unmatched') {
+      console.warn(`Daraja C2B payment ${req.body?.TransID || ''} is unmatched for account ${req.body?.BillRefNumber || ''}`);
+    } else if (result?.status === 'amount_mismatch') {
+      console.warn(`Daraja C2B payment ${req.body?.TransID || ''} has an amount mismatch for account ${req.body?.BillRefNumber || ''}`);
+    }
+    return res.status(200).json({ ResultCode: 0, ResultDesc: 'Accepted' });
+  } catch (error) {
+    console.error('Daraja C2B confirmation failed:', error.response?.data || error.message);
+    return res.status(500).json({ ResultCode: 1, ResultDesc: 'Confirmation temporarily unavailable' });
+  }
+});
+
 router.post('/stk-callback/:clientId', callbackHandler);
-// Temporary alias for STK requests issued by the previous direct-Daraja implementation.
 router.post('/daraja-callback/:clientId', callbackHandler);
 
 module.exports = router;

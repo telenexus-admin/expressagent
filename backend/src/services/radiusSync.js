@@ -129,9 +129,35 @@ async function listRecentRadiusSessions(usernames = [], lookbackMinutes = 15) {
 }
 
 function formatRadiusExpiration(date) {
-  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-  const pad = (value) => String(value).padStart(2, '0');
-  return `${pad(date.getUTCDate())} ${months[date.getUTCMonth()]} ${date.getUTCFullYear()} ${pad(date.getUTCHours())}:${pad(date.getUTCMinutes())}:${pad(date.getUTCSeconds())}`;
+  const value =
+    date instanceof Date
+      ? date
+      : new Date(date);
+
+  if (
+    !Number.isFinite(
+      value.getTime()
+    )
+  ) {
+    throw new Error(
+      'Invalid RADIUS expiration date'
+    );
+  }
+
+  /*
+   * FreeRADIUS accepts Unix epoch seconds
+   * for the Expiration attribute.
+   *
+   * Do NOT format this as a timezone-less
+   * calendar string. Polyizon stores package
+   * expiry as an absolute instant and the
+   * RADIUS server may run in another timezone.
+   */
+  return String(
+    Math.floor(
+      value.getTime() / 1000
+    )
+  );
 }
 
 async function syncSubscriberRadius(subscriber) {

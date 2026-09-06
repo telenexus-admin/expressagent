@@ -804,6 +804,62 @@ async function reconcileExpiredHotspotAccess({
     };
   }
 
+  /*
+   * Keep the subscriber projection synchronized with the
+   * authoritative purchased voucher.
+   *
+   * The voucher/RADIUS expiry is the source of truth.
+   * This also repairs interrupted/manual recovery flows where
+   * the voucher expiry changed but the dashboard projection did not.
+   */
+  await db.query(`
+    UPDATE billing_hotspot_subscribers
+      subscriber
+
+    SET
+      expires_at =
+        voucher.expires_at,
+
+      status =
+        CASE
+          WHEN
+            voucher.expires_at > NOW()
+            AND fulfillment.device_activation_status
+                  IN ('active', 'bypassed')
+          THEN 'active'
+
+          WHEN voucher.expires_at <= NOW()
+          THEN 'expired'
+
+          ELSE subscriber.status
+        END,
+
+      updated_at = NOW()
+
+    FROM hotspot_payment_fulfillments
+      fulfillment
+
+    JOIN billing_hotspot_vouchers
+      voucher
+      ON voucher.id =
+           fulfillment.voucher_id
+     AND voucher.client_id =
+           fulfillment.client_id
+
+    WHERE subscriber.client_id =
+            fulfillment.client_id
+
+      AND subscriber.payment_request_id =
+            fulfillment.payment_request_id
+
+      AND subscriber.voucher_id =
+            fulfillment.voucher_id
+
+      AND subscriber.expires_at
+            IS DISTINCT FROM
+            voucher.expires_at
+  `);
+
   const lockClient =
     await db.connect();
 
@@ -1306,7 +1362,14 @@ function startHotspotSubscriberScheduler() {
       () => {
         void reconcile();
       },
-      30000
+
+      /*
+       * RADIUS enforces the exact expiry itself.
+       * This fast management-plane reconciliation clears
+       * the stale HotSpot host immediately afterwards so
+       * phones can return to captive-portal/sign-in state.
+       */
+      3000
     );
 
   schedulerTimer.unref?.();

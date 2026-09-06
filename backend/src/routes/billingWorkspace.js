@@ -160,8 +160,15 @@ router.get('/summary', async (req, res) => {
                      IS NOT NULL
                AND subscriber.status <>
                      'replaced'
-               AND subscriber.expires_at >
-                     NOW()
+
+               /*
+                * Online means the router currently has a
+                * live HotSpot session. Package expiration is
+                * enforced independently by RADIUS.
+                *
+                * Do not mark a genuinely live subscriber
+                * offline because a projection timestamp is stale.
+                */
                AND live.is_online = TRUE
            ) AS active,
 

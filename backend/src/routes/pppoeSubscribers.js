@@ -1,19 +1,54 @@
+const crypto = require('crypto');
 const express = require('express');
 const { body, validationResult } = require('express-validator');
 
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { encryptPassword } = require('../services/radiusSync');
+const { sendEmail, isEmailConfigured } = require('../services/email');
+const { sendSMS } = require('../services/sms');
+const { sendWhatsAppMessage } = require('../services/whatsapp');
+const { sendClientText } = require('../services/clientEvolution');
 const { appendRequestEvent, ensureEventSchema } = require('../services/events');
 const {
   normalizeAccountNumber,
   normalizePppoeUsername,
-  provisionRadiusCredential,
   rateLimitFromPlan,
-  removeRadiusCredential,
 } = require('../services/pppoeProvisioning');
 
+
 const router = express.Router();
+function generateAccountNumber(clientId) { return normalizeAccountNumber(`PZ-${clientId}-${crypto.randomBytes(5).toString('hex').toUpperCase()}`); }
+function paymentInstructions(client, accountNumber) {
+  const shortcode = String(client?.mpesa_shortcode || '').trim();
+  if (client?.mpesa_enabled && shortcode) return `Pay via M-Pesa PayBill ${shortcode}. Use ${accountNumber} as the account number/reference.`;
+  return `Use account number ${accountNumber} as your payment reference. Contact support for the available M-Pesa payment method.`;
+}
+function escapeHtml(value) { return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;'); }
+async function deliverWelcomeNotice({ client, subscriber, plan }) {
+  const businessName = String(client?.business_name || client?.name || 'Polyizon').trim();
+  const firstName = String(subscriber.full_name || '').trim().split(/\s+/)[0] || 'there';
+  const packagePrice = Number(plan.price || 0).toLocaleString('en-KE');
+  const instructions = paymentInstructions(client, subscriber.account_number);
+  const message = [`Welcome to ${businessName}, ${firstName}.`, `Your PPPoE account number is ${subscriber.account_number}.`, `Package: ${plan.name} — KES ${packagePrice} for ${plan.validity_days} days.`, instructions, 'Your internet will activate after payment is confirmed.'].join('\n');
+  const results = [];
+  const add = async (channel, task) => { try { const result = await task(); results.push({ channel, status: result?.status || 'sent', error: result?.error || null }); } catch (error) { results.push({ channel, status: 'failed', error: error.message || 'Delivery failed' }); } };
+  if (subscriber.phone) {
+    if (client?.connection_provider === 'evolution') await add('whatsapp', () => sendClientText(client, subscriber.phone, message));
+    else if (client?.meta_phone_number_id && client?.meta_access_token) await add('whatsapp', () => sendWhatsAppMessage(client.meta_phone_number_id, client.meta_access_token, subscriber.phone, message));
+    else results.push({ channel: 'whatsapp', status: 'skipped', error: 'WhatsApp is not configured' });
+    await add('sms', () => sendSMS(subscriber.phone, message, { client }));
+  } else results.push({ channel: 'message', status: 'skipped', error: 'Customer phone is not set' });
+  if (subscriber.email) {
+    if (!isEmailConfigured(client)) results.push({ channel: 'email', status: 'skipped', error: 'Email is not configured' });
+    else {
+      const fromName = String(client.email_from_name || client.business_name || client.name || 'Polyizon').trim();
+      const fromAddress = String(client.email_from_address || process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_FROM_EMAIL || '').trim();
+      await add('email', () => sendEmail(client, { from: `${fromName} <${fromAddress}>`, to: [subscriber.email], reply_to: client.email_reply_to || fromAddress, subject: `Welcome to ${businessName} — payment details`, text: message, html: `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE account has been created and is waiting for payment.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Account number: ${escapeHtml(subscriber.account_number)}</strong><br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><p>${escapeHtml(instructions)}</p><p>Your internet will activate after payment is confirmed.</p></div>` }));
+    }
+  } else results.push({ channel: 'email', status: 'skipped', error: 'Customer email is not set' });
+  return { message, deliveries: results };
+}
 
 router.use(authMiddleware, scopeMiddleware);
 
@@ -38,10 +73,6 @@ router.post('/', [
   body('full_name').trim().notEmpty().isLength({ max: 255 }),
   body('phone').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 80 }),
   body('email').optional({ nullable: true, checkFalsy: true }).trim().isEmail().isLength({ max: 255 }),
-  body('account_number')
-    .trim()
-    .matches(/^[A-Za-z0-9._-]{3,40}$/)
-    .withMessage('Account number must be 3-40 letters, numbers, dots, dashes, or underscores'),
   body('radius_username')
     .trim()
     .matches(/^[A-Za-z0-9._@-]{3,64}$/)
@@ -57,14 +88,13 @@ router.post('/', [
   if (!errors.isEmpty()) return res.status(400).json({ errors: errors.array() });
 
   const clientId = req.scope.clientId;
-  const accountNumber = normalizeAccountNumber(req.body.account_number);
   const radiusUsername = normalizePppoeUsername(req.body.radius_username);
   const radiusPassword = String(req.body.radius_password || '');
   const planId = Number(req.body.plan_id);
   const routerId = Number(req.body.router_id);
 
   try {
-    const [planResult, routerResult, duplicateResult] = await Promise.all([
+    const [planResult, routerResult, duplicateResult, clientSettingsResult] = await Promise.all([
       db.query(
         `SELECT id, name, validity_days, router_id, radius_profile,
                 download_speed_mbps, upload_speed_mbps
@@ -81,13 +111,13 @@ router.post('/', [
         [routerId, clientId]
       ),
       db.query(
-        `SELECT account_number, radius_username
+        `SELECT radius_username
          FROM billing_subscribers
-         WHERE (client_id = $1 AND UPPER(account_number) = UPPER($2))
-            OR (radius_username IS NOT NULL AND LOWER(radius_username) = LOWER($3))
+         WHERE client_id = $1 AND radius_username IS NOT NULL AND LOWER(radius_username) = LOWER($2)
          LIMIT 1`,
-        [clientId, accountNumber, radiusUsername]
+        [clientId, radiusUsername]
       ),
+      db.query('SELECT * FROM clients WHERE id = $1 LIMIT 1', [clientId]),
     ]);
 
     const plan = planResult.rows[0];
@@ -100,13 +130,8 @@ router.post('/', [
       return res.status(400).json({ error: 'That package is assigned to a different MikroTik router' });
     }
 
-    if (duplicateResult.rows[0]) {
-      const duplicate = duplicateResult.rows[0];
-      if (duplicate.radius_username && String(duplicate.radius_username).toLowerCase() === radiusUsername.toLowerCase()) {
-        return res.status(409).json({ error: 'That PPPoE username is already used by another Polyizon subscriber' });
-      }
-      return res.status(409).json({ error: 'That M-Pesa account number is already used by another subscriber' });
-    }
+    if (duplicateResult.rows[0]) return res.status(409).json({ error: 'That PPPoE username is already used by another Polyizon subscriber' });
+    const billingClient = clientSettingsResult.rows[0] || {};
 
     const rateLimit = rateLimitFromPlan(plan);
     if (!rateLimit) {
@@ -127,15 +152,20 @@ router.post('/', [
       return res.status(503).json({ error: error.message || 'RADIUS credential encryption is not configured' });
     }
 
-    const expiresAt = new Date(Date.now() + validityDays * 86400000);
     await ensureEventSchema();
 
     const client = await db.connect();
-    let radiusProvisioned = false;
     let subscriber = null;
+    let accountNumber = null;
 
     try {
       await client.query('BEGIN');
+      for (let attempt = 0; attempt < 8; attempt += 1) {
+        const candidate = generateAccountNumber(clientId);
+        const existing = await client.query('SELECT 1 FROM billing_subscribers WHERE client_id = $1 AND UPPER(account_number) = UPPER($2) LIMIT 1', [clientId, candidate]);
+        if (!existing.rows.length) { accountNumber = candidate; break; }
+      }
+      if (!accountNumber) throw new Error('Could not allocate a unique account number');
 
       if (!String(plan.radius_profile || '').trim()) {
         await client.query(
@@ -154,7 +184,7 @@ router.post('/', [
            radius_sync_status, grace_period_days
          )
          VALUES (
-           $1,$2,$3,$4,$5,$6,$7,$8,'pending','pending',$9,$10,$11,'pppoe','provisioning',0
+           $1,$2,$3,$4,$5,$6,$7,$8,'pending','pending',NULL,$9,$10,'pppoe','pending_payment',0
          )
          RETURNING *`,
         [
@@ -166,7 +196,6 @@ router.post('/', [
           accountNumber,
           radiusUsername,
           encryptedPassword,
-          expiresAt,
           selectedRouter.id,
           selectedRouter.name,
         ]
@@ -174,37 +203,14 @@ router.post('/', [
 
       subscriber = insertResult.rows[0];
 
-      await provisionRadiusCredential({
-        username: radiusUsername,
-        password: radiusPassword,
-        expiresAt,
-        rateLimit,
-      });
-      radiusProvisioned = true;
-
-      const activated = await client.query(
-        `UPDATE billing_subscribers
-         SET radius_status = 'active',
-             service_status = 'active',
-             radius_sync_status = 'synced',
-             radius_sync_error = NULL,
-             radius_last_synced_at = NOW(),
-             updated_at = NOW()
-         WHERE id = $1 AND client_id = $2
-         RETURNING *`,
-        [subscriber.id, clientId]
-      );
-
-      subscriber = activated.rows[0];
-
       await appendRequestEvent(client, req, {
         eventType: 'subscriber.created',
         category: 'subscriber',
         source: 'billing_workspace',
         entityType: 'subscriber',
         entityId: subscriber.id,
-        title: 'PPPoE subscriber created',
-        description: `${subscriber.full_name} was created and synchronized with Polyizon RADIUS`,
+        title: 'PPPoE subscriber created pending payment',
+        description: `${subscriber.full_name} was created pending payment; RADIUS access is disabled until payment is confirmed`,
         payload: {
           account_number: subscriber.account_number,
           pppoe_username: subscriber.radius_username,
@@ -213,6 +219,7 @@ router.post('/', [
           router_id: subscriber.router_id,
           router_name: subscriber.router_name,
           expires_at: subscriber.expires_at,
+          payment_required: true,
           radius_rate_limit: rateLimit,
         },
         newState: {
@@ -233,16 +240,12 @@ router.post('/', [
     } catch (error) {
       await client.query('ROLLBACK').catch(() => {});
 
-      if (radiusProvisioned) {
-        await removeRadiusCredential(radiusUsername).catch((cleanupError) => {
-          console.error('PPPoE RADIUS cleanup failed:', cleanupError.message);
-        });
-      }
-
       throw error;
     } finally {
       client.release();
     }
+
+    const welcome = await deliverWelcomeNotice({ client: billingClient, subscriber, plan });
 
     return res.status(201).json({
       subscriber: {
@@ -266,8 +269,9 @@ router.post('/', [
       },
       payment: {
         account_number: accountNumber,
-        purpose: 'Use this account number as the customer M-Pesa subscription reference.',
+        purpose: paymentInstructions(billingClient, accountNumber),
       },
+      notifications: welcome.deliveries,
     });
   } catch (error) {
     if (error.code === '23505') {

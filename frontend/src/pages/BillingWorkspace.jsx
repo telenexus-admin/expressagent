@@ -8,6 +8,7 @@ import BillingSubscribers from './BillingSubscribers';
 import NexaAgentChat from '../components/NexaAgentChat';
 import HotspotControlCenter from '../components/HotspotControlCenter';
 import RouterServiceWizard from '../components/RouterServiceWizard';
+import DesktopBillingDashboard from '../components/DesktopBillingDashboard';
 const InvoiceManagement = lazy(() => import('./InvoiceManagement'));
 const BillingCommunication = lazy(() => import('./BillingCommunication'));
 const BillingTr069 = lazy(() => import('./BillingTr069'));
@@ -131,6 +132,90 @@ const navGroups = [
         .filter(
           Boolean
         ),
+  })
+);
+
+
+const desktopNavGroups = [
+  {
+    label: 'OVERVIEW',
+    keys: [
+      'overview',
+    ],
+  },
+
+  {
+    label: 'CUSTOMERS',
+    keys: [
+      'subscribers',
+      'services',
+      'hotspot',
+    ],
+  },
+
+  {
+    label: 'OPERATIONS',
+    keys: [
+      'tickets',
+      'agents',
+      'inventory',
+    ],
+  },
+
+  {
+    label: 'BILLING',
+    keys: [
+      'invoices',
+      'payments',
+      'vouchers',
+    ],
+  },
+
+  {
+    label: 'NETWORK',
+    keys: [
+      'routers',
+      'noc',
+      'topology',
+      'fibre-gis',
+      'tr069',
+    ],
+  },
+
+  {
+    label: 'COMMUNICATION',
+    keys: [
+      'communication',
+    ],
+  },
+
+  {
+    label: 'INSIGHTS',
+    keys: [
+      'reports',
+    ],
+  },
+
+  {
+    label: 'SYSTEM',
+    keys: [
+      'settings',
+    ],
+  },
+].map(
+  group => ({
+    ...group,
+
+    items:
+      group.keys
+        .map(
+          key =>
+            nav.find(
+              item =>
+                item[0] === key
+            )
+        )
+        .filter(Boolean),
   })
 );
 
@@ -777,15 +862,15 @@ export default function BillingWorkspace() {
     `}</style>
     {open && <button aria-label="Close menu" onClick={() => setOpen(false)} className="fixed inset-0 z-30 bg-slate-950/35 lg:hidden" />}
     <aside
-      className={`fixed inset-y-0 left-0 z-40 flex w-[218px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-r border-slate-100 bg-white px-2.5 py-3 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.035)] transition-transform duration-300 sm:w-[232px] sm:px-3 lg:w-[218px] lg:px-2.5 lg:py-3 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}
+      className={`fixed inset-y-0 left-0 z-40 flex w-[218px] flex-col overflow-y-auto overflow-x-hidden overscroll-contain border-r border-slate-100 bg-white px-2.5 py-3 text-slate-500 shadow-[8px_0_30px_rgba(15,23,42,.035)] transition-transform duration-300 sm:w-[232px] sm:px-3 lg:w-[214px] lg:px-2 lg:py-2 ${open ? 'translate-x-0' : '-translate-x-full'} ${sidebarCollapsed ? 'lg:-translate-x-full' : 'lg:translate-x-0'}`}
     >
       <div className="flex items-center gap-1.5 px-2 py-1">
-        <div className={`text-[11px] font-extrabold uppercase tracking-[.08em] ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>POLYIZON</div>
+        <div className={`text-[11px] font-extrabold uppercase tracking-[.08em] lg:text-[11px] lg:tracking-[.08em] ${darkMode ? 'text-slate-100' : 'text-slate-900'}`}>POLYIZON</div>
         <div className={`border-l pl-1.5 text-[7px] font-bold uppercase tracking-[.12em] ${darkMode ? 'border-slate-600 text-slate-400' : 'border-slate-300 text-slate-500'}`}>BILLING</div>
       </div>
-      <div className="mt-2 space-y-1.5 pb-1">
+      <div className="mt-2 space-y-1.5 pb-1 lg:mt-1 lg:space-y-0">
 
-        {navGroups.map(
+        {(typeof window !== 'undefined' && window.innerWidth >= 1024 ? desktopNavGroups : navGroups).map(
           group => (
             <section
               key={
@@ -793,14 +878,14 @@ export default function BillingWorkspace() {
               }
             >
 
-              <div className="px-2 pt-1 text-[7px] font-extrabold uppercase tracking-[.16em] text-slate-400">
+              <div className="px-2 pt-1 text-[7px] font-extrabold uppercase tracking-[.16em] text-slate-400 lg:mt-0 lg:px-2 lg:pb-0.5 lg:pt-1.5 lg:text-[7.5px] lg:font-bold lg:tracking-[.15em]">
                 {
                   group.label
                 }
               </div>
 
 
-              <nav className="mt-0.5 space-y-0.5">
+              <nav className="mt-0.5 space-y-0.5 lg:mt-0 lg:space-y-0">
 
                 {group.items.map(
                   ([
@@ -818,17 +903,17 @@ export default function BillingWorkspace() {
                           key
                         )
                       }
-                      className={`flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12.35px] font-semibold tracking-[-.015em] transition sm:px-2.5 sm:py-1.5 sm:text-[13px] lg:px-2 lg:py-1 lg:text-[12.35px] ${
+                      className={`group relative flex min-w-0 w-full items-center gap-2 rounded-lg px-2 py-1 text-left text-[12.35px] font-semibold tracking-[-.015em] transition sm:px-2.5 sm:py-1.5 sm:text-[13px] lg:gap-2 lg:rounded-lg lg:px-2 lg:py-1.5 lg:text-[12.25px] ${
                         tab === key
-                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100'
-                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
+                          ? 'bg-emerald-50 text-emerald-700 ring-1 ring-inset ring-emerald-100 lg:bg-slate-900 lg:text-white lg:ring-0 lg:shadow-[0_8px_24px_rgba(15,23,42,.10)]'
+                          : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900 lg:text-slate-600 lg:hover:bg-slate-100 lg:hover:text-slate-950'
                       }`}
                     >
 
-                      <span className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition sm:h-6 sm:w-6 lg:h-[22px] lg:w-[22px] ${
+                      <span className={`flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-md transition sm:h-6 sm:w-6 lg:h-6 lg:w-6 lg:rounded-md ${
                         tab === key
-                          ? 'bg-emerald-100 text-emerald-700'
-                          : 'bg-slate-50 text-slate-500'
+                          ? 'bg-emerald-100 text-emerald-700 lg:bg-white/10 lg:text-white'
+                          : 'bg-slate-50 text-slate-500 lg:bg-transparent lg:text-slate-400'
                       }`}>
                         <NavIcon
                           kind={
@@ -874,9 +959,9 @@ export default function BillingWorkspace() {
         </button>
       </div>
     </aside>
-    <div className={`min-h-screen transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[218px]'}`}>{!['subscribers', 'routers', 'hotspot', 'inventory', 'tickets', 'settings', 'services', 'noc', 'topology', 'fibre-gis'].includes(tab) && <header className="billing-network-header sticky top-0 z-20 flex h-[64px] items-center justify-between overflow-hidden px-3 text-white shadow-sm sm:h-[76px] sm:px-10" style={{ backgroundImage: `linear-gradient(115deg, rgba(3,22,13,.70), rgba(9,42,27,.62)), url(${polyizonLoginNetwork})`, backgroundSize: 'cover', backgroundPosition: 'center' }}><div className="flex items-center gap-2 sm:gap-3"><button type="button" aria-label="Toggle navigation" onClick={() => window.innerWidth < 1024 ? setOpen(true) : setSidebarCollapsed((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-100 transition hover:bg-white/10"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div><div className="text-[10px] font-semibold text-emerald-100/75 sm:text-xs">{admin.client_business_name || admin.client_name || 'Billing workspace'}</div><h1 className="max-w-[230px] truncate font-[Georgia,Times,serif] text-[1.35rem] font-semibold tracking-[-.03em] sm:max-w-none sm:text-[1.7rem]">{tab === 'overview' ? `${greetingText}, ${adminFirstName}` : panelTitle}</h1></div></div><div className="flex items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Toggle dark mode" onClick={() => setDarkMode((value) => { const next = !value; saveTheme(next ? 'dark' : 'light'); return next; })} className={darkMode ? 'flex h-9 w-9 items-center justify-center rounded-xl text-amber-200 transition hover:bg-white/10' : 'flex h-9 w-9 items-center justify-center rounded-xl text-emerald-50 transition hover:bg-white/10'}><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{darkMode ? <path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z" /> : <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>}</svg></button><div className="relative"><button type="button" aria-label="Open account menu" onClick={() => setProfileOpen(!profileOpen)} className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-black text-white shadow-sm sm:h-9 sm:w-9 sm:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</button>{profileOpen && <div className={`absolute right-0 top-12 z-50 w-48 rounded-2xl border p-2 shadow-xl ${darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}><div className="px-3 py-2 text-xs"><div className="font-black">{admin.name || 'Billing admin'}</div><div className="mt-0.5 truncate text-slate-400">{admin.email}</div></div><button type="button" onClick={logout} className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50">Sign out</button></div>}</div>{action && <button type="button" onClick={action} aria-label={actionText} className="rounded-xl bg-emerald-500 px-2.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-emerald-600 sm:px-3.5 sm:py-2.5 sm:text-xs">{tab === 'subscribers' ? actionText : <>+ <span className="hidden sm:inline">{actionText}</span></>}</button>}</div></header>}
+    <div className={`min-h-screen transition-[padding] duration-300 ${sidebarCollapsed ? 'lg:pl-0' : 'lg:pl-[214px]'}`}>{!['subscribers', 'routers', 'hotspot', 'inventory', 'tickets', 'settings', 'services', 'noc', 'topology', 'fibre-gis'].includes(tab) && <header className="billing-network-header sticky top-0 z-20 flex h-[64px] items-center justify-between overflow-hidden px-3 text-white shadow-sm sm:h-[76px] sm:px-10" style={{ backgroundColor: '#12192c' }}><div className="flex items-center gap-2 sm:gap-3"><button type="button" aria-label="Toggle navigation" onClick={() => window.innerWidth < 1024 ? setOpen(true) : setSidebarCollapsed((value) => !value)} className="flex h-10 w-10 items-center justify-center rounded-xl text-slate-100 transition hover:bg-white/10"><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="2" strokeLinecap="round"><path d="M4 6h16M4 12h16M4 18h16" /></svg></button><div><div className="text-[10px] font-semibold text-emerald-100/75 sm:text-xs">{admin.client_business_name || admin.client_name || 'Billing workspace'}</div><h1 className="max-w-[230px] truncate font-[Georgia,Times,serif] text-[1.35rem] font-semibold tracking-[-.03em] sm:max-w-none sm:text-[1.7rem]">{tab === 'overview' ? `${greetingText}, ${adminFirstName}` : panelTitle}</h1></div></div><div className="flex items-center gap-1.5 sm:gap-2"><button type="button" aria-label="Toggle dark mode" onClick={() => setDarkMode((value) => { const next = !value; saveTheme(next ? 'dark' : 'light'); return next; })} className={darkMode ? 'flex h-9 w-9 items-center justify-center rounded-xl text-amber-200 transition hover:bg-white/10' : 'flex h-9 w-9 items-center justify-center rounded-xl text-emerald-50 transition hover:bg-white/10'}><svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5 fill-none stroke-current" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">{darkMode ? <path d="M20 15.5A8 8 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z" /> : <><circle cx="12" cy="12" r="4" /><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4" /></>}</svg></button><div className="relative"><button type="button" aria-label="Open account menu" onClick={() => setProfileOpen(!profileOpen)} className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500 to-fuchsia-500 text-[10px] font-black text-white shadow-sm sm:h-9 sm:w-9 sm:text-xs">{(admin.name || 'B').slice(0, 1).toUpperCase()}</button>{profileOpen && <div className={`absolute right-0 top-12 z-50 w-48 rounded-2xl border p-2 shadow-xl ${darkMode ? 'border-slate-700 bg-slate-800' : 'border-slate-100 bg-white'}`}><div className="px-3 py-2 text-xs"><div className="font-black">{admin.name || 'Billing admin'}</div><div className="mt-0.5 truncate text-slate-400">{admin.email}</div></div><button type="button" onClick={logout} className="w-full rounded-xl px-3 py-2 text-left text-xs font-bold text-rose-500 hover:bg-rose-50">Sign out</button></div>}</div>{action && <button type="button" onClick={action} aria-label={actionText} className="rounded-xl bg-emerald-500 px-2.5 py-2 text-[11px] font-extrabold text-white shadow-sm transition hover:bg-emerald-600 sm:px-3.5 sm:py-2.5 sm:text-xs">{tab === 'subscribers' ? actionText : <>+ <span className="hidden sm:inline">{actionText}</span></>}</button>}</div></header>}
       <main className="mx-auto max-w-[1500px] p-3 pb-24 sm:p-8 lg:pb-8">{error && <div className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2.5 text-xs font-semibold text-rose-700 sm:mb-5 sm:px-4 sm:py-3 sm:text-sm"><span>{error}</span><button type="button" aria-label="Dismiss error" onClick={() => setError('')} className="text-lg leading-none">&times;</button></div>}{loading ? <BillingWorkspaceSkeleton /> : <>
-        {tab === 'overview' && <><div className="lg:hidden"><CurrencyMobileHome summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} onAddSubscriber={openSubscriberCreate} money={money} expanded={mobileExpanded} setExpanded={setMobileExpanded} darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => { const next = !value; saveTheme(next ? 'dark' : 'light'); return next; })} admin={admin} onLogout={logout} greetingText={greetingText} adminFirstName={adminFirstName} /></div><div className="hidden lg:block"><Overview summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} money={money} /></div></>}
+        {tab === 'overview' && <><div className="lg:hidden"><CurrencyMobileHome summary={summary} subscribers={subscribers} invoices={invoices} payments={payments} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} onAddSubscriber={openSubscriberCreate} money={money} expanded={mobileExpanded} setExpanded={setMobileExpanded} darkMode={darkMode} onToggleTheme={() => setDarkMode((value) => { const next = !value; saveTheme(next ? 'dark' : 'light'); return next; })} admin={admin} onLogout={logout} greetingText={greetingText} adminFirstName={adminFirstName} /></div><div className="hidden lg:block"><DesktopBillingDashboard summary={summary} bandwidthHistory={bandwidthHistory} bandwidthTick={bandwidthTick} active={active} setTab={go} money={money} routers={routers} radiusStatus={radiusStatus} darkMode={darkMode} /></div></>}
         {tab === 'services' && <ServicesWorkspace plans={plans} routers={routers} planForm={planForm} setPlanForm={setPlanForm} savePlan={savePlan} saving={saving} />}
         {tab === 'agents' && <Suspense fallback={<BillingWorkspaceSkeleton />}><BillingAgents /></Suspense>}
         {tab === 'plans' && <><div className="mb-6"><div className="text-[10px] font-extrabold uppercase tracking-[.16em] text-slate-400">Service catalogue</div><h2 className="mt-1 text-2xl font-black tracking-tight">Packages</h2><div className="mt-4 inline-flex rounded-xl border border-slate-200 bg-white p-1 shadow-sm"><button onClick={() => setPackageView('pppoe')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'pppoe' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>PPPoE Packages <span className="ml-1 opacity-70">{plans.length}</span></button><button onClick={() => setPackageView('hotspot')} className={`rounded-lg px-4 py-2 text-sm font-bold transition ${packageView === 'hotspot' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-500 hover:text-slate-900'}`}>Hotspot Packages <span className="ml-1 opacity-70">{hotspotPlans.length}</span></button></div></div>{packageView === 'pppoe' ? <Plans plans={plans} form={planForm} setForm={setPlanForm} save={savePlan} saving={saving} /> : <Hotspot plans={hotspotPlans} vouchers={vouchers} planForm={hotspotPlanForm} setPlanForm={setHotspotPlanForm} voucherForm={voucherForm} setVoucherForm={setVoucherForm} savePlan={saveHotspotPlan} generate={generateVouchers} simulate={simulateVoucher} saving={saving} />}</>}

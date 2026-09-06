@@ -10,10 +10,6 @@ function randomCharacters(length, source = alphabet) {
   return Array.from(values, (value) => source[value % source.length]).join('');
 }
 
-function generateAccountNumber() {
-  return `1${randomCharacters(8, '0123456789')}`;
-}
-
 function usernameSuggestion(fullName, accountNumber) {
   const firstName = String(fullName || '')
     .trim()
@@ -35,12 +31,10 @@ function FieldLabel({ children, hint }) {
 }
 
 export default function PppoeClientCreate({ routers = [], plans = [], reload, close }) {
-  const initialAccount = useMemo(() => generateAccountNumber(), []);
   const [form, setForm] = useState({
     full_name: '',
     phone: '',
     email: '',
-    account_number: initialAccount,
     plan_id: '',
     router_id: '',
     radius_username: '',
@@ -58,17 +52,8 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
 
   const set = (key, value) => setForm((current) => ({ ...current, [key]: value }));
 
-  const regenerateAccount = () => {
-    const account = generateAccountNumber();
-    setForm((current) => ({
-      ...current,
-      account_number: account,
-      radius_username: current.radius_username || usernameSuggestion(current.full_name, account),
-    }));
-  };
-
   const regenerateUsername = () => {
-    set('radius_username', usernameSuggestion(form.full_name, form.account_number));
+    set('radius_username', usernameSuggestion(form.full_name));
   };
 
   const choosePlan = (planId) => {
@@ -118,7 +103,7 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
           <div className="rounded-3xl bg-emerald-50 p-5">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-xl font-black text-white">✓</div>
             <h3 className="mt-4 text-2xl font-black tracking-tight text-slate-950">PPPoE client is ready</h3>
-            <p className="mt-1 text-sm text-emerald-800">The subscriber is active in Polyizon and the credentials are synchronized to central RADIUS.</p>
+            <p className="mt-1 text-sm text-emerald-800">The account is waiting for payment. RADIUS access stays disabled until that payment is confirmed.</p>
           </div>
 
           <div className="mt-5 space-y-3">
@@ -132,6 +117,19 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
               </div>
               <p className="mt-2 text-xs leading-5 text-slate-500">This is the account/reference the customer should use when paying for their subscription.</p>
             </div>
+
+            {created.notifications?.length > 0 && (
+              <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                <p className="text-[10px] font-black uppercase tracking-[.18em] text-slate-400">Welcome delivery</p>
+                <div className="mt-2 space-y-1.5">
+                  {created.notifications.map((delivery, index) => (
+                    <p key={`${delivery.channel}-${index}`} className={`text-xs font-bold ${delivery.status === 'sent' ? 'text-emerald-700' : delivery.status === 'failed' ? 'text-rose-700' : 'text-slate-500'}`}>
+                      {delivery.channel}: {delivery.status}{delivery.error ? ` — ${delivery.error}` : ''}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            )}
 
             <div className="rounded-2xl border border-slate-200 p-4">
               <p className="text-[10px] font-black uppercase tracking-[.18em] text-slate-400">PPPoE internet login</p>
@@ -156,7 +154,7 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
               </div>
               <div className="rounded-2xl border border-slate-200 p-4">
                 <span className="text-[10px] font-black uppercase text-slate-400">RADIUS</span>
-                <strong className="mt-1 block text-sm text-emerald-700">Synchronized · {created.pppoe?.rate_limit}</strong>
+                <strong className="mt-1 block text-sm text-amber-700">Pending payment · {created.pppoe?.rate_limit}</strong>
               </div>
             </div>
           </div>
@@ -204,18 +202,9 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
         </section>
 
         <section className="mt-4 rounded-2xl border border-violet-100 bg-violet-50/40 p-4">
-          <div className="mb-4">
-            <p className="text-[10px] font-black uppercase tracking-[.18em] text-violet-500">2 · Billing</p>
-            <h4 className="mt-1 text-sm font-black text-slate-900">M-Pesa account identity</h4>
-          </div>
-          <label>
-            <FieldLabel>Account number</FieldLabel>
-            <div className="mt-1.5 flex gap-2">
-              <input required maxLength={40} className="min-w-0 flex-1 rounded-xl border border-violet-200 bg-white px-3.5 py-3 text-sm font-black uppercase text-slate-900 outline-none focus:border-violet-500 focus:ring-4 focus:ring-violet-500/10" value={form.account_number} onChange={(event) => set('account_number', event.target.value.toUpperCase().replace(/\s/g, ''))} />
-              <button type="button" onClick={regenerateAccount} className="rounded-xl border border-violet-200 bg-white px-3 text-xs font-black text-violet-700">Generate</button>
-            </div>
-            <p className="mt-2 text-[11px] leading-5 text-violet-700">The customer uses this value as the M-Pesa account/reference when paying for internet.</p>
-          </label>
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-violet-500">2 · Billing</p>
+          <h4 className="mt-1 text-sm font-black text-slate-900">System-generated payment account</h4>
+          <p className="mt-2 text-[11px] leading-5 text-violet-700">Polyizon creates a unique account number when this client is saved, then sends it with the package payment instructions. Internet remains disabled until payment is confirmed.</p>
         </section>
 
         <section className="mt-4 rounded-2xl border border-slate-200 p-4">
@@ -276,7 +265,7 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
         </section>
 
         <button disabled={busy || !activePlans.length || !activeRouters.length} className="mt-5 w-full rounded-xl bg-slate-950 py-3.5 text-sm font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-45">
-          {busy ? 'Creating and synchronizing RADIUS…' : 'Create & activate PPPoE client'}
+          {busy ? 'Creating payment account…' : 'Create pending PPPoE client'}
         </button>
       </form>
     </div>

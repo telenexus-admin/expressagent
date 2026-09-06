@@ -501,6 +501,19 @@ export default function BillingSubscribers({ subscribers, items: sourceItems, ne
 
   const isExpired =
     subscriber => {
+      /*
+       * A live MikroTik HotSpot session is authoritative
+       * for the Online badge. RADIUS remains authoritative
+       * for whether that session is allowed to continue.
+       */
+      if (
+        subscriber.service_type ===
+          'hotspot' &&
+        subscriber.is_online
+      ) {
+        return false;
+      }
+
       if (
         subscriber.is_expired ||
         subscriber.service_status ===

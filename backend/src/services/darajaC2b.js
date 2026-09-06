@@ -179,7 +179,7 @@ async function registerC2bUrls() {
   const urls = c2bUrls();
   const token = await getDarajaAccessToken(config);
   const response = await axios.post(
-    `${darajaBaseUrl(config.environment)}/mpesa/c2b/v1/registerurl`,
+    `${darajaBaseUrl(config.environment)}/mpesa/c2b/v2/registerurl`,
     {
       ShortCode: config.shortcode,
       ResponseType: 'Completed',

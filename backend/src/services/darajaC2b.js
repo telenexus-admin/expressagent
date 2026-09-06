@@ -114,7 +114,7 @@ async function validateC2bPayment(body = {}) {
   return {
     accepted: false,
     code: 1,
-    description: 'This account accepts direct-to-bank M-Pesa STK only. Contact your ISP to request a payment prompt.',
+    description: 'Do not pay this PPPoE account to the Polyizon Paybill. Use the ISP direct-bank STK or the ISP bank Paybill instructions instead.',
     directBankRequired: true,
     subscriber: {
       id: subscriber.id,

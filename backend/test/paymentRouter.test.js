@@ -3,7 +3,9 @@ const assert = require('assert');
 const {
   ADAPTERS,
   decisionForProfile,
+  directBankPaymentSnapshot,
   idempotencyKey,
+  isDirectBankProfile,
 } = require('../src/services/paymentRouter');
 
 assert.deepStrictEqual(Object.keys(ADAPTERS).sort(), ['coop', 'equity', 'kcb', 'ncba']);
@@ -24,6 +26,58 @@ assert.deepStrictEqual(
 assert.deepStrictEqual(
   decisionForProfile({ verification_status: 'verified', routing_status: 'active', institution_code: 'equity' }),
   { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' }
+);
+
+const directEquity = {
+  verification_status: 'verified',
+  routing_status: 'active',
+  institution_code: 'equity',
+  rail_reference: 'daraja-direct-stk:247247',
+};
+const directCoop = {
+  verification_status: 'verified',
+  routing_status: 'active',
+  institution_code: 'coop',
+  rail_reference: 'daraja-direct-stk:400200',
+};
+assert.strictEqual(isDirectBankProfile(directEquity), true);
+assert.strictEqual(isDirectBankProfile(directCoop), true);
+assert.deepStrictEqual(
+  decisionForProfile(directEquity, 'paid'),
+  { routeStatus: 'settled', blockReason: null }
+);
+assert.deepStrictEqual(
+  decisionForProfile(directCoop, 'failed'),
+  { routeStatus: 'failed', blockReason: 'collection_failed' }
+);
+assert.deepStrictEqual(
+  decisionForProfile({ ...directEquity, institution_code: 'kcb' }, 'paid'),
+  { routeStatus: 'blocked', blockReason: 'settlement_adapter_not_connected' }
+);
+
+const initiatedSnapshot = directBankPaymentSnapshot({
+  metadata: {
+    settlement: {
+      mode: 'direct_bank_stk',
+      profile_id: 91,
+      institution_code: 'coop',
+      institution_name: 'client supplied name must be ignored',
+      mpesa_paybill: '400200',
+      account_last4: '6001',
+    },
+  },
+});
+assert.deepStrictEqual(initiatedSnapshot, {
+  mode: 'direct_bank_stk',
+  profile_id: 91,
+  institution_code: 'coop',
+  institution_name: 'Co-operative Bank of Kenya',
+  mpesa_paybill: '400200',
+  account_last4: '6001',
+});
+assert.strictEqual(
+  directBankPaymentSnapshot({ metadata: { settlement: { mode: 'direct_bank_stk', institution_code: 'coop', mpesa_paybill: '999999', account_last4: '6001' } } }),
+  null
 );
 
 const first = idempotencyKey(42, 'MPESA-42-ABC');

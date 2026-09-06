@@ -3,6 +3,7 @@ const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { recordRequestEvent } = require('../services/events');
 const {
+  activateSettlementProfile,
   ensureSettlementSchema,
   getSettlementProfile,
   publicInstitutions,
@@ -10,6 +11,11 @@ const {
   safeProfile,
   saveSettlementProfile,
 } = require('../services/settlementProfiles');
+const {
+  DIRECT_BANK_STK_RAILS,
+  railForInstitution,
+  validateDirectBankAccount,
+} = require('../services/directBankStk');
 
 const router = express.Router();
 router.use(authMiddleware, scopeMiddleware);
@@ -34,8 +40,24 @@ function selfClientId(req, res) {
   return req.scope.clientId;
 }
 
+function canManageBankDestination(req) {
+  return Array.isArray(req.user?.permissions) && req.user.permissions.includes('admins');
+}
+
+function directInstitutions() {
+  return publicInstitutions()
+    .filter((item) => DIRECT_BANK_STK_RAILS[item.code])
+    .map((item) => ({
+      ...item,
+      direct_stk: true,
+      mpesa_paybill: DIRECT_BANK_STK_RAILS[item.code].paybill,
+      collection_model: `Direct M-PESA STK to ${DIRECT_BANK_STK_RAILS[item.code].paybill}`,
+      public_notes: `Customer STK payments are initiated by Polyizon and deposited directly into this ISP's ${item.name} account.`,
+    }));
+}
+
 router.get('/institutions', async (_req, res) => {
-  return res.json({ institutions: publicInstitutions() });
+  return res.json({ institutions: directInstitutions() });
 });
 
 router.get('/profile', async (req, res) => {
@@ -46,7 +68,11 @@ router.get('/profile', async (req, res) => {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(403).json({ error: 'Billing workspace access required' });
     const row = await getSettlementProfile(clientId);
-    return res.json({ client: { id: client.id, name: client.business_name || client.name }, profile: safeProfile(row) });
+    return res.json({
+      client: { id: client.id, name: client.business_name || client.name },
+      profile: safeProfile(row),
+      can_manage: canManageBankDestination(req),
+    });
   } catch (error) {
     console.error('GET /settlements/profile error:', error.message);
     return res.status(500).json({ error: 'Could not load settlement profile' });
@@ -56,36 +82,87 @@ router.get('/profile', async (req, res) => {
 router.put('/profile', async (req, res) => {
   const clientId = selfClientId(req, res);
   if (!clientId) return;
+  if (!canManageBankDestination(req)) {
+    return res.status(403).json({ error: 'Bank destination changes require ISP administrator permission' });
+  }
   try {
     const client = await requireBillingClient(clientId);
     if (!client) return res.status(403).json({ error: 'Billing workspace access required' });
+
+    const institutionCode = String(req.body.institution_code || '').trim().toLowerCase();
+    const rail = railForInstitution(institutionCode);
+    if (!rail) {
+      return res.status(400).json({ error: 'For now, direct bank STK is available only for Equity and Co-operative Bank' });
+    }
+
     const before = await getSettlementProfile(clientId);
-    const saved = await saveSettlementProfile({
+    const incomingAccount = String(req.body.account_number || '').trim();
+    const keepingExistingAccount = !incomingAccount && before?.institution_code === institutionCode;
+    let accountNumber = incomingAccount;
+    if (!keepingExistingAccount) {
+      const validation = validateDirectBankAccount(institutionCode, incomingAccount);
+      if (!validation.valid) return res.status(400).json({ error: validation.error });
+      accountNumber = validation.account;
+    }
+
+    await saveSettlementProfile({
       clientId,
-      institutionCode: req.body.institution_code,
+      institutionCode,
       accountName: req.body.account_name,
-      accountNumber: req.body.account_number,
+      accountNumber,
       branchName: req.body.branch_name,
-      collectionReference: req.body.collection_reference,
+      collectionReference: '',
     });
+
+    const railReference = `daraja-direct-stk:${rail.paybill}`;
+    await reviewSettlementProfile({
+      clientId,
+      adminId: req.user.id,
+      decision: 'verified',
+      notes: `Self-configured Polyizon direct bank STK destination via M-PESA Paybill ${rail.paybill}`,
+      railReference,
+    });
+    const activated = await activateSettlementProfile({
+      clientId,
+      adminId: req.user.id,
+      railReference,
+    });
+    if (!activated) throw new Error('Could not activate direct bank STK routing');
+
     await recordRequestEvent(req, {
-      eventType: 'settlement.profile_submitted',
+      eventType: 'settlement.direct_stk_configured',
       category: 'payment',
       source: 'billing_settings',
       entityType: 'settlement_profile',
-      entityId: saved.id,
-      title: 'Settlement profile submitted',
-      description: `${client.business_name || client.name} selected ${saved.institution_name}`,
+      entityId: activated.id,
+      title: 'Direct bank STK destination configured',
+      description: `${client.business_name || client.name} selected ${activated.institution_name} via Paybill ${rail.paybill}`,
       previousState: safeProfile(before),
-      newState: safeProfile(saved),
-      payload: { institution_code: saved.institution_code, verification_status: saved.verification_status },
-      deduplicationKey: `settlement:${clientId}:submitted:${Date.now()}`,
+      newState: safeProfile(activated),
+      payload: {
+        institution_code: activated.institution_code,
+        mpesa_paybill: rail.paybill,
+        routing_mode: 'direct_bank_stk',
+        verification_status: activated.verification_status,
+        routing_status: activated.routing_status,
+      },
+      deduplicationKey: `settlement:${clientId}:direct-stk:${Date.now()}`,
       sensitivity: 'confidential',
-    }).catch((error) => console.error('Settlement profile audit failed:', error.message));
-    return res.json({ success: true, profile: safeProfile(saved) });
+    }).catch((error) => console.error('Direct bank STK settlement audit failed:', error.message));
+
+    return res.json({
+      success: true,
+      profile: safeProfile(activated),
+      direct_stk: {
+        institution_code: rail.code,
+        institution_name: rail.name,
+        mpesa_paybill: rail.paybill,
+        active: true,
+      },
+    });
   } catch (error) {
     const message = String(error.message || 'Could not save settlement profile');
-    const status = /required|valid|unsupported|too long/i.test(message) ? 400 : 500;
+    const status = /required|valid|unsupported|too long|only|exactly|digits/i.test(message) ? 400 : 500;
     console.error('PUT /settlements/profile error:', message);
     return res.status(status).json({ error: message });
   }
@@ -141,11 +218,11 @@ router.post('/operator/:clientId/review', async (req, res) => {
   }
 });
 
-// Live bank routing is intentionally unavailable in phase 1. Verification only moves a profile to "ready".
-// A bank/Safaricom adapter must prove the commercial rail before any profile can become "active".
+// Direct-bank STK activation is performed only by the guarded self-service profile endpoint above.
+// Keep arbitrary operator activation locked so unsupported rails cannot be enabled accidentally.
 router.post('/operator/:clientId/activate', (_req, res) => {
   return res.status(409).json({
-    error: 'Live settlement activation is locked until the bank/Safaricom routing adapter is connected and verified',
+    error: 'Use the ISP Billing Settings direct-bank configuration for Equity or Co-operative Bank',
   });
 });
 

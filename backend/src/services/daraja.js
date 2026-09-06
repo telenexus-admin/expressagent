@@ -2,6 +2,10 @@ const crypto = require('crypto');
 const axios = require('axios');
 const db = require('../db');
 const { canUseConfig, loadClientBillingConfig, lookupPaymentAccount } = require('./billing');
+const {
+  directBankStkEnabled,
+  resolveDirectBankStkDestination,
+} = require('./directBankStk');
 
 const DARAJA_PRODUCTION_URL = 'https://api.safaricom.co.ke';
 const DARAJA_SANDBOX_URL = 'https://sandbox.safaricom.co.ke';
@@ -159,6 +163,19 @@ async function loadDarajaConfig(clientId, overrides = {}) {
   return config;
 }
 
+async function loadPaymentDarajaConfig(clientId) {
+  if (!directBankStkEnabled()) return loadDarajaConfig(clientId);
+  return loadDarajaConfig(clientId, {
+    enabled: true,
+    consumerKey: process.env.DARAJA_CONSUMER_KEY,
+    consumerSecret: process.env.DARAJA_CONSUMER_SECRET,
+    shortcode: process.env.DARAJA_SHORTCODE,
+    passkey: process.env.DARAJA_PASSKEY,
+    environment: process.env.DARAJA_ENVIRONMENT || 'production',
+    transactionType: 'CustomerPayBillOnline',
+  });
+}
+
 async function getDarajaAccessToken(config) {
   if (!config.consumerKey || !config.consumerSecret) {
     throw new Error('Daraja consumer key and consumer secret are not configured');
@@ -187,10 +204,24 @@ function publicBackendUrl() {
   return String(process.env.PUBLIC_BACKEND_URL || process.env.FRONTEND_URL || '').trim().replace(/\/$/, '');
 }
 
+async function paymentConfiguration(clientId) {
+  const config = await loadPaymentDarajaConfig(clientId);
+  if (!config.enabled || !credentialsComplete(config)) {
+    return { ready: false, error: 'Daraja payments have not been enabled by the administrator' };
+  }
+  if (!directBankStkEnabled()) return { ready: true, config, destination: null };
+  try {
+    const destination = await resolveDirectBankStkDestination(clientId);
+    return { ready: true, config, destination };
+  } catch (error) {
+    return { ready: false, error: error.message || 'Direct bank destination is not configured' };
+  }
+}
+
 async function initiateDarajaPayment({ client, conversationId, customerPhone, customerName, amount, metadata = null }) {
-  const config = await loadDarajaConfig(client.id);
-  if (!config.enabled) return { success: false, error: 'M-Pesa payments are not enabled for this client.' };
-  if (!credentialsComplete(config)) return { success: false, error: 'Daraja credentials are incomplete.' };
+  const paymentConfig = await paymentConfiguration(client.id);
+  if (!paymentConfig.ready) return { success: false, error: paymentConfig.error };
+  const { config, destination } = paymentConfig;
 
   const phone = cleanPhone(customerPhone);
   if (!/^254[17]\d{8}$/.test(phone)) return { success: false, error: 'Please send a valid Safaricom M-Pesa phone number.' };
@@ -206,12 +237,25 @@ async function initiateDarajaPayment({ client, conversationId, customerPhone, cu
   const timestamp = darajaTimestamp();
   const externalReference = `MPESA-${client.id}-${Date.now()}-${crypto.randomBytes(3).toString('hex')}`;
   const callback = `${base}/api/public/mpesa/stk-callback/${client.id}?token=${encodeURIComponent(config.callbackSecret)}`;
+  const storedMetadata = destination
+    ? {
+        ...(metadata || {}),
+        settlement: {
+          mode: 'direct_bank_stk',
+          profile_id: destination.profileId,
+          institution_code: destination.institutionCode,
+          institution_name: destination.institutionName,
+          mpesa_paybill: destination.paybill,
+          account_last4: destination.accountLast4,
+        },
+      }
+    : (metadata || {});
 
   await db.query(
     `INSERT INTO payhero_payment_requests
        (client_id, conversation_id, customer_phone, customer_name, amount, external_reference, metadata, payment_provider)
      VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,'daraja')`,
-    [client.id, conversationId || null, phone, customerName || null, amount, externalReference, JSON.stringify(metadata || {})]
+    [client.id, conversationId || null, phone, customerName || null, amount, externalReference, JSON.stringify(storedMetadata)]
   );
 
   try {
@@ -223,10 +267,10 @@ async function initiateDarajaPayment({ client, conversationId, customerPhone, cu
       TransactionType: config.transactionType || 'CustomerPayBillOnline',
       Amount: amount,
       PartyA: phone,
-      PartyB: config.shortcode,
+      PartyB: destination ? destination.paybill : config.shortcode,
       PhoneNumber: phone,
       CallBackURL: callback,
-      AccountReference: externalReference.slice(0, 40),
+      AccountReference: destination ? destination.accountNumber : externalReference.slice(0, 40),
       TransactionDesc: String(metadata?.description || `Internet payment ${customerName || ''}`).slice(0, 100),
     };
     const response = await axios.post(`${darajaBaseUrl(config.environment)}/mpesa/stkpush/v1/processrequest`, payload, {
@@ -257,6 +301,13 @@ async function initiateDarajaPayment({ client, conversationId, customerPhone, cu
       checkoutRequestId: data.CheckoutRequestID || null,
       merchantRequestId: data.MerchantRequestID || null,
       customerMessage: data.CustomerMessage || null,
+      settlement: destination ? {
+        mode: 'direct_bank_stk',
+        institutionCode: destination.institutionCode,
+        institutionName: destination.institutionName,
+        mpesaPaybill: destination.paybill,
+        accountLast4: destination.accountLast4,
+      } : null,
     };
   } catch (err) {
     const message = apiErrorMessage(err);
@@ -271,7 +322,7 @@ async function initiateDarajaPayment({ client, conversationId, customerPhone, cu
 }
 
 async function queryDarajaStkStatus({ clientId, checkoutRequestId }) {
-  const config = await loadDarajaConfig(clientId);
+  const config = await loadPaymentDarajaConfig(clientId);
   if (!credentialsComplete(config)) throw new Error('Daraja credentials are incomplete');
   const timestamp = darajaTimestamp();
   const token = await getDarajaAccessToken(config);
@@ -465,9 +516,9 @@ async function answerDarajaPrompt({ client, conversationId, customerPhone, custo
 
   const request = parsePaymentPromptRequest(messageText, customerPhone);
   if (!isPaymentStart(messageText) && !request) return null;
-  const config = await loadDarajaConfig(client.id);
-  if (!config.enabled || !credentialsComplete(config)) {
-    return 'I cannot send an M-Pesa prompt yet because Daraja payments have not been enabled by the administrator.';
+  const readiness = await paymentConfiguration(client.id);
+  if (!readiness.ready) {
+    return `I cannot send an M-Pesa prompt yet: ${readiness.error}.`;
   }
   if (!(await hasBillingLookup(client.id))) return prepareManualPayment({ client, conversationId, customerName, messageText });
   return prepareAccountPayment({ client, conversationId, phone: customerPhone });
@@ -511,7 +562,9 @@ module.exports = {
   getDarajaAccessToken,
   initiateDarajaPayment,
   loadDarajaConfig,
+  loadPaymentDarajaConfig,
   parsePaymentPromptRequest,
+  paymentConfiguration,
   queryDarajaStkStatus,
   startInvoicePaymentPrompt,
   testDarajaConnection,

@@ -59,7 +59,149 @@ const ALL_PERMISSIONS = ['statistics','conversations','tickets','invoices','inve
 function hasPermission(admin,permission){if(!admin)return false;if(['inventory','documentation','settings','billing','communication','crm'].includes(permission))return true;if(admin.role==='superadmin')return true;if(!Array.isArray(admin.permissions)||admin.permissions.length===0)return true;return admin.permissions.includes(permission)}
 function firstAllowedPath(admin){const first=ALL_PERMISSIONS.find(p=>hasPermission(admin,p))||'statistics';const map={statistics:'statistics',conversations:'conversations',tickets:'tickets',invoices:'invoices',inventory:'inventory',billing:'billing',communication:'communication',documentation:'documentation',escalations:'escalations',installations:'installations',complaints:'complaints',ai_health:'ai-health',admins:'admins',employees:'employees',workflow:'workflow',agent:'agent',settings:'settings',logs:'logs',crm:'crm/leads'};return map[first]||'statistics'}
 function LoadingScreen(){return <div className="flex items-center justify-center h-screen bg-gray-50"><div className="text-gray-500 text-sm">Loading...</div></div>}
-class RouteErrorBoundary extends Component{constructor(props){super(props);this.state={failed:false}}static getDerivedStateFromError(){return{failed:true}}componentDidCatch(){const key='nexa-runtime-recovery-v3';if(sessionStorage.getItem(key))return;sessionStorage.setItem(key,'1');const recover=async()=>{const registrations='serviceWorker'in navigator?await navigator.serviceWorker.getRegistrations():[];await Promise.all(registrations.map(r=>r.unregister()));if('caches'in window){const keys=await caches.keys();await Promise.all(keys.filter(k=>k.includes('workbox')||k.includes('precache')||k.includes('nexa')).map(k=>caches.delete(k)))}window.location.replace(`${window.location.pathname}?refresh=${Date.now()}`)};void recover()}render(){if(!this.state.failed)return this.props.children;return <div className="min-h-screen flex items-center justify-center bg-slate-50 p-6"><div className="max-w-sm rounded-3xl bg-white p-7 text-center shadow-xl"><h1 className="text-lg font-bold">Refreshing Nexa...</h1><p className="mt-2 text-sm text-slate-500">We found an older cached app asset and are loading the current dashboard.</p><button onClick={()=>{sessionStorage.removeItem('nexa-runtime-recovery-v3');window.location.replace(`${window.location.pathname}?refresh=${Date.now()}`)}} className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white">Reload Nexa</button></div></div>}}
+class RouteErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = {
+      failed: false,
+      retrying: false,
+    };
+  }
+
+  static getDerivedStateFromError() {
+    return {
+      failed: true,
+    };
+  }
+
+  async clearStaleAssets() {
+    const registrations =
+      'serviceWorker' in navigator
+        ? await navigator.serviceWorker.getRegistrations()
+        : [];
+
+    await Promise.all(
+      registrations.map(
+        registration =>
+          registration.unregister()
+      )
+    );
+
+    if ('caches' in window) {
+      const keys =
+        await caches.keys();
+
+      await Promise.all(
+        keys
+          .filter(
+            key =>
+              key.includes(
+                'workbox'
+              ) ||
+              key.includes(
+                'precache'
+              ) ||
+              key.includes(
+                'nexa'
+              )
+          )
+          .map(
+            key =>
+              caches.delete(
+                key
+              )
+          )
+      );
+    }
+  }
+
+  retry = async () => {
+    this.setState({
+      retrying: true,
+    });
+
+    sessionStorage.removeItem(
+      'nexa-runtime-recovery-v3'
+    );
+    sessionStorage.removeItem(
+      'nexa-runtime-recovery-v4'
+    );
+    sessionStorage.removeItem(
+      'nexa-preload-retry-v4'
+    );
+
+    try {
+      await this.clearStaleAssets();
+    } finally {
+      const url =
+        new URL(
+          window.location.href
+        );
+
+      url.searchParams.set(
+        'refresh',
+        String(
+          Date.now()
+        )
+      );
+
+      window.location.replace(
+        url.toString()
+      );
+    }
+  };
+
+  componentDidCatch() {
+    const key =
+      'nexa-runtime-recovery-v4';
+
+    if (
+      sessionStorage.getItem(
+        key
+      )
+    ) {
+      return;
+    }
+
+    sessionStorage.setItem(
+      key,
+      '1'
+    );
+
+    void this.retry();
+  }
+
+  render() {
+    if (!this.state.failed) {
+      return this.props.children;
+    }
+
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-slate-50 p-6">
+        <div className="max-w-sm rounded-3xl bg-white p-7 text-center shadow-xl">
+          <h1 className="text-lg font-bold">
+            Refreshing Nexa…
+          </h1>
+
+          <p className="mt-2 text-sm text-slate-500">
+            We found an older cached app asset and are loading the current dashboard.
+          </p>
+
+          <button
+            type="button"
+            onClick={this.retry}
+            disabled={this.state.retrying}
+            className="mt-5 rounded-xl bg-violet-600 px-5 py-2.5 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-70"
+          >
+            {this.state.retrying
+              ? 'Refreshing…'
+              : 'Reload Nexa'}
+          </button>
+        </div>
+      </div>
+    );
+  }
+}
 function AccessDenied(){return <div className="flex-1 flex items-center justify-center bg-[#f8f6ff] p-6"><div className="max-w-md text-center bg-white rounded-[28px] border border-purple-50 shadow-xl p-8"><div className="w-14 h-14 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center mx-auto mb-4 text-2xl">!</div><h1 className="text-xl font-black">Access restricted</h1><p className="text-sm text-slate-500 mt-2">You do not have permission to access this section.</p></div></div>}
 function ProtectedRoute({children}){const{admin,loading}=useAuth();if(loading)return <LoadingScreen/>;if(!admin)return <Navigate to="/login" replace/>;if(admin.role==='superadmin')return <Navigate to="/onboarding" replace/>;if(admin.account_type==='billing')return <Navigate to="/billing" replace/>;return children}
 function BillingRoute({children}){const{admin,loading}=useAuth();if(loading)return <LoadingScreen/>;if(!admin)return <Navigate to="/login" replace/>;if(admin.role==='superadmin')return <Navigate to="/onboarding" replace/>;if(admin.account_type!=='billing')return <Navigate to="/dashboard" replace/>;return children}

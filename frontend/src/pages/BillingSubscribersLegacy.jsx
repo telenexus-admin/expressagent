@@ -1426,10 +1426,7 @@ export default function BillingSubscribers({ subscribers, items: sourceItems, ne
                 </th>
 
                 <th className="px-3 py-3">
-                  {subscriberType ===
-                  'hotspot'
-                    ? 'Paying phone'
-                    : 'Network'}
+                  Phone
                 </th>
 
                 <th className="px-3 py-2">
@@ -1566,9 +1563,8 @@ export default function BillingSubscribers({ subscribers, items: sourceItems, ne
 
                       <td className="px-3 py-2 text-xs text-slate-600">
                         <div>
-                          {subscriber.account_number ||
-                            subscriber.phone ||
-                            'No payment phone'}
+                          {subscriber.phone ||
+                            'No phone'}
                         </div>
                       </td>
 

@@ -20,6 +20,14 @@ function usernameSuggestion(fullName) {
   return `${firstName}.${randomCharacters(5, '0123456789')}`;
 }
 
+function portalUsernameSuggestion(fullName, email) {
+  const cleanEmail = String(email || '').trim().toLowerCase();
+  if (/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail) && cleanEmail.length <= 160) {
+    return cleanEmail;
+  }
+  return usernameSuggestion(fullName);
+}
+
 function FieldLabel({ children, hint }) {
   return (
     <span className="flex items-center justify-between gap-3 text-xs font-black text-slate-700">
@@ -38,8 +46,11 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
     router_id: '',
     radius_username: '',
     radius_password: randomCharacters(12),
+    portal_username: '',
+    portal_password: randomCharacters(12),
   });
   const [showPassword, setShowPassword] = useState(false);
+  const [showPortalPassword, setShowPortalPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [created, setCreated] = useState(null);
@@ -176,7 +187,7 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
           <div className="rounded-3xl bg-emerald-50 p-5">
             <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-emerald-500 text-xl font-black text-white">✓</div>
             <h3 className="mt-4 text-2xl font-black tracking-tight text-slate-950">PPPoE client is ready</h3>
-            <p className="mt-1 text-sm text-emerald-800">The account is pending payment. Polyizon does not receive or hold the customer's subscription money.</p>
+            <p className="mt-1 text-sm text-emerald-800">The account, customer portal login and welcome delivery have been created. Internet access remains pending payment.</p>
           </div>
 
           <div className="mt-5 rounded-2xl border border-violet-100 bg-violet-50/60 p-4">
@@ -189,6 +200,38 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
             </div>
             <p className="mt-2 text-xs leading-5 text-slate-500">This identifies the subscriber inside Polyizon. It is not a Polyizon Paybill account.</p>
           </div>
+
+          {created.portal && (
+            <div className="mt-4 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+              <p className="text-[10px] font-black uppercase tracking-[.18em] text-indigo-600">Customer portal access</p>
+              <p className="mt-1 text-[11px] leading-5 text-indigo-700">These credentials are separate from the PPPoE internet login. They are also included in the customer's welcome email.</p>
+              <div className="mt-3 space-y-2">
+                <div className="rounded-xl bg-white p-3">
+                  <span className="text-[9px] font-bold uppercase text-slate-400">Portal link</span>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <strong className="min-w-0 break-all text-sm text-slate-950">{created.portal.url}</strong>
+                    <button type="button" onClick={() => copy('portal-url', created.portal.url)} className="shrink-0 text-[10px] font-black text-indigo-700">{copied === 'portal-url' ? 'Copied' : 'Copy'}</button>
+                  </div>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-xl bg-white p-3">
+                    <span className="text-[9px] font-bold uppercase text-slate-400">Username</span>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <strong className="min-w-0 break-all text-sm text-slate-950">{created.portal.username}</strong>
+                      <button type="button" onClick={() => copy('portal-user', created.portal.username)} className="shrink-0 text-[10px] font-black text-indigo-700">{copied === 'portal-user' ? 'Copied' : 'Copy'}</button>
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-white p-3">
+                    <span className="text-[9px] font-bold uppercase text-slate-400">Password</span>
+                    <div className="mt-1 flex items-center justify-between gap-2">
+                      <strong className="min-w-0 break-all text-sm text-slate-950">{created.portal.password}</strong>
+                      <button type="button" onClick={() => copy('portal-password', created.portal.password)} className="shrink-0 text-[10px] font-black text-indigo-700">{copied === 'portal-password' ? 'Copied' : 'Copy'}</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           <div className="mt-4 grid gap-4 lg:grid-cols-2">
             <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
@@ -312,7 +355,7 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
           <div>
             <p className="text-[10px] font-black uppercase tracking-[.2em] text-violet-500">Native Polyizon subscriber</p>
             <h3 className="mt-1 text-2xl font-black tracking-tight text-slate-950">Add PPPoE client</h3>
-            <p className="mt-1 text-xs leading-5 text-slate-500">Central RADIUS handles authentication. Payment goes directly to the ISP's configured bank account.</p>
+            <p className="mt-1 text-xs leading-5 text-slate-500">Create the PPPoE subscription and customer portal access together. The customer receives the portal link and login details by email.</p>
           </div>
           <button type="button" onClick={close} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-100 text-xl text-slate-500">×</button>
         </div>
@@ -324,15 +367,37 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
             <label className="sm:col-span-2">
               <FieldLabel>Full name</FieldLabel>
-              <input required autoFocus className={inputClass} value={form.full_name} onChange={(event) => set('full_name', event.target.value)} onBlur={() => { if (!form.radius_username) set('radius_username', usernameSuggestion(form.full_name)); }} placeholder="John Kamau" />
+              <input
+                required
+                autoFocus
+                className={inputClass}
+                value={form.full_name}
+                onChange={(event) => set('full_name', event.target.value)}
+                onBlur={() => setForm((current) => ({
+                  ...current,
+                  radius_username: current.radius_username || usernameSuggestion(current.full_name),
+                  portal_username: current.portal_username || portalUsernameSuggestion(current.full_name, current.email),
+                }))}
+                placeholder="John Kamau"
+              />
             </label>
             <label>
               <FieldLabel hint="recommended">Phone</FieldLabel>
               <input className={inputClass} value={form.phone} onChange={(event) => set('phone', event.target.value)} placeholder="0712345678" />
             </label>
             <label>
-              <FieldLabel hint="optional">Email</FieldLabel>
-              <input type="email" className={inputClass} value={form.email} onChange={(event) => set('email', event.target.value)} placeholder="john@example.com" />
+              <FieldLabel hint="required for welcome email">Email</FieldLabel>
+              <input
+                required
+                type="email"
+                className={inputClass}
+                value={form.email}
+                onChange={(event) => set('email', event.target.value)}
+                onBlur={() => {
+                  if (!form.portal_username) set('portal_username', portalUsernameSuggestion(form.full_name, form.email));
+                }}
+                placeholder="john@example.com"
+              />
             </label>
           </div>
         </section>
@@ -386,8 +451,31 @@ export default function PppoeClientCreate({ routers = [], plans = [], reload, cl
           </div>
         </section>
 
+        <section className="mt-4 rounded-2xl border border-indigo-100 bg-indigo-50/50 p-4">
+          <p className="text-[10px] font-black uppercase tracking-[.18em] text-indigo-600">5 · Customer portal</p>
+          <h4 className="mt-1 text-sm font-black text-slate-900">Portal username & password</h4>
+          <p className="mt-1 text-[11px] leading-5 text-indigo-700">The customer uses these credentials at the Polyizon PPPoE portal to view the subscription and trigger M-Pesa STK renewals. The password is stored only as a secure hash after creation.</p>
+          <div className="mt-3 space-y-3">
+            <label>
+              <FieldLabel hint="can be the customer's email">Portal username</FieldLabel>
+              <div className="mt-1.5 flex gap-2">
+                <input required minLength={3} maxLength={160} className="min-w-0 flex-1 rounded-xl border border-indigo-200 bg-white px-3.5 py-3 text-sm font-bold text-slate-900 outline-none" value={form.portal_username} onChange={(event) => set('portal_username', event.target.value.replace(/\s/g, ''))} placeholder="john@example.com" />
+                <button type="button" onClick={() => set('portal_username', portalUsernameSuggestion(form.full_name, form.email))} className="rounded-xl border border-indigo-200 bg-white px-3 text-xs font-black text-indigo-700">Generate</button>
+              </div>
+            </label>
+            <label>
+              <FieldLabel>Portal password</FieldLabel>
+              <div className="mt-1.5 flex gap-2">
+                <input required minLength={8} maxLength={128} type={showPortalPassword ? 'text' : 'password'} className="min-w-0 flex-1 rounded-xl border border-indigo-200 bg-white px-3.5 py-3 text-sm font-bold text-slate-900 outline-none" value={form.portal_password} onChange={(event) => set('portal_password', event.target.value)} />
+                <button type="button" onClick={() => setShowPortalPassword((value) => !value)} className="rounded-xl border border-indigo-200 bg-white px-3 text-xs font-black text-indigo-700">{showPortalPassword ? 'Hide' : 'Show'}</button>
+                <button type="button" onClick={() => set('portal_password', randomCharacters(12))} className="rounded-xl border border-indigo-200 bg-white px-3 text-xs font-black text-indigo-700">Generate</button>
+              </div>
+            </label>
+          </div>
+        </section>
+
         <button disabled={busy || !activePlans.length || !activeRouters.length} className="mt-5 w-full rounded-xl bg-slate-950 py-3.5 text-sm font-black text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-45">
-          {busy ? 'Creating subscriber…' : 'Create pending PPPoE client'}
+          {busy ? 'Creating subscriber & portal…' : 'Create PPPoE client & portal access'}
         </button>
       </form>
     </div>

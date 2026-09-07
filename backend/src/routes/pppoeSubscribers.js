@@ -169,12 +169,14 @@ function welcomePaymentInstructions(payment, accountNumber) {
   return lines.join('\n');
 }
 
-async function deliverWelcomeNotice({ client, subscriber, plan, payment, portal }) {
+async function deliverWelcomeNotice({ client, subscriber, plan, payment, portal, pppoe }) {
   const businessName = String(client?.business_name || client?.name || 'Polyizon').trim();
   const firstName = String(subscriber.full_name || '').trim().split(/\s+/)[0] || 'there';
   const packagePrice = Number(plan.price || 0).toLocaleString('en-KE');
   const instructions = welcomePaymentInstructions(payment, subscriber.account_number);
   const portalLink = portal?.url || customerPortalUrl();
+  const pppoeUsername = String(pppoe?.username || subscriber.radius_username || '').trim();
+  const pppoePassword = String(pppoe?.password || '');
   const message = [
     `Welcome to ${businessName}, ${firstName}.`,
     `Your PPPoE account reference is ${subscriber.account_number}.`,
@@ -229,6 +231,11 @@ async function deliverWelcomeNotice({ client, subscriber, plan, payment, portal 
         `Amount: KES ${packagePrice}`,
         `Validity: ${plan.validity_days} days`,
         '',
+        'PPPOE INTERNET LOGIN',
+        `Username: ${pppoeUsername}`,
+        `Password: ${pppoePassword}`,
+        'Use these PPPoE credentials in the router/CPE internet settings. They are different from the customer portal login below.',
+        '',
         'CUSTOMER PORTAL LOGIN',
         `Portal: ${portalLink}`,
         `Username: ${portal?.username || ''}`,
@@ -245,7 +252,7 @@ async function deliverWelcomeNotice({ client, subscriber, plan, payment, portal 
         reply_to: client.email_reply_to || fromAddress,
         subject: `Welcome to ${businessName} — your internet account`,
         text: emailText,
-        html: `<div style="font-family:Arial,sans-serif;max-width:640px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE internet account has been created.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Subscription details</strong><br>Subscriber reference: ${escapeHtml(subscriber.account_number)}<br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:14px;padding:16px;margin:18px 0"><strong>Customer portal login</strong><br>Portal: <a href="${escapeHtml(portalLink)}">${escapeHtml(portalLink)}</a><br>Username: <strong>${escapeHtml(portal?.username || '')}</strong><br>Password: <strong>${escapeHtml(portal?.password || '')}</strong></div><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escapeHtml(instructions)}</pre><p>Your internet activates after payment is verified. Keep your customer-portal password private.</p></div>`,
+        html: `<div style="font-family:Arial,sans-serif;max-width:640px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE internet account has been created.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Subscription details</strong><br>Subscriber reference: ${escapeHtml(subscriber.account_number)}<br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:14px;padding:16px;margin:18px 0"><strong>PPPoE internet login</strong><br>Username: <strong>${escapeHtml(pppoeUsername)}</strong><br>Password: <strong>${escapeHtml(pppoePassword)}</strong><br><span style="color:#1e3a8a">Use these in the router/CPE internet settings. They are different from the customer portal login.</span></div><div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:14px;padding:16px;margin:18px 0"><strong>Customer portal login</strong><br>Portal: <a href="${escapeHtml(portalLink)}">${escapeHtml(portalLink)}</a><br>Username: <strong>${escapeHtml(portal?.username || '')}</strong><br>Password: <strong>${escapeHtml(portal?.password || '')}</strong></div><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escapeHtml(instructions)}</pre><p>Your internet activates after payment is verified. Keep your customer-portal password private.</p></div>`,
       }));
     }
   } else {
@@ -505,6 +512,10 @@ router.post('/', [
       plan,
       payment,
       portal,
+      pppoe: {
+        username: radiusUsername,
+        password: radiusPassword,
+      },
     });
 
     return res.status(201).json({

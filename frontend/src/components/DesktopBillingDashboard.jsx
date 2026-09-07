@@ -311,187 +311,67 @@ function KpiCard({
   darkMode,
   tone = 'slate',
 }) {
-  const tones = {
-    emerald: {
-      icon: 'bg-emerald-100 text-emerald-700',
-      accent: '#10b981',
-    },
-    indigo: {
-      icon: 'bg-indigo-100 text-indigo-700',
-      accent: '#6366f1',
-    },
-    amber: {
-      icon: 'bg-amber-100 text-amber-700',
-      accent: '#f59e0b',
-    },
-    slate: {
-      icon: 'bg-slate-100 text-slate-700',
-      accent: '#475569',
-    },
-  };
-
-  const selectedTone =
-    tones[tone] ||
-    tones.slate;
+  const toneClass = {
+    emerald:
+      'bg-emerald-50 text-emerald-700',
+    indigo:
+      'bg-indigo-50 text-indigo-700',
+    amber:
+      'bg-amber-50 text-amber-700',
+    slate:
+      'bg-slate-100 text-slate-700',
+  }[tone];
 
   return (
     <article
       className={
         darkMode
-          ? 'relative overflow-hidden rounded-[18px] border border-slate-800 bg-[#151a2d] p-4 shadow-sm'
-          : 'relative overflow-hidden rounded-[18px] border border-slate-200/80 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,.045)] transition duration-200 hover:-translate-y-0.5 hover:shadow-[0_16px_32px_rgba(15,23,42,.08)]'
+          ? 'rounded-[20px] border border-slate-800 bg-[#151a2d] p-4 shadow-sm'
+          : 'rounded-[20px] border border-slate-200/80 bg-white p-4 shadow-[0_6px_24px_rgba(15,23,42,.04)]'
       }
     >
-      <span
-        className="absolute inset-x-0 top-0 h-0.5"
-        style={{
-          backgroundColor:
-            selectedTone.accent,
-        }}
-      />
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <div className="flex items-start justify-between gap-4">
+        <div>
           <p
             className={
               darkMode
-                ? 'text-[10px] font-bold uppercase tracking-[.15em] text-slate-500'
-                : 'text-[10px] font-bold uppercase tracking-[.15em] text-slate-400'
+                ? 'text-[11px] font-semibold uppercase tracking-[.13em] text-slate-500'
+                : 'text-[11px] font-semibold uppercase tracking-[.13em] text-slate-400'
             }
           >
             {label}
           </p>
+
           <p
             className={
               darkMode
-                ? 'mt-2 text-[27px] font-bold leading-none tracking-[-.055em] text-white'
-                : 'mt-2 text-[27px] font-bold leading-none tracking-[-.055em] text-slate-950'
+                ? 'mt-2.5 text-[26px] font-bold tracking-[-.045em] text-white'
+                : 'mt-2.5 text-[26px] font-bold tracking-[-.045em] text-slate-950'
             }
           >
             {value}
           </p>
+
+          <p
+            className={
+              darkMode
+                ? 'mt-1 text-xs text-slate-500'
+                : 'mt-1 text-xs text-slate-400'
+            }
+          >
+            {detail}
+          </p>
         </div>
 
         <span
-          className={'flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ' + selectedTone.icon}
+          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${toneClass}`}
         >
           <DashboardIcon
             kind={icon}
           />
         </span>
       </div>
-
-      <div className="mt-3 flex min-w-0 items-center gap-2">
-        <span
-          className="h-1.5 w-1.5 shrink-0 rounded-full"
-          style={{
-            backgroundColor:
-              selectedTone.accent,
-          }}
-        />
-        <p
-          className={
-            darkMode
-              ? 'truncate text-[11px] text-slate-500'
-              : 'truncate text-[11px] text-slate-400'
-          }
-        >
-          {detail}
-        </p>
-      </div>
     </article>
-  );
-}
-
-function HealthRing({
-  score,
-  status,
-  darkMode,
-}) {
-  const normalized =
-    Math.max(
-      0,
-      Math.min(
-        100,
-        Math.round(
-          Number(score || 0)
-        )
-      )
-    );
-
-  const radius = 48;
-  const circumference =
-    2 * Math.PI * radius;
-  const offset =
-    circumference -
-    (
-      normalized /
-      100
-    ) *
-    circumference;
-
-  const stroke =
-    normalized >= 90
-      ? '#10b981'
-      : normalized >= 70
-        ? '#f59e0b'
-        : '#f43f5e';
-
-  return (
-    <div
-      className={
-        darkMode
-          ? 'relative flex h-[142px] w-[142px] shrink-0 items-center justify-center rounded-full bg-white/[.025]'
-          : 'relative flex h-[142px] w-[142px] shrink-0 items-center justify-center rounded-full bg-slate-50'
-      }
-      aria-label={'Network health ' + normalized + '%'}
-    >
-      <svg
-        viewBox="0 0 120 120"
-        className="-rotate-90 h-[126px] w-[126px]"
-        aria-hidden="true"
-      >
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke={darkMode ? '#25304a' : '#e7edf5'}
-          strokeWidth="8"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          stroke={stroke}
-          strokeWidth="8"
-          strokeLinecap="round"
-          strokeDasharray={circumference}
-          strokeDashoffset={offset}
-          className="transition-all duration-500"
-        />
-      </svg>
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <strong
-          className={
-            darkMode
-              ? 'text-[29px] font-bold leading-none tracking-[-.06em] text-white'
-              : 'text-[29px] font-bold leading-none tracking-[-.06em] text-slate-950'
-          }
-        >
-          {normalized}%
-        </strong>
-        <span
-          className={
-            darkMode
-              ? 'mt-1 text-[9px] font-bold uppercase tracking-[.14em] text-slate-500'
-              : 'mt-1 text-[9px] font-bold uppercase tracking-[.14em] text-slate-400'
-          }
-        >
-          {status}
-        </span>
-      </div>
-    </div>
   );
 }
 
@@ -1398,20 +1278,6 @@ export default function DesktopBillingDashboard({
             ? 'Online'
             : 'Checking';
 
-  const healthScore =
-    health > 0
-      ? health
-      : totalRouters
-        ? Math.round(
-            (
-              routersOnline /
-              totalRouters
-            ) * 100
-          )
-        : radiusHealthy
-          ? 100
-          : 0;
-
   const wanStatus =
     String(
       noc?.wan_status ||
@@ -1769,28 +1635,36 @@ export default function DesktopBillingDashboard({
         <article
           className={`rounded-[20px] border p-4 shadow-[0_6px_24px_rgba(15,23,42,.035)] ${card}`}
         >
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-[.14em] text-emerald-600">
-                Live health
-              </p>
-              <h3
-                className={'mt-2 text-xl font-semibold tracking-[-.035em] ' + heading}
-              >
-                {healthStatus}
-              </h3>
-              <p
-                className={'mt-1 max-w-[130px] text-xs leading-5 ' + muted}
-              >
-                Live router and service signal.
-              </p>
+          <div>
+            <p className="text-[10px] font-bold uppercase tracking-[.14em] text-emerald-600">
+              Live health
+            </p>
+
+            <div className="mt-2 flex items-end justify-between gap-3">
+              <div>
+                <h3
+                  className={`text-xl font-semibold tracking-[-.035em] ${heading}`}
+                >
+                  {healthStatus}
+                </h3>
+
+                <p
+                  className={`mt-1 text-xs ${muted}`}
+                >
+                  Current network condition
+                </p>
+              </div>
+
+              {health > 0 && (
+                <strong className="text-2xl font-semibold tracking-[-.04em] text-emerald-600">
+                  {Math.round(
+                    health
+                  )}%
+                </strong>
+              )}
             </div>
-            <HealthRing
-              score={healthScore}
-              status={healthStatus}
-              darkMode={darkMode}
-            />
           </div>
+
 
           <div className="mt-5">
 

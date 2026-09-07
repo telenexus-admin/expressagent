@@ -30,6 +30,7 @@ const ticketRoutes = require('./routes/tickets');
 const billingRoutes = require('./routes/billing');
 const billingWorkspaceRoutes = require('./routes/billingWorkspace');
 const pppoeSubscriberRoutes = require('./routes/pppoeSubscribers');
+const pppoePaywallRoutes = require('./routes/pppoePaywall');
 const subscriberCommunicationRoutes = require('./routes/subscriberCommunications');
 const billingAgentRoutes = require('./routes/billingAgents');
 const billingAgentPortalExtensions = require('./routes/billingAgentPortalExtensions');
@@ -79,6 +80,7 @@ const { startAiTaskScheduler } = require('./services/aiTasks');
 const { startMikrotikMonitorScheduler } = require('./services/mikrotikMonitor');
 const { startRadiusSyncJobScheduler } = require('./services/radiusJobs');
 const { startRadiusSessionEventScheduler } = require('./services/radiusSessionEvents');
+const { startPppoeLifecycleController } = require('./services/pppoeLifecycleController');
 const { startKnowledgeProcessorScheduler } = require('./services/knowledgeProcessor');
 const { startKnowledgeBootstrapScheduler } = require('./services/knowledgeBootstrap');
 const { startKnowledgeLLMScheduler } = require('./services/knowledgeLLM');
@@ -118,7 +120,7 @@ async function isAllowedCorsOrigin(origin) {
   } catch { return false; }
 }
 app.use((req, res, next) => {
-  const isPublicApi = req.path.startsWith('/api/public/site-chat') || req.path.startsWith('/api/public/noc') || req.path.startsWith('/api/public/hotspot');
+  const isPublicApi = req.path.startsWith('/api/public/site-chat') || req.path.startsWith('/api/public/noc') || req.path.startsWith('/api/public/hotspot') || req.path.startsWith('/api/public/pppoe-paywall');
   return cors({ origin(origin, callback) { if (isPublicApi) return callback(null, true); isAllowedCorsOrigin(origin).then((allowed) => callback(null, allowed)).catch((error) => callback(error)); }, credentials: !isPublicApi })(req, res, next);
 });
 app.use('/webhook', express.json(), customerSurveyRoutes, webhookRoutes);
@@ -129,6 +131,7 @@ app.use('/api/public/customer-intake', writeOnly(publicWriteLimiter), customerIn
 app.use('/api/public/polyizon-signup', writeOnly(publicWriteLimiter), polyizonSignupRoutes);
 app.use('/api/public/relocation-request', writeOnly(publicWriteLimiter), relocationRequestRoutes);
 app.use('/api/public/installation-work-orders', writeOnly(publicWriteLimiter), installationWorkOrderRoutes);
+app.use('/api/public/pppoe-paywall', writeOnly(publicWriteLimiter), pppoePaywallRoutes);
 app.use('/api/public/mpesa', mpesaRoutes);
 // Safaricom C2B URL validation rejects callback URLs containing the word "mpesa".
 // Keep the existing STK namespace and expose a neutral alias for C2B registration.
@@ -206,6 +209,7 @@ app.listen(PORT, HOST, () => {
   billingAgentPortalExtensions.ensureSchema().then(() => console.log('Agent portal extension schema ready.')).catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
   pppoePortalRoutes.ensureSchema().then(() => console.log('PPPoE customer portal schema ready.')).catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
   pppoePortalRoutes.startPppoePortalScheduler();
+  startPppoeLifecycleController();
   ensureEventSchema().then(() => console.log('Billing event schema ready.')).catch((error) => console.error('Billing event schema initialization failed:', error.message));
   startDailyReportScheduler(); startOperatorFollowUpScheduler(); startHumanTakeoverRecoveryScheduler(); startWebsiteKnowledgeScheduler(); startAiTaskScheduler(); startMikrotikMonitorScheduler(); startHotspotSubscriberScheduler(); startHotspotTvScheduler(); startRadiusSyncJobScheduler(); startRadiusSessionEventScheduler(); startKnowledgeProcessorScheduler(); startKnowledgeBootstrapScheduler(); startKnowledgeLLMScheduler(); startDigitalTwinScheduler(); tr069Routes.startTr069TelemetryScheduler?.(); startTwinStabilitySchedulers(); startIncidentCommanderScheduler(); startNetworkObservabilityScheduler(); startNetworkShadowPlannerScheduler(); startNetworkExecutorScheduler(); startNetworkEnrollmentScheduler();
 });

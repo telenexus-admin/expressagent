@@ -11,6 +11,24 @@ const csrfToken = () => {
   return match ? decodeURIComponent(match[1]) : '';
 };
 
+function isPublicCustomerPath(pathname = window.location.pathname) {
+  const path = String(pathname || '/');
+  return [
+    '/pppoe',
+    '/hotspot',
+    '/agent',
+    '/client-access',
+    '/self-onboarding',
+    '/customer-intake',
+    '/relocation-request',
+    '/installation-work-order',
+    '/public/noc',
+    '/signup',
+    '/forgot-password',
+    '/reset-password',
+  ].some((prefix) => path === prefix || path.startsWith(`${prefix}/`));
+}
+
 api.interceptors.request.use((config) => {
   const method = String(config.method || 'get').toUpperCase();
   if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
@@ -28,6 +46,7 @@ async function refreshSession() {
   if (!refreshPromise) {
     refreshPromise = api.post('/auth/refresh', null, {
       skipAuthRefresh: true,
+      skipAuthRedirect: true,
       headers: { 'X-CSRF-Token': csrfToken() },
     }).finally(() => { refreshPromise = null; });
   }
@@ -40,7 +59,15 @@ api.interceptors.response.use(
     const config = error.config || {};
     const status = error.response?.status;
     const isAuthEndpoint = String(config.url || '').includes('/auth/');
-    if (status === 401 && !config.skipAuthRefresh && !config._sessionRetried && !isAuthEndpoint) {
+    const publicCustomerPath = isPublicCustomerPath();
+
+    if (
+      status === 401 &&
+      !publicCustomerPath &&
+      !config.skipAuthRefresh &&
+      !config._sessionRetried &&
+      !isAuthEndpoint
+    ) {
       config._sessionRetried = true;
       try {
         await refreshSession();
@@ -50,17 +77,24 @@ api.interceptors.response.use(
         }
         return api.request(config);
       } catch {
-        // The redirect below handles an expired or revoked session.
+        // The redirect below handles an expired or revoked admin session.
       }
     }
-    if (status === 401 && !config.skipAuthRedirect && !isAuthEndpoint) {
+
+    if (
+      status === 401 &&
+      !publicCustomerPath &&
+      !config.skipAuthRedirect &&
+      !isAuthEndpoint
+    ) {
       const onOnboarding = window.location.pathname.startsWith('/onboarding') || window.location.pathname.startsWith('/admin');
       const target = onOnboarding ? '/onboarding/login' : '/login';
       if (window.location.pathname !== target) window.location.assign(target);
     }
+
     return Promise.reject(error);
   },
 );
 
-export { csrfToken };
+export { csrfToken, isPublicCustomerPath };
 export default api;

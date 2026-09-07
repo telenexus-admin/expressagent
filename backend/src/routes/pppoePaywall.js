@@ -3,10 +3,10 @@ const jwt = require('jsonwebtoken');
 const db = require('../db');
 const {
   cleanPhone,
-  ensureDarajaSchema,
-  initiateDarajaPayment,
-  paymentConfiguration,
-} = require('../services/daraja');
+  ensurePayHeroSchema,
+  initiatePayHeroPayment,
+} = require('../services/payhero');
+const { paymentConfiguration } = require('../services/daraja');
 
 const router = express.Router();
 
@@ -44,7 +44,7 @@ function verifyPaymentToken(token, reference) {
 }
 
 async function resolveSubscriber(accountNumber, rawPhone) {
-  await ensureDarajaSchema();
+  await ensurePayHeroSchema();
   const account = normalizeAccount(accountNumber);
   const phone = cleanPhone(rawPhone || '');
   if (!account || !/^254[17]\d{8}$/.test(phone)) return null;
@@ -86,6 +86,38 @@ async function directBankReadiness(clientId) {
     throw error;
   }
   return readiness;
+}
+
+async function enforceStkCooldown(subscriber) {
+  const result = await db.query(
+    `SELECT
+       COUNT(*) FILTER (
+         WHERE created_at >= NOW() - INTERVAL '10 minutes'
+           AND status NOT IN ('failed','cancelled','canceled')
+       )::int AS recent_count,
+       COUNT(*) FILTER (
+         WHERE created_at >= NOW() - INTERVAL '90 seconds'
+           AND status IN ('initiated','queued','paid')
+       )::int AS active_count
+     FROM payhero_payment_requests
+     WHERE client_id=$1
+       AND metadata->>'purpose'='pppoe_portal'
+       AND metadata->>'account_number'=$2`,
+    [subscriber.client_id, subscriber.account_number]
+  );
+
+  const recentCount = Number(result.rows[0]?.recent_count || 0);
+  const activeCount = Number(result.rows[0]?.active_count || 0);
+  if (activeCount > 0) {
+    const error = new Error('An M-Pesa prompt was already sent recently. Complete it or wait about 90 seconds before retrying.');
+    error.code = 'STK_COOLDOWN';
+    throw error;
+  }
+  if (recentCount >= 5) {
+    const error = new Error('Too many M-Pesa prompts were requested for this account. Wait 10 minutes before retrying.');
+    error.code = 'STK_COOLDOWN';
+    throw error;
+  }
 }
 
 router.post('/resolve', async (req, res) => {
@@ -157,6 +189,7 @@ router.post('/stk', async (req, res) => {
     }
 
     await directBankReadiness(subscriber.client_id);
+    await enforceStkCooldown(subscriber);
 
     const clientResult = await db.query(
       `SELECT * FROM clients WHERE id=$1 AND account_type='billing' LIMIT 1`,
@@ -165,7 +198,7 @@ router.post('/stk', async (req, res) => {
     const billingClient = clientResult.rows[0];
     if (!billingClient) return res.status(404).json({ error: 'ISP billing account was not found.' });
 
-    const result = await initiateDarajaPayment({
+    const result = await initiatePayHeroPayment({
       client: billingClient,
       conversationId: null,
       customerPhone: subscriber.phone,
@@ -211,7 +244,11 @@ router.post('/stk', async (req, res) => {
       message: `M-Pesa prompt sent. KES ${amount} goes directly to ${result.settlement.institutionName} account ending ${result.settlement.accountLast4}.`,
     });
   } catch (error) {
-    const status = error.code === 'DIRECT_BANK_NOT_READY' ? 409 : 500;
+    const status = error.code === 'DIRECT_BANK_NOT_READY'
+      ? 409
+      : error.code === 'STK_COOLDOWN'
+        ? 429
+        : 500;
     console.error('PPPoE expired paywall STK error:', error.message);
     return res.status(status).json({ error: error.message || 'Could not start the M-Pesa payment.' });
   }

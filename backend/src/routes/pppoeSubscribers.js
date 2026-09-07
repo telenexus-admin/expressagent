@@ -1,4 +1,5 @@
 const express = require('express');
+const bcrypt = require('bcryptjs');
 const { body, validationResult } = require('express-validator');
 
 const db = require('../db');
@@ -40,6 +41,37 @@ function escapeHtml(value) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+function customerPortalUrl() {
+  const base = String(
+    process.env.PUBLIC_FRONTEND_URL ||
+    process.env.FRONTEND_URL ||
+    'https://billing.polyizon.tech'
+  ).trim().replace(/\/$/, '');
+  return `${base}/pppoe`;
+}
+
+async function ensurePortalAccessSchema() {
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS billing_pppoe_portal_accounts (
+      id BIGSERIAL PRIMARY KEY,
+      client_id INTEGER NOT NULL,
+      subscriber_id BIGINT NOT NULL,
+      login VARCHAR(160) NOT NULL,
+      password_hash TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT TRUE,
+      last_login_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (client_id, subscriber_id)
+    )
+  `);
+
+  await db.query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_pppoe_portal_login
+    ON billing_pppoe_portal_accounts (client_id, LOWER(login))
+  `);
 }
 
 async function subscriberWithPlan(clientId, subscriberId) {
@@ -137,15 +169,19 @@ function welcomePaymentInstructions(payment, accountNumber) {
   return lines.join('\n');
 }
 
-async function deliverWelcomeNotice({ client, subscriber, plan, payment }) {
+async function deliverWelcomeNotice({ client, subscriber, plan, payment, portal }) {
   const businessName = String(client?.business_name || client?.name || 'Polyizon').trim();
   const firstName = String(subscriber.full_name || '').trim().split(/\s+/)[0] || 'there';
   const packagePrice = Number(plan.price || 0).toLocaleString('en-KE');
   const instructions = welcomePaymentInstructions(payment, subscriber.account_number);
+  const portalLink = portal?.url || customerPortalUrl();
   const message = [
     `Welcome to ${businessName}, ${firstName}.`,
     `Your PPPoE account reference is ${subscriber.account_number}.`,
     `Package: ${plan.name} — KES ${packagePrice} for ${plan.validity_days} days.`,
+    `Customer portal: ${portalLink}`,
+    `Portal username: ${portal?.username || 'Contact your ISP'}.`,
+    'Your portal password is included in your welcome email.',
     instructions,
     'Your internet activates only after the payment is confirmed.',
   ].join('\n');
@@ -184,13 +220,32 @@ async function deliverWelcomeNotice({ client, subscriber, plan, payment }) {
     } else {
       const fromName = String(client.email_from_name || client.business_name || client.name || 'Polyizon').trim();
       const fromAddress = String(client.email_from_address || process.env.EMAIL_FROM_ADDRESS || process.env.SMTP_FROM_EMAIL || '').trim();
+      const emailText = [
+        `Welcome to ${businessName}, ${firstName}.`,
+        '',
+        'SUBSCRIPTION DETAILS',
+        `Subscriber reference: ${subscriber.account_number}`,
+        `Package: ${plan.name}`,
+        `Amount: KES ${packagePrice}`,
+        `Validity: ${plan.validity_days} days`,
+        '',
+        'CUSTOMER PORTAL LOGIN',
+        `Portal: ${portalLink}`,
+        `Username: ${portal?.username || ''}`,
+        `Password: ${portal?.password || ''}`,
+        '',
+        instructions,
+        '',
+        'Your internet activates only after payment is confirmed. Keep your portal password private.',
+      ].join('\n');
+
       await add('email', () => sendEmail(client, {
         from: `${fromName} <${fromAddress}>`,
         to: [subscriber.email],
         reply_to: client.email_reply_to || fromAddress,
-        subject: `Welcome to ${businessName} — payment details`,
-        text: message,
-        html: `<div style="font-family:Arial,sans-serif;max-width:620px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE account has been created and is waiting for payment.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Subscriber reference: ${escapeHtml(subscriber.account_number)}</strong><br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escapeHtml(instructions)}</pre><p>Your internet activates after the payment is verified. Polyizon does not receive or hold the subscription funds.</p></div>`,
+        subject: `Welcome to ${businessName} — your internet account`,
+        text: emailText,
+        html: `<div style="font-family:Arial,sans-serif;max-width:640px;color:#172033;line-height:1.6"><h2>Welcome to ${escapeHtml(businessName)}</h2><p>Hello ${escapeHtml(firstName)},</p><p>Your PPPoE internet account has been created.</p><div style="background:#f5f3ff;border-radius:14px;padding:16px;margin:18px 0"><strong>Subscription details</strong><br>Subscriber reference: ${escapeHtml(subscriber.account_number)}<br>Package: ${escapeHtml(plan.name)}<br>Amount: KES ${escapeHtml(packagePrice)}<br>Validity: ${escapeHtml(plan.validity_days)} days</div><div style="background:#ecfdf5;border:1px solid #a7f3d0;border-radius:14px;padding:16px;margin:18px 0"><strong>Customer portal login</strong><br>Portal: <a href="${escapeHtml(portalLink)}">${escapeHtml(portalLink)}</a><br>Username: <strong>${escapeHtml(portal?.username || '')}</strong><br>Password: <strong>${escapeHtml(portal?.password || '')}</strong></div><pre style="white-space:pre-wrap;font-family:Arial,sans-serif">${escapeHtml(instructions)}</pre><p>Your internet activates after payment is verified. Keep your customer-portal password private.</p></div>`,
       }));
     }
   } else {
@@ -220,7 +275,13 @@ router.use(async (req, res, next) => {
 router.post('/', [
   body('full_name').trim().notEmpty().isLength({ max: 255 }),
   body('phone').optional({ nullable: true, checkFalsy: true }).trim().isLength({ max: 80 }),
-  body('email').optional({ nullable: true, checkFalsy: true }).trim().isEmail().isLength({ max: 255 }),
+  body('email')
+    .trim()
+    .notEmpty()
+    .withMessage('Customer email is required so portal login details can be delivered')
+    .bail()
+    .isEmail()
+    .isLength({ max: 255 }),
   body('radius_username')
     .trim()
     .matches(/^[A-Za-z0-9._@-]{3,64}$/)
@@ -229,6 +290,14 @@ router.post('/', [
     .isString()
     .matches(/^\S{8,128}$/)
     .withMessage('PPPoE password must be 8-128 characters with no spaces'),
+  body('portal_username')
+    .trim()
+    .matches(/^[A-Za-z0-9._@-]{3,160}$/)
+    .withMessage('Portal username must be 3-160 letters, numbers, dots, dashes, underscores, or @'),
+  body('portal_password')
+    .isString()
+    .isLength({ min: 8, max: 128 })
+    .withMessage('Portal password must be 8-128 characters'),
   body('plan_id').isInt({ min: 1 }),
   body('router_id').isInt({ min: 1 }),
 ], async (req, res) => {
@@ -238,6 +307,8 @@ router.post('/', [
   const clientId = req.scope.clientId;
   const radiusUsername = normalizePppoeUsername(req.body.radius_username);
   const radiusPassword = String(req.body.radius_password || '');
+  const portalUsername = String(req.body.portal_username || '').trim();
+  const portalPassword = String(req.body.portal_password || '');
   const planId = Number(req.body.plan_id);
   const routerId = Number(req.body.router_id);
 
@@ -245,9 +316,10 @@ router.post('/', [
     await Promise.all([
       ensurePppoeAccountNumberSchema(),
       ensureManualBankPaymentSchema(),
+      ensurePortalAccessSchema(),
     ]);
 
-    const [planResult, routerResult, duplicateResult, clientSettingsResult] = await Promise.all([
+    const [planResult, routerResult, duplicateResult, portalDuplicateResult, clientSettingsResult] = await Promise.all([
       db.query(
         `SELECT id,name,price,validity_days,router_id,radius_profile,download_speed_mbps,upload_speed_mbps
          FROM billing_plans
@@ -269,6 +341,13 @@ router.post('/', [
          LIMIT 1`,
         [clientId, radiusUsername]
       ),
+      db.query(
+        `SELECT id
+         FROM billing_pppoe_portal_accounts
+         WHERE client_id=$1 AND LOWER(login)=LOWER($2)
+         LIMIT 1`,
+        [clientId, portalUsername]
+      ),
       db.query('SELECT * FROM clients WHERE id=$1 LIMIT 1', [clientId]),
     ]);
 
@@ -281,6 +360,9 @@ router.post('/', [
     }
     if (duplicateResult.rows[0]) {
       return res.status(409).json({ error: 'That PPPoE username is already used by another Polyizon subscriber' });
+    }
+    if (portalDuplicateResult.rows[0]) {
+      return res.status(409).json({ error: 'That customer-portal username is already used by another subscriber' });
     }
 
     const billingClient = clientSettingsResult.rows[0] || {};
@@ -296,10 +378,12 @@ router.post('/', [
     }
 
     let encryptedPassword;
+    let portalPasswordHash;
     try {
       encryptedPassword = encryptPassword(radiusPassword);
+      portalPasswordHash = await bcrypt.hash(portalPassword, 12);
     } catch (error) {
-      return res.status(503).json({ error: error.message || 'RADIUS credential encryption is not configured' });
+      return res.status(503).json({ error: error.message || 'Subscriber credential encryption is not configured' });
     }
 
     await ensureEventSchema();
@@ -307,6 +391,7 @@ router.post('/', [
     const client = await db.connect();
     let subscriber;
     let accountAllocation;
+    let portalAccount;
     try {
       await client.query('BEGIN');
       accountAllocation = await allocatePppoeAccountNumber(client, clientId);
@@ -333,7 +418,7 @@ router.post('/', [
           plan.id,
           String(req.body.full_name).trim(),
           req.body.phone ? String(req.body.phone).trim() : null,
-          req.body.email ? String(req.body.email).trim().toLowerCase() : null,
+          String(req.body.email).trim().toLowerCase(),
           accountAllocation.accountNumber,
           radiusUsername,
           encryptedPassword,
@@ -342,6 +427,15 @@ router.post('/', [
         ]
       );
       subscriber = insertResult.rows[0];
+
+      const portalResult = await client.query(
+        `INSERT INTO billing_pppoe_portal_accounts (
+           client_id,subscriber_id,login,password_hash,enabled
+         ) VALUES ($1,$2,$3,$4,TRUE)
+         RETURNING id,login,enabled,created_at`,
+        [clientId, subscriber.id, portalUsername, portalPasswordHash]
+      );
+      portalAccount = portalResult.rows[0];
 
       await appendRequestEvent(client, req, {
         eventType: 'subscriber.created',
@@ -355,6 +449,8 @@ router.post('/', [
           account_number: subscriber.account_number,
           account_prefix: accountAllocation.prefix,
           pppoe_username: subscriber.radius_username,
+          portal_username: portalUsername,
+          portal_url: customerPortalUrl(),
           package_id: subscriber.plan_id,
           package_name: plan.name,
           package_price: Number(plan.price),
@@ -370,6 +466,7 @@ router.post('/', [
           radius_status: subscriber.radius_status,
           radius_sync_status: subscriber.radius_sync_status,
           access_mode: subscriber.access_mode,
+          portal_enabled: true,
         },
         relatedEntities: [
           { entityType: 'package', entityId: plan.id, relationship: 'subscribed_to' },
@@ -394,11 +491,20 @@ router.post('/', [
       Number(plan.price)
     );
 
+    const portal = {
+      id: portalAccount.id,
+      username: portalAccount.login,
+      password: portalPassword,
+      enabled: portalAccount.enabled,
+      url: customerPortalUrl(),
+    };
+
     const welcome = await deliverWelcomeNotice({
       client: billingClient,
       subscriber,
       plan,
       payment,
+      portal,
     });
 
     return res.status(201).json({
@@ -422,12 +528,13 @@ router.post('/', [
         password: radiusPassword,
         rate_limit: rateLimit,
       },
+      portal,
       payment,
       notifications: welcome.deliveries,
     });
   } catch (error) {
     if (error.code === '23505') {
-      return res.status(409).json({ error: 'That account number or PPPoE username already exists' });
+      return res.status(409).json({ error: 'That account number, PPPoE username, or portal username already exists' });
     }
     if (error.code === 'RADIUS_USERNAME_EXISTS') {
       return res.status(409).json({ error: error.message });

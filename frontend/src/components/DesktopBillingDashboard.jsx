@@ -376,6 +376,100 @@ function KpiCard({
 }
 
 
+function HealthRing({
+  score,
+  status,
+  darkMode,
+}) {
+  const normalized =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          Number(score || 0)
+        )
+      )
+    );
+
+  const radius = 48;
+  const circumference =
+    2 * Math.PI * radius;
+  const offset =
+    circumference -
+    (
+      normalized /
+      100
+    ) *
+    circumference;
+
+  const stroke =
+    normalized >= 90
+      ? '#10b981'
+      : normalized >= 70
+        ? '#f59e0b'
+        : '#f43f5e';
+
+  return (
+    <div
+      className={
+        darkMode
+          ? 'relative flex h-[142px] w-[142px] shrink-0 items-center justify-center rounded-full bg-white/[.025]'
+          : 'relative flex h-[142px] w-[142px] shrink-0 items-center justify-center rounded-full bg-slate-50'
+      }
+      aria-label={'Network health ' + normalized + '%'}
+    >
+      <svg
+        viewBox="0 0 120 120"
+        className="-rotate-90 h-[126px] w-[126px]"
+        aria-hidden="true"
+      >
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke={darkMode ? '#25304a' : '#e7edf5'}
+          strokeWidth="8"
+        />
+        <circle
+          cx="60"
+          cy="60"
+          r={radius}
+          fill="none"
+          stroke={stroke}
+          strokeWidth="8"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={offset}
+          className="transition-all duration-500"
+        />
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center">
+        <strong
+          className={
+            darkMode
+              ? 'text-[29px] font-bold leading-none tracking-[-.06em] text-white'
+              : 'text-[29px] font-bold leading-none tracking-[-.06em] text-slate-950'
+          }
+        >
+          {normalized}%
+        </strong>
+        <span
+          className={
+            darkMode
+              ? 'mt-1 text-[9px] font-bold uppercase tracking-[.14em] text-slate-500'
+              : 'mt-1 text-[9px] font-bold uppercase tracking-[.14em] text-slate-400'
+          }
+        >
+          {status}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+
 function TrafficChart({
   values,
   darkMode,
@@ -1278,6 +1372,20 @@ export default function DesktopBillingDashboard({
             ? 'Online'
             : 'Checking';
 
+  const healthScore =
+    health > 0
+      ? health
+      : totalRouters
+        ? Math.round(
+            (
+              routersOnline /
+              totalRouters
+            ) * 100
+          )
+        : radiusHealthy
+          ? 100
+          : 0;
+
   const wanStatus =
     String(
       noc?.wan_status ||
@@ -1635,36 +1743,28 @@ export default function DesktopBillingDashboard({
         <article
           className={`rounded-[20px] border p-4 shadow-[0_6px_24px_rgba(15,23,42,.035)] ${card}`}
         >
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[.14em] text-emerald-600">
-              Live health
-            </p>
-
-            <div className="mt-2 flex items-end justify-between gap-3">
-              <div>
-                <h3
-                  className={`text-xl font-semibold tracking-[-.035em] ${heading}`}
-                >
-                  {healthStatus}
-                </h3>
-
-                <p
-                  className={`mt-1 text-xs ${muted}`}
-                >
-                  Current network condition
-                </p>
-              </div>
-
-              {health > 0 && (
-                <strong className="text-2xl font-semibold tracking-[-.04em] text-emerald-600">
-                  {Math.round(
-                    health
-                  )}%
-                </strong>
-              )}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[.14em] text-emerald-600">
+                Live health
+              </p>
+              <h3
+                className={'mt-2 text-xl font-semibold tracking-[-.035em] ' + heading}
+              >
+                {healthStatus}
+              </h3>
+              <p
+                className={'mt-1 max-w-[130px] text-xs leading-5 ' + muted}
+              >
+                Live router and service signal.
+              </p>
             </div>
+            <HealthRing
+              score={healthScore}
+              status={healthStatus}
+              darkMode={darkMode}
+            />
           </div>
-
 
           <div className="mt-5">
 

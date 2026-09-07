@@ -360,6 +360,97 @@ router.get('/summary', async (req, res) => {
       ),
     ]);
 
+    const pppoeSubscribers =
+      await db.query(
+        `SELECT
+           router_id,
+           radius_username,
+           access_mode
+         FROM billing_subscribers
+         WHERE client_id = $1
+           AND LOWER(
+             COALESCE(
+               access_mode,
+               'pppoe'
+             )
+           ) IN (
+             'pppoe',
+             'pppoe_static'
+           )`,
+        [clientId]
+      );
+
+    const livePppoe =
+      await resolveLivePppoeUsernames(
+        clientId,
+        pppoeSubscribers.rows
+      );
+
+    const livePppoeCount =
+      pppoeSubscribers.rows.filter(
+        subscriber => {
+          const username =
+            String(
+              subscriber.radius_username ||
+              ''
+            )
+              .trim()
+              .toLowerCase();
+
+          const routerId =
+            Number(
+              subscriber.router_id ||
+              0
+            );
+
+          return Boolean(
+            username &&
+            livePppoe.observedRouterIds.has(
+              routerId
+            ) &&
+            livePppoe.online.has(
+              username
+            )
+          );
+        }
+      ).length;
+
+    const cachedPppoeOnline =
+      await db.query(
+        `SELECT
+           COUNT(*)::int AS total
+         FROM mikrotik_clients
+         WHERE client_id = $1
+           AND service_type = 'pppoe'
+           AND is_online = TRUE`,
+        [clientId]
+      );
+
+    const cachedActive =
+      Number(
+        subscribers.rows[0]
+          ?.active ||
+        0
+      );
+
+    subscribers.rows[0].active =
+      Math.max(
+        0,
+        cachedActive -
+          Number(
+            cachedPppoeOnline.rows[0]
+              ?.total ||
+            0
+          ) +
+          livePppoeCount
+      );
+
+    subscribers.rows[0].pppoe_online =
+      livePppoeCount;
+
+    subscribers.rows[0].online_source =
+      'routeros_ppp_active';
+
     res.json({
       subscribers:
         subscribers.rows[0],

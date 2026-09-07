@@ -311,70 +311,124 @@ function KpiCard({
   darkMode,
   tone = 'slate',
 }) {
-  const toneClass = {
-    emerald:
-      'bg-emerald-50 text-emerald-700',
-    indigo:
-      'bg-indigo-50 text-indigo-700',
-    amber:
-      'bg-amber-50 text-amber-700',
-    slate:
-      'bg-slate-100 text-slate-700',
+  const toneConfig = {
+    emerald: {
+      icon: 'bg-emerald-50 text-emerald-700',
+      stroke: '#10b981',
+      fill: '#d1fae5',
+      path: 'M2 39 C15 37 20 20 34 25 C48 30 53 12 68 17 C82 22 91 6 108 9 C122 12 128 2 142 4',
+    },
+    indigo: {
+      icon: 'bg-indigo-50 text-indigo-700',
+      stroke: '#6366f1',
+      fill: '#e0e7ff',
+      path: 'M2 37 C18 34 23 13 38 20 C52 27 61 28 73 16 C84 5 94 30 108 20 C121 10 129 14 142 4',
+    },
+    amber: {
+      icon: 'bg-amber-50 text-amber-700',
+      stroke: '#f59e0b',
+      fill: '#fef3c7',
+      path: 'M2 38 C14 30 24 33 35 19 C47 4 58 30 70 19 C82 8 94 15 105 9 C119 2 128 17 142 7',
+    },
+    slate: {
+      icon: 'bg-slate-100 text-slate-700',
+      stroke: '#64748b',
+      fill: '#e2e8f0',
+      path: 'M2 36 C16 25 26 31 39 19 C53 7 64 29 77 17 C91 5 103 25 116 13 C126 5 134 9 142 3',
+    },
   }[tone];
 
   return (
     <article
       className={
         darkMode
-          ? 'rounded-[20px] border border-slate-800 bg-[#151a2d] p-4 shadow-sm'
-          : 'rounded-[20px] border border-slate-200/80 bg-white p-4 shadow-[0_6px_24px_rgba(15,23,42,.04)]'
+          ? 'group relative min-h-[132px] overflow-hidden rounded-[18px] border border-slate-800 bg-[#151a2d] p-4 shadow-sm'
+          : 'group relative min-h-[132px] overflow-hidden rounded-[18px] border border-slate-200/80 bg-white p-4 shadow-[0_8px_26px_rgba(15,23,42,.045)] transition hover:-translate-y-0.5 hover:shadow-[0_14px_32px_rgba(15,23,42,.08)]'
       }
     >
+      <svg
+        viewBox="0 0 144 44"
+        preserveAspectRatio="none"
+        aria-hidden="true"
+        className="pointer-events-none absolute bottom-0 right-0 h-[58px] w-[54%] opacity-70"
+      >
+        <path
+          d={`${toneConfig.path} L142 44 L2 44 Z`}
+          fill={toneConfig.fill}
+          opacity={darkMode ? '.08' : '.42'}
+        />
+        <path
+          d={toneConfig.path}
+          fill="none"
+          stroke={toneConfig.stroke}
+          strokeWidth="2.5"
+          strokeLinecap="round"
+        />
+      </svg>
       <div className="flex items-start justify-between gap-4">
-        <div>
-          <p
-            className={
-              darkMode
-                ? 'text-[11px] font-semibold uppercase tracking-[.13em] text-slate-500'
-                : 'text-[11px] font-semibold uppercase tracking-[.13em] text-slate-400'
-            }
-          >
+        <div className="relative z-10 min-w-0">
+          <p className={darkMode ? 'text-[10px] font-bold uppercase tracking-[.14em] text-slate-500' : 'text-[10px] font-bold uppercase tracking-[.14em] text-slate-400'}>
             {label}
           </p>
-
-          <p
-            className={
-              darkMode
-                ? 'mt-2.5 text-[26px] font-bold tracking-[-.045em] text-white'
-                : 'mt-2.5 text-[26px] font-bold tracking-[-.045em] text-slate-950'
-            }
-          >
+          <p className={darkMode ? 'mt-2.5 text-[28px] font-bold leading-none tracking-[-.05em] text-white' : 'mt-2.5 text-[28px] font-bold leading-none tracking-[-.05em] text-slate-950'}>
             {value}
           </p>
-
-          <p
-            className={
-              darkMode
-                ? 'mt-1 text-xs text-slate-500'
-                : 'mt-1 text-xs text-slate-400'
-            }
-          >
+          <p className={darkMode ? 'mt-2 max-w-[165px] truncate text-[11px] text-slate-500' : 'mt-2 max-w-[165px] truncate text-[11px] text-slate-400'}>
             {detail}
           </p>
         </div>
-
-        <span
-          className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl ${toneClass}`}
-        >
-          <DashboardIcon
-            kind={icon}
-          />
+        <span className={`relative z-10 flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl ${toneConfig.icon}`}>
+          <DashboardIcon kind={icon} />
         </span>
       </div>
     </article>
   );
 }
 
+
+function NetworkGauge({
+  value,
+  label,
+  darkMode,
+}) {
+  const score =
+    Math.max(
+      0,
+      Math.min(
+        100,
+        Math.round(
+          Number(value || 0)
+        )
+      )
+    );
+
+  const color =
+    score >= 90
+      ? '#10b981'
+      : score >= 65
+        ? '#f59e0b'
+        : '#f43f5e';
+
+  return (
+    <div
+      className="relative flex h-[148px] w-[148px] shrink-0 items-center justify-center rounded-full"
+      style={{
+        background:
+          `conic-gradient(${color} ${score * 3.6}deg, ${darkMode ? '#263048' : '#e9eef5'} 0deg)`,
+      }}
+      aria-label={`Network health ${score}%`}
+    >
+      <div className={darkMode ? 'flex h-[112px] w-[112px] flex-col items-center justify-center rounded-full bg-[#151a2d] shadow-inner' : 'flex h-[112px] w-[112px] flex-col items-center justify-center rounded-full bg-white shadow-inner'}>
+        <strong className={darkMode ? 'text-[30px] font-bold leading-none tracking-[-.06em] text-white' : 'text-[30px] font-bold leading-none tracking-[-.06em] text-slate-950'}>
+          {score}%
+        </strong>
+        <span className="mt-1.5 text-[9px] font-bold uppercase tracking-[.14em] text-slate-400">
+          {label}
+        </span>
+      </div>
+    </div>
+  );
+}
 
 function TrafficChart({
   values,
@@ -1304,6 +1358,21 @@ export default function DesktopBillingDashboard({
         )
       : true;
 
+  const healthScore =
+    health > 0
+      ? health
+      : totalRouters
+        ? Math.round(
+            (
+              routersOnline /
+              totalRouters
+            ) *
+            100
+          )
+        : radiusHealthy
+          ? 100
+          : 0;
+
   const topUsers =
     useMemo(
       () =>
@@ -1635,38 +1704,26 @@ export default function DesktopBillingDashboard({
         <article
           className={`rounded-[20px] border p-4 shadow-[0_6px_24px_rgba(15,23,42,.035)] ${card}`}
         >
-          <div>
-            <p className="text-[10px] font-bold uppercase tracking-[.14em] text-emerald-600">
-              Live health
-            </p>
-
-            <div className="mt-2 flex items-end justify-between gap-3">
-              <div>
-                <h3
-                  className={`text-xl font-semibold tracking-[-.035em] ${heading}`}
-                >
-                  {healthStatus}
-                </h3>
-
-                <p
-                  className={`mt-1 text-xs ${muted}`}
-                >
-                  Current network condition
-                </p>
-              </div>
-
-              {health > 0 && (
-                <strong className="text-2xl font-semibold tracking-[-.04em] text-emerald-600">
-                  {Math.round(
-                    health
-                  )}%
-                </strong>
-              )}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-[10px] font-bold uppercase tracking-[.14em] text-emerald-600">
+                Live network
+              </p>
+              <h3 className={`mt-2 text-xl font-semibold tracking-[-.035em] ${heading}`}>
+                {healthStatus}
+              </h3>
+              <p className={`mt-1 max-w-[125px] text-xs leading-5 ${muted}`}>
+                Routers and authentication services right now.
+              </p>
             </div>
+            <NetworkGauge
+              value={healthScore}
+              label={healthStatus}
+              darkMode={darkMode}
+            />
           </div>
 
-
-          <div className="mt-5">
+          <div className="mt-4 rounded-2xl border border-slate-100/80 px-3 dark:border-slate-800">
 
             <HealthRow
               label="Routers"

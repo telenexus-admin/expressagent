@@ -426,18 +426,20 @@ export default function BillingSubscribers({ subscribers, items: sourceItems, ne
           null,
 
         service_status:
-          client.is_expired
+          client.is_expired || managedSubscriber?.is_expired
             ? 'expired'
-            : client.is_online
+            : (client.is_online || managedSubscriber?.is_online)
               ? 'active'
               : (
                   client.status ||
+                  managedSubscriber?.service_status ||
                   'offline'
                 ),
 
         is_online:
           Boolean(
-            client.is_online
+            client.is_online ||
+            managedSubscriber?.is_online
           ),
 
         is_expired:

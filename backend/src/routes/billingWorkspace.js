@@ -6,6 +6,7 @@ const { body, validationResult } = require('express-validator');
 const db = require('../db');
 const { authMiddleware, scopeMiddleware } = require('../middleware/auth');
 const { encryptPassword, getOnlineUsernames, getSubscriberUsage, loadSubscriber, radiusEnabled, revokeHotspotRadiusAccess, syncHotspotMemberRadius, syncHotspotVoucherRadius, syncSubscriberRadius } = require('../services/radiusSync');
+const { getRouter, connectRouter } = require('../services/mikrotik');
 const {
   activatePaidHotspotDevice,
   revokeHotspotDeviceAccess,
@@ -1329,6 +1330,42 @@ router.delete(
 );
 
 
+
+async function resolveLivePppoeUsernames(clientId, subscribers = []) {
+  const usernamesByRouter = new Map();
+  for (const subscriber of subscribers) {
+    const routerId = Number(subscriber.router_id || 0);
+    const username = String(subscriber.radius_username || '').trim();
+    const mode = String(subscriber.access_mode || 'pppoe').toLowerCase();
+    if (!routerId || !username || !['pppoe', 'pppoe_static'].includes(mode)) continue;
+    if (!usernamesByRouter.has(routerId)) usernamesByRouter.set(routerId, new Set());
+    usernamesByRouter.get(routerId).add(username);
+  }
+
+  const online = new Set();
+  const observedRouterIds = new Set();
+  for (const [routerId, usernames] of usernamesByRouter) {
+    let api;
+    try {
+      const router = await getRouter(clientId, routerId, { includePassword: true });
+      if (!router?.is_active) continue;
+      api = await connectRouter(router);
+      const active = await api.command('/ppp/active/print');
+      observedRouterIds.add(routerId);
+      const expected = new Set([...usernames].map((value) => value.toLowerCase()));
+      for (const row of active) {
+        const username = String(row.name || '').trim();
+        if (username && expected.has(username.toLowerCase())) online.add(username.toLowerCase());
+      }
+    } catch (error) {
+      console.error(`PPPoE live-session lookup failed for router ${routerId}:`, error.message);
+    } finally {
+      api?.close();
+    }
+  }
+  return { online, observedRouterIds };
+}
+
 router.get('/subscribers', async (req, res) => {
   const result = await db.query(
     `SELECT s.*, p.name AS plan_name, COALESCE(r.name, s.router_name) AS router_name,
@@ -1339,13 +1376,21 @@ router.get('/subscribers', async (req, res) => {
      WHERE s.client_id = $1 ORDER BY s.created_at DESC`,
     [req.scope.clientId]
   );
-  let online = new Set();
+  let radiusOnline = new Set();
   const radiusUsernames = result.rows.map((row) => row.radius_username).filter(Boolean);
-  try { online = await getOnlineUsernames(radiusUsernames); } catch (err) { console.error('RADIUS online session lookup failed:', err.message); }
-  res.json(result.rows.map((subscriber) => ({
-    ...subscriber,
-    is_online: Boolean(subscriber.radius_username && online.has(String(subscriber.radius_username))),
-  })));
+  try { radiusOnline = await getOnlineUsernames(radiusUsernames); } catch (err) { console.error('RADIUS online session lookup failed:', err.message); }
+  const livePppoe = await resolveLivePppoeUsernames(req.scope.clientId, result.rows);
+  res.json(result.rows.map((subscriber) => {
+    const routerId = Number(subscriber.router_id || 0);
+    const username = String(subscriber.radius_username || '').trim().toLowerCase();
+    const nativePppoe = ['pppoe', 'pppoe_static'].includes(String(subscriber.access_mode || 'pppoe').toLowerCase());
+    const routerWasObserved = nativePppoe && livePppoe.observedRouterIds.has(routerId);
+    return {
+      ...subscriber,
+      is_online: Boolean(username && (routerWasObserved ? livePppoe.online.has(username) : radiusOnline.has(String(subscriber.radius_username)))),
+      online_source: routerWasObserved ? 'routeros_ppp_active' : 'radius_accounting',
+    };
+  }));
 });
 
 router.get('/subscribers/crm', async (req, res) => {

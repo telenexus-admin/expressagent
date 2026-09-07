@@ -573,6 +573,7 @@ export default function BillingWorkspace() {
           const [
             result,
             summaryResult,
+            subscriberResult,
           ] = await Promise.all([
             api.get(
               '/mikrotik/clients'
@@ -580,6 +581,10 @@ export default function BillingWorkspace() {
 
             api.get(
               '/billing-workspace/summary'
+            ),
+
+            api.get(
+              '/billing-workspace/subscribers'
             ),
           ]);
 
@@ -602,6 +607,12 @@ export default function BillingWorkspace() {
 
           setSummary(
             summaryResult.data
+          );
+
+          setSubscribers(
+            Array.isArray(subscriberResult.data)
+              ? subscriberResult.data
+              : []
           );
         } catch (_) {
           // Keep the latest confirmed

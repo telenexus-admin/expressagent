@@ -80,7 +80,7 @@ const { startAiTaskScheduler } = require('./services/aiTasks');
 const { startMikrotikMonitorScheduler } = require('./services/mikrotikMonitor');
 const { startRadiusSyncJobScheduler } = require('./services/radiusJobs');
 const { startRadiusSessionEventScheduler } = require('./services/radiusSessionEvents');
-const { startPppoeLifecycleController } = require('./services/pppoeLifecycleController');
+const { startPppoeExpiredPaywallScheduler } = require('./services/pppoeExpiredPaywallScheduler');
 const { startKnowledgeProcessorScheduler } = require('./services/knowledgeProcessor');
 const { startKnowledgeBootstrapScheduler } = require('./services/knowledgeBootstrap');
 const { startKnowledgeLLMScheduler } = require('./services/knowledgeLLM');
@@ -209,7 +209,7 @@ app.listen(PORT, HOST, () => {
   billingAgentPortalExtensions.ensureSchema().then(() => console.log('Agent portal extension schema ready.')).catch((error) => console.error('Agent portal extension schema initialization failed:', error.message));
   pppoePortalRoutes.ensureSchema().then(() => console.log('PPPoE customer portal schema ready.')).catch((error) => console.error('PPPoE customer portal schema initialization failed:', error.message));
   pppoePortalRoutes.startPppoePortalScheduler();
-  startPppoeLifecycleController();
+  startPppoeExpiredPaywallScheduler();
   ensureEventSchema().then(() => console.log('Billing event schema ready.')).catch((error) => console.error('Billing event schema initialization failed:', error.message));
   startDailyReportScheduler(); startOperatorFollowUpScheduler(); startHumanTakeoverRecoveryScheduler(); startWebsiteKnowledgeScheduler(); startAiTaskScheduler(); startMikrotikMonitorScheduler(); startHotspotSubscriberScheduler(); startHotspotTvScheduler(); startRadiusSyncJobScheduler(); startRadiusSessionEventScheduler(); startKnowledgeProcessorScheduler(); startKnowledgeBootstrapScheduler(); startKnowledgeLLMScheduler(); startDigitalTwinScheduler(); tr069Routes.startTr069TelemetryScheduler?.(); startTwinStabilitySchedulers(); startIncidentCommanderScheduler(); startNetworkObservabilityScheduler(); startNetworkShadowPlannerScheduler(); startNetworkExecutorScheduler(); startNetworkEnrollmentScheduler();
 });

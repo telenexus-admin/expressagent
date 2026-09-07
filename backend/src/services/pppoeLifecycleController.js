@@ -7,11 +7,6 @@ const {
   disconnectSubscriberSessions,
   updateSubscriberPolicy,
 } = require('./radiusDynamicAuth');
-const {
-  ensurePppoeExpiredPaywall,
-  expiredPaywallEnabled,
-} = require('./pppoeExpiredPaywall');
-const { syncExpiredSubscriberRadius } = require('./pppoeExpiredRadius');
 
 let running = false;
 let timer;
@@ -34,18 +29,6 @@ function secondsUntilExpiry(subscriber, now = new Date()) {
   const expiry = effectiveExpiry(subscriber);
   if (!expiry) return null;
   return Math.max(1, Math.ceil((expiry.getTime() - now.getTime()) / 1000));
-}
-
-function expiredPaywallEligible(subscriber, now = new Date()) {
-  if (!expiredPaywallEnabled()) return false;
-  const expiry = effectiveExpiry(subscriber);
-  return Boolean(
-    expiry
-    && expiry <= now
-    && ['active', 'expired'].includes(String(subscriber?.service_status || ''))
-    && subscriber?.radius_status === 'active'
-    && subscriber?.router_id
-  );
 }
 
 async function ensurePppoeLifecycleSchema() {
@@ -286,64 +269,6 @@ async function recordLifecycleEvent(subscriber, eventType, title, payload = {}, 
   }).catch((error) => console.error('PPPoE lifecycle event could not be recorded:', error.message));
 }
 
-async function markExpired(subscriber) {
-  if (subscriber.service_status !== 'active') return;
-  await db.query(
-    `UPDATE billing_subscribers
-     SET service_status='expired', updated_at=NOW()
-     WHERE id=$1 AND client_id=$2 AND service_status='active'`,
-    [subscriber.id, subscriber.client_id]
-  );
-  subscriber.service_status = 'expired';
-}
-
-async function enforceInactiveSubscriber(subscriber, now, rateLimit) {
-  const expiry = effectiveExpiry(subscriber);
-  const expired = Boolean(expiry && expiry <= now);
-
-  if (expired && expiredPaywallEligible(subscriber, now)) {
-    const paywall = await ensurePppoeExpiredPaywall({
-      clientId: subscriber.client_id,
-      routerId: subscriber.router_id,
-    });
-    await syncExpiredSubscriberRadius(subscriber);
-    subscriber.radius_sync_status = 'synced';
-    await markExpired(subscriber);
-    const sessionControl = await disconnectWithFallback(subscriber);
-    await saveState(subscriber, {
-      accessActive: false,
-      rateLimit,
-      action: 'expired_paywall',
-    });
-    await recordLifecycleEvent(
-      subscriber,
-      'pppoe.expired_paywall_enforced',
-      'PPPoE expired payment page enforced',
-      {
-        session_control: sessionControl.method,
-        address_list: paywall.address_list,
-        portal_url: paywall.portal_url,
-      }
-    );
-    return;
-  }
-
-  await syncAndMark(subscriber, rateLimit);
-  const sessionControl = await disconnectWithFallback(subscriber);
-  if (expired) await markExpired(subscriber);
-  await saveState(subscriber, {
-    accessActive: false,
-    rateLimit,
-    action: 'inactive_enforced',
-  });
-  await recordLifecycleEvent(
-    subscriber,
-    expired ? 'pppoe.expired_enforced' : 'pppoe.access_revoked',
-    expired ? 'PPPoE expiry enforced' : 'PPPoE access revoked',
-    { session_control: sessionControl.method }
-  );
-}
-
 async function enforceSubscriber(subscriber, now = new Date()) {
   const state = await loadState(subscriber.id);
   const currentActive = accessIsActive(subscriber, now);
@@ -364,17 +289,10 @@ async function enforceSubscriber(subscriber, now = new Date()) {
   try {
     if (!state) {
       if (!currentActive || subscriber.radius_sync_status === 'failed') {
-        if (!currentActive) {
-          await enforceInactiveSubscriber(subscriber, now, rateLimit);
-          return;
-        }
         await syncAndMark(subscriber, rateLimit);
+        if (!currentActive) await disconnectWithFallback(subscriber);
       }
-      await saveState(subscriber, {
-        accessActive: currentActive,
-        rateLimit,
-        action: currentActive ? 'baseline' : 'inactive_enforced',
-      });
+      await saveState(subscriber, { accessActive: currentActive, rateLimit, action: currentActive ? 'baseline' : 'inactive_enforced' });
       return;
     }
 
@@ -385,19 +303,31 @@ async function enforceSubscriber(subscriber, now = new Date()) {
         radius_username: state.radius_username,
         router_id: state.router_id || subscriber.router_id,
       });
-      if (currentActive) {
-        await syncAndMark(subscriber, rateLimit);
-      } else {
-        await enforceInactiveSubscriber(subscriber, now, rateLimit);
-        return;
-      }
+      await syncAndMark(subscriber, rateLimit);
       await saveState(subscriber, { accessActive: currentActive, rateLimit, action: 'username_changed' });
       await recordLifecycleEvent(subscriber, 'pppoe.username_changed', 'PPPoE username synchronized');
       return;
     }
 
     if (!currentActive) {
-      await enforceInactiveSubscriber(subscriber, now, rateLimit);
+      await syncAndMark(subscriber, rateLimit);
+      const sessionControl = await disconnectWithFallback(subscriber);
+      if (expiry && expiry <= now && subscriber.service_status === 'active') {
+        await db.query(
+          `UPDATE billing_subscribers
+           SET service_status='expired', updated_at=NOW()
+           WHERE id=$1 AND client_id=$2 AND service_status='active'`,
+          [subscriber.id, subscriber.client_id]
+        );
+        subscriber.service_status = 'expired';
+      }
+      await saveState(subscriber, { accessActive: false, rateLimit, action: 'inactive_enforced' });
+      await recordLifecycleEvent(
+        subscriber,
+        expiry && expiry <= now ? 'pppoe.expired_enforced' : 'pppoe.access_revoked',
+        expiry && expiry <= now ? 'PPPoE expiry enforced' : 'PPPoE access revoked',
+        { session_control: sessionControl.method }
+      );
       return;
     }
 
@@ -405,9 +335,7 @@ async function enforceSubscriber(subscriber, now = new Date()) {
       const sync = await syncAndMark(subscriber, rateLimit);
       let sessionControl = null;
 
-      if (routerChanged || accessChanged) {
-        // Reauthentication is required when leaving the expired payment-only
-        // address-list so the active subscriber receives the normal RADIUS policy.
+      if (routerChanged) {
         sessionControl = await disconnectWithFallback(subscriber);
       } else if (rateChanged || planChanged || planUpdated || expiryChanged) {
         sessionControl = await coaWithFallback(subscriber, {
@@ -534,7 +462,6 @@ module.exports = {
   effectiveExpiry,
   ensurePppoeLifecycleSchema,
   enforceSubscriber,
-  expiredPaywallEligible,
   loadLifecycleCandidates,
   processPppoeLifecycle,
   secondsUntilExpiry,

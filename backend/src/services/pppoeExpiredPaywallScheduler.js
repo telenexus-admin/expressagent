@@ -138,7 +138,7 @@ async function markState(subscriber, status, error = null) {
        router_id=EXCLUDED.router_id,
        radius_username=EXCLUDED.radius_username,
        status=EXCLUDED.status,
-       enforced_at=CASE WHEN EXCLUDED.status='paywall' THEN NOW() ELSE billing_pppoe_expired_paywall_state.enforced_at END,
+       enforced_at=CASE WHEN EXCLUDED.status='paywall' THEN COALESCE(billing_pppoe_expired_paywall_state.enforced_at,NOW()) ELSE billing_pppoe_expired_paywall_state.enforced_at END,
        restored_at=CASE WHEN EXCLUDED.status='restored' THEN NOW() ELSE NULL END,
        last_error=EXCLUDED.last_error,
        updated_at=NOW()`,
@@ -197,7 +197,9 @@ async function restorePaid(subscriber) {
       session_control: disconnected.method,
     };
   } catch (error) {
-    await markState(subscriber, 'failed', error).catch(() => {});
+    // Keep the state as paywall so the scheduler retries restoration. A transient
+    // router/RADIUS failure must never strand a paid subscriber in failed state.
+    await markState(subscriber, 'paywall', error).catch(() => {});
     throw error;
   }
 }
